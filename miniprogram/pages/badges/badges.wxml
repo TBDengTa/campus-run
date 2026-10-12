@@ -1,0 +1,22 @@
+<view class="page badges-page">
+  <view class="card badges-summary">
+    <text class="summary-num num-font">{{earnedCount}}</text>
+    <text class="summary-sep">/</text>
+    <text class="summary-total num-font">{{total}}</text>
+    <text class="text-secondary"> 枚徽章已点亮</text>
+  </view>
+
+  <view class="badge-grid">
+    <view class="badge-cell {{item.earned ? 'earned' : ''}}" wx:for="{{list}}" wx:key="key">
+      <image wx:if="{{item.icon}}" class="badge-icon" src="{{item.icon}}" mode="aspectFit" lazy-load />
+      <view wx:else class="badge-icon-fallback">{{item.earned ? '🏅' : '🔒'}}</view>
+      <view class="badge-name">{{item.name}}</view>
+      <view class="badge-desc text-placeholder">{{item.description}}</view>
+      <view class="badge-progress text-secondary" wx:if="{{!item.earned}}">
+        {{item.tierGroup ? item.tierGroup + ' · ' : ''}}目标 {{item.target}}{{item.type === 'total_distance' || item.type === 'single_distance' ? 'm' : item.type === 'total_steps' || item.type === 'single_steps' ? '步' : '天'}}
+      </view>
+    </view>
+  </view>
+
+  <t-loading wx:if="{{loading}}" theme="circular" size="48rpx" text="加载中…" class="loading" />
+</view>

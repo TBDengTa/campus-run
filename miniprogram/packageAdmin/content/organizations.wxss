@@ -1,0 +1,34 @@
+@import '../admin-common.wxss';
+
+.add-bar {
+  padding: 0 28rpx 16rpx;
+}
+
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  justify-content: flex-end;
+}
+
+.level-1 {
+  background: var(--td-brand-color-1, #f2f3ff);
+}
+
+.level-2 {
+  padding-left: 56rpx;
+}
+
+.level-3 {
+  padding-left: 104rpx;
+}
+
+.level-3 .row-actions {
+  gap: 8rpx;
+}
+
+.loading-more {
+  display: flex;
+  justify-content: center;
+  padding: 24rpx;
+}

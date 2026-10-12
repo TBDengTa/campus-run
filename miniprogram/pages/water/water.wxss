@@ -1,0 +1,89 @@
+.water-page {
+  padding: 24rpx 0 48rpx;
+}
+
+.water-hero {
+  text-align: center;
+}
+
+.water-num {
+  font-size: 72rpx;
+  font-weight: 700;
+  color: var(--td-brand-color);
+}
+
+.target-link {
+  text-align: center;
+  margin-top: 20rpx;
+  font-size: 26rpx;
+}
+
+.quick-row {
+  display: flex;
+  gap: 20rpx;
+}
+
+.quick-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 24rpx 12rpx;
+  border-radius: 16rpx;
+  background: var(--td-gray-color-1);
+}
+
+.quick-icon {
+  font-size: 48rpx;
+}
+
+.quick-amount {
+  margin-top: 8rpx;
+  font-size: 28rpx;
+  font-weight: 600;
+}
+
+.quick-label {
+  font-size: 22rpx;
+}
+
+.quick-item.custom {
+  justify-content: center;
+  gap: 12rpx;
+}
+
+.custom-input-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6rpx;
+}
+
+.custom-input {
+  width: 90rpx;
+  font-size: 28rpx;
+  font-weight: 600;
+  border-bottom: 2rpx solid var(--td-component-border);
+  text-align: center;
+}
+
+.log-item {
+  display: flex;
+  align-items: center;
+  padding: 16rpx 0;
+  border-bottom: 1rpx solid var(--td-component-stroke);
+}
+
+.log-item:last-child {
+  border-bottom: none;
+}
+
+.log-time {
+  width: 120rpx;
+  color: var(--td-text-color-secondary);
+  font-size: 26rpx;
+}
+
+.log-amount {
+  font-weight: 600;
+  color: var(--td-brand-color);
+}

@@ -1,0 +1,48 @@
+<view class="admin-page">
+  <view class="add-bar">
+    <t-button theme="primary" size="small" bind:tap="openCreate">+ 新增落地页</t-button>
+  </view>
+
+  <view class="form-card" wx:if="{{form}}">
+    <view class="form-item">
+      <text class="form-item-label">名称 *</text>
+      <input class="form-item-input" value="{{form.name}}" bindinput="onField" data-field="name" />
+    </view>
+    <view class="form-item">
+      <text class="form-item-label">Slug *（访问路径 /p/{{form.slug || 'xxx'}}）</text>
+      <input class="form-item-input" value="{{form.slug}}" bindinput="onField" data-field="slug" placeholder="英文短横线，如 summer-run" />
+    </view>
+    <view class="form-item">
+      <text class="form-item-label">HTML 内容</text>
+      <textarea class="html-editor" value="{{form.htmlContent}}" bindinput="onHtml" maxlength="-1" auto-height />
+    </view>
+    <view class="form-item flex-between">
+      <text class="form-item-label" style="margin-bottom:0">启用</text>
+      <t-switch value="{{form.enabled}}" bind:change="toggleEnabled" />
+    </view>
+    <view class="form-actions">
+      <t-button theme="primary" block bind:tap="save">保存</t-button>
+      <t-button variant="outline" block bind:tap="closeForm">取消</t-button>
+    </view>
+  </view>
+
+  <view class="list-card">
+    <view class="row" wx:for="{{list}}" wx:key="_id">
+      <view class="flex-1">
+        <view class="row-title">
+          {{item.name}}
+          <t-tag wx:if="{{!item.enabled}}" theme="default" variant="light" size="small">停用</t-tag>
+        </view>
+        <view class="row-sub">/p/{{item.slug}} · {{item.htmlSize}}</view>
+      </view>
+      <view class="row-actions">
+        <view class="mini-btn" catch:tap="preview" data-url="{{item.url}}">预览</view>
+        <view class="mini-btn" catch:tap="copyLink" data-url="{{item.url}}">复制链接</view>
+        <view class="mini-btn" catch:tap="openEdit" data-id="{{item._id}}">编辑</view>
+        <view class="mini-btn danger" catch:tap="remove" data-id="{{item._id}}">删除</view>
+      </view>
+    </view>
+    <view class="empty-tip" wx:if="{{!list.length && !loading}}">暂无落地页</view>
+    <t-loading wx:if="{{loading}}" theme="circular" size="40rpx" class="loading-more" />
+  </view>
+</view>

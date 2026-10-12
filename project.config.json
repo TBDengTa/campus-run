@@ -1,0 +1,24 @@
+{
+  "compileType": "miniprogram",
+  "appid": "wx4a0a2a165f12eb7e",
+  "projectname": "校园跑小程序",
+  "miniprogramRoot": "miniprogram/",
+  "libVersion": "3.8.12",
+  "setting": {
+    "es6": true,
+    "postcss": true,
+    "minified": true,
+    "enhance": true,
+    "ignoreUploadUnusedFiles": true,
+    "babelSetting": {
+      "ignore": [],
+      "disablePlugins": [],
+      "outputPath": ""
+    }
+  },
+  "condition": {},
+  "editorSetting": {
+    "tabIndent": "insertSpaces",
+    "tabSize": 2
+  }
+}

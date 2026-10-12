@@ -1,0 +1,41 @@
+@import '../admin-common.wxss';
+
+.search-wrap {
+  margin: 0 24rpx;
+}
+
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 0 28rpx 8rpx;
+}
+
+.filter-chip {
+  font-size: 24rpx;
+  padding: 8rpx 24rpx;
+  border-radius: 999px;
+  background: var(--td-gray-color-2, #eee);
+  color: var(--td-text-color-secondary);
+}
+
+.filter-chip.active {
+  background: var(--td-brand-color);
+  color: #fff;
+}
+
+.filter-count {
+  margin-left: auto;
+  font-size: 22rpx;
+}
+
+.row-actions {
+  display: flex;
+  gap: 12rpx;
+}
+
+.loading-more {
+  display: flex;
+  justify-content: center;
+  padding: 24rpx;
+}

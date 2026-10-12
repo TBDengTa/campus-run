@@ -1,0 +1,142 @@
+.calendar-page {
+  padding: 24rpx 0 48rpx;
+}
+
+.week-card {
+  display: flex;
+}
+
+.week-stat {
+  flex: 1;
+  text-align: center;
+}
+
+.week-num {
+  font-size: 36rpx;
+  font-weight: 600;
+}
+
+.week-label {
+  margin-top: 6rpx;
+  font-size: 24rpx;
+}
+
+.month-header {
+  padding: 0 8rpx 24rpx;
+}
+
+.month-text {
+  font-size: 32rpx;
+  font-weight: 600;
+}
+
+.weekday-row {
+  display: flex;
+  margin-bottom: 8rpx;
+}
+
+.weekday {
+  flex: 1;
+  text-align: center;
+  font-size: 24rpx;
+  padding: 8rpx 0;
+}
+
+.day-grid {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.day-cell {
+  width: 14.28%;
+  height: 88rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12rpx;
+  position: relative;
+}
+
+.day-cell.empty {
+  pointer-events: none;
+}
+
+.day-num {
+  font-size: 28rpx;
+  line-height: 1.2;
+}
+
+.day-dot {
+  width: 10rpx;
+  height: 10rpx;
+  border-radius: 50%;
+  background: var(--td-gray-color-4);
+  margin-top: 4rpx;
+}
+
+.day-dot.active {
+  background: var(--td-brand-color-5);
+}
+
+.day-dot.achieved {
+  background: var(--td-success-color-5);
+}
+
+.day-cell.selected {
+  background: var(--td-brand-color-1);
+}
+
+.day-cell.today .day-num {
+  color: var(--td-brand-color);
+  font-weight: 700;
+}
+
+.day-holiday {
+  position: absolute;
+  top: 2rpx;
+  right: 4rpx;
+  font-size: 16rpx;
+  color: var(--td-warning-color-5);
+}
+
+.legend {
+  margin-top: 16rpx;
+  justify-content: center;
+  gap: 32rpx;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  font-size: 22rpx;
+  color: var(--td-text-color-secondary);
+}
+
+.record-item {
+  display: flex;
+  align-items: center;
+  padding: 20rpx 0;
+  border-bottom: 1rpx solid var(--td-component-stroke);
+}
+
+.record-item:last-child {
+  border-bottom: none;
+}
+
+.record-title {
+  font-size: 28rpx;
+  font-weight: 500;
+}
+
+.record-sub {
+  font-size: 24rpx;
+  margin-top: 4rpx;
+}
+
+.record-steps {
+  font-size: 30rpx;
+  font-weight: 600;
+  margin-right: 8rpx;
+}

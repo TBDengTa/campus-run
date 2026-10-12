@@ -1,0 +1,44 @@
+<view class="admin-page" wx:if="{{user}}">
+  <view class="form-card">
+    <view class="flex-between">
+      <view>
+        <view class="row-title">{{user.nickname || user.realName || '未命名'}}</view>
+        <view class="row-sub">{{user.openid}}</view>
+      </view>
+      <t-tag theme="{{user.status === 'banned' ? 'danger' : 'success'}}" variant="light" size="small">
+        {{user.status === 'banned' ? '封禁中' : '正常'}}
+      </t-tag>
+    </view>
+    <view class="info-grid">
+      <view class="info-item"><text class="text-secondary">姓名</text><text>{{user.realName || '-'}}</text></view>
+      <view class="info-item"><text class="text-secondary">学号</text><text>{{user.studentId || '-'}}</text></view>
+      <view class="info-item"><text class="text-secondary">学校</text><text>{{user.schoolName || '-'}}</text></view>
+      <view class="info-item"><text class="text-secondary">院系</text><text>{{user.departmentName || '-'}}</text></view>
+      <view class="info-item"><text class="text-secondary">班级</text><text>{{user.className || '-'}}</text></view>
+      <view class="info-item"><text class="text-secondary">注册</text><text>{{user.createdText}}</text></view>
+      <view class="info-item"><text class="text-secondary">累计步数</text><text class="num-font">{{user.totalSteps || 0}}</text></view>
+      <view class="info-item"><text class="text-secondary">打卡天数</text><text class="num-font">{{user.totalDays || 0}}</text></view>
+    </view>
+    <view class="ban-info" wx:if="{{user.status === 'banned'}}">
+      <view class="text-error">封禁原因：{{user.banReason}}</view>
+      <view class="text-secondary" wx:if="{{user.bannedUntilText}}">解封时间：{{user.bannedUntilText}}</view>
+    </view>
+
+    <view class="form-actions" wx:if="{{user.role !== 'admin'}}">
+      <t-button wx:if="{{user.status !== 'banned'}}" theme="danger" block bind:tap="ban">封禁</t-button>
+      <t-button wx:else theme="primary" block bind:tap="unban">解封</t-button>
+    </view>
+    <view class="empty-tip" wx:else>管理员账号不可封禁</view>
+  </view>
+
+  <view class="section-title">封禁/解封流水</view>
+  <view class="list-card">
+    <view class="row" wx:for="{{bans}}" wx:key="_id">
+      <view class="flex-1">
+        <view class="row-title">{{item.action === 'ban' ? '🔴 封禁' : '🟢 解封'}} · {{item.reason || '-'}}</view>
+        <view class="row-sub">{{item.timeText}} · {{item.operator === 'system' ? '系统自动' : '管理员'}}{{item.durationDays ? ' · ' + item.durationDays + '天' : ''}}</view>
+      </view>
+    </view>
+    <view class="empty-tip" wx:if="{{!bans.length}}">暂无流水</view>
+  </view>
+</view>

@@ -1,0 +1,13 @@
+<view class="page ann-page">
+  <block wx:if="{{list.length}}">
+    <view class="card" wx:for="{{list}}" wx:key="_id">
+      <view class="flex-between mb-16">
+        <view class="ann-title">{{item.title}}</view>
+        <text class="text-placeholder date">{{item.dateText}}</text>
+      </view>
+      <view class="ann-content text-secondary">{{item.content}}</view>
+    </view>
+  </block>
+  <t-empty wx:elif="{{!loading}}" content="暂无公告" />
+  <t-loading wx:if="{{loading}}" theme="circular" size="48rpx" text="加载中…" class="loading" />
+</view>

@@ -1,0 +1,30 @@
+.detail-page {
+  padding: 24rpx 0;
+}
+
+.map {
+  width: calc(100% - 48rpx);
+  height: 480rpx;
+  margin: 0 24rpx 24rpx;
+  border-radius: 24rpx;
+}
+
+.stats-row {
+  display: flex;
+  margin-top: 8rpx;
+}
+
+.stat {
+  flex: 1;
+  text-align: center;
+}
+
+.stat-num {
+  font-size: 40rpx;
+  font-weight: 700;
+}
+
+.stat-label {
+  font-size: 24rpx;
+  margin-top: 6rpx;
+}

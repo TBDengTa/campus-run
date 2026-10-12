@@ -1,0 +1,24 @@
+@import '../admin-common.wxss';
+
+.add-bar {
+  padding: 0 28rpx 16rpx;
+}
+
+.row-actions {
+  display: flex;
+  gap: 12rpx;
+}
+
+.year-chip {
+  font-size: 28rpx;
+  font-weight: 600;
+  padding: 12rpx 24rpx;
+  border-radius: 12rpx;
+  background: var(--td-bg-color-container, #fff);
+}
+
+.loading-more {
+  display: flex;
+  justify-content: center;
+  padding: 24rpx;
+}

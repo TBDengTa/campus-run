@@ -1,0 +1,60 @@
+<view class="admin-page">
+  <view class="add-bar">
+    <t-button theme="primary" size="small" bind:tap="openCreate">+ 新增广告位</t-button>
+  </view>
+
+  <view class="form-card" wx:if="{{form}}">
+    <view class="form-item">
+      <text class="form-item-label">Key *（如 home_banner）</text>
+      <input class="form-item-input" value="{{form.key}}" bindinput="onField" data-field="key" placeholder="英文标识，唯一" />
+    </view>
+    <view class="form-item">
+      <text class="form-item-label">名称 *</text>
+      <input class="form-item-input" value="{{form.name}}" bindinput="onField" data-field="name" />
+    </view>
+    <view class="form-item">
+      <text class="form-item-label">类型</text>
+      <picker range="{{types}}" range-key="label" value="{{typeIndex}}" bindchange="onType">
+        <view class="form-item-input">{{types[typeIndex].label}}</view>
+      </picker>
+    </view>
+    <view class="form-item">
+      <text class="form-item-label">所在页面</text>
+      <input class="form-item-input" value="{{form.page}}" bindinput="onField" data-field="page" placeholder="如 首页" />
+    </view>
+    <view class="form-item">
+      <text class="form-item-label">最大素材数</text>
+      <t-stepper value="{{form.maxSponsors}}" min="1" max="20" bind:change="onMaxChange" />
+    </view>
+    <view class="form-item flex-between">
+      <text class="form-item-label" style="margin-bottom:0">独占位（只展示权重最高一条）</text>
+      <t-switch value="{{form.exclusive}}" bind:change="toggleExclusive" />
+    </view>
+    <view class="form-item flex-between">
+      <text class="form-item-label" style="margin-bottom:0">启用</text>
+      <t-switch value="{{form.enabled}}" bind:change="toggleEnabled" />
+    </view>
+    <view class="form-actions">
+      <t-button theme="primary" block bind:tap="save">保存</t-button>
+      <t-button variant="outline" block bind:tap="closeForm">取消</t-button>
+    </view>
+  </view>
+
+  <view class="list-card">
+    <view class="row" wx:for="{{list}}" wx:key="_id">
+      <view class="flex-1">
+        <view class="row-title">
+          {{item.name}}
+          <t-tag wx:if="{{!item.enabled}}" theme="default" variant="light" size="small">停用</t-tag>
+        </view>
+        <view class="row-sub">{{item.key}} · {{item.page || '-'}}</view>
+      </view>
+      <view class="row-actions">
+        <view class="mini-btn" catch:tap="openEdit" data-id="{{item._id}}">编辑</view>
+        <view class="mini-btn danger" catch:tap="remove" data-id="{{item._id}}">删除</view>
+      </view>
+    </view>
+    <view class="empty-tip" wx:if="{{!list.length && !loading}}">暂无广告位</view>
+    <t-loading wx:if="{{loading}}" theme="circular" size="40rpx" class="loading-more" />
+  </view>
+</view>

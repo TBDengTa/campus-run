@@ -1,0 +1,43 @@
+<view class="page org-page">
+  <view class="card">
+    <view class="card-title">学生认证</view>
+
+    <view class="picker-row">
+      <text class="picker-label text-secondary">学校</text>
+      <picker range="{{schools}}" bindchange="pickSchool">
+        <view class="picker-value {{schoolIndex >= 0 ? '' : 'text-placeholder'}}">{{schoolLabel}}</view>
+      </picker>
+    </view>
+    <view class="picker-row">
+      <text class="picker-label text-secondary">院系</text>
+      <picker range="{{departments}}" bindchange="pickDepartment" disabled="{{schoolIndex < 0}}">
+        <view class="picker-value {{departmentIndex >= 0 ? '' : 'text-placeholder'}}">{{departmentLabel}}</view>
+      </picker>
+    </view>
+    <view class="picker-row" wx:if="{{specialties.length}}">
+      <text class="picker-label text-secondary">专业</text>
+      <picker range="{{specialties}}" bindchange="pickSpecialty">
+        <view class="picker-value {{specialtyIndex >= 0 ? '' : 'text-placeholder'}}">{{specialtyLabel}}</view>
+      </picker>
+    </view>
+
+    <view class="input-row">
+      <text class="picker-label text-secondary">姓名</text>
+      <input class="input" value="{{realName}}" placeholder="真实姓名" bindinput="inputName" />
+    </view>
+    <view class="input-row">
+      <text class="picker-label text-secondary">学号</text>
+      <input class="input" value="{{studentId}}" placeholder="学号" bindinput="inputStudentId" />
+    </view>
+    <view class="input-row">
+      <text class="picker-label text-secondary">班级</text>
+      <input class="input" value="{{className}}" placeholder="如 23级大数据1班" bindinput="inputClass" />
+    </view>
+
+    <t-button theme="primary" block class="mt-24" loading="{{submitting}}" bind:tap="submit">
+      保存认证信息
+    </t-button>
+  </view>
+
+  <view class="tip text-placeholder">信息仅用于跑步打卡统计与班长核对，不会对外展示</view>
+</view>

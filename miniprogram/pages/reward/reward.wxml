@@ -1,0 +1,47 @@
+<view class="page reward-page">
+  <view class="card reward-hero">
+    <view class="reward-title">看视频 · 赚步数</view>
+    <view class="reward-sub text-secondary">观看一条激励视频，即可领取 {{stepsPerWatch}} 步</view>
+    <view class="reward-stats">
+      <view class="reward-stat">
+        <view class="num-font reward-num">{{stepsEarned}}</view>
+        <view class="text-secondary">今日已得步数</view>
+      </view>
+      <view class="reward-stat">
+        <view class="num-font reward-num">{{watchCount}}/{{limit}}</view>
+        <view class="text-secondary">今日观看次数</view>
+      </view>
+    </view>
+    <t-button
+      theme="primary"
+      size="large"
+      block
+      shape="round"
+      disabled="{{!enabled || remaining <= 0}}"
+      bind:tap="watch"
+    >
+      {{enabled ? (remaining > 0 ? '观看视频领步数（剩 ' + remaining + ' 次）' : '今日已用完') : '活动暂未开启'}}
+    </t-button>
+    <view class="reward-tip text-placeholder mt-16">步数将计入今日微信运动步数记录</view>
+  </view>
+
+  <view class="card" wx:if="{{rewarded}}">
+    <view class="card-title">刚刚获得</view>
+    <view class="rewarded-steps num-font">+{{rewarded.steps}} 步</view>
+    <block wx:if="{{rewarded.badges.length}}">
+      <t-divider content="新徽章" align="left" />
+      <view class="badge-names">
+        <t-tag wx:for="{{rewarded.badges}}" wx:key="key" theme="warning" variant="light" size="medium">
+          🏅 {{item.name}}
+        </t-tag>
+      </view>
+    </block>
+  </view>
+
+  <view class="card">
+    <view class="card-title">规则说明</view>
+    <view class="rule text-secondary">· 每日最多观看 {{limit}} 次，每次 +{{stepsPerWatch}} 步</view>
+    <view class="rule text-secondary">· 步数实时到账，计入当日打卡记录</view>
+    <view class="rule text-secondary">· 请勿使用模拟器等异常方式观看，违规将被封禁</view>
+  </view>
+</view>

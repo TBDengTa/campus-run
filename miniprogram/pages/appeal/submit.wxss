@@ -1,0 +1,18 @@
+.appeal-submit-page {
+  padding: 24rpx 0 48rpx;
+}
+
+.ban-title {
+  font-weight: 600;
+  margin-bottom: 8rpx;
+}
+
+.ban-reason,
+.ban-until {
+  font-size: 26rpx;
+  line-height: 40rpx;
+}
+
+.tip {
+  font-size: 24rpx;
+}

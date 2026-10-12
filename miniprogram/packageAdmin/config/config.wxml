@@ -1,0 +1,82 @@
+<view class="admin-page" wx:if="{{config}}">
+  <view class="form-card">
+    <view class="group-title">默认目标（未匹配计划时生效）</view>
+    <view class="grid-3">
+      <view class="grid-item">
+        <text class="form-item-label">每日步数</text>
+        <input class="form-item-input" type="number" value="{{config.daily.steps}}" bindinput="onDaily" data-field="steps" />
+      </view>
+      <view class="grid-item">
+        <text class="form-item-label">每日距离(m)</text>
+        <input class="form-item-input" type="number" value="{{config.daily.distance}}" bindinput="onDaily" data-field="distance" />
+      </view>
+      <view class="grid-item">
+        <text class="form-item-label">每日千卡</text>
+        <input class="form-item-input" type="number" value="{{config.daily.calories}}" bindinput="onDaily" data-field="calories" />
+      </view>
+      <view class="grid-item">
+        <text class="form-item-label">每周步数</text>
+        <input class="form-item-input" type="number" value="{{config.weekly.steps}}" bindinput="onWeekly" data-field="steps" />
+      </view>
+      <view class="grid-item">
+        <text class="form-item-label">每周距离(m)</text>
+        <input class="form-item-input" type="number" value="{{config.weekly.distance}}" bindinput="onWeekly" data-field="distance" />
+      </view>
+      <view class="grid-item">
+        <text class="form-item-label">每周千卡</text>
+        <input class="form-item-input" type="number" value="{{config.weekly.calories}}" bindinput="onWeekly" data-field="calories" />
+      </view>
+    </view>
+  </view>
+
+  <view class="form-card">
+    <view class="group-title">分时段目标（到点应完成的百分比）</view>
+    <view class="graded-row" wx:for="{{config.graded}}" wx:key="index">
+      <input class="graded-time" type="text" value="{{item.time}}" bindinput="onGradedTime" data-index="{{index}}" />
+      <input class="graded-percent" type="number" value="{{item.percent}}" bindinput="onGradedPercent" data-index="{{index}}" />
+      <text class="text-secondary">%</text>
+      <view class="mini-btn danger" bind:tap="removeGraded" data-index="{{index}}">删</view>
+    </view>
+    <t-button variant="outline" size="small" bind:tap="addGraded">+ 添加时段</t-button>
+  </view>
+
+  <view class="form-card">
+    <view class="group-title">反作弊</view>
+    <view class="form-item flex-between">
+      <text class="form-item-label" style="margin-bottom:0">启用自动检测</text>
+      <t-switch value="{{config.anticheat.enabled}}" bind:change="onAnticheat" data-field="enabled" />
+    </view>
+    <view class="form-item">
+      <text class="form-item-label">单次同步步数暴增阈值（步）</text>
+      <input class="form-item-input" type="number" value="{{config.anticheat.maxStepJumpPerSync}}" bindinput="onAnticheat" data-field="maxStepJumpPerSync" />
+    </view>
+    <view class="form-item">
+      <text class="form-item-label">最低配速阈值（秒/公里，低于即异常）</text>
+      <input class="form-item-input" type="number" value="{{config.anticheat.minPaceSecondsPerKm}}" bindinput="onAnticheat" data-field="minPaceSecondsPerKm" />
+    </view>
+    <view class="form-item">
+      <text class="form-item-label">自动封禁天数</text>
+      <input class="form-item-input" type="number" value="{{config.anticheat.banDays}}" bindinput="onAnticheat" data-field="banDays" />
+    </view>
+  </view>
+
+  <view class="form-card">
+    <view class="group-title">激励视频赚步数</view>
+    <view class="form-item flex-between">
+      <text class="form-item-label" style="margin-bottom:0">启用</text>
+      <t-switch value="{{config.rewardVideo.enabled}}" bind:change="onReward" data-field="enabled" />
+    </view>
+    <view class="form-item">
+      <text class="form-item-label">每日观看上限（次）</text>
+      <input class="form-item-input" type="number" value="{{config.rewardVideo.dailyLimit}}" bindinput="onReward" data-field="dailyLimit" />
+    </view>
+    <view class="form-item">
+      <text class="form-item-label">每次奖励步数</text>
+      <input class="form-item-input" type="number" value="{{config.rewardVideo.stepsPerWatch}}" bindinput="onReward" data-field="stepsPerWatch" />
+    </view>
+  </view>
+
+  <view class="save-bar">
+    <t-button theme="primary" block loading="{{saving}}" bind:tap="save">保存配置</t-button>
+  </view>
+</view>

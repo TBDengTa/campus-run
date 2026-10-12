@@ -1,0 +1,24 @@
+<view class="page appeal-submit-page">
+  <view class="card" wx:if="{{user && user.status === 'banned'}}">
+    <view class="ban-title">封禁信息</view>
+    <view class="ban-reason text-secondary">{{user.banReason || '违反社区规范'}}</view>
+    <view class="ban-until text-secondary" wx:if="{{user.bannedUntil}}">
+      解封时间：{{user.bannedUntil}}
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="card-title">填写申诉</view>
+    <t-textarea
+      placeholder="请说明情况（至少 10 字），例如步数异常的原因…"
+      maxlength="500"
+      value="{{content}}"
+      bind:change="input"
+      indicator
+    />
+    <t-button theme="primary" block class="mt-24" loading="{{submitting}}" bind:tap="submit">
+      提交申诉
+    </t-button>
+    <view class="tip text-placeholder mt-16">提交后请耐心等待管理员审核，可在「我的申诉」中查看进度</view>
+  </view>
+</view>

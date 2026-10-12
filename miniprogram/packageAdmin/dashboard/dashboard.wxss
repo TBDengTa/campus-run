@@ -1,0 +1,31 @@
+@import '../admin-common.wxss';
+
+.chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 8rpx;
+  padding: 32rpx 28rpx 16rpx;
+  height: 200rpx;
+}
+
+.bar-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+  justify-content: flex-end;
+}
+
+.bar {
+  width: 100%;
+  max-width: 28rpx;
+  background: var(--td-brand-color-5);
+  border-radius: 6rpx 6rpx 0 0;
+}
+
+.bar-label {
+  font-size: 18rpx;
+  margin-top: 8rpx;
+  transform: scale(0.85);
+}

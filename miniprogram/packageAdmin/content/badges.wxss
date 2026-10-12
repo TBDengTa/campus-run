@@ -1,0 +1,25 @@
+@import '../admin-common.wxss';
+
+.add-bar {
+  padding: 0 28rpx 16rpx;
+}
+
+.row-actions {
+  display: flex;
+  gap: 12rpx;
+}
+
+.form-cols {
+  display: flex;
+  gap: 16rpx;
+}
+
+.form-item.half {
+  flex: 1;
+}
+
+.loading-more {
+  display: flex;
+  justify-content: center;
+  padding: 24rpx;
+}

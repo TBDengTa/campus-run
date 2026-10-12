@@ -1,0 +1,59 @@
+@import '../admin-common.wxss';
+
+.add-bar {
+  padding: 0 28rpx 16rpx;
+}
+
+.row-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+}
+
+.content-img {
+  width: 120rpx;
+  height: 72rpx;
+  border-radius: 8rpx;
+  background: var(--td-gray-color-2, #eee);
+  margin-right: 16rpx;
+  flex-shrink: 0;
+}
+
+.info {
+  margin-right: 12rpx;
+}
+
+.img-row {
+  width: 100%;
+  height: 200rpx;
+  border-radius: 12rpx;
+  overflow: hidden;
+  background: var(--td-gray-color-1, #f3f3f3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.img-preview {
+  width: 100%;
+  height: 100%;
+}
+
+.img-empty {
+  font-size: 24rpx;
+}
+
+.form-cols {
+  display: flex;
+  gap: 16rpx;
+}
+
+.form-item.half {
+  flex: 1;
+}
+
+.loading-more {
+  display: flex;
+  justify-content: center;
+  padding: 24rpx;
+}

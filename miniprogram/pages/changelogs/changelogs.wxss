@@ -1,0 +1,61 @@
+.log-page {
+  padding: 24rpx 0 48rpx;
+}
+
+.timeline {
+  padding: 0 24rpx;
+}
+
+.tl-item {
+  position: relative;
+  padding-left: 36rpx;
+  padding-bottom: 24rpx;
+}
+
+.tl-dot {
+  position: absolute;
+  left: 0;
+  top: 32rpx;
+  width: 16rpx;
+  height: 16rpx;
+  border-radius: 50%;
+  background: var(--td-brand-color);
+}
+
+.tl-item::before {
+  content: '';
+  position: absolute;
+  left: 7rpx;
+  top: 56rpx;
+  bottom: 0;
+  width: 2rpx;
+  background: var(--td-component-stroke);
+}
+
+.tl-item:last-child::before {
+  display: none;
+}
+
+.tl-version {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: var(--td-brand-color);
+}
+
+.tl-title {
+  font-size: 28rpx;
+  font-weight: 600;
+  margin-bottom: 8rpx;
+}
+
+.tl-content {
+  font-size: 26rpx;
+  line-height: 42rpx;
+  white-space: pre-wrap;
+}
+
+.loading {
+  display: flex;
+  justify-content: center;
+  padding: 40rpx;
+}

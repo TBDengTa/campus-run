@@ -1,0 +1,100 @@
+.profile-page {
+  padding: 24rpx 0 48rpx;
+}
+
+.user-card {
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+  margin: 0 24rpx 24rpx;
+  padding: 40rpx 32rpx;
+  background: var(--td-bg-color-container);
+  border-radius: 32rpx;
+  box-shadow: var(--td-shadow-1);
+}
+
+.avatar-btn {
+  padding: 0;
+  margin: 0;
+  width: 128rpx;
+  height: 128rpx;
+  border-radius: 50%;
+  overflow: hidden;
+  background: transparent;
+  line-height: 1;
+}
+
+.avatar-btn::after {
+  border: none;
+}
+
+.avatar {
+  width: 128rpx;
+  height: 128rpx;
+  border-radius: 50%;
+  background: var(--td-gray-color-3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.nickname-input {
+  font-size: 34rpx;
+  font-weight: 600;
+  height: 56rpx;
+}
+
+.user-meta {
+  font-size: 24rpx;
+  margin-top: 6rpx;
+}
+
+.user-tags {
+  display: flex;
+  gap: 8rpx;
+  margin-top: 12rpx;
+  flex-wrap: wrap;
+}
+
+.ban-banner {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin: 0 24rpx 24rpx;
+  padding: 20rpx 24rpx;
+  border-radius: 16rpx;
+  background: var(--td-error-color-1);
+  color: var(--td-error-color-6);
+  font-size: 26rpx;
+}
+
+.stats-card {
+  display: flex;
+}
+
+.stat {
+  flex: 1;
+  text-align: center;
+}
+
+.stat-num {
+  font-size: 36rpx;
+  font-weight: 600;
+}
+
+.stat-label {
+  font-size: 24rpx;
+  margin-top: 6rpx;
+}
+
+.admin-header {
+  font-size: 24rpx;
+  margin: 24rpx 32rpx 12rpx;
+}
+
+.footer {
+  text-align: center;
+  font-size: 24rpx;
+  padding: 40rpx 0;
+}

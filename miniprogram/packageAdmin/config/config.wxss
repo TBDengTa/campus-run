@@ -1,0 +1,46 @@
+@import '../admin-common.wxss';
+
+.group-title {
+  font-size: 28rpx;
+  font-weight: 600;
+  margin-bottom: 20rpx;
+}
+
+.grid-3 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+}
+
+.grid-item {
+  width: calc((100% - 32rpx) / 3);
+}
+
+.graded-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin-bottom: 16rpx;
+}
+
+.graded-time {
+  width: 140rpx;
+  text-align: center;
+  font-size: 28rpx;
+  padding: 12rpx;
+  border-radius: 12rpx;
+  background: var(--td-gray-color-1, #f3f3f3);
+}
+
+.graded-percent {
+  flex: 1;
+  text-align: center;
+  font-size: 28rpx;
+  padding: 12rpx;
+  border-radius: 12rpx;
+  background: var(--td-gray-color-1, #f3f3f3);
+}
+
+.save-bar {
+  padding: 0 28rpx 48rpx;
+}

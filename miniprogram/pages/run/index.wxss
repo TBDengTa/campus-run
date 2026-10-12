@@ -1,0 +1,46 @@
+.run-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.map {
+  flex: 1;
+  width: 100%;
+}
+
+.panel {
+  padding: 32rpx 32rpx calc(32rpx + env(safe-area-inset-bottom));
+  background: var(--td-bg-color-container);
+  border-radius: 32rpx 32rpx 0 0;
+  box-shadow: var(--td-shadow-2);
+}
+
+.stats-row {
+  display: flex;
+  margin-bottom: 32rpx;
+}
+
+.stat {
+  flex: 1;
+  text-align: center;
+}
+
+.stat-num {
+  font-size: 44rpx;
+  font-weight: 700;
+}
+
+.stat-label {
+  font-size: 24rpx;
+  margin-top: 4rpx;
+}
+
+.btn-row {
+  display: flex;
+  gap: 24rpx;
+}
+
+.btn-row t-button {
+  flex: 1;
+}

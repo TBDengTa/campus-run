@@ -1,0 +1,26 @@
+.ann-page {
+  padding: 24rpx 0 48rpx;
+}
+
+.ann-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  flex: 1;
+  margin-right: 16rpx;
+}
+
+.date {
+  font-size: 22rpx;
+}
+
+.ann-content {
+  font-size: 27rpx;
+  line-height: 44rpx;
+  white-space: pre-wrap;
+}
+
+.loading {
+  display: flex;
+  justify-content: center;
+  padding: 40rpx;
+}

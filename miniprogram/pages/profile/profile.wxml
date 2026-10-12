@@ -1,0 +1,72 @@
+<view class="page profile-page">
+  <!-- 用户卡 -->
+  <view class="user-card">
+    <button class="avatar-btn" open-type="chooseAvatar" bind:chooseavatar="chooseAvatar">
+      <image wx:if="{{user.avatarUrl}}" class="avatar" src="{{user.avatarUrl}}" mode="aspectFill" />
+      <view wx:else class="avatar avatar-placeholder">
+        <t-icon name="user-add" size="64rpx" color="var(--td-text-color-placeholder)" />
+      </view>
+    </button>
+    <view class="user-info flex-1">
+      <input
+        class="nickname-input"
+        type="nickname"
+        value="{{user.nickname}}"
+        placeholder="点击设置昵称"
+        bind:blur="nicknameInput"
+      />
+      <view class="user-meta text-secondary" wx:if="{{user.studentId}}">{{user.realName}} · {{user.studentId}}</view>
+      <view class="user-meta text-secondary" wx:elif="{{user.nickname}}">点击昵称可修改</view>
+      <view class="user-meta text-placeholder" wx:else>完善资料有助于班长核对</view>
+      <view class="user-tags" wx:if="{{user.schoolName || user.departmentName}}">
+        <t-tag size="small" variant="light" theme="primary" wx:if="{{user.schoolName}}">{{user.schoolName}}</t-tag>
+        <t-tag size="small" variant="light" theme="warning" wx:if="{{user.departmentName}}">{{user.departmentName}}</t-tag>
+        <t-tag size="small" variant="light" theme="success" wx:if="{{user.className}}">{{user.className}}</t-tag>
+      </view>
+    </view>
+  </view>
+
+  <!-- 封禁提醒 -->
+  <view class="ban-banner" wx:if="{{banned}}" bind:tap="goBanned">
+    <t-icon name="error-circle" size="36rpx" />
+    <text>账号已被封禁，点击查看详情并申诉</text>
+  </view>
+
+  <!-- 汇总 -->
+  <view class="card stats-card" wx:if="{{stats}}">
+    <view class="stat">
+      <view class="stat-num num-font">{{stats.totalSteps}}</view>
+      <view class="stat-label text-secondary">累计步数</view>
+    </view>
+    <view class="stat">
+      <view class="stat-num num-font">{{stats.totalDistance}}</view>
+      <view class="stat-label text-secondary">累计距离</view>
+    </view>
+    <view class="stat">
+      <view class="stat-num num-font">{{stats.totalDays}}</view>
+      <view class="stat-label text-secondary">打卡天数</view>
+    </view>
+  </view>
+
+  <!-- 功能入口 -->
+  <t-cell-group bordered>
+    <t-cell title="身体数据 / 目标计划" hover arrow left-icon="heart" data-url="/pages/body-data/body-data" bind:tap="go" />
+    <t-cell title="喝水打卡" hover arrow left-icon="swimming-pool" data-url="/pages/water/water" bind:tap="go" />
+    <t-cell title="看视频赚步数" hover arrow left-icon="play-circle" data-url="/pages/reward/reward" bind:tap="go" />
+    <t-cell title="我的徽章" hover arrow left-icon="medal" data-url="/pages/badges/badges" bind:tap="go" />
+    <t-cell title="学生认证 / 院系班级" hover arrow left-icon="school" data-url="/pages/org/bind" bind:tap="go" />
+    <t-cell title="我的申诉" hover arrow left-icon="error-circle" data-url="/pages/appeal/list" bind:tap="go" />
+    <t-cell title="公告" hover arrow left-icon="notification" data-url="/pages/announcements/announcements" bind:tap="go" />
+    <t-cell title="版本日志" hover arrow left-icon="history" data-url="/pages/changelogs/changelogs" bind:tap="go" />
+  </t-cell-group>
+
+  <!-- 管理端 -->
+  <block wx:if="{{isAdmin}}">
+    <view class="admin-header text-secondary">管理员功能</view>
+    <t-cell-group bordered>
+      <t-cell title="管理端控制台" hover arrow left-icon="dashboard" note="用户 / 申诉 / 广告 / 配置" bind:tap="goAdmin" />
+    </t-cell-group>
+  </block>
+
+  <view class="footer text-placeholder">校园跑 v2.0.0</view>
+</view>

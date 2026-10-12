@@ -1,0 +1,36 @@
+<view class="admin-page">
+  <view class="filter-bar">
+    <picker mode="date" value="{{startDate}}" bindchange="onStart">
+      <view class="date-chip">{{startDate}}</view>
+    </picker>
+    <text class="text-secondary">至</text>
+    <picker mode="date" value="{{endDate}}" bindchange="onEnd">
+      <view class="date-chip">{{endDate}}</view>
+    </picker>
+  </view>
+
+  <view class="stat-grid">
+    <view class="stat-box">
+      <view class="num num-font">{{totals.pv}}</view>
+      <view class="label">总曝光 PV</view>
+    </view>
+    <view class="stat-box">
+      <view class="num num-font">{{totals.click}}</view>
+      <view class="label">总点击</view>
+    </view>
+  </view>
+
+  <view class="section-title">每日趋势（蓝=PV 红=点击）</view>
+  <view class="list-card">
+    <view class="chart">
+      <view class="bar-col" wx:for="{{byDate}}" wx:key="_id">
+        <view class="bars">
+          <view class="bar pv" style="height: {{item.pvHeight}}rpx"></view>
+          <view class="bar click" style="height: {{item.clickHeight}}rpx"></view>
+        </view>
+        <view class="bar-label text-placeholder">{{item.label}}</view>
+      </view>
+    </view>
+    <view class="empty-tip" wx:if="{{!byDate.length && !loading}}">该区间暂无数据</view>
+  </view>
+</view>

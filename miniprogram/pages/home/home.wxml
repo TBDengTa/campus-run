@@ -1,0 +1,118 @@
+<view class="page home-page">
+  <!-- 公告条 -->
+  <t-notice-bar
+    wx:if="{{announcements.length}}"
+    visible
+    prefixIcon="sound"
+    content="{{announcements[0].title}}"
+    bind:click="goAnnouncements"
+  />
+
+  <!-- 封禁提醒 -->
+  <view class="ban-banner" wx:if="{{banned}}" bind:tap="goBanned">
+    <t-icon name="error-circle" size="36rpx" />
+    <text>账号已被封禁，点击查看详情并申诉</text>
+  </view>
+
+  <!-- 今日步数主卡片 -->
+  <view class="hero-card">
+    <view class="flex-between">
+      <text class="date-text">{{dateText}}</text>
+      <view class="goal-tag" wx:if="{{goalName}}">
+        <t-tag size="small" variant="light" theme="primary">{{goalName}}</t-tag>
+      </view>
+    </view>
+
+    <view class="steps-hero">
+      <t-progress
+        theme="circle"
+        percentage="{{percent}}"
+        size="380rpx"
+        stroke-width="16rpx"
+        track-color="var(--td-gray-color-3)"
+      />
+      <view class="steps-hero-center">
+        <view class="steps-num num-font">{{steps}}</view>
+        <view class="steps-label text-secondary">今日步数 / 目标 {{goalSteps}}</view>
+        <view class="goal-state {{goalAchieved ? 'text-success' : 'text-placeholder'}}">
+          {{goalAchieved ? '✓ 已达成今日目标' : '还差 ' + (goalSteps - steps > 0 ? goalSteps - steps : 0) + ' 步'}}
+        </view>
+      </view>
+    </view>
+
+    <view class="stats-row">
+      <view class="stat-item">
+        <view class="stat-value num-font">{{distance}}</view>
+        <view class="stat-label text-secondary">距离</view>
+      </view>
+      <view class="stat-item">
+        <view class="stat-value num-font">{{calories}}</view>
+        <view class="stat-label text-secondary">千卡</view>
+      </view>
+      <view class="stat-item">
+        <view class="stat-value num-font">{{durationText}}</view>
+        <view class="stat-label text-secondary">时长</view>
+      </view>
+    </view>
+
+    <view class="action-row">
+      <t-button theme="primary" size="medium" loading="{{syncing}}" bind:tap="syncWerun">
+        同步微信运动
+      </t-button>
+      <t-button theme="default" size="medium" bind:tap="goRun">GPS 实跑</t-button>
+    </view>
+  </view>
+
+  <!-- 广告轮播 -->
+  <view class="ad-banner card" wx:if="{{ads.length}}">
+    <swiper class="ad-swiper" autoplay circular interval="4000" indicator-dots="{{ads.length > 1}}">
+      <swiper-item wx:for="{{ads}}" wx:key="_id" bind:tap="onAdTap" data-index="{{index}}">
+        <image class="ad-image" src="{{item.imageUrl}}" mode="aspectFill" />
+      </swiper-item>
+    </swiper>
+  </view>
+
+  <!-- 快捷入口 -->
+  <view class="card">
+    <view class="entry-grid">
+      <view class="entry-item" bind:tap="goWater">
+        <view class="entry-icon" style="background: var(--td-brand-color-1)">
+          <t-icon name="swimming-pool" size="44rpx" color="var(--td-brand-color)" />
+        </view>
+        <text class="entry-text">喝水打卡</text>
+      </view>
+      <view class="entry-item" bind:tap="goReward">
+        <view class="entry-icon" style="background: var(--td-warning-color-1)">
+          <t-icon name="play-circle" size="44rpx" color="var(--td-warning-color-5)" />
+        </view>
+        <text class="entry-text">看视频赚步数</text>
+      </view>
+      <view class="entry-item" bind:tap="goBadges">
+        <view class="entry-icon" style="background: var(--td-success-color-1)">
+          <t-icon name="medal" size="44rpx" color="var(--td-success-color-5)" />
+        </view>
+        <text class="entry-text">我的徽章</text>
+      </view>
+      <view class="entry-item" bind:tap="goBodyData">
+        <view class="entry-icon" style="background: var(--td-error-color-1)">
+          <t-icon name="heart" size="44rpx" color="var(--td-error-color-6)" />
+        </view>
+        <text class="entry-text">身体数据</text>
+      </view>
+      <view class="entry-item" bind:tap="goAnnouncements">
+        <view class="entry-icon" style="background: var(--td-gray-color-2)">
+          <t-icon name="notification" size="44rpx" color="var(--td-gray-color-8)" />
+        </view>
+        <text class="entry-text">公告</text>
+      </view>
+      <view class="entry-item" wx:if="{{isAdmin}}" bind:tap="goAdmin">
+        <view class="entry-icon" style="background: var(--td-brand-color-light)">
+          <t-icon name="dashboard" size="44rpx" color="var(--td-brand-color)" />
+        </view>
+        <text class="entry-text">管理端</text>
+      </view>
+    </view>
+  </view>
+
+  <view class="footer-tip text-placeholder">坚持每日运动，达成目标更健康</view>
+</view>

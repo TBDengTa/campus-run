@@ -1,0 +1,22 @@
+<view class="page appeal-list-page">
+  <view class="card submit-entry" bind:tap="goSubmit">
+    <t-icon name="add" size="40rpx" color="var(--td-brand-color)" />
+    <text class="text-brand">提交新的申诉</text>
+  </view>
+
+  <block wx:if="{{list.length}}">
+    <view class="card appeal-card" wx:for="{{list}}" wx:key="_id">
+      <view class="flex-between mb-16">
+        <t-tag theme="{{item.statusInfo.theme}}" variant="light" size="small">{{item.statusInfo.text}}</t-tag>
+        <text class="text-placeholder time">{{item.dateText}}</text>
+      </view>
+      <view class="appeal-content">{{item.content}}</view>
+      <view class="reply" wx:if="{{item.reply}}">
+        <text class="reply-label">管理员回复：</text>{{item.reply}}
+      </view>
+    </view>
+  </block>
+  <t-empty wx:elif="{{!loading}}" content="暂无申诉记录" />
+
+  <t-loading wx:if="{{loading}}" theme="circular" size="48rpx" text="加载中…" class="loading" />
+</view>

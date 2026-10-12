@@ -1,0 +1,37 @@
+<view class="page detail-page" wx:if="{{record}}">
+  <map
+    wx:if="{{hasRoute}}"
+    class="map"
+    latitude="{{latitude}}"
+    longitude="{{longitude}}"
+    scale="15"
+    polyline="{{polyline}}"
+    markers="{{markers}}"
+  />
+
+  <view class="card">
+    <view class="flex-between mb-16">
+      <text class="card-title" style="margin-bottom:0">{{record.sourceText}}</text>
+      <t-tag theme="{{record.goalAchieved ? 'success' : 'default'}}" variant="light" size="small">
+        {{record.goalAchieved ? '已达标' : record.dateText}}
+      </t-tag>
+    </view>
+    <view class="stats-row">
+      <view class="stat">
+        <view class="stat-num num-font">{{record.steps || 0}}</view>
+        <view class="stat-label text-secondary">步数</view>
+      </view>
+      <view class="stat">
+        <view class="stat-num num-font">{{record.distanceText}}</view>
+        <view class="stat-label text-secondary">距离</view>
+      </view>
+      <view class="stat">
+        <view class="stat-num num-font">{{record.durationText}}</view>
+        <view class="stat-label text-secondary">时长</view>
+      </view>
+    </view>
+    <view class="extra text-secondary mt-16">
+      消耗 {{record.calories || 0}} 千卡<text wx:if="{{record.pace}}"> · 配速 {{record.pace}}/公里</text>
+    </view>
+  </view>
+</view>

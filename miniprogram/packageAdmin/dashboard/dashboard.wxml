@@ -1,0 +1,73 @@
+<view class="admin-page">
+  <!-- 总览 -->
+  <view class="stat-grid" wx:if="{{overview}}">
+    <view class="stat-box">
+      <view class="num num-font">{{overview.totalUsers}}</view>
+      <view class="label">总用户数</view>
+    </view>
+    <view class="stat-box">
+      <view class="num num-font">{{overview.activeToday}}</view>
+      <view class="label">今日活跃</view>
+    </view>
+    <view class="stat-box">
+      <view class="num num-font">{{overview.newUsersToday}}</view>
+      <view class="label">今日新增</view>
+    </view>
+    <view class="stat-box">
+      <view class="num num-font">{{overview.stepsTodayText}}</view>
+      <view class="label">今日总步数</view>
+    </view>
+    <view class="stat-box">
+      <view class="num num-font">{{overview.adPvToday}}</view>
+      <view class="label">今日广告 PV</view>
+    </view>
+    <view class="stat-box">
+      <view class="num num-font">{{overview.adClickToday}}</view>
+      <view class="label">今日广告点击</view>
+    </view>
+    <view class="stat-box">
+      <view class="num num-font">{{overview.pendingAppeals}}</view>
+      <view class="label">待审申诉</view>
+    </view>
+    <view class="stat-box">
+      <view class="num num-font">{{overview.bannedUsers}}</view>
+      <view class="label">封禁用户</view>
+    </view>
+  </view>
+
+  <!-- 活跃趋势 -->
+  <view class="section-title">近 {{days}} 天活跃趋势</view>
+  <view class="list-card trend-card">
+    <view class="chart">
+      <view class="bar-col" wx:for="{{trend}}" wx:key="date">
+        <view class="bar" style="height: {{item.barHeight}}rpx"></view>
+        <view class="bar-label text-placeholder">{{item.label}}</view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 快捷入口 -->
+  <view class="section-title">快捷入口</view>
+  <view class="list-card">
+    <view class="row" bind:tap="go" data-url="/packageAdmin/users/users">
+      <view class="flex-1"><view class="row-title">用户管理</view><view class="row-sub">搜索 / 封禁 / 解封</view></view>
+      <t-icon name="chevron-right" size="36rpx" />
+    </view>
+    <view class="row" bind:tap="go" data-url="/packageAdmin/appeals/appeals">
+      <view class="flex-1"><view class="row-title">申诉审核</view><view class="row-sub">处理用户申诉</view></view>
+      <t-icon name="chevron-right" size="36rpx" />
+    </view>
+    <view class="row" bind:tap="go" data-url="/packageAdmin/ads/contents">
+      <view class="flex-1"><view class="row-title">广告管理</view><view class="row-sub">素材 / 广告位 / 统计</view></view>
+      <t-icon name="chevron-right" size="36rpx" />
+    </view>
+    <view class="row" bind:tap="go" data-url="/packageAdmin/content/announcements">
+      <view class="flex-1"><view class="row-title">内容管理</view><view class="row-sub">公告 / 版本 / 节假日 / 组织</view></view>
+      <t-icon name="chevron-right" size="36rpx" />
+    </view>
+    <view class="row" bind:tap="go" data-url="/packageAdmin/config/config">
+      <view class="flex-1"><view class="row-title">系统配置</view><view class="row-sub">目标 / 反作弊 / 激励视频</view></view>
+      <t-icon name="chevron-right" size="36rpx" />
+    </view>
+  </view>
+</view>

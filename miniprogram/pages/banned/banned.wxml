@@ -1,0 +1,20 @@
+<view class="page banned-page" wx:if="{{!loading && user}}">
+  <view class="ban-hero">
+    <view class="ban-icon">🚫</view>
+    <view class="ban-title">账号已被封禁</view>
+    <view class="ban-reason" wx:if="{{user.banReason}}">{{user.banReason}}</view>
+    <view class="ban-until" wx:if="{{user.bannedUntil}}">
+      解封时间：{{user.bannedUntil}}
+    </view>
+    <view class="ban-until" wx:else>该封禁无固定解封时间，可提交申诉</view>
+  </view>
+
+  <view class="card">
+    <view class="card-title">你能做什么</view>
+    <t-button theme="primary" block bind:tap="goSubmit">提交申诉</t-button>
+    <t-button theme="default" block class="mt-16" bind:tap="goList">查看申诉进度</t-button>
+    <t-button variant="outline" block class="mt-16" bind:tap="refreshStatus">刷新封禁状态</t-button>
+  </view>
+
+  <view class="tip text-placeholder">若认为封禁有误（如步数为微信运动原始数据），提交申诉后管理员会尽快核实</view>
+</view>

@@ -1,0 +1,66 @@
+<view class="page body-page">
+  <view class="card">
+    <view class="card-title">身体数据</view>
+    <view class="form-row">
+      <text class="form-label">性别</text>
+      <view class="gender-group">
+        <view class="gender-chip {{gender === 1 ? 'active' : ''}}" bind:tap="pickGender" data-value="1">男</view>
+        <view class="gender-chip {{gender === 2 ? 'active' : ''}}" bind:tap="pickGender" data-value="2">女</view>
+        <view class="gender-chip {{gender === 0 ? 'active' : ''}}" bind:tap="pickGender" data-value="0">保密</view>
+      </view>
+    </view>
+    <view class="form-row">
+      <text class="form-label">身高 cm</text>
+      <input class="form-input" type="digit" value="{{height}}" placeholder="如 170" bindinput="inputHeight" />
+    </view>
+    <view class="form-row">
+      <text class="form-label">体重 kg</text>
+      <input class="form-input" type="digit" value="{{weight}}" placeholder="如 60" bindinput="inputWeight" />
+    </view>
+    <view class="form-col">
+      <text class="form-label">运动强度偏好</text>
+      <view class="pref-group">
+        <view
+          wx:for="{{preferenceOptions}}"
+          wx:key="value"
+          class="pref-chip {{preferenceLevel === item.value ? 'active' : ''}}"
+          bind:tap="pickPreference"
+          data-value="{{item.value}}"
+        >
+          <view class="pref-name">{{item.label}}</view>
+          <view class="pref-desc">{{item.desc}}</view>
+        </view>
+      </view>
+    </view>
+
+    <t-button theme="primary" block loading="{{submitting}}" bind:tap="submit" class="mt-24">
+      保存并匹配目标计划
+    </t-button>
+  </view>
+
+  <view class="card" wx:if="{{saved}}">
+    <view class="card-title">我的 BMI</view>
+    <view class="bmi-row">
+      <view class="bmi-num num-font">{{saved.bmi}}</view>
+      <t-tag theme="primary" variant="light" size="medium">{{saved.bmiLevelText}}</t-tag>
+    </view>
+    <block wx:if="{{saved.plan}}">
+      <t-divider content="已匹配计划" align="left" />
+      <view class="plan-name">{{saved.plan.name}}</view>
+      <view class="plan-grid">
+        <view class="plan-item">
+          <view class="num-font">{{saved.plan.daily.steps}}</view>
+          <view class="text-secondary">每日步数</view>
+        </view>
+        <view class="plan-item">
+          <view class="num-font">{{saved.plan.daily.distance}}m</view>
+          <view class="text-secondary">每日距离</view>
+        </view>
+        <view class="plan-item">
+          <view class="num-font">{{saved.plan.daily.calories}}</view>
+          <view class="text-secondary">每日千卡</view>
+        </view>
+      </view>
+    </block>
+  </view>
+</view>

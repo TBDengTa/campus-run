@@ -1,0 +1,128 @@
+.home-page {
+  padding: 24rpx 0 48rpx;
+}
+
+.ban-banner {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin: 0 24rpx 24rpx;
+  padding: 20rpx 24rpx;
+  border-radius: 16rpx;
+  background: var(--td-error-color-1);
+  color: var(--td-error-color-6);
+  font-size: 26rpx;
+}
+
+.hero-card {
+  margin: 24rpx;
+  padding: 40rpx 32rpx;
+  background: var(--td-bg-color-container);
+  border-radius: 32rpx;
+  box-shadow: var(--td-shadow-1);
+}
+
+.date-text {
+  font-size: 28rpx;
+  color: var(--td-text-color-secondary);
+}
+
+.steps-hero {
+  margin-top: 40rpx;
+}
+
+.steps-num {
+  font-size: 88rpx;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--td-text-color-primary);
+}
+
+.steps-label {
+  margin-top: 8rpx;
+  font-size: 26rpx;
+}
+
+.goal-state {
+  margin-top: 12rpx;
+  font-size: 24rpx;
+}
+
+.stats-row {
+  display: flex;
+  margin-top: 40rpx;
+}
+
+.stat-item {
+  flex: 1;
+  text-align: center;
+}
+
+.stat-value {
+  font-size: 36rpx;
+  font-weight: 600;
+}
+
+.stat-label {
+  margin-top: 6rpx;
+  font-size: 24rpx;
+}
+
+.action-row {
+  display: flex;
+  gap: 24rpx;
+  margin-top: 40rpx;
+}
+
+.action-row t-button {
+  flex: 1;
+}
+
+.ad-banner {
+  padding: 0;
+  overflow: hidden;
+}
+
+.ad-swiper {
+  height: 240rpx;
+  width: 100%;
+}
+
+.ad-image {
+  width: 100%;
+  height: 240rpx;
+}
+
+.entry-grid {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.entry-item {
+  width: 33.33%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 24rpx 0;
+}
+
+.entry-icon {
+  width: 96rpx;
+  height: 96rpx;
+  border-radius: 32rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.entry-text {
+  margin-top: 12rpx;
+  font-size: 24rpx;
+  color: var(--td-text-color-secondary);
+}
+
+.footer-tip {
+  text-align: center;
+  font-size: 24rpx;
+  padding: 16rpx 0 32rpx;
+}

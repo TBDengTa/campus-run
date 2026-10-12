@@ -1,0 +1,112 @@
+{
+  "darkmode": true,
+  "pages": [
+    "pages/home/home",
+    "pages/calendar/calendar",
+    "pages/profile/profile",
+    "pages/run/index",
+    "pages/run/detail",
+    "pages/body-data/body-data",
+    "pages/water/water",
+    "pages/reward/reward",
+    "pages/badges/badges",
+    "pages/appeal/submit",
+    "pages/appeal/list",
+    "pages/org/bind",
+    "pages/announcements/announcements",
+    "pages/changelogs/changelogs",
+    "pages/webview/webview",
+    "pages/banned/banned"
+  ],
+  "subpackages": [
+    {
+      "root": "packageAdmin",
+      "pages": [
+        "dashboard/dashboard",
+        "users/users",
+        "user-detail/user-detail",
+        "appeals/appeals",
+        "ads/sponsors",
+        "ads/slots",
+        "ads/contents",
+        "ads/pages",
+        "ads/stats",
+        "content/announcements",
+        "content/changelogs",
+        "content/holidays",
+        "content/organizations",
+        "content/badges",
+        "config/config"
+      ]
+    }
+  ],
+  "tabBar": {
+    "color": "#8b8b8b",
+    "selectedColor": "#0052d9",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "black",
+    "list": [
+      {
+        "pagePath": "pages/home/home",
+        "text": "首页",
+        "iconPath": "assets/tabbar/home.png",
+        "selectedIconPath": "assets/tabbar/home-active.png"
+      },
+      {
+        "pagePath": "pages/calendar/calendar",
+        "text": "日历",
+        "iconPath": "assets/tabbar/calendar.png",
+        "selectedIconPath": "assets/tabbar/calendar-active.png"
+      },
+      {
+        "pagePath": "pages/profile/profile",
+        "text": "我的",
+        "iconPath": "assets/tabbar/profile.png",
+        "selectedIconPath": "assets/tabbar/profile-active.png"
+      }
+    ]
+  },
+  "window": {
+    "navigationBarTitleText": "校园跑",
+    "navigationBarBackgroundColor": "@navBgColor",
+    "navigationBarTextStyle": "@navTxtStyle",
+    "backgroundColor": "@bgColor",
+    "backgroundTextStyle": "@bgTxtStyle"
+  },
+  "usingComponents": {
+    "t-button": "tdesign-miniprogram/button/button",
+    "t-icon": "tdesign-miniprogram/icon/icon",
+    "t-cell": "tdesign-miniprogram/cell/cell",
+    "t-cell-group": "tdesign-miniprogram/cell-group/cell-group",
+    "t-tag": "tdesign-miniprogram/tag/tag",
+    "t-empty": "tdesign-miniprogram/empty/empty",
+    "t-loading": "tdesign-miniprogram/loading/loading",
+    "t-toast": "tdesign-miniprogram/toast/toast",
+    "t-dialog": "tdesign-miniprogram/dialog/dialog",
+    "t-divider": "tdesign-miniprogram/divider/divider",
+    "t-badge": "tdesign-miniprogram/badge/badge",
+    "t-image": "tdesign-miniprogram/image/image",
+    "t-swiper": "tdesign-miniprogram/swiper/swiper",
+    "t-swiper-nav": "tdesign-miniprogram/swiper-nav/swiper-nav",
+    "t-progress": "tdesign-miniprogram/progress/progress",
+    "t-input": "tdesign-miniprogram/input/input",
+    "t-textarea": "tdesign-miniprogram/textarea/textarea",
+    "t-picker": "tdesign-miniprogram/picker/picker",
+    "t-date-time-picker": "tdesign-miniprogram/date-time-picker/date-time-picker",
+    "t-popup": "tdesign-miniprogram/popup/popup",
+    "t-search": "tdesign-miniprogram/search/search",
+    "t-stepper": "tdesign-miniprogram/stepper/stepper",
+    "t-switch": "tdesign-miniprogram/switch/switch",
+    "t-radio": "tdesign-miniprogram/radio/radio",
+    "t-navbar": "tdesign-miniprogram/navbar/navbar",
+    "t-fab": "tdesign-miniprogram/fab/fab",
+    "t-skeleton": "tdesign-miniprogram/skeleton/skeleton",
+    "t-notice-bar": "tdesign-miniprogram/notice-bar/notice-bar",
+    "t-sticky": "tdesign-miniprogram/sticky/sticky"
+  },
+  "resolveAlias": {
+    "@behaviors/*": "behaviors/*"
+  },
+  "sitemapLocation": "sitemap.json",
+  "lazyCodeLoading": "requiredComponents"
+}
