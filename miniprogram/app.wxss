@@ -425,7 +425,7 @@ page {
 .mb-16 { margin-bottom: 16rpx; }
 .mb-24 { margin-bottom: 24rpx; }
 
-/* 首页步数环中央数字 */
+/* 首页/喝水页步数环中央内容：圆形底遮住 t-progress 自带的百分比文字 */
 .steps-hero {
   position: relative;
   display: flex;
@@ -435,11 +435,15 @@ page {
 
 .steps-hero-center {
   position: absolute;
-  left: 0;
-  right: 0;
+  left: 50%;
   top: 50%;
-  transform: translateY(-50%);
+  transform: translate(-50%, -50%);
+  width: 300rpx;
+  height: 300rpx;
+  border-radius: 50%;
+  background: var(--td-bg-color-container);
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
 }

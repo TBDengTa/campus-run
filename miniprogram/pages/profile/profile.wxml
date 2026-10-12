@@ -51,10 +51,10 @@
   <!-- 功能入口 -->
   <t-cell-group bordered>
     <t-cell title="身体数据 / 目标计划" hover arrow left-icon="heart" data-url="/pages/body-data/body-data" bind:tap="go" />
-    <t-cell title="喝水打卡" hover arrow left-icon="swimming-pool" data-url="/pages/water/water" bind:tap="go" />
+    <t-cell title="喝水打卡" hover arrow left-icon="drink" data-url="/pages/water/water" bind:tap="go" />
     <t-cell title="看视频赚步数" hover arrow left-icon="play-circle" data-url="/pages/reward/reward" bind:tap="go" />
-    <t-cell title="我的徽章" hover arrow left-icon="medal" data-url="/pages/badges/badges" bind:tap="go" />
-    <t-cell title="学生认证 / 院系班级" hover arrow left-icon="school" data-url="/pages/org/bind" bind:tap="go" />
+    <t-cell title="我的徽章" hover arrow left-icon="star" data-url="/pages/badges/badges" bind:tap="go" />
+    <t-cell title="学生认证 / 院系班级" hover arrow left-icon="book" data-url="/pages/org/bind" bind:tap="go" />
     <t-cell title="我的申诉" hover arrow left-icon="error-circle" data-url="/pages/appeal/list" bind:tap="go" />
     <t-cell title="公告" hover arrow left-icon="notification" data-url="/pages/announcements/announcements" bind:tap="go" />
     <t-cell title="版本日志" hover arrow left-icon="history" data-url="/pages/changelogs/changelogs" bind:tap="go" />

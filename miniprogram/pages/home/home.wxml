@@ -77,7 +77,7 @@
     <view class="entry-grid">
       <view class="entry-item" bind:tap="goWater">
         <view class="entry-icon" style="background: var(--td-brand-color-1)">
-          <t-icon name="swimming-pool" size="44rpx" color="var(--td-brand-color)" />
+          <t-icon name="drink" size="44rpx" color="var(--td-brand-color)" />
         </view>
         <text class="entry-text">喝水打卡</text>
       </view>
@@ -89,7 +89,7 @@
       </view>
       <view class="entry-item" bind:tap="goBadges">
         <view class="entry-icon" style="background: var(--td-success-color-1)">
-          <t-icon name="medal" size="44rpx" color="var(--td-success-color-5)" />
+          <t-icon name="star" size="44rpx" color="var(--td-success-color-5)" />
         </view>
         <text class="entry-text">我的徽章</text>
       </view>
