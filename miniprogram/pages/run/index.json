@@ -1,5 +1,5 @@
 {
   "navigationBarTitleText": "GPS 实跑",
   "disableScroll": true,
-  "requiredPrivateInfos": ["getLocation", "onLocationChange", "startLocationUpdate"]
+  "usingComponents": {}
 }
