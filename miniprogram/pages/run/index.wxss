@@ -71,7 +71,7 @@
   position: absolute;
   left: 24rpx;
   right: 24rpx;
-  bottom: calc(156rpx + env(safe-area-inset-bottom));
+  bottom: calc(148rpx + env(safe-area-inset-bottom));
   padding: 18rpx 40rpx 32rpx;
   background: var(--tt-card);
   border-radius: 40rpx;

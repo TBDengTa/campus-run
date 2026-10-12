@@ -232,3 +232,58 @@
   font-weight: 400;
   color: var(--tt-text-3);
 }
+
+/* ===== 分段切换 ===== */
+.records-segment {
+  margin: 0 24rpx 8rpx;
+}
+
+/* ===== 列表通用 ===== */
+.day-week {
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+  margin-left: 8rpx;
+}
+
+.day-today {
+  font-size: 20rpx;
+  color: var(--tt-brand);
+  background: var(--tt-brand-weak, rgba(255, 107, 0, 0.1));
+  border-radius: 6rpx;
+  padding: 2rpx 10rpx;
+  margin-left: 8rpx;
+}
+
+.list-more {
+  text-align: center;
+  font-size: 24rpx;
+  color: var(--tt-text-3);
+  padding: 20rpx 0 4rpx;
+}
+
+/* ===== 每周记录 ===== */
+.week-item {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  padding: 24rpx 0;
+  border-bottom: 1rpx solid var(--tt-line, rgba(0, 0, 0, 0.06));
+}
+
+.week-item:last-child {
+  border-bottom: none;
+}
+
+.week-flag {
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+  background: var(--tt-line, rgba(0, 0, 0, 0.05));
+  border-radius: 999px;
+  padding: 6rpx 16rpx;
+  white-space: nowrap;
+}
+
+.week-flag.ok {
+  color: #16a34a;
+  background: #eafaf1;
+}

@@ -70,13 +70,12 @@ box-shadow: 0 12rpx 32rpx rgba(255, 107, 0, 0.24);
 
 `app.json` 的 `tabBar.custom = true`，实际渲染由组件 `custom-tab-bar/index` 负责：
 
-- **形态**：白色悬浮胶囊（`left/right: 24rpx`、`height: 116rpx`、`border-radius: 999rpx`、柔和大投影），
-  学生端中间项为**凸起的橙色渐变圆钮**（`104rpx`、`linear-gradient(135deg,#ff9a3d,#ff6b00)` + 橙色投影 + `6rpx` 白描边）。
+- **形态**：白色悬浮胶囊（`left/right: 24rpx`、`height: 112rpx`、`border-radius: 999rpx`、柔和大投影），
+  **全部为普通导航项，不做中间凸起圆钮**。
 - **图标**：用 `t-icon` 矢量图标（选中用 `*-filled` 填充态 + `#ff6b00`，未选中用线性态 + `#9aa0a6`），
   不用位图，便于随主题换色；`assets/tabbar/*.png` 仅作为关闭 custom 时的原生兜底。
-- **角色差异**：学生 = 首页 / 跑步 / 记录 / 排行 / 我的（中间凸起圆钮）；
+- **角色差异**：学生 = 首页 / 跑步 / 记录 / 排行 / 我的；
   教师（有管理权限）= 首页 / 管理 / 我的；教师（无管理权限）= 首页 / 公告 / 我的。
-  **教师端三项均为普通导航项，不做凸起圆钮**（只给学生端「跑步」标记 `center: true`）。
   教师账号不参与运动记录与排名，故不展示跑步 / 记录 / 排行入口。
 - **接入约定**：每个 tab 页在 `onShow` 中调用 `this.getTabBar().setActive('<自身路径>')`
   （页面根节点同时加 `.tt-page-tab`，底部留白 `200rpx + 安全区`，避免内容被悬浮胶囊遮挡）。
@@ -146,16 +145,31 @@ box-shadow: 0 12rpx 32rpx rgba(255, 107, 0, 0.24);
 
 首页自上而下：**插画头 → 公告跑马灯 → 广告位 → 今日目标 → 本周目标 → 管理面板（有权限时）→ 快捷入口 → 页脚**。
 
-- **插画头**（`.sky`，高 `350rpx`）：天空渐变 + 圆角云朵 + 双层椭圆草地（地平线）+ 虚线椭圆跑道 + 白色标题（四向蓝描边阴影）与标语。
-  标题区 `padding-top: 74rpx`，跑道 `bottom: 38rpx`（避免被悬浮公告条压住），公告条用 `margin-top: -28rpx` 叠在草地上。
+- **插画头**（`.sky`）：两种形态自动切换。
+  - **有素材**（`assets/home/hero.png` 存在）：`<image mode="widthFix">` 按**图片本身比例**铺满宽度，容器高度自适应
+    （1500×523 的图 → 750rpx 宽时约 262rpx 高），并且**不再叠加标题文字**（图内已含「唐唐快跑」与标语）。
+  - **无素材**：CSS 插画兜底 —— 高 `350rpx` 的天空渐变 + 圆角云朵 + 双层椭圆草地 + 虚线椭圆跑道 +
+    白色标题（四向蓝描边）与标语，标题区 `padding-top: 74rpx`、跑道 `bottom: 38rpx`。
+  - 公告条用 `margin-top: -20rpx` 叠在插画底边上，遮住图片与页面底色的接缝。
 - **公告跑马灯**：`.notice-viewport`（`overflow: hidden` 定高）+ `.notice-track`（两份文案 + `translateX(-50%)` 无限循环动画）。
-  文案 ≤ 14 字不滚动（只渲染一份、不加 `.run`）；超过则 `animation-duration = max(10, 字数 × 0.5)` 秒。
-  文案取自 `/api/content/announcements` 的第一条。
-- **今日目标**：标题 + 计划名胶囊（点进身体数据/目标计划）+ 「同步」胶囊（微信运动同步入口），
-  下面是**本周 7 天圆点**（达标=橙色渐变+勾、有记录=橙色描边+橙点、无记录=灰底+「—」、今天=橙色描边）与**橙色四项指标条**（步数/公里/时长/卡路里，橙色渐变 + 白色分隔线）。
-- **本周目标**：`步数 x/y`、`里程 x/y km` 两条橙色进度条，数据取 `goal.weekly` 与本周（周一起）实际累计。
+  文案 ≤ 14 字不滚动（只渲染一份、不加 `.run`）；超过则 `animation-duration = clamp(字数 × 0.2, 8, 40)` 秒（约 125rpx/s）。
+  文案由**当前生效的多条公告正文**拼接（标题兜底、换行压平、单条超 60 字截断、最多 5 条）——只显示第一条的标题会看起来像写死的错误文案。
+- **今日目标 + 本周目标（同一张卡片）**：上半部分今日、下半部分本周，中间用 `.card-split`（2rpx `--tt-line`）分隔，比两张卡省一次卡片间距与内边距。
+  标题 + 计划名胶囊（点进身体数据/目标计划）+ 「同步」胶囊（微信运动同步入口）。
+  - **有记录**：摘要行显示「日期 · 步数 · 里程」，下面是**本周 7 天圆点**与**橙色四项指标条**（步数/公里/时长/卡路里）。
+  - **无记录**（当日无记录，或同步后步数与里程都为 0）：摘要行只留日期，**四项指标条整块不渲染**，改为一行「今天还没有运动记录，去运动 ›」（`.today-empty`，点击切到跑步 tab）。两块是 `wx:if="{{hasRecord}}"` / `wx:else` 的二选一关系，且必须是相邻兄弟节点。
+  - **7 天圆点**：每个圆点内固定显示小人图标（`assets/home/day-run-{white,orange,gray}.png`，白=已达标/橙=有记录/灰=无记录），
+    不再出现「空圆圈」；今天额外用橙色描边高亮。
+- **本周目标**：**步数 / 里程两项并排两列**（`.weekly-cols` 内两个 `.prog-col`，中间 2rpx 分隔线），每列「标签 + `x/y` + 橙色进度条」，
+  数据取 `goal.weekly` 与本周（周一起）实际累计，右上角显示周区间（如 `10.12 - 10.18`）。
+  紧凑比例：标题 24rpx、数值 19rpx、进度条高 `8rpx`。
+- **广告位**：卡片右上角固定「广告」标识（`.ad-flag`，右上 `12rpx`，半透明黑底白字 18rpx，`pointer-events: none`）。
+  图片用 `mode="aspectFit"`，**不裁切**；swiper 高度由 `measureAdHeight()` 按图片真实比例换算成 rpx 并写入内联 style
+  （可用宽 702rpx = 750 − 卡片左右各 24rpx，限幅 120~420rpx）。`wx.getImageInfo` 失败（如未配置下载域名）时
+  保持兜底 `250rpx`，配合 aspectFit 仍能完整显示。
+  **圆角与其它卡片一致**：卡片 / swiper / 图片三层都写 `border-radius: var(--tt-radius)`，避免圆角被裁切得不一致。
 - **紧凑比例**：整页按约 0.85 比例收紧（插画头 420→350rpx、卡片内边距 30→22rpx、7 天圆点 66→52rpx、
-  指标条数字 36→28rpx、入口图标 104→84rpx、广告位 250→210rpx），如需再缩放，改 `pages/home/home.wxss` 里对应数值即可。
+  指标条数字 36→28rpx、入口图标 104→84rpx），如需再缩放，改 `pages/home/home.wxss` 里对应数值即可。
 - **快捷入口**：饮水管理 / 目标计划 / 徽章成就 / 身体数据（教师端为 饮水管理 / 身体数据 / 公告 / 管理端）。
   「目标计划」「身体数据」是同一页，用 `?focus=plan|body` 让 `body-data` 页自动滚动到对应区块。
 
@@ -165,11 +179,13 @@ box-shadow: 0 12rpx 32rpx rgba(255, 107, 0, 0.24);
 
 | 素材 | 路径 | 建议尺寸 |
 |---|---|---|
-| 顶部人物场景图 | `miniprogram/assets/home/hero.png` | 750×350 以上，底部自带草地 |
-| 入口-饮水管理 | `miniprogram/assets/home/entry-water.png` | 120×120 |
-| 入口-目标计划 | `miniprogram/assets/home/entry-plan.png` | 120×120 |
-| 入口-徽章成就 | `miniprogram/assets/home/entry-badge.png` | 120×120 |
-| 入口-身体数据 | `miniprogram/assets/home/entry-body.png` | 120×120 |
+| 顶部场景图（图内含标题文字） | `miniprogram/assets/home/hero.png` | 宽高比 2.87:1（现用 1500×523），≤ 400KB |
+| 入口-饮水管理 | `miniprogram/assets/home/entry-water.png` | 240×240（原图 512×512 压缩后 ~9KB） |
+| 入口-目标计划 | `miniprogram/assets/home/entry-plan.png` | 240×240 |
+| 入口-徽章成就 | `miniprogram/assets/home/entry-badge.png` | 240×240 |
+| 入口-身体数据 | `miniprogram/assets/home/entry-body.png` | 240×240 |
+| 7 天圆点小人（**自动生成，勿手改**） | `assets/home/day-run-{gray,orange,white}.png` | 81×81，由 `tools/gen-tabbar-icons.js` 产出 |
 
 路径常量在 `pages/home/home.js` 顶部的 `HERO_IMAGE` / `ENTRY_IMAGES`，目录内另有 `assets/home/README.md` 给设计/运营看。
-（注意：不要用 WXSS `background-image` 引用尚不存在的文件，会导致构建报错；统一走上面的运行时探测。）
+（注意：不要用 WXSS `background-image` 引用尚不存在的文件，会导致构建报错；统一走上面的运行时探测。
+原始大图放仓库根目录 `.design-src/`（已 gitignore，不入包），压缩后再放进 `assets/home/`。）

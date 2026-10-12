@@ -443,9 +443,9 @@ page {
   box-sizing: border-box;
 }
 
-/* tab 页：为自定义悬浮导航栏留出空间 */
+/* tab 页：为自定义悬浮导航栏留出空间（栏高 112rpx + 底部 16rpx 偏移） */
 .tt-page-tab {
-  padding-bottom: calc(200rpx + env(safe-area-inset-bottom));
+  padding-bottom: calc(160rpx + env(safe-area-inset-bottom));
 }
 
 /* 分组标题：左侧橙色短竖条 */

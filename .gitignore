@@ -24,3 +24,6 @@ Thumbs.db
 # ZCode 会话工作目录
 .zcode/
 
+# 设计源文件（原始大图，不入包也不入库；压缩后的小图放 miniprogram/assets/）
+.design-src/
+

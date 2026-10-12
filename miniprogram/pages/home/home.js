@@ -2,7 +2,8 @@ const auth = require('../../utils/request');
 const fmt = require('../../utils/format');
 
 // ===== 可选插画素材：把 PNG 放到下列路径即可自动启用（未放置时回退到 CSS 插画）=====
-//   顶部人物场景图：miniprogram/assets/home/hero.png（建议 750×420 以上，底部留草地）
+//   顶部场景图：miniprogram/assets/home/hero.png（宽高比约 2.87:1，例如 1500×523；
+//   图内已含「唐唐快跑」标题与标语，放图后页面不再叠加文字，高度按图片比例自适应）
 //   4 个入口插画：miniprogram/assets/home/entry-water.png / entry-plan.png / entry-badge.png / entry-body.png（建议 120×120）
 const HERO_IMAGE = 'assets/home/hero.png';
 const ENTRY_IMAGES = {
@@ -55,11 +56,11 @@ function buildNoticeText(list) {
   return parts.join('　·　');
 }
 
-// 文字够长才滚动，时长随字数递增（速度约 70rpx/s 的观感）
+// 文字够长才滚动，时长随字数递增（约 125rpx/s，比原来快约 1.7 倍）
 function marqueeFor(text) {
   const len = (text || '').length;
   if (len <= 14) return { marquee: false, duration: 12 };
-  return { marquee: true, duration: Math.min(60, Math.max(10, Math.round(len * 0.35))) };
+  return { marquee: true, duration: Math.min(40, Math.max(8, Math.round(len * 0.2))) };
 }
 
 const WEEK_LABELS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
@@ -112,6 +113,7 @@ Page({
     weekDays: [],
     weekly: null,
     ads: [],
+    adHeight: 250, // 广告位高度（rpx），由图片真实比例算得，保证整张图完整显示
     announcements: [],
     // 公告跑马灯
     noticeText: '',
@@ -225,6 +227,8 @@ Page({
       adList.forEach((ad) => {
         auth.post(`/api/ads/${ad._id}/pv`).catch(() => {});
       });
+      // 按广告图真实比例算高度（保证整张图完整显示）
+      this.measureAdHeight(adList);
       // 管理视角：拉取看板概览（无 dashboard.view 权限时静默忽略）
       if (isManager) {
         this.loadOverview();
@@ -242,6 +246,29 @@ Page({
     } finally {
       this.setData({ loading: false });
     }
+  },
+
+  // 广告位高度：按图片真实比例换算 rpx（可用宽 702rpx = 750 - 卡片左右各 24rpx），并限制在 120~420rpx
+  async measureAdHeight(list) {
+    const items = (list || []).filter((a) => a && a.imageUrl);
+    if (!items.length) return;
+    const infos = await Promise.all(
+      items.map(
+        (a) =>
+          new Promise((resolve) => {
+            wx.getImageInfo({ src: a.imageUrl, success: resolve, fail: () => resolve(null) });
+          })
+      )
+    );
+    let max = 0;
+    for (const info of infos) {
+      if (!info || !info.width || !info.height) continue;
+      max = Math.max(max, Math.round((702 * info.height) / info.width));
+    }
+    // 探测失败（如未配置下载域名）时保持兜底高度，配合 aspectFit 仍能完整显示
+    if (!max) return;
+    const adHeight = Math.max(120, Math.min(420, max));
+    if (adHeight !== this.data.adHeight) this.setData({ adHeight });
   },
 
   async loadOverview() {
@@ -277,7 +304,8 @@ Page({
       durationText: fmt.formatDuration(record?.durationSeconds || 0),
       goalAchieved: !!record?.goalAchieved,
       goalName: goal.planName || '默认目标',
-      hasRecord: !!record,
+      // 有记录 = 存在当日记录且步数或里程不为 0（同步过但没动的情况视为「今天没有运动记录」）
+      hasRecord: !!record && ((record.steps || 0) > 0 || (record.distance || 0) > 0),
     });
   },
 
@@ -322,10 +350,13 @@ Page({
     const targetSteps = weekly.steps || 0;
     const targetDistance = weekly.distance || 0; // 米
     const targetKmText = toKmText(targetDistance, targetDistance % 1000 === 0 ? 0 : 1);
+    const md = (key) => `${Number(key.slice(5, 7))}.${Number(key.slice(8, 10))}`;
+    const weekRangeText = `${md(monday)} - ${md(addDaysToKey(monday, 6))}`;
 
     this.setData({
       weekDays: days,
       weekly: {
+        weekRangeText,
         stepsTargetText: fmt.formatNumber(targetSteps),
         distanceTargetText: `${targetKmText} km`,
         weekStepsText: fmt.formatNumber(weekSteps),

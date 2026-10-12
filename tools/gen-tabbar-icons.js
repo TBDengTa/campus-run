@@ -181,6 +181,22 @@ for (const [name, fn] of Object.entries(icons)) {
   }
 }
 
+// ---------- 首页「本周 7 天」圆点里的小人图标（三种状态色） ----------
+// 产物：miniprogram/assets/home/day-run-{gray,orange,white}.png
+const dayDir = path.join(__dirname, '../miniprogram/assets/home');
+fs.mkdirSync(dayDir, { recursive: true });
+const DAY_PALETTE = {
+  gray: [197, 197, 197],
+  orange: [255, 107, 0],
+  white: [255, 255, 255],
+};
+for (const [suffix, color] of Object.entries(DAY_PALETTE)) {
+  const png = encodePNG(SIZE, SIZE, render(icons.run, color));
+  const file = path.join(dayDir, `day-run-${suffix}.png`);
+  fs.writeFileSync(file, png);
+  console.log('生成', path.relative(process.cwd(), file), `${png.length}B`);
+}
+
 // ---------- 预览拼图（4 倍放大，白底，仅用于人眼校验，不进入小程序包） ----------
 const SCALE = 4;
 const PAD = 18;

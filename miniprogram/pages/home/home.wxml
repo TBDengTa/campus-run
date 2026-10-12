@@ -1,7 +1,9 @@
 <view class="page home-page">
-  <!-- ===== 顶部插画头（放 assets/home/hero.png 后自动替换为人物场景图） ===== -->
-  <view class="sky">
-    <image wx:if="{{heroImage}}" class="sky-img" src="{{heroImage}}" mode="aspectFill" />
+  <!-- ===== 顶部插画头 =====
+       放了 assets/home/hero.png → 按图片本身比例铺满宽度显示，不再叠加文字；
+       未放图 → 回退到 CSS 插画（渐变天空 + 云朵 + 草地 + 跑道）+ 标题文案 -->
+  <view class="sky {{heroImage ? 'sky-has-image' : ''}}">
+    <image wx:if="{{heroImage}}" class="sky-img" src="{{heroImage}}" mode="widthFix" />
     <block wx:else>
       <view class="sky-cloud cloud-1"></view>
       <view class="sky-cloud cloud-2"></view>
@@ -9,11 +11,11 @@
       <view class="sky-hill-back"></view>
       <view class="sky-hill"></view>
       <view class="sky-track"></view>
+      <view class="sky-body">
+        <view class="sky-title">唐唐快跑</view>
+        <view class="sky-slogan">青春逐风，快乐奔跑</view>
+      </view>
     </block>
-    <view class="sky-body">
-      <view class="sky-title">唐唐快跑</view>
-      <view class="sky-slogan">青春逐风，快乐奔跑</view>
-    </view>
   </view>
 
   <!-- ===== 封禁提醒 ===== -->
@@ -55,13 +57,21 @@
     </view>
   </view>
 
-  <!-- ===== 广告位 ===== -->
+  <!-- ===== 广告位：右上角「广告」标识；aspectFit + 按图片比例算高度，保证整张图完整可见 ===== -->
   <view class="tt-card ad-banner" wx:if="{{ads.length}}">
-    <swiper class="ad-swiper" autoplay circular interval="4000" indicator-dots="{{ads.length > 1}}">
+    <swiper
+      class="ad-swiper"
+      style="height: {{adHeight}}rpx"
+      autoplay
+      circular
+      interval="4000"
+      indicator-dots="{{ads.length > 1}}"
+    >
       <swiper-item wx:for="{{ads}}" wx:key="_id" bind:tap="onAdTap" data-index="{{index}}">
-        <image class="ad-image" src="{{item.imageUrl}}" mode="aspectFill" />
+        <image class="ad-image" src="{{item.imageUrl}}" mode="aspectFit" />
       </swiper-item>
     </swiper>
+    <view class="ad-flag">广告</view>
   </view>
 
   <!-- ===== 今日目标（学生） ===== -->
@@ -75,28 +85,34 @@
       </view>
     </view>
 
+    <!-- 今日摘要：有记录才显示步数/里程，无记录只留日期 -->
     <view class="today-sub">
       <text>{{dateText}}</text>
-      <text class="today-dot">·</text>
-      <text>步数 {{stepsText}} 步</text>
-      <text class="today-dot">·</text>
-      <text>里程 {{kmText}} 公里</text>
+      <block wx:if="{{hasRecord}}">
+        <text class="today-dot">·</text>
+        <text>步数 {{stepsText}} 步</text>
+        <text class="today-dot">·</text>
+        <text>里程 {{kmText}} 公里</text>
+      </block>
     </view>
 
     <!-- 本周 7 天 -->
     <view class="week-days">
       <view class="day-chip" wx:for="{{weekDays}}" wx:key="key">
         <view class="day-circle {{item.achieved ? 'achieved' : (item.hasData ? 'partial' : '')}} {{item.isToday ? 'today' : ''}}">
-          <t-icon wx:if="{{item.achieved}}" name="check" size="30rpx" color="#ffffff" />
-          <view wx:elif="{{item.hasData}}" class="day-dot"></view>
+          <image
+            class="day-ico"
+            mode="aspectFit"
+            src="{{item.achieved ? '/assets/home/day-run-white.png' : (item.hasData ? '/assets/home/day-run-orange.png' : '/assets/home/day-run-gray.png')}}"
+          />
         </view>
         <text class="day-label {{item.isToday ? 'today' : ''}}">{{item.label}}</text>
         <text class="day-value {{item.hasData ? '' : 'empty'}}">{{item.stepsText}}</text>
       </view>
     </view>
 
-    <!-- 今日四项指标 -->
-    <view class="stat-bar">
+    <!-- 今日四项指标：今天没有运动记录时整块不显示，只留下面的「去运动」提示 -->
+    <view class="stat-bar" wx:if="{{hasRecord}}">
       <view class="stat-bar-item">
         <text class="stat-bar-value num-font">{{stepsText}}</text>
         <text class="stat-bar-label">步数</text>
@@ -115,27 +131,30 @@
       </view>
     </view>
 
-    <view class="today-empty" wx:if="{{!hasRecord}}" bind:tap="goRun">
-      <t-icon name="play-circle" size="32rpx" color="var(--tt-brand)" />
-      <text>今天还没有运动记录，去跑一跑 ›</text>
+    <view class="today-empty" wx:else bind:tap="goRun">
+      <t-icon name="play-circle" size="34rpx" color="var(--tt-brand)" />
+      <text>今天还没有运动记录，去运动 ›</text>
     </view>
-  </view>
 
-  <!-- ===== 本周目标（学生） ===== -->
-  <view class="tt-card weekly-card" wx:if="{{!isTeacher && weekly}}">
-    <view class="weekly-head">
-      <text class="weekly-title">本周目标</text>
-      <text class="weekly-target">步数 {{weekly.stepsTargetText}} 步 · 里程 {{weekly.distanceTargetText}}</text>
-    </view>
-    <view class="prog-row" wx:for="{{weekly.bars}}" wx:key="key">
-      <view class="prog-top">
-        <text class="prog-label">{{item.label}}</text>
-        <text class="prog-value num-font">{{item.valueText}}</text>
+    <!-- 本周目标：与今日目标同卡片，分隔线以下两列显示 -->
+    <block wx:if="{{weekly}}">
+      <view class="card-split"></view>
+      <view class="weekly-head">
+        <text class="weekly-title">本周目标</text>
+        <text class="weekly-target">{{weekly.weekRangeText}}</text>
       </view>
-      <view class="prog-track">
-        <view class="prog-fill" style="width: {{item.percent}}%"></view>
+      <view class="weekly-cols">
+        <view class="prog-col" wx:for="{{weekly.bars}}" wx:key="key">
+          <view class="prog-top">
+            <text class="prog-label">{{item.label}}</text>
+            <text class="prog-value num-font">{{item.valueText}}</text>
+          </view>
+          <view class="prog-track">
+            <view class="prog-fill" style="width: {{item.percent}}%"></view>
+          </view>
+        </view>
       </view>
-    </view>
+    </block>
   </view>
 
   <!-- ===== 管理视角面板（教师/管理员） ===== -->

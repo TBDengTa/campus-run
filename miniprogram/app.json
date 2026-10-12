@@ -19,7 +19,9 @@
     "pages/announcements/announcements",
     "pages/changelogs/changelogs",
     "pages/webview/webview",
-    "pages/banned/banned"
+    "pages/banned/banned",
+    "pages/records/day",
+    "pages/records/week"
   ],
   "subpackages": [
     {

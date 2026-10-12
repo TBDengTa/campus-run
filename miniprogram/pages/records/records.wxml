@@ -1,5 +1,5 @@
 <view class="page tt-page tt-page-tab records-page">
-  <!-- ===== 本周概览 ===== -->
+  <!-- ===== 本周概览（常驻） ===== -->
   <view class="tt-card sum-card">
     <view class="sum-head">
       <text class="sum-title">本周概览</text>
@@ -21,7 +21,6 @@
       </view>
     </view>
 
-    <!-- 近 7 天迷你柱状图 -->
     <view class="bars" wx:if="{{bars.length}}">
       <view class="bar-col" wx:for="{{bars}}" wx:key="key">
         <view class="bar-track">
@@ -32,67 +31,29 @@
     </view>
   </view>
 
-  <!-- ===== 月历 ===== -->
-  <view class="tt-card">
-    <view class="cal-head">
-      <view class="cal-nav" bind:tap="prevMonth">
-        <t-icon name="chevron-left" size="40rpx" color="var(--tt-text-2)" />
-      </view>
-      <view class="cal-title">
-        <text class="cal-month">{{monthText}}</text>
-      </view>
-      <view class="cal-nav" bind:tap="nextMonth">
-        <t-icon name="chevron-right" size="40rpx" color="var(--tt-text-2)" />
-      </view>
-    </view>
-
-    <view class="weekday-row">
-      <view class="weekday" wx:for="{{weekdays}}" wx:key="*this">{{item}}</view>
-    </view>
-
-    <view class="day-grid">
-      <view
-        wx:for="{{cells}}"
-        wx:key="index"
-        class="day-cell {{item.empty ? 'empty' : ''}} {{item.key === selected ? 'selected' : ''}} {{item.isToday ? 'today' : ''}}"
-        bind:tap="{{item.empty ? '' : 'selectDay'}}"
-        data-key="{{item.key}}"
-      >
-        <block wx:if="{{!item.empty}}">
-          <view class="day-num">{{item.day}}</view>
-          <view class="day-dot {{item.achieved ? 'achieved' : (item.steps > 0 ? 'active' : '')}}"></view>
-          <view class="day-holiday" wx:if="{{item.holiday}}">{{item.holiday.name}}</view>
-        </block>
-      </view>
-    </view>
-
-    <view class="legend">
-      <view class="legend-item"><view class="day-dot achieved"></view><text>已达标</text></view>
-      <view class="legend-item"><view class="day-dot active"></view><text>有记录</text></view>
-      <view class="legend-item"><view class="day-dot"></view><text>无记录</text></view>
+  <!-- ===== 分段切换 ===== -->
+  <view class="records-segment">
+    <view class="tt-segment">
+      <view class="tt-segment-item {{tab === 'sport' ? 'active' : ''}}" bind:tap="switchTab" data-tab="sport">运动记录</view>
+      <view class="tt-segment-item {{tab === 'day' ? 'active' : ''}}" bind:tap="switchTab" data-tab="day">每日记录</view>
+      <view class="tt-segment-item {{tab === 'week' ? 'active' : ''}}" bind:tap="switchTab" data-tab="week">每周记录</view>
     </view>
   </view>
 
-  <!-- ===== 当日详情 ===== -->
-  <block wx:if="{{selected}}">
+  <!-- ===== 运动记录 ===== -->
+  <block wx:if="{{tab === 'sport'}}">
     <view class="tt-section">
-      <text>{{selectedText}}</text>
-      <text class="tt-section-extra">{{selectedRecords.length}} 条记录</text>
+      <text>全部记录</text>
+      <text class="tt-section-extra">共 {{sport.total}} 条</text>
     </view>
     <view class="tt-card">
-      <block wx:if="{{selectedRecords.length}}">
-        <view
-          class="tt-row"
-          wx:for="{{selectedRecords}}"
-          wx:key="_id"
-          bind:tap="openRecord"
-          data-id="{{item._id}}"
-        >
+      <block wx:if="{{sport.list.length}}">
+        <view class="tt-row" wx:for="{{sport.list}}" wx:key="_id" bind:tap="openRecord" data-id="{{item._id}}">
           <view class="row-icon">
             <t-icon name="{{item.sourceIcon}}" size="40rpx" color="var(--tt-brand)" />
           </view>
           <view class="flex-1">
-            <view class="tt-row-title">{{item.sourceText}}</view>
+            <view class="tt-row-title">{{item.dateText}} {{item.timeText}} · {{item.sourceText}}</view>
             <view class="tt-row-sub">{{item.durationText}} · {{item.distanceText}}</view>
           </view>
           <view class="row-value">
@@ -101,35 +62,72 @@
           </view>
           <t-icon name="chevron-right" size="34rpx" color="var(--tt-text-3)" />
         </view>
+        <view class="list-more" wx:if="{{!sport.done}}">
+          {{sport.loading ? '加载中…' : '上拉加载更多'}}
+        </view>
+        <view class="list-more" wx:else>已加载全部 {{sport.total}} 条</view>
       </block>
-      <view class="tt-empty" wx:else>当天无运动记录</view>
+      <view class="tt-empty" wx:else>还没有运动记录，去跑步吧</view>
     </view>
   </block>
 
-  <!-- ===== 本月记录 ===== -->
-  <view class="tt-section">
-    <text>本月记录</text>
-    <text class="tt-section-extra" bind:tap="goRun">去跑步</text>
-  </view>
-  <view class="tt-card">
-    <block wx:if="{{recent.length}}">
-      <view class="tt-row" wx:for="{{recent}}" wx:key="_id" bind:tap="openRecord" data-id="{{item._id}}">
-        <view class="row-icon">
-          <t-icon name="{{item.sourceIcon}}" size="40rpx" color="var(--tt-brand)" />
+  <!-- ===== 每日记录 ===== -->
+  <block wx:if="{{tab === 'day'}}">
+    <view class="tt-section">
+      <text>每日记录</text>
+      <text class="tt-section-extra">共 {{days.total}} 天</text>
+    </view>
+    <view class="tt-card">
+      <block wx:if="{{days.list.length}}">
+        <view class="tt-row" wx:for="{{days.list}}" wx:key="date" bind:tap="openDay" data-date="{{item.date}}">
+          <view class="flex-1">
+            <view class="tt-row-title">
+              {{item.monthDay}}
+              <text class="day-week">{{item.weekText}}</text>
+              <text class="day-today" wx:if="{{item.isToday}}">今天</text>
+            </view>
+            <view class="tt-row-sub">{{item.durationText}} · {{item.distanceText}} · {{item.recordCount}} 条记录</view>
+          </view>
+          <view class="row-value">
+            <text class="num-font">{{item.stepsText}}</text>
+            <text class="row-unit">步</text>
+          </view>
+          <t-icon name="chevron-right" size="34rpx" color="var(--tt-text-3)" />
         </view>
-        <view class="flex-1">
-          <view class="tt-row-title">{{item.dateText}} · {{item.sourceText}}</view>
-          <view class="tt-row-sub">{{item.durationText}} · {{item.distanceText}}</view>
+        <view class="list-more" wx:if="{{!days.done}}">
+          {{days.loading ? '加载中…' : '上拉加载更多'}}
         </view>
-        <view class="row-value">
-          <text class="num-font">{{item.stepsText}}</text>
-          <text class="row-unit">步</text>
+        <view class="list-more" wx:else>已加载全部 {{days.total}} 天</view>
+      </block>
+      <view class="tt-empty" wx:else>暂无每日记录</view>
+    </view>
+  </block>
+
+  <!-- ===== 每周记录 ===== -->
+  <block wx:if="{{tab === 'week'}}">
+    <view class="tt-section">
+      <text>每周记录</text>
+      <text class="tt-section-extra">近 {{weeks.list.length}} 周</text>
+    </view>
+    <view class="tt-card">
+      <block wx:if="{{weeks.list.length}}">
+        <view class="week-item" wx:for="{{weeks.list}}" wx:key="weekStart" bind:tap="openWeek" data-start="{{item.weekStart}}">
+          <view class="flex-1">
+            <view class="tt-row-title">
+              {{item.rangeText}}
+              <text class="day-today" wx:if="{{item.isThisWeek}}">本周</text>
+            </view>
+            <view class="tt-row-sub">{{item.stepsText}} 步 · {{item.distanceText}} · 活跃 {{item.activeDays}} 天</view>
+          </view>
+          <view class="week-flag {{item.goalAchieved ? 'ok' : ''}}">
+            {{item.goalAchieved ? '周目标达成' : '未达周目标'}}
+          </view>
+          <t-icon name="chevron-right" size="34rpx" color="var(--tt-text-3)" />
         </view>
-        <t-icon name="chevron-right" size="34rpx" color="var(--tt-text-3)" />
-      </view>
-    </block>
-    <view class="tt-empty" wx:else>本月暂无运动记录</view>
-  </view>
+      </block>
+      <view class="tt-empty" wx:else>暂无每周记录</view>
+    </view>
+  </block>
 
   <view class="tt-footer">数据每日自动同步微信运动</view>
 </view>

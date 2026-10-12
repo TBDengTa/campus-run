@@ -1,0 +1,82 @@
+.day-page {
+  padding-bottom: 48rpx;
+}
+
+.day-hero {
+  padding: 32rpx 32rpx 24rpx;
+}
+
+.day-hero-date {
+  font-size: 40rpx;
+  font-weight: 700;
+}
+
+.day-hero-tags {
+  display: flex;
+  gap: 12rpx;
+  margin-top: 12rpx;
+  align-items: center;
+}
+
+.achieve-chip {
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+  background: var(--tt-line, rgba(0, 0, 0, 0.05));
+  border-radius: 999px;
+  padding: 6rpx 18rpx;
+}
+
+.achieve-chip.ok {
+  color: #16a34a;
+  background: #eafaf1;
+}
+
+.goal-row {
+  margin-top: 28rpx;
+}
+
+.goal-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 24rpx;
+  margin-bottom: 10rpx;
+}
+
+.goal-percent {
+  font-weight: 600;
+  color: var(--tt-brand);
+}
+
+.row-icon {
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 50%;
+  background: var(--tt-brand-weak, rgba(255, 107, 0, 0.08));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 16rpx;
+}
+
+.loading {
+  display: flex;
+  justify-content: center;
+  padding: 40rpx;
+}
+
+.row-value {
+  display: flex;
+  align-items: baseline;
+  gap: 4rpx;
+  margin: 0 8rpx;
+}
+
+.row-value .num-font {
+  font-size: 30rpx;
+  font-weight: 600;
+}
+
+.row-unit {
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+}

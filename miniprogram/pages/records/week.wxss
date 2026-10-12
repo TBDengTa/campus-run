@@ -1,0 +1,156 @@
+.week-page {
+  padding-bottom: 48rpx;
+}
+
+.week-hero {
+  padding: 32rpx 32rpx 24rpx;
+}
+
+.week-hero-range {
+  font-size: 40rpx;
+  font-weight: 700;
+}
+
+.week-hero-tags {
+  display: flex;
+  gap: 12rpx;
+  margin-top: 12rpx;
+  align-items: center;
+}
+
+.achieve-chip {
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+  background: var(--tt-line, rgba(0, 0, 0, 0.05));
+  border-radius: 999px;
+  padding: 6rpx 18rpx;
+}
+
+.achieve-chip.ok {
+  color: #16a34a;
+  background: #eafaf1;
+}
+
+.goal-row {
+  margin-top: 28rpx;
+}
+
+.goal-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 24rpx;
+  margin-bottom: 10rpx;
+}
+
+.goal-percent {
+  font-weight: 600;
+  color: var(--tt-brand);
+}
+
+/* ===== 7 天逐日 ===== */
+.week-day-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 18rpx 0;
+  border-bottom: 1rpx solid var(--tt-line, rgba(0, 0, 0, 0.06));
+}
+
+.week-day-row:last-child {
+  border-bottom: none;
+}
+
+.wd-label {
+  width: 96rpx;
+  display: flex;
+  flex-direction: column;
+}
+
+.wd-week {
+  font-size: 24rpx;
+  font-weight: 500;
+}
+
+.wd-date {
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+}
+
+.wd-label.today .wd-week {
+  color: var(--tt-brand);
+}
+
+.wd-bar-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.wd-bar-track {
+  flex: 1;
+  height: 20rpx;
+  border-radius: 999px;
+  background: var(--tt-line, rgba(0, 0, 0, 0.05));
+  overflow: hidden;
+}
+
+.wd-bar {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--tt-brand-weak, rgba(255, 107, 0, 0.35));
+}
+
+.wd-bar.active {
+  background: var(--tt-brand);
+}
+
+.wd-bar.ok {
+  background: #16a34a;
+}
+
+.wd-steps {
+  width: 110rpx;
+  text-align: right;
+  font-size: 24rpx;
+}
+
+.wd-flag {
+  width: 44rpx;
+  display: flex;
+  justify-content: center;
+}
+
+.row-icon {
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 50%;
+  background: var(--tt-brand-weak, rgba(255, 107, 0, 0.08));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 16rpx;
+}
+
+.loading {
+  display: flex;
+  justify-content: center;
+  padding: 40rpx;
+}
+
+.row-value {
+  display: flex;
+  align-items: baseline;
+  gap: 4rpx;
+  margin: 0 8rpx;
+}
+
+.row-value .num-font {
+  font-size: 30rpx;
+  font-weight: 600;
+}
+
+.row-unit {
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+}

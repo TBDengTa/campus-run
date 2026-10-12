@@ -1,9 +1,9 @@
-// 自定义 tabBar：白色悬浮胶囊，学生端中间「跑步」为凸起橙色圆钮
+// 自定义 tabBar：白色悬浮胶囊，全部为普通导航项（不做中间凸起圆钮）
 // 学生：首页 / 跑步 / 记录 / 排行 / 我的
-// 教师：首页 / 管理(或公告) / 我的（教师不参与排名与运动记录，导航项均为普通项，不做凸起圆钮）
+// 教师：首页 / 管理(或公告) / 我的（教师不参与排名与运动记录）
 const STUDENT_TABS = [
   { key: 'home', path: '/pages/home/home', text: '首页', icon: 'home', activeIcon: 'home-filled', tab: true },
-  { key: 'run', path: '/pages/run/index', text: '跑步', icon: 'play-circle', activeIcon: 'play-circle-filled', tab: true, center: true },
+  { key: 'run', path: '/pages/run/index', text: '跑步', icon: 'play-circle', activeIcon: 'play-circle-filled', tab: true },
   { key: 'records', path: '/pages/records/records', text: '记录', icon: 'file-paste', activeIcon: 'file-paste-filled', tab: true },
   { key: 'ranking', path: '/pages/ranking/ranking', text: '排行', icon: 'chart-bar', activeIcon: 'chart-bar-filled', tab: true },
   { key: 'profile', path: '/pages/profile/profile', text: '我的', icon: 'user-circle', activeIcon: 'user-circle-filled', tab: true },

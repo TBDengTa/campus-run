@@ -1,5 +1,5 @@
 .home-page {
-  padding: 0 0 calc(180rpx + env(safe-area-inset-bottom));
+  padding: 0 0 calc(160rpx + env(safe-area-inset-bottom));
 }
 
 /* ============================================================
@@ -12,16 +12,18 @@
   background: linear-gradient(180deg, #9fd8ff 0%, #c6e9ff 46%, #e9f8ff 100%);
 }
 
-.sky-img {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 100%;
-  height: 100%;
+/* 有插画素材时：高度由图片比例决定（widthFix 自动撑高），不再叠加文字 */
+.sky-has-image {
+  height: auto;
+  background: none;
 }
 
-/* 云朵 */
-.sky-cloud {
+.sky-img {
+  display: block;
+  width: 100%;
+}
+
+/* 云朵 */.sky-cloud {
   position: absolute;
   background: #ffffff;
   border-radius: 999rpx;
@@ -118,7 +120,7 @@
   display: flex;
   align-items: center;
   gap: 12rpx;
-  margin: -28rpx var(--tt-gap) var(--tt-gap);
+  margin: -20rpx var(--tt-gap) var(--tt-gap);
   padding: 16rpx 22rpx;
   border-radius: var(--tt-radius-sm);
   background: linear-gradient(135deg, #ff9a3d 0%, #ff6b00 70%);
@@ -277,11 +279,10 @@
   border-color: var(--tt-brand);
 }
 
-.day-dot {
-  width: 11rpx;
-  height: 11rpx;
-  border-radius: 50%;
-  background: var(--tt-brand);
+/* 圆点里的小人图标（三态：白/橙/灰，由 WXML 按状态选图） */
+.day-ico {
+  width: 30rpx;
+  height: 30rpx;
 }
 
 .day-label {
@@ -364,10 +365,12 @@
 }
 
 /* ============================================================
-   本周目标
+   本周目标（与「今日目标」同卡片，分隔线以下两列并排）
    ============================================================ */
-.weekly-card {
-  padding: 22rpx;
+.card-split {
+  height: 2rpx;
+  background: var(--tt-line);
+  margin: 20rpx 0 16rpx;
 }
 
 .weekly-head {
@@ -375,44 +378,60 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 12rpx;
-  margin-bottom: 18rpx;
+  margin-bottom: 12rpx;
 }
 
 .weekly-title {
-  font-size: 27rpx;
+  font-size: 24rpx;
   font-weight: 700;
   color: var(--tt-text-1);
 }
 
 .weekly-target {
-  font-size: 20rpx;
+  font-size: 18rpx;
   color: var(--tt-text-3);
 }
 
-.prog-row + .prog-row {
-  margin-top: 16rpx;
+.weekly-cols {
+  display: flex;
+  gap: 24rpx;
+}
+
+.prog-col {
+  flex: 1;
+  min-width: 0;
+}
+
+.prog-col + .prog-col {
+  padding-left: 24rpx;
+  border-left: 2rpx solid var(--tt-line);
 }
 
 .prog-top {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
+  gap: 8rpx;
   margin-bottom: 8rpx;
 }
 
 .prog-label {
-  font-size: 21rpx;
+  font-size: 19rpx;
   color: var(--tt-text-2);
+  flex-shrink: 0;
 }
 
 .prog-value {
-  font-size: 21rpx;
+  font-size: 19rpx;
   font-weight: 600;
   color: var(--tt-text-1);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .prog-track {
-  height: 11rpx;
+  height: 8rpx;
   border-radius: 999rpx;
   background: var(--td-bg-color-component);
   overflow: hidden;
@@ -607,19 +626,41 @@
 }
 
 /* ============================================================
-   广告
+   广告（右上角「广告」标识；高度由 JS 按图片比例设置，aspectFit 保证整图可见）
+   圆角与其它卡片保持一致（--tt-radius），卡片/轮播/图片三层都圆角，避免裁切差异
    ============================================================ */
 .ad-banner {
+  position: relative;
   padding: 0;
   overflow: hidden;
+  border-radius: var(--tt-radius);
 }
 
 .ad-swiper {
-  height: 210rpx;
   width: 100%;
+  height: 250rpx; /* 兜底高度，实际由内联 style 覆盖 */
+  border-radius: var(--tt-radius);
+  overflow: hidden;
 }
 
 .ad-image {
   width: 100%;
-  height: 210rpx;
+  height: 100%;
+  border-radius: var(--tt-radius);
+  background: var(--td-bg-color-page);
+}
+
+.ad-flag {
+  position: absolute;
+  right: 12rpx;
+  top: 12rpx;
+  z-index: 2;
+  padding: 2rpx 12rpx;
+  border-radius: 8rpx;
+  font-size: 18rpx;
+  line-height: 26rpx;
+  letter-spacing: 2rpx;
+  color: #ffffff;
+  background: rgba(0, 0, 0, 0.34);
+  pointer-events: none;
 }
