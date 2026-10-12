@@ -1,36 +1,176 @@
-@import '../admin-common.wxss';
-
-.add-bar {
-  padding: 0 28rpx 16rpx;
+/* ===== 广告主管理 · 白橙 ===== */
+.sponsor-page {
+  --td-input-vertical-padding: 0;
+  --td-input-label-min-width: 150rpx;
+  --td-input-label-max-width: 230rpx;
+  --td-input-label-text-color: var(--tt-text-2);
+  padding-bottom: calc(32rpx + env(safe-area-inset-bottom));
 }
 
-.row-actions {
+/* 概览条 */
+.sponsor-head {
   display: flex;
-  gap: 12rpx;
+  align-items: center;
+  gap: 20rpx;
+  padding: 24rpx;
 }
 
-.logo-row {
-  width: 160rpx;
-  height: 160rpx;
-  border-radius: 12rpx;
-  overflow: hidden;
-  background: var(--td-gray-color-1, #f3f3f3);
+.sponsor-head-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.sponsor-head-sub {
+  margin-top: 6rpx;
+  font-size: 24rpx;
+  color: var(--tt-text-3);
+}
+
+/* 表单 */
+.sponsor-form-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sponsor-form-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.sponsor-close {
+  width: 56rpx;
+  height: 56rpx;
+  border-radius: 50%;
+  background: var(--td-bg-color-component);
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-.logo-img {
+.sponsor-close:active {
+  opacity: 0.7;
+}
+
+.sponsor-field {
+  /* t-input 的标签与内容统一到 28rpx，和页面内其它表单行一致 */
+  --td-font-size-m: 28rpx;
+  padding: 26rpx 0;
+  border-bottom: 2rpx solid var(--tt-line);
+}
+
+.sponsor-field:last-child {
+  border-bottom: none;
+}
+
+.sponsor-field-row {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+}
+
+.sponsor-field-label {
+  font-size: 28rpx;
+  color: var(--tt-text-2);
+}
+
+.sponsor-field-tip {
+  margin-top: 6rpx;
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+.sponsor-logo-box {
+  margin-top: 16rpx;
+  width: 200rpx;
+  height: 200rpx;
+  border-radius: var(--tt-radius-sm);
+  border: 2rpx solid var(--tt-line);
+  background: var(--tt-brand-soft);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sponsor-logo-img {
   width: 100%;
   height: 100%;
 }
 
-.logo-empty {
-  font-size: 24rpx;
+.sponsor-logo-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8rpx;
+  font-size: 23rpx;
+  color: var(--tt-brand);
 }
 
-.loading-more {
+.sponsor-form-actions {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 32rpx;
+}
+
+/* 列表 */
+.sponsor-list {
+  padding: 8rpx 24rpx;
+}
+
+.sponsor-icon {
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 24rpx;
+  background: var(--tt-brand-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.sponsor-icon-img {
+  width: 100%;
+  height: 100%;
+}
+
+.sponsor-name {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  flex-wrap: wrap;
+}
+
+.sponsor-acts {
+  display: flex;
+  flex-direction: column;
+  gap: 10rpx;
+  flex-shrink: 0;
+}
+
+.sponsor-act {
+  padding: 8rpx 22rpx;
+  border-radius: 999rpx;
+  text-align: center;
+  font-size: 23rpx;
+  color: var(--tt-brand);
+  background: var(--tt-brand-soft);
+}
+
+.sponsor-act.danger {
+  color: var(--td-error-color-6);
+  background: var(--td-error-color-1);
+}
+
+.sponsor-act:active {
+  opacity: 0.7;
+}
+
+.sponsor-loading {
   display: flex;
   justify-content: center;
-  padding: 24rpx;
+  padding: 28rpx 0;
 }

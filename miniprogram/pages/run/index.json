@@ -1,5 +1,4 @@
 {
-  "navigationBarTitleText": "GPS 实跑",
-  "disableScroll": true,
-  "usingComponents": {}
+  "navigationBarTitleText": "跑步",
+  "disableScroll": true
 }

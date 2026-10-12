@@ -1,41 +1,76 @@
-@import '../admin-common.wxss';
-
-.search-wrap {
-  margin: 0 24rpx;
+/* 管理端 · 用户列表（白橙设计系统） */
+.users-page {
+  padding-bottom: calc(32rpx + env(safe-area-inset-bottom));
 }
 
-.filter-row {
+/* 搜索卡片：内边距收紧 */
+.users-search-card {
+  padding: 16rpx 20rpx;
+}
+
+.users-filter {
+  margin: 0 var(--tt-gap) var(--tt-gap);
+}
+
+/* 列表卡片：管理端信息密度更高 */
+.users-card {
+  padding: 8rpx 24rpx;
+}
+
+.users-avatar {
+  width: 72rpx;
+  height: 72rpx;
+  flex-shrink: 0;
+  border-radius: 22rpx;
   display: flex;
   align-items: center;
-  gap: 16rpx;
-  padding: 0 28rpx 8rpx;
+  justify-content: center;
+  background: var(--tt-brand-soft);
 }
 
-.filter-chip {
-  font-size: 24rpx;
-  padding: 8rpx 24rpx;
-  border-radius: 999px;
-  background: var(--td-gray-color-2, #eee);
-  color: var(--td-text-color-secondary);
-}
-
-.filter-chip.active {
-  background: var(--td-brand-color);
-  color: #fff;
-}
-
-.filter-count {
-  margin-left: auto;
-  font-size: 22rpx;
-}
-
-.row-actions {
+.users-name {
   display: flex;
-  gap: 12rpx;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10rpx;
 }
 
-.loading-more {
+.users-actions {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  flex-shrink: 0;
+}
+
+.users-loading {
   display: flex;
   justify-content: center;
   padding: 24rpx;
+}
+
+/* ===== 名单操作 ===== */
+.users-actions {
+  display: flex;
+  gap: 16rpx;
+  margin: 0 24rpx 16rpx;
+}
+
+.users-action-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
+  padding: 18rpx 0;
+  border-radius: 14rpx;
+  background: var(--td-bg-color-container, #fff);
+  border: 1rpx solid var(--td-component-border, #dcdcdc);
+  font-size: 26rpx;
+  color: var(--td-text-color-primary);
+}
+
+.users-action-btn.primary {
+  background: var(--tt-brand, #ff6b00);
+  border-color: var(--tt-brand, #ff6b00);
+  color: #fff;
 }

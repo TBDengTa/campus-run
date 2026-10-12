@@ -1,0 +1,35 @@
+<view class="page login-page">
+  <view class="login-hero">
+    <view class="login-title">账号登录</view>
+    <view class="login-sub text-secondary">使用学校提供的姓名与初始密码登录，并绑定当前微信</view>
+  </view>
+
+  <view class="card login-card">
+    <view class="form-row">
+      <text class="form-label">姓名</text>
+      <input class="form-input" value="{{account}}" placeholder="请输入姓名" bindinput="inputAccount" />
+    </view>
+    <view class="form-row">
+      <text class="form-label">密码</text>
+      <input class="form-input" password value="{{password}}" placeholder="初始密码为学号/身份证后8位" bindinput="inputPassword" />
+    </view>
+    <t-button theme="primary" block loading="{{submitting}}" bind:tap="submit" class="mt-24">登录并绑定微信</t-button>
+  </view>
+
+  <view class="card tips-card">
+    <view class="tip-title text-secondary">登录说明</view>
+    <view class="tip-line text-secondary">· 初始密码为学号后 8 位或身份证后 8 位</view>
+    <view class="tip-line text-secondary">· 首次登录后需修改密码</view>
+    <view class="tip-line text-secondary">· 账号绑定微信后不可更换，其他微信登录该账号将被拒绝</view>
+    <view class="tip-line text-secondary">· 没有账号？请联系学校/老师导入名单</view>
+  </view>
+
+  <view class="card" wx:if="{{devRoles}}">
+    <view class="tip-title text-secondary">DEV 快速登录</view>
+    <view class="dev-row">
+      <view class="mini-btn primary" bind:tap="devLogin" data-role="dev-student">学生</view>
+      <view class="mini-btn" bind:tap="devLogin" data-role="dev-teacher">教师</view>
+      <view class="mini-btn" bind:tap="devLogin" data-role="dev-admin">管理员</view>
+    </view>
+  </view>
+</view>

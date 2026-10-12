@@ -1,54 +1,214 @@
-.reward-page {
-  padding: 24rpx 0 48rpx;
-}
+/* 看视频赚步数：橙色主视觉 + 数据卡 + 药丸主按钮 */
 
 .reward-hero {
-  text-align: center;
-  padding: 48rpx 32rpx;
+  position: relative;
+  margin: 0 var(--tt-gap) var(--tt-gap);
+  padding: 38rpx 36rpx 34rpx;
+  border-radius: 36rpx;
+  overflow: hidden;
+  background: linear-gradient(135deg, #ff9a3d 0%, #ff6b00 62%, #f25a00 100%);
+  box-shadow: 0 12rpx 32rpx rgba(255, 107, 0, 0.24);
 }
 
-.reward-title {
-  font-size: 40rpx;
-  font-weight: 700;
+.reward-hero::after {
+  content: '';
+  position: absolute;
+  right: -120rpx;
+  top: -140rpx;
+  width: 380rpx;
+  height: 380rpx;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
 }
 
-.reward-sub {
-  margin-top: 12rpx;
-  font-size: 26rpx;
+.reward-hero-body {
+  position: relative;
+  z-index: 1;
 }
 
-.reward-stats {
+.reward-hero-top {
   display: flex;
-  margin: 40rpx 0;
+  align-items: center;
+  justify-content: space-between;
 }
 
-.reward-stat {
+.reward-hero-label {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: 2rpx;
+}
+
+.reward-hero-chip {
+  padding: 6rpx 20rpx;
+  border-radius: 999rpx;
+  font-size: 22rpx;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.reward-hero-main {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  margin-top: 24rpx;
+  font-size: 25rpx;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.reward-hero-tip {
+  flex: 1;
+  line-height: 1.5;
+}
+
+/* ===== 数据卡 ===== */
+.reward-num {
+  color: var(--tt-brand);
+}
+
+.reward-quota {
+  margin-top: 32rpx;
+  padding-top: 28rpx;
+  border-top: 2rpx solid var(--tt-line);
+}
+
+.reward-quota-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.reward-quota-label {
+  font-size: 26rpx;
+  color: var(--tt-text-2);
+}
+
+.reward-quota-value {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: var(--tt-brand);
+}
+
+.reward-quota-track {
+  height: 14rpx;
+  margin-top: 16rpx;
+  border-radius: 999rpx;
+  background: var(--tt-line);
+  overflow: hidden;
+}
+
+.reward-quota-fill {
+  height: 100%;
+  border-radius: 999rpx;
+  background: linear-gradient(90deg, #ff9a3d, var(--tt-brand));
+  transition: width 0.4s ease;
+}
+
+.reward-quota-foot {
+  margin-top: 14rpx;
+  font-size: 23rpx;
+  color: var(--tt-text-3);
+}
+
+/* ===== 主行动按钮 ===== */
+.reward-action {
+  margin: 8rpx var(--tt-gap) 0;
+}
+
+.reward-action.disabled {
+  background: var(--td-bg-color-component);
+  color: var(--tt-text-3);
+  box-shadow: none;
+}
+
+.reward-action-note {
+  margin: 16rpx var(--tt-gap) 0;
+  text-align: center;
+  font-size: 23rpx;
+  color: var(--tt-text-3);
+}
+
+/* ===== 刚刚获得 ===== */
+.reward-gain {
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+}
+
+.reward-gain-icon {
+  flex-shrink: 0;
+  width: 92rpx;
+  height: 92rpx;
+}
+
+.reward-gain-body {
   flex: 1;
 }
 
-.reward-num {
-  font-size: 44rpx;
-  font-weight: 700;
-  color: var(--td-brand-color);
+.reward-gain-steps {
+  display: flex;
+  align-items: baseline;
+  gap: 8rpx;
 }
 
-.reward-tip {
-  font-size: 22rpx;
-}
-
-.rewarded-steps {
+.reward-gain-num {
   font-size: 56rpx;
   font-weight: 700;
-  color: var(--td-success-color-5);
+  line-height: 1.1;
+  color: var(--tt-brand);
 }
 
-.badge-names {
+.reward-gain-unit {
+  font-size: 26rpx;
+  color: var(--tt-text-2);
+}
+
+.reward-gain-sub {
+  margin-top: 8rpx;
+  font-size: 23rpx;
+  color: var(--tt-text-3);
+}
+
+/* ===== 新徽章 ===== */
+.reward-badges-head {
   display: flex;
-  gap: 12rpx;
-  flex-wrap: wrap;
+  align-items: center;
+  gap: 10rpx;
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
 }
 
-.rule {
+.reward-badges-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+  margin-top: 22rpx;
+}
+
+.reward-badge-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8rpx;
+  padding: 10rpx 22rpx;
+  border-radius: 999rpx;
   font-size: 24rpx;
-  line-height: 44rpx;
+  color: var(--tt-brand-deep);
+  background: var(--tt-brand-soft);
+}
+
+/* ===== 规则说明 ===== */
+.reward-rule {
+  align-items: flex-start;
+}
+
+.reward-rule-icon {
+  flex-shrink: 0;
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 24rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--tt-brand-soft);
 }

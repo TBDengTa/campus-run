@@ -74,6 +74,9 @@ router.get(
 router.post(
   '/sync-werun',
   wrap(async (req, res) => {
+    // 教师账号不参与运动记录
+    if (stepsSvc.isTeacher(req.user)) throw new ApiError(403, 403003, stepsSvc.TEACHER_BLOCK_MESSAGE);
+
     const { encryptedData, iv } = req.body || {};
     if (!encryptedData || !iv) throw new ApiError(400, 400, '缺少 encryptedData/iv');
     const session = await WxSession.findOne({ openid: req.user.openid });
@@ -97,6 +100,7 @@ router.post(
       // 非当日：只增不减（保留激励视频等奖励步数）
       if (dateKey !== todayKey() && steps < prevSteps) steps = prevSteps;
       const result = await stepsSvc.syncWerunDay(req.user, dateKey, steps, { checkJump: dateKey === todayKey() });
+      if (result.blocked) throw new ApiError(403, 403003, result.reason);
       if (result.banned) {
         banned = result.reason;
         break;
@@ -125,6 +129,9 @@ function tsToDateKey(ts) {
 router.post(
   '/gps',
   wrap(async (req, res) => {
+    // 教师账号不参与运动记录
+    if (stepsSvc.isTeacher(req.user)) throw new ApiError(403, 403003, stepsSvc.TEACHER_BLOCK_MESSAGE);
+
     const { date, distance, durationSeconds, calories, startTime, endTime, routePoints, location } = req.body || {};
     if (!distance || distance < 10) throw new ApiError(400, 400, '距离过短');
     const result = await stepsSvc.saveGpsRun(req.user, {
@@ -137,6 +144,9 @@ router.post(
       routePoints,
       location,
     });
+    if (result.blocked) {
+      throw new ApiError(403, 403003, result.reason);
+    }
     if (result.banned) {
       throw new ApiError(403, 403001, `检测到数据异常，账号已被封禁：${result.reason}`, { banned: true });
     }

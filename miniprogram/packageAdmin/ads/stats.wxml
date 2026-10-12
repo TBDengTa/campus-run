@@ -1,36 +1,99 @@
-<view class="admin-page">
-  <view class="filter-bar">
-    <picker mode="date" value="{{startDate}}" bindchange="onStart">
-      <view class="date-chip">{{startDate}}</view>
+<view class="page tt-page adstat-page">
+  <!-- ===== 统计区间 ===== -->
+  <view class="tt-section">
+    <text>统计区间</text>
+    <text class="tt-section-extra">按自然日</text>
+  </view>
+
+  <view class="tt-card adstat-filter">
+    <picker class="adstat-pick" mode="date" value="{{startDate}}" bindchange="onStart">
+      <view class="adstat-date">
+        <text class="adstat-date-label">开始</text>
+        <text class="adstat-date-value num-font">{{startDate}}</text>
+      </view>
     </picker>
-    <text class="text-secondary">至</text>
-    <picker mode="date" value="{{endDate}}" bindchange="onEnd">
-      <view class="date-chip">{{endDate}}</view>
+    <text class="adstat-sep">至</text>
+    <picker class="adstat-pick" mode="date" value="{{endDate}}" bindchange="onEnd">
+      <view class="adstat-date">
+        <text class="adstat-date-label">结束</text>
+        <text class="adstat-date-value num-font">{{endDate}}</text>
+      </view>
     </picker>
   </view>
 
-  <view class="stat-grid">
-    <view class="stat-box">
-      <view class="num num-font">{{totals.pv}}</view>
-      <view class="label">总曝光 PV</view>
-    </view>
-    <view class="stat-box">
-      <view class="num num-font">{{totals.click}}</view>
-      <view class="label">总点击</view>
-    </view>
-  </view>
-
-  <view class="section-title">每日趋势（蓝=PV 红=点击）</view>
-  <view class="list-card">
-    <view class="chart">
-      <view class="bar-col" wx:for="{{byDate}}" wx:key="_id">
-        <view class="bars">
-          <view class="bar pv" style="height: {{item.pvHeight}}rpx"></view>
-          <view class="bar click" style="height: {{item.clickHeight}}rpx"></view>
-        </view>
-        <view class="bar-label text-placeholder">{{item.label}}</view>
+  <!-- ===== 核心指标 ===== -->
+  <view class="tt-card">
+    <view class="tt-stat-row">
+      <view class="tt-stat">
+        <view class="tt-stat-value num-font">{{pvText}}</view>
+        <view class="tt-stat-label">总曝光 PV</view>
+      </view>
+      <view class="tt-stat">
+        <view class="tt-stat-value num-font">{{clickText}}</view>
+        <view class="tt-stat-label">总点击</view>
+      </view>
+      <view class="tt-stat">
+        <view class="tt-stat-value num-font">{{ctrText}}</view>
+        <view class="tt-stat-label">点击率 CTR</view>
       </view>
     </view>
-    <view class="empty-tip" wx:if="{{!byDate.length && !loading}}">该区间暂无数据</view>
   </view>
+
+  <!-- ===== 每日趋势 ===== -->
+  <view class="tt-section">
+    <text>每日趋势</text>
+    <text class="tt-section-extra">橙 = PV · 浅橙 = 点击</text>
+  </view>
+
+  <view class="tt-card">
+    <view class="adstat-legend">
+      <view class="adstat-legend-item">
+        <view class="adstat-dot pv"></view>
+        <text>曝光 PV</text>
+      </view>
+      <view class="adstat-legend-item">
+        <view class="adstat-dot click"></view>
+        <text>点击</text>
+      </view>
+    </view>
+
+    <view class="adstat-chart" wx:if="{{byDate.length}}">
+      <view class="adstat-col" wx:for="{{byDate}}" wx:key="_id">
+        <view class="adstat-bars">
+          <view class="adstat-bar pv" style="height: {{item.pvHeight}}rpx"></view>
+          <view class="adstat-bar click" style="height: {{item.clickHeight}}rpx"></view>
+        </view>
+        <text class="adstat-bar-label">{{item.label}}</text>
+      </view>
+    </view>
+
+    <view class="tt-empty" wx:else>该区间暂无数据</view>
+  </view>
+
+  <!-- ===== 每日明细 ===== -->
+  <view class="tt-section">
+    <text>每日明细</text>
+    <text class="tt-section-extra">{{byDate.length}} 天</text>
+  </view>
+
+  <view class="tt-card adstat-list">
+    <view class="tt-row" wx:for="{{byDate}}" wx:key="_id">
+      <text class="adstat-day num-font">{{item.label}}</text>
+      <view class="adstat-cell">
+        <text class="adstat-cell-num num-font">{{item.pvText}}</text>
+        <text class="adstat-cell-label">PV</text>
+      </view>
+      <view class="adstat-cell">
+        <text class="adstat-cell-num num-font">{{item.clickText}}</text>
+        <text class="adstat-cell-label">点击</text>
+      </view>
+    </view>
+
+    <view class="tt-empty" wx:if="{{!byDate.length && !loading}}">该区间暂无数据</view>
+    <view class="adstat-loading" wx:if="{{loading}}">
+      <t-loading theme="circular" size="40rpx" />
+    </view>
+  </view>
+
+  <view class="tt-footer">数据来源于广告位曝光与点击上报，可能存在延迟</view>
 </view>

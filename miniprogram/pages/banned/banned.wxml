@@ -1,20 +1,44 @@
-<view class="page banned-page" wx:if="{{!loading && user}}">
-  <view class="ban-hero">
-    <view class="ban-icon">🚫</view>
-    <view class="ban-title">账号已被封禁</view>
-    <view class="ban-reason" wx:if="{{user.banReason}}">{{user.banReason}}</view>
-    <view class="ban-until" wx:if="{{user.bannedUntil}}">
-      解封时间：{{user.bannedUntil}}
+<view class="page tt-page" wx:if="{{!loading && user}}">
+  <!-- ===== 封禁状态卡 ===== -->
+  <view class="banned-hero">
+    <view class="banned-hero-icon">
+      <t-icon name="error-circle" size="64rpx" color="var(--td-error-color-6)" />
     </view>
-    <view class="ban-until" wx:else>该封禁无固定解封时间，可提交申诉</view>
+    <view class="banned-hero-title">账号已被封禁</view>
+    <view class="banned-hero-sub">申诉提交后管理员会尽快核实处理</view>
   </view>
 
-  <view class="card">
-    <view class="card-title">你能做什么</view>
-    <t-button theme="primary" block bind:tap="goSubmit">提交申诉</t-button>
-    <t-button theme="default" block class="mt-16" bind:tap="goList">查看申诉进度</t-button>
-    <t-button variant="outline" block class="mt-16" bind:tap="refreshStatus">刷新封禁状态</t-button>
+  <!-- ===== 封禁详情 ===== -->
+  <view class="banned-info">
+    <view class="banned-info-row">
+      <text class="banned-info-label">封禁原因</text>
+      <text class="banned-info-value">{{user.banReason || '违反社区规范'}}</text>
+    </view>
+    <view class="banned-info-row">
+      <text class="banned-info-label">解封时间</text>
+      <text class="banned-info-value" wx:if="{{user.bannedUntil}}">{{user.bannedUntil}}</text>
+      <text class="banned-info-value banned-info-muted" wx:else>无固定期限，可提交申诉</text>
+    </view>
   </view>
 
-  <view class="tip text-placeholder">若认为封禁有误（如步数为微信运动原始数据），提交申诉后管理员会尽快核实</view>
+  <!-- ===== 可执行操作 ===== -->
+  <view class="tt-section">你可以这样做</view>
+  <view class="tt-card">
+    <view class="tt-pill-btn primary" bind:tap="goSubmit">
+      <t-icon name="edit-1" size="34rpx" color="#ffffff" />
+      <text>提交申诉</text>
+    </view>
+
+    <view class="tt-pill-btn ghost banned-btn-gap" bind:tap="goList">
+      <t-icon name="view-list" size="34rpx" color="var(--tt-brand)" />
+      <text>查看申诉进度</text>
+    </view>
+
+    <view class="banned-refresh" bind:tap="refreshStatus">
+      <t-icon name="refresh" size="28rpx" color="var(--tt-text-3)" />
+      <text>刷新封禁状态</text>
+    </view>
+  </view>
+
+  <view class="tt-footer">若认为封禁有误（如步数为微信运动原始数据），提交申诉后管理员会尽快核实</view>
 </view>

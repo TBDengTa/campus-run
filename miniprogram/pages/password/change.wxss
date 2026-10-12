@@ -1,0 +1,33 @@
+.pwd-page {
+  padding: 24rpx 0 48rpx;
+}
+
+.first-tip {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  margin-bottom: 20rpx;
+  padding: 18rpx 20rpx;
+  border-radius: 12rpx;
+  background: var(--td-warning-color-1, #fff1e9);
+  color: var(--td-warning-color-5);
+  font-size: 24rpx;
+}
+
+.form-row {
+  display: flex;
+  align-items: center;
+  padding: 20rpx 0;
+  border-bottom: 1rpx solid var(--td-component-stroke);
+}
+
+.form-label {
+  width: 180rpx;
+  font-size: 28rpx;
+  color: var(--td-text-color-secondary);
+}
+
+.form-input {
+  flex: 1;
+  font-size: 30rpx;
+}

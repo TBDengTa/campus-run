@@ -15,6 +15,7 @@ permissionSchema.statics.DEFAULT_CATALOG = [
   { key: 'dashboard.view', name: '查看数据看板', module: '看板', sort: 1 },
   { key: 'user.view', name: '查看用户', module: '用户', sort: 10 },
   { key: 'user.manage', name: '封禁/解封用户', module: '用户', sort: 11 },
+  { key: 'user.import', name: '导入学生名单', module: '用户', sort: 12 },
   { key: 'appeal.view', name: '查看申诉', module: '申诉', sort: 20 },
   { key: 'appeal.review', name: '审核申诉', module: '申诉', sort: 21 },
   { key: 'ad.view', name: '查看广告数据', module: '广告', sort: 30 },

@@ -1,13 +1,83 @@
+const crypto = require('crypto');
 const express = require('express');
 const { wrap, ok, ApiError, parsePagination } = require('../../utils/response');
 const { requirePermission } = require('../../middlewares/admin');
 const anticheat = require('../../services/anticheat');
+const pwd = require('../../services/password');
+const roster = require('../../services/roster');
 const BanRecord = require('../../models/ban-record');
 const User = require('../../models/user');
 const PermissionGroup = require('../../models/permission-group');
 const Permission = require('../../models/permission');
 
 const router = express.Router();
+
+// 导入学生名单（需 user.import）：body { rows: [...] } 或 { payload: 'CSV/JSON 文本' }
+router.post(
+  '/import',
+  requirePermission('user.import'),
+  wrap(async (req, res) => {
+    const rows = roster.parseRows(req.body?.rows || req.body?.payload);
+    if (!rows.length) throw new ApiError(400, 400, '未解析到数据（支持 JSON 数组或 CSV，表头：姓名,学号,身份证号,学校,院系,班级,专业）');
+    const result = await roster.importRows(rows);
+    ok(res, result);
+  })
+);
+
+// 创建教师账号（需 permission.manage）：初始密码系统随机生成，仅本次响应返回
+router.post(
+  '/teachers',
+  requirePermission('permission.manage'),
+  wrap(async (req, res) => {
+    const name = String(req.body?.name || '').trim();
+    if (!name) throw new ApiError(400, 400, '请填写教师姓名（作为登录账号）');
+    const exists = await User.findOne({ account: name, role: 'teacher' });
+    if (exists) throw new ApiError(400, 400, '已存在同名教师账号');
+    const initialPassword = pwd.last8(req.body?.initialPassword) || crypto.randomBytes(4).toString('hex');
+    const user = await User.create({
+      account: name,
+      realName: name,
+      nickname: name,
+      role: 'teacher',
+      schoolName: String(req.body?.school || '').trim(),
+      departmentName: String(req.body?.department || '').trim(),
+      passwordHash: pwd.hashPassword(initialPassword),
+      initialHashes: [pwd.hashPassword(initialPassword)],
+      mustChangePassword: true,
+    });
+    ok(res, { _id: user._id, account: user.account, initialPassword });
+  })
+);
+
+// 重置密码（需 permission.manage）：恢复为初始密码（学号/身份证后8），无初始数据则生成随机码
+router.post(
+  '/:id/reset-password',
+  requirePermission('permission.manage'),
+  wrap(async (req, res) => {
+    const user = await User.findById(req.params.id);
+    if (!user) throw new ApiError(404, 404, '用户不存在');
+
+    let message;
+    const resetHashes = user.resetHashes || [];
+    if (resetHashes.length) {
+      // 恢复为名单初始密码，并同步恢复可用的 initialHashes（下次改密用旧密码验证）
+      user.passwordHash = resetHashes[0];
+      user.initialHashes = [...resetHashes];
+      message = '已重置为初始密码（证件/学号后8位）';
+    } else {
+      const randomPwd = crypto.randomBytes(4).toString('hex');
+      user.passwordHash = pwd.hashPassword(randomPwd);
+      user.initialHashes = [pwd.hashPassword(randomPwd)];
+      user.resetHashes = [pwd.hashPassword(randomPwd)];
+      message = `该账号无名单初始密码数据，已生成随机密码：${randomPwd}`;
+    }
+    user.mustChangePassword = true;
+    user.failedLogins = 0;
+    user.lockUntil = null;
+    await user.save();
+    ok(res, { success: true, message });
+  })
+);
 
 // 修改用户角色/权限（需 permission.manage）
 router.put(

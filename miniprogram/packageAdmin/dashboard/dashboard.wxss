@@ -1,31 +1,64 @@
-@import '../admin-common.wxss';
-
-.chart {
-  display: flex;
-  align-items: flex-end;
-  gap: 8rpx;
-  padding: 32rpx 28rpx 16rpx;
-  height: 200rpx;
+/* 管理端 · 数据看板（白橙设计系统） */
+.dash-page {
+  padding-bottom: calc(32rpx + env(safe-area-inset-bottom));
 }
 
-.bar-col {
+/* 管理端信息密度更高：卡片内边距局部收紧 */
+.dash-card {
+  padding: 24rpx;
+}
+
+.dash-loading {
+  display: flex;
+  justify-content: center;
+  padding: 40rpx 0;
+}
+
+/* ===== 趋势条形图（橙色系自绘） ===== */
+.dash-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 6rpx;
+  padding: 8rpx 0 4rpx;
+}
+
+.dash-bar-col {
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
-  height: 100%;
-  justify-content: flex-end;
 }
 
-.bar {
+.dash-bar-track {
   width: 100%;
-  max-width: 28rpx;
-  background: var(--td-brand-color-5);
-  border-radius: 6rpx 6rpx 0 0;
+  height: 140rpx;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
 }
 
-.bar-label {
+.dash-bar {
+  width: 100%;
+  max-width: 22rpx;
+  border-radius: 8rpx 8rpx 4rpx 4rpx;
+  background: linear-gradient(180deg, #ff9a3d, var(--tt-brand));
+}
+
+.dash-bar-label {
+  margin-top: 10rpx;
   font-size: 18rpx;
-  margin-top: 8rpx;
-  transform: scale(0.85);
+  color: var(--tt-text-3);
+  transform: scale(0.9);
+}
+
+/* ===== 快捷入口 ===== */
+.dash-entry-icon {
+  width: 72rpx;
+  height: 72rpx;
+  flex-shrink: 0;
+  border-radius: 22rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--tt-brand-soft);
 }

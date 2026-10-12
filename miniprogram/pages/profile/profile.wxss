@@ -1,27 +1,46 @@
 .profile-page {
-  padding: 24rpx 0 48rpx;
+  padding: 0 0 calc(200rpx + env(safe-area-inset-bottom));
 }
 
-.user-card {
+/* ===== 用户卡 ===== */
+.ucard {
+  position: relative;
+  margin: 0;
+  padding: 44rpx 36rpx 108rpx;
+  border-radius: 0 0 40rpx 40rpx;
+  overflow: hidden;
+  background: linear-gradient(135deg, #ff9a3d 0%, #ff6b00 62%, #f25a00 100%);
+}
+
+.ucard::after {
+  content: '';
+  position: absolute;
+  right: -140rpx;
+  top: -160rpx;
+  width: 420rpx;
+  height: 420rpx;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.ucard-inner {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
-  gap: 24rpx;
-  margin: 0 24rpx 24rpx;
-  padding: 40rpx 32rpx;
-  background: var(--td-bg-color-container);
-  border-radius: 32rpx;
-  box-shadow: var(--td-shadow-1);
+  gap: 26rpx;
 }
 
 .avatar-btn {
   padding: 0;
   margin: 0;
-  width: 128rpx;
-  height: 128rpx;
+  width: 140rpx;
+  height: 140rpx;
   border-radius: 50%;
   overflow: hidden;
   background: transparent;
   line-height: 1;
+  flex-shrink: 0;
 }
 
 .avatar-btn::after {
@@ -29,78 +48,151 @@
 }
 
 .avatar {
-  width: 128rpx;
-  height: 128rpx;
+  width: 140rpx;
+  height: 140rpx;
   border-radius: 50%;
-  background: var(--td-gray-color-3);
+  background: rgba(255, 255, 255, 0.25);
+  border: 4rpx solid rgba(255, 255, 255, 0.65);
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
 }
 
-.nickname-input {
-  font-size: 34rpx;
-  font-weight: 600;
-  height: 56rpx;
+.ucard-info {
   flex: 1;
   min-width: 0;
 }
 
-.gap-8 {
-  gap: 8rpx;
-}
-
-.user-meta {
-  font-size: 24rpx;
-  margin-top: 6rpx;
-}
-
-.user-tags {
+.name-row {
   display: flex;
-  gap: 8rpx;
-  margin-top: 12rpx;
-  flex-wrap: wrap;
+  align-items: center;
+  gap: 14rpx;
 }
 
+.nickname-input {
+  font-size: 38rpx;
+  font-weight: 700;
+  color: #ffffff;
+  height: 60rpx;
+  flex: 1;
+  min-width: 0;
+}
+
+.nick-ph {
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 500;
+}
+
+.role-chip {
+  flex-shrink: 0;
+  padding: 6rpx 20rpx;
+  border-radius: 999rpx;
+  font-size: 22rpx;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.u-meta {
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.86);
+}
+
+.u-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10rpx;
+  margin-top: 14rpx;
+}
+
+.u-tag {
+  padding: 6rpx 18rpx;
+  border-radius: 999rpx;
+  font-size: 21rpx;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* ===== 累计数据（上移叠在渐变卡上） ===== */
+.stats-card {
+  margin-top: -76rpx;
+  position: relative;
+  z-index: 2;
+}
+
+/* ===== 封禁提醒 ===== */
 .ban-banner {
   display: flex;
   align-items: center;
   gap: 12rpx;
-  margin: 0 24rpx 24rpx;
-  padding: 20rpx 24rpx;
-  border-radius: 16rpx;
+  margin: 0 var(--tt-gap) var(--tt-gap);
+  padding: 22rpx 26rpx;
+  border-radius: var(--tt-radius-sm);
   background: var(--td-error-color-1);
   color: var(--td-error-color-6);
   font-size: 26rpx;
 }
 
-.stats-card {
-  display: flex;
-}
-
-.stat {
+.ban-banner text {
   flex: 1;
-  text-align: center;
 }
 
-.stat-num {
-  font-size: 36rpx;
-  font-weight: 600;
+/* ===== 菜单 ===== */
+.menu-card {
+  padding: 8rpx var(--tt-pad);
 }
 
-.stat-label {
-  font-size: 24rpx;
+.menu-row {
+  display: flex;
+  align-items: center;
+  gap: 22rpx;
+  padding: 26rpx 0;
+  border-bottom: 2rpx solid var(--tt-line);
+}
+
+.menu-row:last-child {
+  border-bottom: none;
+}
+
+.menu-row:active {
+  opacity: 0.7;
+}
+
+.menu-icon {
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 24rpx;
+  background: var(--tt-brand-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.menu-label {
+  flex: 1;
+  font-size: 29rpx;
+  color: var(--tt-text-1);
+}
+
+.menu-sub {
   margin-top: 6rpx;
+  font-size: 23rpx;
+  color: var(--tt-text-3);
 }
 
-.admin-header {
-  font-size: 24rpx;
-  margin: 24rpx 32rpx 12rpx;
+/* ===== 退出登录 ===== */
+.logout-card {
+  padding: 0;
+  overflow: hidden;
 }
 
-.footer {
+.logout-btn {
   text-align: center;
-  font-size: 24rpx;
-  padding: 40rpx 0;
+  padding: 26rpx 0;
+  font-size: 30rpx;
+  font-weight: 500;
+  color: var(--td-error-color-6);
 }

@@ -1,0 +1,53 @@
+<view class="page tt-page import-page">
+  <view class="tt-section">学生名单导入</view>
+  <view class="tt-card">
+    <view class="import-tip">
+      <view class="tip-line">· 支持粘贴 CSV / JSON，或从聊天记录选择 .csv / .json 文件</view>
+      <view class="tip-line">· CSV 表头：姓名,学号,身份证号,学校,院系,班级,专业</view>
+      <view class="tip-line">· 初始密码 = 身份证后8位（无身份证用学号后8位），首次登录强制修改</view>
+      <view class="tip-line">· 按「学号」去重：已存在的学生仅更新班级信息，不会改动密码和微信绑定</view>
+      <view class="tip-line warn">· 同名且同初始密码的记录会被拒绝，请学校核实后调整</view>
+    </view>
+    <view class="import-actions">
+      <view class="import-btn" bind:tap="chooseFile">选择文件</view>
+      <view class="import-btn" bind:tap="fillSample">填充示例</view>
+    </view>
+    <textarea
+      class="import-textarea"
+      value="{{payload}}"
+      bindinput="inputPayload"
+      maxlength="-1"
+      auto-height
+      placeholder="在此粘贴 CSV 或 JSON 数据…"
+    />
+    <t-button theme="primary" block loading="{{submitting}}" bind:tap="submit" class="mt-16">
+      开始导入
+    </t-button>
+  </view>
+
+  <block wx:if="{{result}}">
+    <view class="tt-section">导入结果</view>
+    <view class="tt-card">
+      <view class="result-row">
+        <view class="result-stat">
+          <view class="num-font result-num ok">{{result.created}}</view>
+          <view class="result-label">新增</view>
+        </view>
+        <view class="result-stat">
+          <view class="num-font result-num">{{result.updated}}</view>
+          <view class="result-label">更新</view>
+        </view>
+        <view class="result-stat">
+          <view class="num-font result-num bad">{{result.failed.length}}</view>
+          <view class="result-label">失败</view>
+        </view>
+      </view>
+      <view class="fail-list" wx:if="{{result.failed.length}}">
+        <view class="fail-item" wx:for="{{result.failed}}" wx:key="index">
+          <text class="fail-row">{{item.row}}</text>
+          <text class="fail-reason">{{item.reason}}</text>
+        </view>
+      </view>
+    </view>
+  </block>
+</view>

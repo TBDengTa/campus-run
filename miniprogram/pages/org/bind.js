@@ -1,5 +1,11 @@
 const auth = require('../../utils/request');
 
+// 仅用于展示：统计已绑定的院校/班级信息项数
+function countBound(user) {
+  if (!user) return 0;
+  return ['schoolName', 'departmentName', 'specialty', 'className'].filter((k) => !!user[k]).length;
+}
+
 Page({
   data: {
     tree: [],
@@ -16,6 +22,7 @@ Page({
     studentId: '',
     className: '',
     specialtyName: '',
+    boundCount: 0,
     submitting: false,
   },
 
@@ -26,6 +33,7 @@ Page({
       studentId: user.studentId || '',
       className: user.className || '',
       specialtyName: user.specialty || '',
+      boundCount: countBound(user),
     });
     this.loadTree();
   },
@@ -40,6 +48,7 @@ Page({
       });
       // 回显已保存的选择
       const user = getApp().globalData.userInfo || {};
+      this.setData({ boundCount: countBound(user) });
       if (user.schoolName) {
         const si = tree.findIndex((s) => s.name === user.schoolName);
         if (si >= 0) {

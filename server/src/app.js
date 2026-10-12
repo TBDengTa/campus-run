@@ -29,7 +29,9 @@ function createApp() {
   app.use('/uploads', express.static(path.join(__dirname, '../uploads'), { maxAge: '7d' }));
 
   app.use('/api/auth', require('./routes/auth'));
+  app.use('/api/roster', require('./routes/roster'));
   app.use('/api/run', require('./routes/run'));
+  app.use('/api/ranking', require('./routes/ranking'));
   app.use('/api/goal', require('./routes/goal'));
   app.use('/api/reward-video', require('./routes/reward-video'));
   app.use('/api/water', require('./routes/water'));

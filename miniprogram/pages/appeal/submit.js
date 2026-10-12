@@ -3,6 +3,7 @@ const auth = require('../../utils/request');
 Page({
   data: {
     content: '',
+    contentLength: 0,
     submitting: false,
     user: null,
   },
@@ -13,7 +14,8 @@ Page({
   },
 
   input(e) {
-    this.setData({ content: e.detail.value });
+    const value = e.detail.value;
+    this.setData({ content: value, contentLength: (value || '').length });
   },
 
   async submit() {

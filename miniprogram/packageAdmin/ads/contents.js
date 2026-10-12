@@ -1,4 +1,5 @@
 const auth = require('../../utils/request');
+const fmt = require('../../utils/format');
 
 const EMPTY = {
   _id: '',
@@ -57,6 +58,8 @@ Page({
           slotName: slotMap.get(c.slotKey) || c.slotKey,
           sponsorName: c.sponsorId ? sponsorMap.get(String(c.sponsorId)) || '-' : '-',
           pageName: c.pageId ? pageMap.get(String(c.pageId)) || '-' : '',
+          pvText: fmt.formatNumber(c.totalPv || 0),
+          clickText: fmt.formatNumber(c.totalClick || 0),
         })),
         slots: slots.list,
         sponsors: sponsors.list,
@@ -147,6 +150,8 @@ Page({
     delete payload.slotName;
     delete payload.sponsorName;
     delete payload.pageName;
+    delete payload.pvText;
+    delete payload.clickText;
     if (!payload.sponsorId) payload.sponsorId = null;
     if (payload.linkType !== 'page') payload.pageId = null;
     if (!payload.pageId) payload.pageId = null;

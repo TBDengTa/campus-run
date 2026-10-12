@@ -1,40 +1,66 @@
-<view class="admin-page">
-  <view class="add-bar flex-between">
+<view class="page tt-page holi-page">
+  <view class="holi-head">
     <picker value="{{year}}" bindchange="changeYear">
-      <view class="year-chip">{{year}} 年 ▾</view>
+      <view class="holi-year">
+        <text class="num-font">{{year}}</text>
+        <text class="holi-year-unit">年</text>
+        <t-icon name="chevron-down" size="30rpx" color="var(--tt-brand)" />
+      </view>
     </picker>
     <t-button theme="primary" size="small" bind:tap="openCreate">+ 新增</t-button>
   </view>
 
-  <view class="form-card" wx:if="{{form}}">
-    <view class="form-item">
-      <text class="form-item-label">日期 *</text>
+  <!-- ===== 编辑表单 ===== -->
+  <view class="tt-card" wx:if="{{form}}">
+    <view class="tt-section holi-form-title">
+      <text>{{form._id ? '编辑节假日' : '新增节假日'}}</text>
+      <text class="tt-section-extra" bind:tap="closeForm">收起</text>
+    </view>
+
+    <view class="holi-fitem">
+      <text class="holi-flabel">日期 <text class="holi-req">*</text></text>
       <picker mode="date" value="{{form.date}}" bindchange="onDate">
-        <view class="form-item-input">{{form.date}}</view>
+        <view class="holi-input holi-picker">{{form.date || '选择日期'}}</view>
       </picker>
     </view>
-    <view class="form-item">
-      <text class="form-item-label">名称 *</text>
-      <input class="form-item-input" value="{{form.name}}" bindinput="onField" data-field="name" placeholder="如 元旦" />
+
+    <view class="holi-fitem">
+      <text class="holi-flabel">名称 <text class="holi-req">*</text></text>
+      <input class="holi-input" value="{{form.name}}" bindinput="onField" data-field="name" placeholder="如 元旦" />
     </view>
-    <view class="form-actions">
+
+    <view class="holi-form-actions">
       <t-button theme="primary" block bind:tap="save">保存</t-button>
-      <t-button variant="outline" block bind:tap="closeForm">取消</t-button>
+      <t-button theme="default" variant="outline" block bind:tap="closeForm">取消</t-button>
     </view>
   </view>
 
-  <view class="list-card">
-    <view class="row" wx:for="{{list}}" wx:key="_id">
-      <view class="flex-1">
-        <view class="row-title">{{item.name}}</view>
-        <view class="row-sub">{{item.date}}</view>
-      </view>
-      <view class="row-actions">
-        <view class="mini-btn" catch:tap="openEdit" data-id="{{item._id}}">编辑</view>
-        <view class="mini-btn danger" catch:tap="remove" data-id="{{item._id}}">删除</view>
-      </view>
-    </view>
-    <view class="empty-tip" wx:if="{{!list.length && !loading}}">该年度暂无节假日数据</view>
-    <t-loading wx:if="{{loading}}" theme="circular" size="40rpx" class="loading-more" />
+  <!-- ===== 节假日列表 ===== -->
+  <view class="tt-section">
+    <text>节假日列表</text>
+    <text class="tt-section-extra">{{year}} 年度</text>
   </view>
+
+  <view class="tt-card">
+    <block wx:if="{{list.length}}">
+      <view class="tt-row holi-row" wx:for="{{list}}" wx:key="_id">
+        <view class="holi-date">
+          <text class="holi-date-md num-font">{{item.monthDay}}</text>
+          <text class="holi-date-y">{{item.yearText}}</text>
+        </view>
+        <view class="flex-1">
+          <view class="tt-row-title">{{item.name}}</view>
+          <view class="tt-row-sub">{{item.date}}</view>
+        </view>
+        <view class="holi-actions">
+          <view class="holi-btn" catch:tap="openEdit" data-id="{{item._id}}">编辑</view>
+          <view class="holi-btn danger" catch:tap="remove" data-id="{{item._id}}">删除</view>
+        </view>
+      </view>
+    </block>
+    <view class="tt-empty" wx:if="{{!list.length && !loading}}">该年度暂无节假日数据</view>
+    <t-loading wx:if="{{loading}}" theme="circular" size="40rpx" class="holi-loading" />
+  </view>
+
+  <view class="tt-footer">节假日用于记录页日历标记与达标豁免判断</view>
 </view>

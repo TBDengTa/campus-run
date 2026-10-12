@@ -16,6 +16,40 @@ Page({
     this.reload();
   },
 
+  goImport() {
+    wx.navigateTo({ url: '/packageAdmin/users/import' });
+  },
+
+  // 创建教师账号：输入姓名 → 系统生成初始密码，一次性展示
+  createTeacher() {
+    const that = this;
+    wx.showModal({
+      title: '创建教师账号',
+      editable: true,
+      placeholderText: '教师姓名（作为登录账号）',
+      success: async (res) => {
+        if (!res.confirm) return;
+        const name = (res.content || '').trim();
+        if (!name) {
+          wx.showToast({ title: '请输入姓名', icon: 'none' });
+          return;
+        }
+        try {
+          await getApp().ensureLogin();
+          const created = await auth.post('/api/admin/users/teachers', { name });
+          wx.showModal({
+            title: '教师账号已创建',
+            content: `账号：${created.account}\n初始密码：${created.initialPassword}\n\n请立即告知该教师，密码仅显示这一次，教师首次登录后需修改。`,
+            showCancel: false,
+          });
+          that.reload();
+        } catch (e) {
+          wx.showToast({ title: e.message, icon: 'none' });
+        }
+      },
+    });
+  },
+
   async reload() {
     this.setData({ page: 1, list: [] });
     this.load();

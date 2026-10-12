@@ -1,55 +1,79 @@
-@import '../admin-common.wxss';
+/* 管理端 · 申诉审核（白橙设计系统） */
+.appeal-page {
+  padding-bottom: calc(32rpx + env(safe-area-inset-bottom));
+}
 
-.tabs {
+.appeal-tabs {
+  margin: 0 var(--tt-gap) var(--tt-gap);
+}
+
+/* 列表卡片：内边距收紧 */
+.appeal-card {
+  padding: 8rpx 24rpx;
+}
+
+/* 多行列表项：沿用 .tt-row 的分割线与末行处理，仅改为纵向排布 */
+.appeal-item {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.appeal-head {
   display: flex;
-  margin: 0 24rpx 24rpx;
-  background: var(--td-bg-color-container, #fff);
-  border-radius: 16rpx;
-  overflow: hidden;
+  align-items: center;
+  gap: 12rpx;
 }
 
-.tab {
-  flex: 1;
-  text-align: center;
-  padding: 20rpx 0;
-  font-size: 26rpx;
-  color: var(--td-text-color-secondary);
-}
-
-.tab.active {
-  color: var(--td-brand-color);
-  font-weight: 600;
-  background: var(--td-brand-color-1, #f2f3ff);
-}
-
-.time {
+.appeal-time {
+  margin-left: auto;
+  flex-shrink: 0;
   font-size: 22rpx;
+  color: var(--tt-text-3);
 }
 
-.appeal-row {
-  padding: 24rpx 28rpx;
-  border-bottom: 1rpx solid var(--td-component-stroke, #e7e7e7);
-}
-
-.appeal-row:last-child {
-  border-bottom: none;
+.appeal-meta {
+  font-size: 24rpx;
+  color: var(--td-error-color-6);
+  line-height: 38rpx;
 }
 
 .appeal-content {
-  font-size: 26rpx;
-  line-height: 42rpx;
+  font-size: 27rpx;
+  line-height: 44rpx;
+  color: var(--tt-text-1);
   white-space: pre-wrap;
+  word-break: break-all;
 }
 
-.reply-box {
-  margin-top: 16rpx;
+.appeal-reply {
+  display: flex;
+  gap: 12rpx;
   padding: 16rpx 20rpx;
-  background: var(--td-gray-color-1, #f3f3f3);
-  border-radius: 12rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-brand-soft);
   font-size: 24rpx;
+  line-height: 38rpx;
 }
 
-.loading-more {
+.appeal-reply-label {
+  flex-shrink: 0;
+  color: var(--tt-brand);
+  font-weight: 500;
+}
+
+.appeal-reply-text {
+  flex: 1;
+  color: var(--tt-text-2);
+  word-break: break-all;
+}
+
+.appeal-actions {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.appeal-loading {
   display: flex;
   justify-content: center;
   padding: 24rpx;

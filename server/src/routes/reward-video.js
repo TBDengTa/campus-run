@@ -29,6 +29,10 @@ router.get(
 router.post(
   '/report',
   wrap(async (req, res) => {
+    // 教师账号不参与运动记录（不加步数）
+    if (stepsSvc.isTeacher(req.user)) {
+      return ok(res, { success: false, message: stepsSvc.TEACHER_BLOCK_MESSAGE, error: stepsSvc.TEACHER_BLOCK_MESSAGE });
+    }
     const result = await stepsSvc.reportRewardVideo(req.user);
     if (result.error) {
       return ok(res, { success: false, message: result.error, ...result });

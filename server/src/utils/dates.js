@@ -30,4 +30,13 @@ function isValidDateKey(key) {
   return /^\d{4}-\d{2}-\d{2}$/.test(key || '');
 }
 
-module.exports = { toDateKey, todayKey, addDays, monthRange, isValidDateKey };
+// dateKey 所在自然周的起止（默认周一为一周开始，闭区间）
+function weekRange(dateKey, weekStartsOn = 1) {
+  const d = new Date(`${dateKey}T00:00:00`);
+  const diff = (d.getDay() - weekStartsOn + 7) % 7;
+  const start = new Date(d.getTime());
+  start.setDate(d.getDate() - diff);
+  return { startKey: toDateKey(start), endKey: dateKey };
+}
+
+module.exports = { toDateKey, todayKey, addDays, monthRange, isValidDateKey, weekRange };

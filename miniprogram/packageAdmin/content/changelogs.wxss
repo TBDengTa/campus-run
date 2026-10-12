@@ -1,40 +1,141 @@
-@import '../admin-common.wxss';
-
-.add-bar {
-  padding: 0 28rpx 16rpx;
+/* 版本日志管理（白橙设计系统） */
+.clog-page {
+  padding-bottom: 32rpx;
 }
 
-.row-actions {
+.clog-head {
   display: flex;
-  gap: 12rpx;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+  margin: 0 var(--tt-gap) 24rpx;
 }
 
-.ta {
-  width: 100%;
-  min-height: 160rpx;
+.clog-head-text {
   font-size: 26rpx;
-  padding: 16rpx 20rpx;
-  border-radius: 12rpx;
-  background: var(--td-gray-color-1, #f3f3f3);
+  color: var(--tt-text-2);
+}
+
+/* ===== 表单 ===== */
+.clog-form-title {
+  margin: 0 0 20rpx;
+}
+
+.clog-fitem {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding: 22rpx 0;
+  border-bottom: 2rpx solid var(--tt-line);
+}
+
+.clog-fitem:last-of-type {
+  border-bottom: none;
+}
+
+.clog-fitem-top {
+  align-items: flex-start;
+}
+
+.clog-flabel {
+  flex-shrink: 0;
+  width: 160rpx;
+  font-size: 27rpx;
+  color: var(--tt-text-2);
+}
+
+.clog-req {
+  color: var(--td-error-color-6);
+}
+
+.clog-input {
+  flex: 1;
+  min-width: 0;
+  height: 68rpx;
+  padding: 0 20rpx;
+  font-size: 27rpx;
+  color: var(--tt-text-1);
+  background: var(--td-bg-color-component);
+  border-radius: 16rpx;
   box-sizing: border-box;
 }
 
-.form-cols {
+.clog-picker {
+  display: flex;
+  align-items: center;
+}
+
+.clog-textarea {
+  flex: 1;
+  min-width: 0;
+  min-height: 180rpx;
+  padding: 16rpx 20rpx;
+  font-size: 27rpx;
+  line-height: 1.6;
+  color: var(--tt-text-1);
+  background: var(--td-bg-color-component);
+  border-radius: 16rpx;
+  box-sizing: border-box;
+}
+
+.clog-form-actions {
   display: flex;
   gap: 16rpx;
+  margin-top: 24rpx;
 }
 
-.form-item.half {
-  flex: 1;
+/* ===== 列表 ===== */
+.clog-ver {
+  flex-shrink: 0;
+  min-width: 128rpx;
+  padding: 10rpx 18rpx;
+  text-align: center;
+  font-size: 26rpx;
+  font-weight: 700;
+  color: var(--tt-brand);
+  background: var(--tt-brand-soft);
+  border-radius: 16rpx;
 }
 
-.row-sub-inline {
-  font-weight: 400;
-  font-size: 22rpx;
-  color: var(--td-text-color-placeholder);
+.clog-row-title {
+  font-size: 29rpx;
+  font-weight: 500;
+  color: var(--tt-text-1);
 }
 
-.loading-more {
+.clog-date {
+  margin-left: 8rpx;
+}
+
+.clog-row .tt-row-sub {
+  display: flex;
+  align-items: center;
+}
+
+.clog-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 12rpx;
+}
+
+.clog-btn {
+  padding: 10rpx 22rpx;
+  font-size: 23rpx;
+  color: var(--tt-brand);
+  background: var(--tt-brand-soft);
+  border-radius: 999rpx;
+}
+
+.clog-btn.danger {
+  color: var(--td-error-color-6);
+  background: var(--td-error-color-1);
+}
+
+.clog-btn:active {
+  opacity: 0.7;
+}
+
+.clog-loading {
   display: flex;
   justify-content: center;
   padding: 24rpx;

@@ -1,13 +1,34 @@
-<view class="page ann-page">
+<view class="page tt-page">
+  <view class="tt-section">
+    <text>全部公告</text>
+    <text class="tt-section-extra" wx:if="{{list.length}}">{{list.length}} 条</text>
+  </view>
+
   <block wx:if="{{list.length}}">
-    <view class="card" wx:for="{{list}}" wx:key="_id">
-      <view class="flex-between mb-16">
-        <view class="ann-title">{{item.title}}</view>
-        <text class="text-placeholder date">{{item.dateText}}</text>
+    <view class="tt-card" wx:for="{{list}}" wx:key="_id">
+      <view class="ann-head">
+        <view class="tt-chip-icon ann-icon">
+          <t-icon name="notification" size="38rpx" color="var(--tt-brand)" />
+        </view>
+        <view class="flex-1">
+          <view class="ann-title">{{item.title}}</view>
+          <view class="ann-date">
+            <t-icon name="time" size="24rpx" color="var(--tt-text-3)" />
+            <text>{{item.dateText || '—'}}</text>
+          </view>
+        </view>
       </view>
-      <view class="ann-content text-secondary">{{item.content}}</view>
+      <view class="ann-content">{{item.content}}</view>
     </view>
   </block>
-  <t-empty wx:elif="{{!loading}}" content="暂无公告" />
-  <t-loading wx:if="{{loading}}" theme="circular" size="48rpx" text="加载中…" class="loading" />
+
+  <view class="tt-card ann-empty-card" wx:elif="{{!loading}}">
+    <view class="tt-empty">暂无公告</view>
+  </view>
+
+  <view class="ann-loading" wx:if="{{loading}}">
+    <t-loading theme="circular" size="48rpx" text="加载中…" />
+  </view>
+
+  <view class="tt-footer" wx:if="{{list.length}}">公告由管理员发布，如有疑问请联系客服</view>
 </view>

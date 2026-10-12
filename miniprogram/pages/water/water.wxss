@@ -1,89 +1,234 @@
-.water-page {
-  padding: 24rpx 0 48rpx;
-}
+/* ===== 喝水打卡 · 白橙 ===== */
 
+/* 主视觉（白底卡 + 橙色水杯进度） */
 .water-hero {
-  text-align: center;
+  margin: 0 var(--tt-gap) var(--tt-gap);
+  padding: 34rpx 36rpx 32rpx;
+  border-radius: 36rpx;
+  background: var(--tt-card);
+  box-shadow: var(--tt-card-shadow);
 }
 
-.water-num {
-  font-size: 72rpx;
-  font-weight: 700;
-  color: var(--td-brand-color);
-}
-
-.target-link {
-  text-align: center;
-  margin-top: 20rpx;
-  font-size: 26rpx;
-}
-
-.quick-row {
+.water-hero-head {
   display: flex;
-  gap: 20rpx;
+  align-items: center;
+  justify-content: space-between;
 }
 
-.quick-item {
+.water-hero-title {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  font-size: 29rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.water-hero-target {
+  padding: 6rpx 20rpx;
+  border-radius: 999rpx;
+  font-size: 22rpx;
+  color: var(--tt-brand);
+  background: var(--tt-brand-soft);
+}
+
+.water-hero-num {
+  display: flex;
+  align-items: flex-end;
+  gap: 10rpx;
+  margin: 24rpx 0 24rpx;
+}
+
+.water-hero-value {
+  font-size: 84rpx;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 2rpx;
+  color: var(--tt-text-1);
+}
+
+.water-hero-unit {
+  padding-bottom: 10rpx;
+  font-size: 26rpx;
+  color: var(--tt-text-3);
+}
+
+/* 水杯进度槽 */
+.water-cup {
+  position: relative;
+  height: 34rpx;
+  border-radius: 999rpx;
+  background: var(--tt-line);
+  overflow: hidden;
+}
+
+.water-cup-fill {
+  height: 100%;
+  border-radius: 999rpx;
+  background: linear-gradient(90deg, #ffb273 0%, #ff9a3d 40%, var(--tt-brand) 100%);
+  box-shadow: 0 4rpx 14rpx rgba(255, 107, 0, 0.3);
+  transition: width 0.35s ease;
+}
+
+.water-hero-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 20rpx;
+  font-size: 24rpx;
+  color: var(--tt-text-3);
+}
+
+.water-hero-percent {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: var(--tt-brand);
+}
+
+.water-hero-state.done {
+  font-weight: 600;
+  color: var(--td-success-color-5);
+}
+
+/* 快捷记录 */
+.water-quick-row {
+  display: flex;
+  gap: 18rpx;
+}
+
+.water-quick-item {
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 24rpx 12rpx;
-  border-radius: 16rpx;
-  background: var(--td-gray-color-1);
+  padding: 26rpx 10rpx 22rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-brand-soft);
+  transition: transform 0.15s ease;
 }
 
-.quick-icon {
-  font-size: 48rpx;
+.water-quick-item:active {
+  transform: scale(0.96);
 }
 
-.quick-amount {
-  margin-top: 8rpx;
-  font-size: 28rpx;
-  font-weight: 600;
-}
-
-.quick-label {
-  font-size: 22rpx;
-}
-
-.quick-item.custom {
-  justify-content: center;
-  gap: 12rpx;
-}
-
-.custom-input-row {
-  display: flex;
-  align-items: baseline;
-  gap: 6rpx;
-}
-
-.custom-input {
-  width: 90rpx;
-  font-size: 28rpx;
-  font-weight: 600;
-  border-bottom: 2rpx solid var(--td-component-border);
-  text-align: center;
-}
-
-.log-item {
+.water-quick-icon {
+  width: 76rpx;
+  height: 76rpx;
+  border-radius: 50%;
   display: flex;
   align-items: center;
-  padding: 16rpx 0;
-  border-bottom: 1rpx solid var(--td-component-stroke);
+  justify-content: center;
+  background: linear-gradient(135deg, #ff9a3d, var(--tt-brand));
+  box-shadow: 0 8rpx 18rpx rgba(255, 107, 0, 0.24);
 }
 
-.log-item:last-child {
+.water-quick-amount {
+  margin-top: 14rpx;
+  font-size: 32rpx;
+  font-weight: 700;
+  color: var(--tt-brand-deep);
+}
+
+.water-quick-label {
+  margin-top: 4rpx;
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+/* 自定义输入 */
+.water-custom {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.water-custom-label {
+  font-size: 28rpx;
+  color: var(--tt-text-2);
+}
+
+.water-custom-input-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  height: 80rpx;
+  padding: 0 22rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--td-bg-color-component);
+}
+
+.water-custom-input {
+  flex: 1;
+  height: 80rpx;
+  font-size: 32rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.water-custom-unit {
+  font-size: 24rpx;
+  color: var(--tt-text-3);
+}
+
+.water-custom-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6rpx;
+  height: 80rpx;
+  padding: 0 32rpx;
+  border-radius: 999rpx;
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(135deg, #ff9a3d, var(--tt-brand));
+  box-shadow: 0 10rpx 22rpx rgba(255, 107, 0, 0.26);
+}
+
+.water-custom-btn:active {
+  opacity: 0.86;
+}
+
+/* 今日记录 */
+.water-log {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 24rpx 0;
+  border-bottom: 2rpx solid var(--tt-line);
+}
+
+.water-log-type {
+  flex: 1;
+  font-size: 27rpx;
+  color: var(--tt-text-1);
+}
+
+.water-log-dot {
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ffb273, var(--tt-brand));
+}
+
+.water-log-time {
+  width: 110rpx;
+  font-size: 26rpx;
+  color: var(--tt-text-2);
+}
+
+.water-log-amount {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--tt-brand);
+}
+
+.water-log:last-child {
   border-bottom: none;
 }
 
-.log-time {
-  width: 120rpx;
-  color: var(--td-text-color-secondary);
-  font-size: 26rpx;
-}
-
-.log-amount {
-  font-weight: 600;
-  color: var(--td-brand-color);
+/* 调整目标 */
+.water-target-btn {
+  margin: 0 var(--tt-gap);
 }

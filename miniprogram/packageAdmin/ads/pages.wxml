@@ -1,48 +1,110 @@
-<view class="admin-page">
-  <view class="add-bar">
-    <t-button theme="primary" size="small" bind:tap="openCreate">+ 新增落地页</t-button>
+<view class="page tt-page adp-page">
+  <!-- ===== 概览 + 新增 ===== -->
+  <view class="tt-card adp-head">
+    <view class="flex-1">
+      <view class="adp-head-title">落地页</view>
+      <view class="adp-head-sub">共 {{list.length}} 个页面</view>
+    </view>
+    <t-button theme="primary" size="small" icon="add" bind:tap="openCreate">新增</t-button>
   </view>
 
-  <view class="form-card" wx:if="{{form}}">
-    <view class="form-item">
-      <text class="form-item-label">名称 *</text>
-      <input class="form-item-input" value="{{form.name}}" bindinput="onField" data-field="name" />
+  <!-- ===== 新增 / 编辑表单 ===== -->
+  <view class="tt-card" wx:if="{{form}}">
+    <view class="adp-form-head">
+      <text class="adp-form-title">{{form._id ? '编辑落地页' : '新增落地页'}}</text>
+      <view class="adp-close" bind:tap="closeForm">
+        <t-icon name="close" size="34rpx" color="var(--tt-text-2)" />
+      </view>
     </view>
-    <view class="form-item">
-      <text class="form-item-label">Slug *（访问路径 /p/{{form.slug || 'xxx'}}）</text>
-      <input class="form-item-input" value="{{form.slug}}" bindinput="onField" data-field="slug" placeholder="英文短横线，如 summer-run" />
+
+    <view class="tt-divider"></view>
+
+    <view class="adp-field">
+      <t-input
+        borderless
+        label="名称"
+        value="{{form.name}}"
+        placeholder="页面名称（必填）"
+        bind:change="onField"
+        data-field="name"
+      />
     </view>
-    <view class="form-item">
-      <text class="form-item-label">HTML 内容</text>
-      <textarea class="html-editor" value="{{form.htmlContent}}" bindinput="onHtml" maxlength="-1" auto-height />
+
+    <view class="adp-field">
+      <t-input
+        borderless
+        label="Slug"
+        value="{{form.slug}}"
+        placeholder="英文短横线，如 summer-run"
+        bind:change="onField"
+        data-field="slug"
+      />
+      <view class="adp-field-tip">访问路径 /p/{{form.slug || 'xxx'}}</view>
     </view>
-    <view class="form-item flex-between">
-      <text class="form-item-label" style="margin-bottom:0">启用</text>
+
+    <view class="adp-field">
+      <t-textarea
+        label="HTML 内容"
+        placeholder="粘贴完整 HTML"
+        maxlength="{{-1}}"
+        value="{{form.htmlContent}}"
+        t-class="adp-html-box"
+        t-class-textarea="adp-html"
+        bind:change="onHtml"
+      />
+    </view>
+
+    <view class="adp-field adp-field-row">
+      <view class="flex-1">
+        <view class="adp-field-label">启用</view>
+        <view class="adp-field-tip">停用后访问该链接将提示页面不存在</view>
+      </view>
       <t-switch value="{{form.enabled}}" bind:change="toggleEnabled" />
     </view>
-    <view class="form-actions">
+
+    <view class="adp-form-actions">
       <t-button theme="primary" block bind:tap="save">保存</t-button>
-      <t-button variant="outline" block bind:tap="closeForm">取消</t-button>
+      <t-button theme="default" block bind:tap="closeForm">取消</t-button>
     </view>
   </view>
 
-  <view class="list-card">
-    <view class="row" wx:for="{{list}}" wx:key="_id">
+  <!-- ===== 列表 ===== -->
+  <view class="tt-section">
+    <text>落地页列表</text>
+    <text class="tt-section-extra">{{list.length}} 条</text>
+  </view>
+
+  <view class="tt-card adp-list">
+    <view class="tt-row" wx:for="{{list}}" wx:key="_id">
+      <view class="adp-icon">
+        <t-icon name="file-paste" size="40rpx" color="var(--tt-brand)" />
+      </view>
+
       <view class="flex-1">
-        <view class="row-title">
-          {{item.name}}
+        <view class="adp-name">
+          <text class="tt-row-title">{{item.name}}</text>
           <t-tag wx:if="{{!item.enabled}}" theme="default" variant="light" size="small">停用</t-tag>
         </view>
-        <view class="row-sub">/p/{{item.slug}} · {{item.htmlSize}}</view>
+        <view class="tt-row-sub">/p/{{item.slug}}</view>
+        <view class="adp-meta">
+          <text class="tt-chip">{{item.htmlSize}}</text>
+          <text class="adp-meta-text">HTML</text>
+        </view>
       </view>
-      <view class="row-actions">
-        <view class="mini-btn" catch:tap="preview" data-url="{{item.url}}">预览</view>
-        <view class="mini-btn" catch:tap="copyLink" data-url="{{item.url}}">复制链接</view>
-        <view class="mini-btn" catch:tap="openEdit" data-id="{{item._id}}">编辑</view>
-        <view class="mini-btn danger" catch:tap="remove" data-id="{{item._id}}">删除</view>
+
+      <view class="adp-acts">
+        <view class="adp-act" catch:tap="preview" data-url="{{item.url}}">预览</view>
+        <view class="adp-act" catch:tap="copyLink" data-url="{{item.url}}">复制</view>
+        <view class="adp-act" catch:tap="openEdit" data-id="{{item._id}}">编辑</view>
+        <view class="adp-act danger" catch:tap="remove" data-id="{{item._id}}">删除</view>
       </view>
     </view>
-    <view class="empty-tip" wx:if="{{!list.length && !loading}}">暂无落地页</view>
-    <t-loading wx:if="{{loading}}" theme="circular" size="40rpx" class="loading-more" />
+
+    <view class="tt-empty" wx:if="{{!list.length && !loading}}">暂无落地页，点击右上角「新增」</view>
+    <view class="adp-loading" wx:if="{{loading}}">
+      <t-loading theme="circular" size="40rpx" />
+    </view>
   </view>
+
+  <view class="tt-footer">落地页保存后可通过 /p/ 路径直接访问，支持完整 HTML</view>
 </view>

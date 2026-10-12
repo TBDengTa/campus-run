@@ -1,43 +1,89 @@
-<view class="page org-page">
-  <view class="card">
-    <view class="card-title">学生认证</view>
-
-    <view class="picker-row">
-      <text class="picker-label text-secondary">学校</text>
-      <picker range="{{schools}}" bindchange="pickSchool">
-        <view class="picker-value {{schoolIndex >= 0 ? '' : 'text-placeholder'}}">{{schoolLabel}}</view>
-      </picker>
+<view class="page tt-page">
+  <!-- ===== 顶部说明 ===== -->
+  <view class="bind-hero">
+    <view class="bind-hero-icon">
+      <t-icon name="user-add" size="44rpx" color="var(--tt-brand)" />
     </view>
-    <view class="picker-row">
-      <text class="picker-label text-secondary">院系</text>
-      <picker range="{{departments}}" bindchange="pickDepartment" disabled="{{schoolIndex < 0}}">
-        <view class="picker-value {{departmentIndex >= 0 ? '' : 'text-placeholder'}}">{{departmentLabel}}</view>
-      </picker>
+    <view class="bind-hero-body">
+      <view class="bind-hero-title">学生认证</view>
+      <view class="bind-hero-sub">绑定学校 / 院系 / 班级后，打卡数据将计入本院系统计</view>
     </view>
-    <view class="picker-row" wx:if="{{specialties.length}}">
-      <text class="picker-label text-secondary">专业</text>
-      <picker range="{{specialties}}" bindchange="pickSpecialty">
-        <view class="picker-value {{specialtyIndex >= 0 ? '' : 'text-placeholder'}}">{{specialtyLabel}}</view>
-      </picker>
-    </view>
-
-    <view class="input-row">
-      <text class="picker-label text-secondary">姓名</text>
-      <input class="input" value="{{realName}}" placeholder="真实姓名" bindinput="inputName" />
-    </view>
-    <view class="input-row">
-      <text class="picker-label text-secondary">学号</text>
-      <input class="input" value="{{studentId}}" placeholder="学号" bindinput="inputStudentId" />
-    </view>
-    <view class="input-row">
-      <text class="picker-label text-secondary">班级</text>
-      <input class="input" value="{{className}}" placeholder="如 23级大数据1班" bindinput="inputClass" />
-    </view>
-
-    <t-button theme="primary" block class="mt-24" loading="{{submitting}}" bind:tap="submit">
-      保存认证信息
-    </t-button>
   </view>
 
-  <view class="tip text-placeholder">信息仅用于跑步打卡统计与班长核对，不会对外展示</view>
+  <!-- ===== 已绑定信息 ===== -->
+  <view class="bind-bound" wx:if="{{boundCount > 0}}">
+    <view class="bind-bound-head">
+      <t-icon name="check-circle" size="32rpx" color="var(--tt-brand)" />
+      <text class="bind-bound-title">当前已绑定信息</text>
+      <text class="tt-chip tt-chip-brand bind-bound-chip">已认证 {{boundCount}} 项</text>
+    </view>
+
+    <view class="bind-bound-chips">
+      <text class="tt-chip bind-chip" wx:if="{{schoolLabel && schoolIndex >= 0}}">{{schoolLabel}}</text>
+      <text class="tt-chip bind-chip" wx:if="{{departmentLabel && departmentIndex >= 0}}">{{departmentLabel}}</text>
+      <text class="tt-chip bind-chip" wx:if="{{specialtyName}}">{{specialtyName}}</text>
+      <text class="tt-chip bind-chip" wx:if="{{className}}">{{className}}</text>
+    </view>
+
+    <view class="bind-bound-hint">如需变更，直接在下方重新选择并保存即可</view>
+  </view>
+
+  <!-- ===== 步骤 1：院校选择 ===== -->
+  <view class="tt-section">1 · 选择院校</view>
+  <view class="tt-card">
+    <view class="bind-row">
+      <text class="bind-row-label">学校</text>
+      <picker class="bind-row-picker" range="{{schools}}" bindchange="pickSchool">
+        <view class="bind-row-value {{schoolIndex >= 0 ? '' : 'bind-placeholder'}}">
+          <text class="bind-row-text">{{schoolLabel}}</text>
+          <t-icon name="chevron-right" size="30rpx" color="var(--tt-text-3)" />
+        </view>
+      </picker>
+    </view>
+
+    <view class="bind-row">
+      <text class="bind-row-label">院系</text>
+      <picker class="bind-row-picker" range="{{departments}}" bindchange="pickDepartment" disabled="{{schoolIndex < 0}}">
+        <view class="bind-row-value {{departmentIndex >= 0 ? '' : 'bind-placeholder'}}">
+          <text class="bind-row-text">{{departmentLabel}}</text>
+          <t-icon name="chevron-right" size="30rpx" color="var(--tt-text-3)" />
+        </view>
+      </picker>
+    </view>
+
+    <view class="bind-row" wx:if="{{specialties.length}}">
+      <text class="bind-row-label">专业</text>
+      <picker class="bind-row-picker" range="{{specialties}}" bindchange="pickSpecialty">
+        <view class="bind-row-value {{specialtyIndex >= 0 ? '' : 'bind-placeholder'}}">
+          <text class="bind-row-text">{{specialtyLabel}}</text>
+          <t-icon name="chevron-right" size="30rpx" color="var(--tt-text-3)" />
+        </view>
+      </picker>
+    </view>
+  </view>
+
+  <!-- ===== 步骤 2：个人信息 ===== -->
+  <view class="tt-section">2 · 填写个人信息</view>
+  <view class="tt-card">
+    <view class="bind-row">
+      <text class="bind-row-label">姓名</text>
+      <input class="bind-row-input" value="{{realName}}" placeholder="真实姓名" bindinput="inputName" />
+    </view>
+
+    <view class="bind-row">
+      <text class="bind-row-label">学号</text>
+      <input class="bind-row-input" value="{{studentId}}" placeholder="学号" bindinput="inputStudentId" />
+    </view>
+
+    <view class="bind-row">
+      <text class="bind-row-label">班级</text>
+      <input class="bind-row-input" value="{{className}}" placeholder="如 23级大数据1班" bindinput="inputClass" />
+    </view>
+
+    <view class="bind-submit">
+      <t-button theme="primary" block loading="{{submitting}}" bind:tap="submit">保存认证信息</t-button>
+    </view>
+  </view>
+
+  <view class="tt-footer">信息仅用于跑步打卡统计与班长核对，不会对外展示</view>
 </view>

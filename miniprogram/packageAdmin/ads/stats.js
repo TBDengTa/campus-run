@@ -1,8 +1,12 @@
 const auth = require('../../utils/request');
+const fmt = require('../../utils/format');
 
 Page({
   data: {
     totals: { pv: 0, click: 0 },
+    pvText: '0',
+    clickText: '0',
+    ctrText: '0.00%',
     byDate: [],
     startDate: '',
     endDate: '',
@@ -27,14 +31,21 @@ Page({
         end: this.data.endDate,
       });
       const maxVal = Math.max(1, ...byDate.map((d) => d.pv));
+      const pv = (totals && totals.pv) || 0;
+      const click = (totals && totals.click) || 0;
       this.setData({
         loading: false,
         totals,
+        pvText: fmt.formatNumber(pv),
+        clickText: fmt.formatNumber(click),
+        ctrText: pv > 0 ? `${((click / pv) * 100).toFixed(2)}%` : '0.00%',
         byDate: byDate.map((d) => ({
           ...d,
           label: d._id.slice(5),
           pvHeight: Math.max(4, Math.round((d.pv / maxVal) * 140)),
           clickHeight: Math.max(4, Math.round((d.click / maxVal) * 140)),
+          pvText: fmt.formatNumber(d.pv),
+          clickText: fmt.formatNumber(d.click),
         })),
       });
     } catch (e) {

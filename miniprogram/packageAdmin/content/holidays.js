@@ -19,7 +19,13 @@ Page({
     try {
       await getApp().ensureLogin();
       const list = await auth.get('/api/content/holidays', { year: this.data.year });
-      this.setData({ list });
+      this.setData({
+        list: list.map((h) => ({
+          ...h,
+          monthDay: (h.date || '').slice(5) || '--',
+          yearText: (h.date || '').slice(0, 4),
+        })),
+      });
     } catch (e) {
       wx.showToast({ title: e.message, icon: 'none' });
     } finally {

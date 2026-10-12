@@ -7,8 +7,12 @@ const User = require('../models/user');
 const WxSession = require('../models/wx-session');
 const ClassMonitor = require('../models/class-monitor');
 const wechat = require('../services/wechat');
+const pwd = require('../services/password');
 
 const router = express.Router();
+
+const MAX_FAILED = 5;
+const LOCK_MINUTES = 15;
 
 function signToken(user) {
   return jwt.sign({ uid: user._id, openid: user.openid, role: user.role }, config.jwtSecret, {
@@ -16,8 +20,13 @@ function signToken(user) {
   });
 }
 
-// 登录：code 换 openid，新用户自动注册
-// DEV_LOGIN=true 时支持约定 code：dev-student / dev-teacher / dev-admin（本地测试，不调微信接口）
+function signGuest(openid) {
+  return jwt.sign({ openid, guest: true }, config.jwtSecret, { expiresIn: '2h' });
+}
+
+// 登录第一步：wx.login code 换会话
+// - openid 已绑定账号 → 正式 token（bound: true）
+// - openid 未绑定 → 游客 token（bound: false），需走 /bind 完成姓名密码登录+绑定
 router.post(
   '/login',
   wrap(async (req, res) => {
@@ -26,64 +35,145 @@ router.post(
 
     let openid;
     let sessionKey = '';
-    if (config.devLogin && /^dev-(student|teacher|admin)$/.test(code)) {
-      openid = `dev_${code.replace('dev-', '')}_1`;
-      // 预置昵称便于区分测试账号
+    if (config.devLogin && /^dev-(student|teacher|admin|new|new2|new3)$/.test(code)) {
+      // dev-new / dev-new2 / dev-new3：未绑定微信的测试号（用于走姓名密码绑定流程）
+      if (/^dev-new\d?$/.test(code)) {
+        openid = `dev_wechat_${code.replace('dev-', '')}`;
+      } else {
+        openid = `dev_${code.replace('dev-', '')}_1`;
+      }
     } else {
       const session = await wechat.code2session(code);
       openid = session.openid;
       sessionKey = session.session_key;
     }
 
-    let user = await User.findOne({ openid });
-    const isNew = !user;
-    const isDevLogin = openid.startsWith('dev_');
-    if (!user) {
-      const devNicknames = {
-        dev_student_1: '测试学生',
-        dev_teacher_1: '测试教师',
-        dev_admin_1: '测试管理员',
-      };
-      user = await User.create({
-        openid,
-        role: isDevLogin && openid !== 'dev_student_1' ? 'teacher' : 'student',
-        nickname: devNicknames[openid] || '',
-        studentId: undefined, // 留空以避开 studentId 唯一稀疏索引的空串冲突
-      });
-    }
-    let changed = false;
-    // dev 登录：强制重置为约定角色/权限组，保证切换测试视角可预期
-    if (isDevLogin) {
-      const preset = {
-        dev_admin_1: { role: 'teacher', groups: ['superadmin'] },
-        dev_teacher_1: { role: 'teacher', groups: ['teacher'] },
-        dev_student_1: { role: 'student', groups: [] },
-      }[openid];
-      const groupsJson = JSON.stringify(preset.groups);
-      if (user.role !== preset.role || JSON.stringify(user.permissionGroups || []) !== groupsJson) {
-        user.role = preset.role;
-        user.permissionGroups = preset.groups;
-        changed = true;
-      }
-    }
-    // 引导管理员（env 配置）→ 超级管理员权限组
-    if (config.adminBootstrapOpenids.includes(openid) && !user.permissionGroups.includes('superadmin')) {
-      user.permissionGroups.push('superadmin');
-      if (user.role !== 'teacher') user.role = 'teacher';
-      changed = true;
-    }
-    if (changed) await user.save();
-
     if (sessionKey) {
       await WxSession.updateOne({ openid }, { $set: { sessionKey } }, { upsert: true });
     }
 
+    const user = await User.findOne({ openid });
+    if (user) {
+      let changed = false;
+      // dev 登录：强制重置为约定角色/权限组，保证切换测试视角可预期
+      if (config.devLogin && openid.startsWith('dev_')) {
+        const preset = {
+          dev_admin_1: { role: 'teacher', groups: ['superadmin'] },
+          dev_teacher_1: { role: 'teacher', groups: ['teacher'] },
+          dev_student_1: { role: 'student', groups: [] },
+        }[openid];
+        if (preset && (user.role !== preset.role || JSON.stringify(user.permissionGroups || []) !== JSON.stringify(preset.groups))) {
+          user.role = preset.role;
+          user.permissionGroups = preset.groups;
+          changed = true;
+        }
+      }
+      // 引导管理员（env 配置）→ 超级管理员权限组
+      if (config.adminBootstrapOpenids.includes(openid) && !(user.permissionGroups || []).includes('superadmin')) {
+        user.permissionGroups = [...(user.permissionGroups || []), 'superadmin'];
+        if (user.role !== 'teacher') user.role = 'teacher';
+        changed = true;
+      }
+      if (changed) await user.save();
+
+      const effective = await user.getEffectivePermissions();
+      return ok(res, {
+        token: signToken(user),
+        bound: true,
+        mustChangePassword: !!user.mustChangePassword,
+        isNew: false,
+        userInfo: { ...user.toSafeJSON(), effectivePermissions: effective, isManager: effective.length > 0 },
+      });
+    }
+
+    // 未绑定 → 游客 token
+    ok(res, { token: signGuest(openid), bound: false });
+  })
+);
+
+// 登录第二步：姓名 + 密码 绑定/登录（游客 token）
+// 规则：账号未被绑定 → 绑定当前微信；已被其他微信绑定 → 拒绝；不可解绑
+router.post(
+  '/bind',
+  auth,
+  wrap(async (req, res) => {
+    const { account, password } = req.body || {};
+    if (!req.guestOpenid) throw new ApiError(403, 403003, '请先通过微信登录');
+    if (!account || !password) throw new ApiError(400, 400, '请输入姓名和密码');
+
+    const now = new Date();
+    const candidates = await User.find({ account: String(account).trim() });
+    if (!candidates.length) throw new ApiError(400, 400, '账号或密码不正确');
+
+    const locked = candidates.find((u) => u.lockUntil && u.lockUntil > now);
+    if (locked) {
+      throw new ApiError(429, 429, `失败次数过多，账号已锁定，请 ${Math.ceil((locked.lockUntil - now) / 60000)} 分钟后再试`);
+    }
+
+    // 在同名候选中按密码匹配
+    const matched = candidates.filter(
+      (u) => pwd.verifyPassword(password, u.passwordHash) || pwd.matchesAnyInitial(password, u.initialHashes)
+    );
+    if (!matched.length) {
+      for (const u of candidates) {
+        u.failedLogins = (u.failedLogins || 0) + 1;
+        if (u.failedLogins >= MAX_FAILED) {
+          u.lockUntil = new Date(now.getTime() + LOCK_MINUTES * 60000);
+          u.failedLogins = 0;
+        }
+        await u.save();
+      }
+      throw new ApiError(400, 400, '账号或密码不正确');
+    }
+
+    const user = matched[0];
+    // 绑定校验：一个账号只认第一个绑定的微信
+    if (user.openid && user.openid !== req.guestOpenid) {
+      throw new ApiError(403, 403004, '该账号已绑定其他微信，禁止登录。如为本人操作，请联系管理员处理');
+    }
+
+    user.openid = req.guestOpenid;
+    user.openidBoundAt = user.openidBoundAt || now;
+    user.failedLogins = 0;
+    user.lockUntil = null;
+    if (!user.account) user.account = String(account).trim();
+    if (!user.realName) user.realName = user.account;
+    await user.save();
+
     const effective = await user.getEffectivePermissions();
     ok(res, {
       token: signToken(user),
-      isNew,
+      bound: true,
+      mustChangePassword: !!user.mustChangePassword,
+      isNew: false,
       userInfo: { ...user.toSafeJSON(), effectivePermissions: effective, isManager: effective.length > 0 },
     });
+  })
+);
+
+// 修改密码：验证旧密码（或初始密码）→ 设置新密码、清初始哈希、解除强制改密
+router.post(
+  '/password/change',
+  auth,
+  wrap(async (req, res) => {
+    if (req.guestOpenid) throw new ApiError(403, 403003, '请先绑定账号');
+    const { oldPassword, newPassword } = req.body || {};
+    if (!oldPassword || !newPassword) throw new ApiError(400, 400, '请填写旧密码和新密码');
+    const invalid = pwd.validateNewPassword(newPassword);
+    if (invalid) throw new ApiError(400, 400, invalid);
+    if (oldPassword === newPassword) throw new ApiError(400, 400, '新密码不能与旧密码相同');
+
+    const user = await User.findById(req.user._id);
+    const oldOk = pwd.verifyPassword(oldPassword, user.passwordHash) || pwd.matchesAnyInitial(oldPassword, user.initialHashes);
+    if (!oldOk) throw new ApiError(400, 400, '旧密码不正确');
+
+    user.passwordHash = pwd.hashPassword(newPassword);
+    user.initialHashes = [];
+    user.mustChangePassword = false;
+    user.failedLogins = 0;
+    user.lockUntil = null;
+    await user.save();
+    ok(res, { success: true });
   })
 );
 
@@ -92,6 +182,7 @@ router.get(
   '/me',
   auth,
   wrap(async (req, res) => {
+    if (req.guestOpenid) throw new ApiError(403, 403003, '请先绑定账号');
     const monitor = await ClassMonitor.findOne({ openid: req.user.openid }).lean();
     const effective = await req.user.getEffectivePermissions();
     const data = {
@@ -109,6 +200,7 @@ router.put(
   '/profile',
   auth,
   wrap(async (req, res) => {
+    if (req.guestOpenid) throw new ApiError(403, 403003, '请先绑定账号');
     const allowed = ['nickname', 'avatarUrl', 'realName', 'studentId', 'className', 'specialty', 'gender', 'birthdate'];
     const $set = {};
     for (const k of allowed) {
@@ -127,6 +219,7 @@ router.put(
   '/school',
   auth,
   wrap(async (req, res) => {
+    if (req.guestOpenid) throw new ApiError(403, 403003, '请先绑定账号');
     const { schoolId, departmentId, className } = req.body || {};
     const Organization = require('../models/organization');
     const $set = {};

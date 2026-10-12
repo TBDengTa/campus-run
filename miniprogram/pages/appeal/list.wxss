@@ -1,40 +1,116 @@
-.appeal-list-page {
-  padding: 24rpx 0 48rpx;
+/* ===== 我的申诉 · 白橙 ===== */
+
+/* 顶部入口 */
+.appeal-entry {
+  display: flex;
+  align-items: center;
+  gap: 22rpx;
+  margin: 0 var(--tt-gap) var(--tt-gap);
+  padding: 28rpx var(--tt-pad);
+  border-radius: var(--tt-radius);
+  background: var(--tt-card);
+  box-shadow: var(--tt-card-shadow);
 }
 
-.submit-entry {
+.appeal-entry:active {
+  opacity: 0.86;
+}
+
+.appeal-entry-icon {
+  width: 76rpx;
+  height: 76rpx;
+  border-radius: 26rpx;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8rpx;
-  font-size: 28rpx;
+  background: var(--tt-brand-soft);
+  flex-shrink: 0;
 }
 
-.time {
-  font-size: 22rpx;
+.appeal-entry-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.appeal-entry-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.appeal-entry-sub {
+  margin-top: 6rpx;
+  font-size: 23rpx;
+  color: var(--tt-text-3);
+}
+
+/* 记录卡片 */
+.appeal-card {
+  padding: 28rpx var(--tt-pad);
+}
+
+.appeal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18rpx;
+}
+
+.appeal-time {
+  font-size: 23rpx;
+  color: var(--tt-text-3);
 }
 
 .appeal-content {
   font-size: 28rpx;
   line-height: 44rpx;
+  color: var(--tt-text-1);
   white-space: pre-wrap;
+  word-break: break-all;
 }
 
-.reply {
-  margin-top: 16rpx;
-  padding: 16rpx 20rpx;
-  background: var(--td-gray-color-1);
-  border-radius: 12rpx;
+/* 管理员回复 */
+.appeal-reply {
+  margin-top: 22rpx;
+  padding: 22rpx 24rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-brand-soft);
+}
+
+.appeal-reply-label {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  font-size: 24rpx;
+  font-weight: 600;
+  color: var(--tt-brand-deep);
+}
+
+.appeal-reply-text {
+  margin-top: 10rpx;
   font-size: 26rpx;
   line-height: 40rpx;
+  color: var(--tt-text-2);
+  word-break: break-all;
 }
 
-.reply-label {
-  color: var(--td-brand-color);
+/* 空状态 */
+.appeal-empty-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 72rpx var(--tt-pad);
 }
 
-.loading {
+.appeal-empty-text {
+  margin-top: 20rpx;
+  font-size: 26rpx;
+  color: var(--tt-text-3);
+}
+
+/* 加载 */
+.appeal-loading {
   display: flex;
   justify-content: center;
-  padding: 40rpx;
+  padding: 60rpx 0;
 }

@@ -1,56 +1,154 @@
-@import '../admin-common.wxss';
+/* ===== 广告数据统计 · 白橙 ===== */
+.adstat-page {
+  padding-bottom: calc(32rpx + env(safe-area-inset-bottom));
+}
 
-.filter-bar {
+/* 统计区间 */
+.adstat-filter {
   display: flex;
   align-items: center;
   gap: 16rpx;
-  padding: 0 28rpx 16rpx;
+  padding: 24rpx;
 }
 
-.date-chip {
-  font-size: 26rpx;
-  padding: 12rpx 24rpx;
-  border-radius: 12rpx;
-  background: var(--td-bg-color-container, #fff);
+.adstat-pick {
+  flex: 1;
+  min-width: 0;
 }
 
-.chart {
-  display: flex;
-  align-items: flex-end;
-  gap: 8rpx;
-  padding: 32rpx 20rpx 16rpx;
-  min-height: 220rpx;
-  overflow-x: auto;
-}
-
-.bar-col {
+.adstat-date {
   display: flex;
   flex-direction: column;
   align-items: center;
-  min-width: 40rpx;
+  gap: 6rpx;
+  padding: 14rpx 12rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-brand-soft);
 }
 
-.bars {
+.adstat-date-label {
+  font-size: 21rpx;
+  color: var(--tt-text-3);
+}
+
+.adstat-date-value {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--tt-brand-deep);
+}
+
+.adstat-sep {
+  font-size: 24rpx;
+  color: var(--tt-text-3);
+}
+
+/* 趋势图例 */
+.adstat-legend {
+  display: flex;
+  align-items: center;
+  gap: 28rpx;
+  padding-bottom: 20rpx;
+  border-bottom: 2rpx solid var(--tt-line);
+}
+
+.adstat-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+.adstat-dot {
+  width: 16rpx;
+  height: 16rpx;
+  border-radius: 999rpx;
+}
+
+.adstat-dot.pv {
+  background: linear-gradient(180deg, #ff9a3d, var(--tt-brand));
+}
+
+.adstat-dot.click {
+  background: var(--tt-brand-soft-2);
+}
+
+/* 趋势图 */
+.adstat-chart {
   display: flex;
   align-items: flex-end;
-  gap: 4rpx;
-  height: 150rpx;
+  gap: 12rpx;
+  padding-top: 28rpx;
+  overflow-x: auto;
 }
 
-.bar {
-  width: 14rpx;
-  border-radius: 4rpx 4rpx 0 0;
+.adstat-col {
+  flex: 1;
+  min-width: 44rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12rpx;
 }
 
-.bar.pv {
-  background: var(--td-brand-color-5, #618dff);
+.adstat-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 6rpx;
+  height: 140rpx;
 }
 
-.bar.click {
-  background: var(--td-error-color-4, #ff9285);
+.adstat-bar {
+  width: 16rpx;
+  border-radius: 999rpx;
+  transition: height 0.4s ease;
 }
 
-.bar-label {
-  font-size: 18rpx;
-  margin-top: 8rpx;
+.adstat-bar.pv {
+  background: linear-gradient(180deg, #ff9a3d, var(--tt-brand));
+}
+
+.adstat-bar.click {
+  background: var(--tt-brand-soft-2);
+}
+
+.adstat-bar-label {
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+}
+
+/* 每日明细 */
+.adstat-list {
+  padding: 8rpx 24rpx;
+}
+
+.adstat-day {
+  margin-right: auto;
+  font-size: 26rpx;
+  color: var(--tt-text-2);
+}
+
+.adstat-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 110rpx;
+}
+
+.adstat-cell-num {
+  font-size: 28rpx;
+  font-weight: 700;
+  color: var(--tt-text-1);
+}
+
+.adstat-cell-label {
+  margin-top: 4rpx;
+  font-size: 21rpx;
+  color: var(--tt-text-3);
+}
+
+.adstat-loading {
+  display: flex;
+  justify-content: center;
+  padding: 28rpx 0;
 }

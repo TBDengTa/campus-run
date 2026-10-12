@@ -3,7 +3,11 @@ const config = require('../config');
 const { ApiError } = require('../utils/response');
 const User = require('../models/user');
 
+// 游客（未绑定账号）可访问的路径前缀（含路由内相对路径）
+const GUEST_ALLOW = ['^/api/auth/', '^/auth/', '^/bind$'];
+
 // 小程序端鉴权：校验 JWT，挂载 req.user（全量用户文档）
+// 游客 token（未绑定账号）→ req.guestOpenid，仅放行 GUEST_ALLOW 路径，其余 403003
 async function auth(req, res, next) {
   try {
     const header = req.headers.authorization || '';
@@ -15,6 +19,16 @@ async function auth(req, res, next) {
     } catch (e) {
       throw new ApiError(401, 401, '登录已过期，请重新登录');
     }
+
+    // 游客：未完成账号绑定
+    if (payload.guest) {
+      req.guestOpenid = payload.openid;
+      if (!GUEST_ALLOW.some((p) => new RegExp(p).test(req.path))) {
+        throw new ApiError(403, 403003, '请先登录账号');
+      }
+      return next();
+    }
+
     const user = await User.findById(payload.uid);
     if (!user) throw new ApiError(401, 401, '用户不存在，请重新登录');
 

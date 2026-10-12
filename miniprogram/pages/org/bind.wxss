@@ -1,32 +1,145 @@
-.org-page {
-  padding: 24rpx 0 48rpx;
-}
+/* ===== 学生认证 · 白橙 ===== */
 
-.picker-row,
-.input-row {
+/* 顶部说明 */
+.bind-hero {
   display: flex;
   align-items: center;
-  padding: 20rpx 0;
-  border-bottom: 1rpx solid var(--td-component-stroke);
+  gap: 22rpx;
+  margin: 0 var(--tt-gap) var(--tt-gap);
+  padding: 32rpx var(--tt-pad);
+  border-radius: var(--tt-radius);
+  background: var(--tt-card);
+  box-shadow: var(--tt-card-shadow);
 }
 
-.picker-label {
-  width: 140rpx;
-  font-size: 28rpx;
+.bind-hero-icon {
+  width: 92rpx;
+  height: 92rpx;
+  border-radius: 30rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--tt-brand-soft);
+  flex-shrink: 0;
 }
 
-.picker-value {
-  font-size: 30rpx;
-}
-
-.input {
+.bind-hero-body {
   flex: 1;
-  font-size: 30rpx;
+  min-width: 0;
 }
 
-.tip {
-  text-align: center;
-  font-size: 24rpx;
-  padding: 0 48rpx;
-  line-height: 36rpx;
+.bind-hero-title {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: var(--tt-text-1);
+}
+
+.bind-hero-sub {
+  margin-top: 8rpx;
+  font-size: 23rpx;
+  line-height: 34rpx;
+  color: var(--tt-text-3);
+}
+
+/* 已绑定信息（橙色浅底区块） */
+.bind-bound {
+  margin: 0 var(--tt-gap) var(--tt-gap);
+  padding: 28rpx var(--tt-pad);
+  border-radius: var(--tt-radius);
+  background: var(--tt-brand-soft);
+}
+
+.bind-bound-head {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+}
+
+.bind-bound-title {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--tt-brand-deep);
+}
+
+.bind-bound-chip {
+  margin-left: auto;
+  color: var(--tt-brand);
+  background: var(--tt-brand-soft-2);
+}
+
+.bind-bound-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin-top: 20rpx;
+}
+
+.bind-chip {
+  color: var(--tt-brand-deep);
+  background: var(--tt-card);
+  max-width: 100%;
+  white-space: normal;
+  line-height: 32rpx;
+}
+
+.bind-bound-hint {
+  margin-top: 18rpx;
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+/* 表单行 */
+.bind-row {
+  display: flex;
+  align-items: center;
+  padding: 26rpx 0;
+  border-bottom: 2rpx solid var(--tt-line);
+}
+
+.bind-row:last-child {
+  border-bottom: none;
+}
+
+.bind-row-label {
+  width: 150rpx;
+  flex-shrink: 0;
+  font-size: 28rpx;
+  color: var(--tt-text-2);
+}
+
+.bind-row-picker {
+  flex: 1;
+  min-width: 0;
+}
+
+.bind-row-value {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  font-size: 29rpx;
+  color: var(--tt-text-1);
+}
+
+.bind-row-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.bind-placeholder .bind-row-text {
+  color: var(--tt-text-3);
+}
+
+.bind-row-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 29rpx;
+  color: var(--tt-text-1);
+}
+
+/* 提交 */
+.bind-submit {
+  margin-top: 32rpx;
 }

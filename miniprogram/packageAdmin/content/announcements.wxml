@@ -1,46 +1,71 @@
-<view class="admin-page">
-  <view class="add-bar">
+<view class="page tt-page ann-page">
+  <view class="ann-head">
+    <text class="ann-head-text">共 {{list.length}} 条公告</text>
     <t-button theme="primary" size="small" bind:tap="openCreate">+ 发布公告</t-button>
   </view>
 
-  <view class="form-card" wx:if="{{form}}">
-    <view class="form-item">
-      <text class="form-item-label">标题 *</text>
-      <input class="form-item-input" value="{{form.title}}" bindinput="onField" data-field="title" />
+  <!-- ===== 编辑表单 ===== -->
+  <view class="tt-card" wx:if="{{form}}">
+    <view class="tt-section ann-form-title">
+      <text>{{form._id ? '编辑公告' : '发布公告'}}</text>
+      <text class="tt-section-extra" bind:tap="closeForm">收起</text>
     </view>
-    <view class="form-item">
-      <text class="form-item-label">内容</text>
-      <textarea class="ta" value="{{form.content}}" bindinput="onContent" maxlength="-1" auto-height />
+
+    <view class="ann-fitem">
+      <text class="ann-flabel">标题 <text class="ann-req">*</text></text>
+      <input class="ann-input" value="{{form.title}}" bindinput="onField" data-field="title" placeholder="请输入公告标题" />
     </view>
-    <view class="form-item">
-      <text class="form-item-label">排序权重（大者靠前）</text>
-      <input class="form-item-input" type="number" value="{{form.priority}}" bindinput="onField" data-field="priority" />
+
+    <view class="ann-fitem">
+      <text class="ann-flabel">内容</text>
+      <textarea class="ann-textarea" value="{{form.content}}" bindinput="onContent" maxlength="-1" auto-height placeholder="请输入公告内容" />
     </view>
-    <view class="form-item flex-between">
-      <text class="form-item-label" style="margin-bottom:0">启用</text>
+
+    <view class="ann-fitem">
+      <text class="ann-flabel">排序权重</text>
+      <input class="ann-input" type="number" value="{{form.priority}}" bindinput="onField" data-field="priority" placeholder="数值大者靠前" />
+    </view>
+
+    <view class="ann-fitem ann-fitem-switch">
+      <view class="ann-flabel-col">
+        <text class="ann-flabel">启用</text>
+        <text class="ann-fdesc">关闭后用户端不展示该公告</text>
+      </view>
       <t-switch value="{{form.enabled}}" bind:change="toggleEnabled" />
     </view>
-    <view class="form-actions">
+
+    <view class="ann-form-actions">
       <t-button theme="primary" block bind:tap="save">保存</t-button>
-      <t-button variant="outline" block bind:tap="closeForm">取消</t-button>
+      <t-button theme="default" variant="outline" block bind:tap="closeForm">取消</t-button>
     </view>
   </view>
 
-  <view class="list-card">
-    <view class="row" wx:for="{{list}}" wx:key="_id">
-      <view class="flex-1">
-        <view class="row-title">
-          {{item.title}}
-          <t-tag wx:if="{{!item.enabled}}" theme="default" variant="light" size="small">停用</t-tag>
-        </view>
-        <view class="row-sub">{{item.dateText}} · 权重 {{item.priority}}</view>
-      </view>
-      <view class="row-actions">
-        <view class="mini-btn" catch:tap="openEdit" data-id="{{item._id}}">编辑</view>
-        <view class="mini-btn danger" catch:tap="remove" data-id="{{item._id}}">删除</view>
-      </view>
-    </view>
-    <view class="empty-tip" wx:if="{{!list.length && !loading}}">暂无公告</view>
-    <t-loading wx:if="{{loading}}" theme="circular" size="40rpx" class="loading-more" />
+  <!-- ===== 公告列表 ===== -->
+  <view class="tt-section">
+    <text>公告列表</text>
+    <text class="tt-section-extra">权重高者靠前</text>
   </view>
+
+  <view class="tt-card">
+    <block wx:if="{{list.length}}">
+      <view class="tt-row ann-row" wx:for="{{list}}" wx:key="_id">
+        <view class="flex-1">
+          <view class="ann-row-title">
+            <text class="ann-row-name">{{item.title}}</text>
+            <t-tag wx:if="{{!item.enabled}}" theme="default" variant="light" size="small">停用</t-tag>
+            <t-tag wx:else theme="success" variant="light" size="small">启用</t-tag>
+          </view>
+          <view class="tt-row-sub">{{item.dateText}} · 权重 <text class="num-font tt-num-brand">{{item.priority}}</text></view>
+        </view>
+        <view class="ann-actions">
+          <view class="ann-btn" catch:tap="openEdit" data-id="{{item._id}}">编辑</view>
+          <view class="ann-btn danger" catch:tap="remove" data-id="{{item._id}}">删除</view>
+        </view>
+      </view>
+    </block>
+    <view class="tt-empty" wx:if="{{!list.length && !loading}}">暂无公告</view>
+    <t-loading wx:if="{{loading}}" theme="circular" size="40rpx" class="ann-loading" />
+  </view>
+
+  <view class="tt-footer">公告按权重降序展示给用户端</view>
 </view>

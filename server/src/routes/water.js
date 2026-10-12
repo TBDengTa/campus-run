@@ -1,5 +1,5 @@
 const express = require('express');
-const { wrap, ok } = require('../utils/response');
+const { wrap, ok, ApiError } = require('../utils/response');
 const { auth } = require('../middlewares/auth');
 const WaterRecord = require('../models/water-record');
 const { todayKey } = require('../utils/dates');
@@ -27,7 +27,7 @@ router.post(
   wrap(async (req, res) => {
     const amount = Number(req.body?.amount);
     if (!amount || amount <= 0 || amount > 2000) {
-      return ok(res, { error: '单次饮水量应在 1-2000ml 之间' });
+      throw new ApiError(400, 400, '单次饮水量应在 1-2000ml 之间');
     }
     const type = req.body?.type || '水';
     const doc = await getOrCreate(req.user.openid, todayKey());
@@ -44,7 +44,7 @@ router.put(
   wrap(async (req, res) => {
     const target = Number(req.body?.target);
     if (!target || target < 500 || target > 6000) {
-      return ok(res, { error: '目标应在 500-6000ml 之间' });
+      throw new ApiError(400, 400, '目标应在 500-6000ml 之间');
     }
     const doc = await getOrCreate(req.user.openid, todayKey());
     doc.target = target;

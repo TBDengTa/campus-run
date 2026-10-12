@@ -1,66 +1,122 @@
-<view class="page body-page">
-  <view class="card">
-    <view class="card-title">身体数据</view>
-    <view class="form-row">
-      <text class="form-label">性别</text>
-      <view class="gender-group">
-        <view class="gender-chip {{gender === 1 ? 'active' : ''}}" bind:tap="pickGender" data-value="1">男</view>
-        <view class="gender-chip {{gender === 2 ? 'active' : ''}}" bind:tap="pickGender" data-value="2">女</view>
-        <view class="gender-chip {{gender === 0 ? 'active' : ''}}" bind:tap="pickGender" data-value="0">保密</view>
+<view class="page tt-page">
+  <!-- ===== 主视觉：我的 BMI ===== -->
+  <view class="tt-hero" wx:if="{{saved && saved.bmi}}">
+    <view class="body-hero-body">
+      <view class="body-hero-top">
+        <text class="body-hero-label">我的 BMI</text>
+        <text class="body-hero-badge">{{saved.bmiLevelText || '待评估'}}</text>
+      </view>
+      <view class="body-hero-num">
+        <text class="num-font body-hero-value">{{saved.bmi}}</text>
+      </view>
+      <view class="body-hero-sub">
+        <t-icon name="heart" size="26rpx" color="rgba(255,255,255,0.9)" />
+        <text>已按身体数据为你匹配目标计划</text>
       </view>
     </view>
-    <view class="form-row">
-      <text class="form-label">身高 cm</text>
-      <input class="form-input" type="digit" value="{{height}}" placeholder="如 170" bindinput="inputHeight" />
-    </view>
-    <view class="form-row">
-      <text class="form-label">体重 kg</text>
-      <input class="form-input" type="digit" value="{{weight}}" placeholder="如 60" bindinput="inputWeight" />
-    </view>
-    <view class="form-col">
-      <text class="form-label">运动强度偏好</text>
-      <view class="pref-group">
-        <view
-          wx:for="{{preferenceOptions}}"
-          wx:key="value"
-          class="pref-chip {{preferenceLevel === item.value ? 'active' : ''}}"
-          bind:tap="pickPreference"
-          data-value="{{item.value}}"
-        >
-          <view class="pref-name">{{item.label}}</view>
-          <view class="pref-desc">{{item.desc}}</view>
-        </view>
+  </view>
+
+  <!-- ===== 基础资料 ===== -->
+  <view class="tt-section" id="base-card">基础资料</view>
+  <view class="tt-card">
+    <view class="body-row">
+      <text class="body-label">性别</text>
+      <view class="body-gender">
+        <view class="body-gender-chip {{gender === 1 ? 'active' : ''}}" bind:tap="pickGender" data-value="1">男</view>
+        <view class="body-gender-chip {{gender === 2 ? 'active' : ''}}" bind:tap="pickGender" data-value="2">女</view>
+        <view class="body-gender-chip {{gender === 0 ? 'active' : ''}}" bind:tap="pickGender" data-value="0">保密</view>
       </view>
     </view>
 
-    <t-button theme="primary" block loading="{{submitting}}" bind:tap="submit" class="mt-24">
+    <view class="tt-divider"></view>
+
+    <view class="body-row">
+      <text class="body-label">身高</text>
+      <view class="body-input-wrap">
+        <input class="body-input num-font" type="digit" value="{{height}}" placeholder="如 170" placeholder-class="body-ph" bindinput="inputHeight" />
+        <text class="body-unit">cm</text>
+      </view>
+    </view>
+
+    <view class="body-row">
+      <text class="body-label">体重</text>
+      <view class="body-input-wrap">
+        <input class="body-input num-font" type="digit" value="{{weight}}" placeholder="如 60" placeholder-class="body-ph" bindinput="inputWeight" />
+        <text class="body-unit">kg</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- ===== 运动强度偏好 ===== -->
+  <view class="tt-section">运动强度偏好</view>
+  <view class="tt-card">
+    <view class="body-pref-group">
+      <view
+        wx:for="{{preferenceOptions}}"
+        wx:key="value"
+        class="body-pref-chip {{preferenceLevel === item.value ? 'active' : ''}}"
+        bind:tap="pickPreference"
+        data-value="{{item.value}}"
+      >
+        <view class="body-pref-name">{{item.label}}</view>
+        <view class="body-pref-desc">{{item.desc}}</view>
+      </view>
+    </view>
+  </view>
+
+  <!-- ===== 提交 ===== -->
+  <view class="body-action">
+    <t-button theme="primary" block loading="{{submitting}}" bind:tap="submit">
       保存并匹配目标计划
     </t-button>
   </view>
 
-  <view class="card" wx:if="{{saved}}">
-    <view class="card-title">我的 BMI</view>
-    <view class="bmi-row">
-      <view class="bmi-num num-font">{{saved.bmi}}</view>
-      <t-tag theme="primary" variant="light" size="medium">{{saved.bmiLevelText}}</t-tag>
-    </view>
-    <block wx:if="{{saved.plan}}">
-      <t-divider content="已匹配计划" align="left" />
-      <view class="plan-name">{{saved.plan.name}}</view>
-      <view class="plan-grid">
-        <view class="plan-item">
-          <view class="num-font">{{saved.plan.daily.steps}}</view>
-          <view class="text-secondary">每日步数</view>
+  <!-- ===== 已匹配计划 ===== -->
+  <block wx:if="{{saved && saved.plan}}">
+    <view class="tt-section" id="plan-card">我的目标计划<text class="tt-section-extra">每日 / 每周</text></view>
+    <view class="tt-card">
+      <view class="body-plan-head">
+        <t-icon name="flag" size="34rpx" color="var(--tt-brand)" />
+        <text class="body-plan-name">{{saved.plan.name}}</text>
+        <text class="tt-chip tt-chip-brand">已匹配</text>
+      </view>
+
+      <view class="tt-divider"></view>
+
+      <view class="tt-stat-row body-plan-row">
+        <view class="tt-stat">
+          <view class="tt-stat-value body-plan-stat num-font">{{saved.plan.daily.stepsText}}</view>
+          <view class="tt-stat-label">步数</view>
         </view>
-        <view class="plan-item">
-          <view class="num-font">{{saved.plan.daily.distance}}m</view>
-          <view class="text-secondary">每日距离</view>
+        <view class="tt-stat">
+          <view class="tt-stat-value body-plan-stat num-font">{{saved.plan.daily.distanceText}}</view>
+          <view class="tt-stat-label">距离</view>
         </view>
-        <view class="plan-item">
-          <view class="num-font">{{saved.plan.daily.calories}}</view>
-          <view class="text-secondary">每日千卡</view>
+        <view class="tt-stat">
+          <view class="tt-stat-value body-plan-stat num-font">{{saved.plan.daily.calories}}</view>
+          <view class="tt-stat-label">千卡</view>
+        </view>
+        <view class="tt-stat">
+          <view class="tt-stat-value body-plan-stat num-font">{{saved.plan.daily.durationMinutes}}</view>
+          <view class="tt-stat-label">分钟</view>
         </view>
       </view>
-    </block>
-  </view>
+
+      <block wx:if="{{saved.plan.weekly}}">
+        <view class="body-plan-label">每周目标</view>
+        <view class="tt-stat-row body-plan-row">
+          <view class="tt-stat">
+            <view class="tt-stat-value body-plan-stat num-font">{{saved.plan.weekly.stepsText}}</view>
+            <view class="tt-stat-label">步数</view>
+          </view>
+          <view class="tt-stat">
+            <view class="tt-stat-value body-plan-stat num-font">{{saved.plan.weekly.distanceText}}</view>
+            <view class="tt-stat-label">距离</view>
+          </view>
+        </view>
+      </block>
+    </view>
+  </block>
+
+  <view class="tt-footer">BMI 与计划仅供健康参考，运动请量力而行</view>
 </view>

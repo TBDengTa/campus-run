@@ -1,60 +1,132 @@
-<view class="admin-page">
-  <view class="add-bar">
-    <t-button theme="primary" size="small" bind:tap="openCreate">+ 新增广告位</t-button>
+<view class="page tt-page slot-page">
+  <!-- ===== 概览 + 新增 ===== -->
+  <view class="tt-card slot-head">
+    <view class="flex-1">
+      <view class="slot-head-title">广告位</view>
+      <view class="slot-head-sub">共 {{list.length}} 个展示位</view>
+    </view>
+    <t-button theme="primary" size="small" icon="add" bind:tap="openCreate">新增</t-button>
   </view>
 
-  <view class="form-card" wx:if="{{form}}">
-    <view class="form-item">
-      <text class="form-item-label">Key *（如 home_banner）</text>
-      <input class="form-item-input" value="{{form.key}}" bindinput="onField" data-field="key" placeholder="英文标识，唯一" />
+  <!-- ===== 新增 / 编辑表单 ===== -->
+  <view class="tt-card" wx:if="{{form}}">
+    <view class="slot-form-head">
+      <text class="slot-form-title">{{form._id ? '编辑广告位' : '新增广告位'}}</text>
+      <view class="slot-close" bind:tap="closeForm">
+        <t-icon name="close" size="34rpx" color="var(--tt-text-2)" />
+      </view>
     </view>
-    <view class="form-item">
-      <text class="form-item-label">名称 *</text>
-      <input class="form-item-input" value="{{form.name}}" bindinput="onField" data-field="name" />
+
+    <view class="tt-divider"></view>
+
+    <view class="slot-field">
+      <t-input
+        borderless
+        label="Key"
+        value="{{form.key}}"
+        placeholder="英文标识，如 home_banner"
+        bind:change="onField"
+        data-field="key"
+      />
     </view>
-    <view class="form-item">
-      <text class="form-item-label">类型</text>
-      <picker range="{{types}}" range-key="label" value="{{typeIndex}}" bindchange="onType">
-        <view class="form-item-input">{{types[typeIndex].label}}</view>
+
+    <view class="slot-field">
+      <t-input
+        borderless
+        label="名称"
+        value="{{form.name}}"
+        placeholder="广告位名称（必填）"
+        bind:change="onField"
+        data-field="name"
+      />
+    </view>
+
+    <view class="slot-field slot-field-pick">
+      <text class="slot-field-label slot-pick-label">类型</text>
+      <picker class="slot-pick-body" range="{{types}}" range-key="label" value="{{typeIndex}}" bindchange="onType">
+        <view class="slot-picker">
+          <text class="slot-picker-text">{{types[typeIndex].label}}</text>
+          <t-icon name="chevron-down" size="30rpx" color="var(--tt-text-3)" />
+        </view>
       </picker>
     </view>
-    <view class="form-item">
-      <text class="form-item-label">所在页面</text>
-      <input class="form-item-input" value="{{form.page}}" bindinput="onField" data-field="page" placeholder="如 首页" />
+
+    <view class="slot-field">
+      <t-input
+        borderless
+        label="所在页面"
+        value="{{form.page}}"
+        placeholder="如 首页"
+        bind:change="onField"
+        data-field="page"
+      />
     </view>
-    <view class="form-item">
-      <text class="form-item-label">最大素材数</text>
+
+    <view class="slot-field slot-field-row">
+      <view class="flex-1">
+        <view class="slot-field-label">最大素材数</view>
+        <view class="slot-field-tip">同一位最多同时展示的素材条数</view>
+      </view>
       <t-stepper value="{{form.maxSponsors}}" min="1" max="20" bind:change="onMaxChange" />
     </view>
-    <view class="form-item flex-between">
-      <text class="form-item-label" style="margin-bottom:0">独占位（只展示权重最高一条）</text>
+
+    <view class="slot-field slot-field-row">
+      <view class="flex-1">
+        <view class="slot-field-label">独占位</view>
+        <view class="slot-field-tip">只展示权重最高的一条素材</view>
+      </view>
       <t-switch value="{{form.exclusive}}" bind:change="toggleExclusive" />
     </view>
-    <view class="form-item flex-between">
-      <text class="form-item-label" style="margin-bottom:0">启用</text>
+
+    <view class="slot-field slot-field-row">
+      <view class="flex-1">
+        <view class="slot-field-label">启用</view>
+        <view class="slot-field-tip">停用后该广告位不再下发</view>
+      </view>
       <t-switch value="{{form.enabled}}" bind:change="toggleEnabled" />
     </view>
-    <view class="form-actions">
+
+    <view class="slot-form-actions">
       <t-button theme="primary" block bind:tap="save">保存</t-button>
-      <t-button variant="outline" block bind:tap="closeForm">取消</t-button>
+      <t-button theme="default" block bind:tap="closeForm">取消</t-button>
     </view>
   </view>
 
-  <view class="list-card">
-    <view class="row" wx:for="{{list}}" wx:key="_id">
+  <!-- ===== 列表 ===== -->
+  <view class="tt-section">
+    <text>广告位列表</text>
+    <text class="tt-section-extra">{{list.length}} 条</text>
+  </view>
+
+  <view class="tt-card slot-list">
+    <view class="tt-row" wx:for="{{list}}" wx:key="_id">
+      <view class="slot-icon">
+        <t-icon name="view-module" size="40rpx" color="var(--tt-brand)" />
+      </view>
+
       <view class="flex-1">
-        <view class="row-title">
-          {{item.name}}
+        <view class="slot-name">
+          <text class="tt-row-title">{{item.name}}</text>
           <t-tag wx:if="{{!item.enabled}}" theme="default" variant="light" size="small">停用</t-tag>
         </view>
-        <view class="row-sub">{{item.key}} · {{item.page || '-'}}</view>
+        <view class="slot-meta">
+          <text class="tt-chip">{{item.key}}</text>
+          <text class="slot-meta-text">{{item.page || '未指定页面'}}</text>
+        </view>
+        <view class="tt-row-sub">最多 {{item.maxSponsors}} 条{{item.exclusive ? ' · 独占' : ''}}</view>
       </view>
-      <view class="row-actions">
-        <view class="mini-btn" catch:tap="openEdit" data-id="{{item._id}}">编辑</view>
-        <view class="mini-btn danger" catch:tap="remove" data-id="{{item._id}}">删除</view>
+
+      <view class="slot-acts">
+        <view class="slot-act" catch:tap="openEdit" data-id="{{item._id}}">编辑</view>
+        <view class="slot-act danger" catch:tap="remove" data-id="{{item._id}}">删除</view>
       </view>
     </view>
-    <view class="empty-tip" wx:if="{{!list.length && !loading}}">暂无广告位</view>
-    <t-loading wx:if="{{loading}}" theme="circular" size="40rpx" class="loading-more" />
+
+    <view class="tt-empty" wx:if="{{!list.length && !loading}}">暂无广告位，点击右上角「新增」</view>
+    <view class="slot-loading" wx:if="{{loading}}">
+      <t-loading theme="circular" size="40rpx" />
+    </view>
   </view>
+
+  <view class="tt-footer">广告位 Key 一经使用请勿随意修改</view>
 </view>

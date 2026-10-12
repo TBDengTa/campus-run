@@ -15,17 +15,19 @@ function haversine(lat1, lng1, lat2, lng2) {
 
 Page({
   data: {
-    state: 'idle', // idle | running | paused
+    state: 'idle', // idle | running | paused | finished
+    stateText: '准备就绪',
     latitude: 39.909,
     longitude: 116.397,
     scale: 16,
     polyline: [],
     markers: [],
-    distanceText: '0.00 km',
+    distanceText: '0.00',
     durationText: '00:00',
     paceText: "--'--\"",
     saving: false,
     locationReady: false,
+    isTeacher: false,
   },
 
   onLoad() {
@@ -34,8 +36,60 @@ Page({
     this.seconds = 0;
     this.timer = null;
     this.lastPoint = null;
-    this.initLocation();
   },
+
+  onShow() {
+    this.syncTabBar();
+    this.bootstrap();
+  },
+
+  // 先确认角色，再决定是否进入跑步流程
+  async bootstrap() {
+    const isTeacher = await this.syncRole();
+    // 教师账号不参与运动记录，停在此页提示
+    if (isTeacher) {
+      this.applyState('idle');
+      return;
+    }
+    // tab 页常驻：回到本页时若未开始跑步，刷新一次定位与状态提示
+    if (this.data.state === 'idle' || this.data.state === 'finished') {
+      this.applyState('idle');
+      if (!this.data.locationReady) this.initLocation();
+    } else {
+      this.applyState(this.data.state);
+    }
+  },
+
+  // 角色（教师不参与运动记录）
+  async syncRole() {
+    try {
+      await getApp().ensureLogin();
+    } catch (e) {
+      // 未配置后端时忽略，按学生处理
+    }
+    const user = (getApp().globalData && getApp().globalData.userInfo) || {};
+    const isTeacher = user.role === 'teacher';
+    if (isTeacher !== this.data.isTeacher) this.setData({ isTeacher });
+    return isTeacher;
+  },
+
+  // 自定义 tabBar 选中态
+  syncTabBar() {
+    if (typeof this.getTabBar !== 'function') return;
+    const bar = this.getTabBar();
+    if (bar && typeof bar.setActive === 'function') bar.setActive('/pages/run/index');
+  },
+
+  goHome() {
+    wx.switchTab({ url: '/pages/home/home' });
+  },
+
+  // 统一维护状态与状态文案
+  applyState(state) {
+    const map = { idle: '准备就绪', running: '跑步中', paused: '已暂停', finished: '已结束' };
+    this.setData({ state, stateText: map[state] || '准备就绪' });
+  },
+
 
   onUnload() {
     this.stopTimer();
@@ -111,7 +165,7 @@ Page({
       polyline: [
         {
           points: this.points,
-          color: '#0052d9',
+          color: '#ff6b00',
           width: 6,
           arrowLine: true,
         },
@@ -142,29 +196,34 @@ Page({
       ? `${Math.floor(paceSeconds / 60)}'${String(Math.round(paceSeconds % 60)).padStart(2, '0')}"`
       : "--'--\"";
     this.setData({
-      distanceText: `${(this.distance / 1000).toFixed(2)} km`,
+      distanceText: `${(this.distance / 1000).toFixed(2)}`,
       durationText: fmt.formatDuration(this.seconds),
       paceText,
     });
   },
 
   start() {
+    if (this.data.isTeacher) {
+      wx.showToast({ title: '教师账号不参与运动记录', icon: 'none' });
+      return;
+    }
     if (!this.data.locationReady) {
       this.initLocation();
       return;
     }
-    this.setData({ state: 'running' });
+    this.applyState('running');
+    this.startTime = Date.now();
     this.startLocationUpdate();
     this.startTimer();
   },
 
   pause() {
-    this.setData({ state: 'paused' });
+    this.applyState('paused');
     this.stopTimer();
   },
 
   resume() {
-    this.setData({ state: 'running' });
+    this.applyState('running');
     this.startTimer();
   },
 
@@ -178,7 +237,7 @@ Page({
       });
       return;
     }
-    this.setData({ state: 'finished' });
+    this.applyState('finished');
     this.stopTimer();
     this.stopLocationUpdate();
     this.save();
@@ -202,7 +261,7 @@ Page({
       const badges = result.newBadges || [];
       wx.showModal({
         title: '已保存',
-        content: `${this.data.distanceText} · ${this.data.durationText}${badges.length ? `，获得「${badges.map((b) => b.name).join('」「')}」徽章！` : ''}`,
+        content: `${this.data.distanceText} km · ${this.data.durationText}${badges.length ? `，获得「${badges.map((b) => b.name).join('」「')}」徽章！` : ''}`,
         confirmText: '查看记录',
         cancelText: '返回',
         success: (r) => {
@@ -219,7 +278,7 @@ Page({
         return;
       }
       wx.showModal({ title: '保存失败', content: e.message, showCancel: false });
-      this.setData({ state: 'paused' });
+      this.applyState('paused');
     } finally {
       this.setData({ saving: false });
     }
@@ -231,7 +290,9 @@ Page({
     this.seconds = 0;
     this.lastPoint = null;
     this.startTime = null;
-    this.setData({ state: 'idle', polyline: [], markers: [] });
+    this.setData({ polyline: [], markers: [] });
+    this.applyState('idle');
     this.updateStats();
+    this.initLocation();
   },
 });

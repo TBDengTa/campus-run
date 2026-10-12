@@ -1,78 +1,113 @@
-<view class="admin-page">
-  <view class="add-bar">
+<view class="page tt-page badge-page">
+  <view class="badge-head">
+    <text class="badge-head-text">共 {{list.length}} 枚徽章</text>
     <t-button theme="primary" size="small" bind:tap="openCreate">+ 新增徽章</t-button>
   </view>
 
-  <view class="form-card" wx:if="{{form}}">
-    <view class="form-cols">
-      <view class="form-item half">
-        <text class="form-item-label">Key *（英文唯一）</text>
-        <input class="form-item-input" value="{{form.key}}" bindinput="onField" data-field="key" />
+  <!-- ===== 编辑表单 ===== -->
+  <view class="tt-card" wx:if="{{form}}">
+    <view class="tt-section badge-form-title">
+      <text>{{form._id ? '编辑徽章' : '新增徽章'}}</text>
+      <text class="tt-section-extra" bind:tap="closeForm">收起</text>
+    </view>
+
+    <view class="badge-fitem">
+      <text class="badge-flabel">Key <text class="badge-req">*</text></text>
+      <input class="badge-input" value="{{form.key}}" bindinput="onField" data-field="key" placeholder="唯一英文标识" />
+    </view>
+
+    <view class="badge-fitem">
+      <text class="badge-flabel">名称 <text class="badge-req">*</text></text>
+      <input class="badge-input" value="{{form.name}}" bindinput="onField" data-field="name" placeholder="展示名称" />
+    </view>
+
+    <view class="badge-fitem">
+      <text class="badge-flabel">描述</text>
+      <input class="badge-input" value="{{form.description}}" bindinput="onField" data-field="description" placeholder="一句话说明获取方式" />
+    </view>
+
+    <view class="badge-fitem">
+      <text class="badge-flabel">图标 URL</text>
+      <input class="badge-input" value="{{form.icon}}" bindinput="onField" data-field="icon" placeholder="可选，不填用默认图标" />
+    </view>
+
+    <view class="badge-fitem">
+      <text class="badge-flabel">达成条件</text>
+      <picker range="{{types}}" range-key="label" value="{{typeIndex}}" bindchange="onType">
+        <view class="badge-input badge-picker">
+          <text>{{types[typeIndex].label}}</text>
+          <t-icon name="chevron-down" size="28rpx" color="var(--tt-text-3)" />
+        </view>
+      </picker>
+    </view>
+
+    <view class="badge-fitem">
+      <text class="badge-flabel">目标值 <text class="badge-req">*</text></text>
+      <input class="badge-input" type="number" value="{{form.target}}" bindinput="onField" data-field="target" placeholder="达成阈值" />
+    </view>
+
+    <view class="badge-frow">
+      <view class="badge-fcol">
+        <text class="badge-flabel-sm">阶梯组（可选）</text>
+        <input class="badge-input" value="{{form.tierGroup}}" bindinput="onField" data-field="tierGroup" placeholder="如 steps_tier" />
       </view>
-      <view class="form-item half">
-        <text class="form-item-label">名称 *</text>
-        <input class="form-item-input" value="{{form.name}}" bindinput="onField" data-field="name" />
+      <view class="badge-fcol">
+        <text class="badge-flabel-sm">阶梯等级</text>
+        <input class="badge-input" type="number" value="{{form.tierLevel}}" bindinput="onField" data-field="tierLevel" placeholder="0" />
       </view>
     </view>
-    <view class="form-item">
-      <text class="form-item-label">描述</text>
-      <input class="form-item-input" value="{{form.description}}" bindinput="onField" data-field="description" />
+
+    <view class="badge-fitem">
+      <text class="badge-flabel">排序</text>
+      <input class="badge-input" type="number" value="{{form.sort}}" bindinput="onField" data-field="sort" placeholder="数值小者靠前" />
     </view>
-    <view class="form-item">
-      <text class="form-item-label">图标 URL（可选，不填用默认）</text>
-      <input class="form-item-input" value="{{form.icon}}" bindinput="onField" data-field="icon" />
-    </view>
-    <view class="form-cols">
-      <view class="form-item half">
-        <text class="form-item-label">达成条件</text>
-        <picker range="{{types}}" range-key="label" value="{{typeIndex}}" bindchange="onType">
-          <view class="form-item-input">{{types[typeIndex].label}}</view>
-        </picker>
+
+    <view class="badge-fitem badge-fitem-switch">
+      <view class="badge-flabel-col">
+        <text class="badge-flabel">启用</text>
+        <text class="badge-fdesc">关闭后不再对新达成用户发放</text>
       </view>
-      <view class="form-item half">
-        <text class="form-item-label">目标值 *</text>
-        <input class="form-item-input" type="number" value="{{form.target}}" bindinput="onField" data-field="target" />
-      </view>
-    </view>
-    <view class="form-cols">
-      <view class="form-item half">
-        <text class="form-item-label">阶梯组（可选）</text>
-        <input class="form-item-input" value="{{form.tierGroup}}" bindinput="onField" data-field="tierGroup" />
-      </view>
-      <view class="form-item half">
-        <text class="form-item-label">阶梯等级</text>
-        <input class="form-item-input" type="number" value="{{form.tierLevel}}" bindinput="onField" data-field="tierLevel" />
-      </view>
-    </view>
-    <view class="form-item">
-      <text class="form-item-label">排序（小者靠前）</text>
-      <input class="form-item-input" type="number" value="{{form.sort}}" bindinput="onField" data-field="sort" />
-    </view>
-    <view class="form-item flex-between">
-      <text class="form-item-label" style="margin-bottom:0">启用</text>
       <t-switch value="{{form.enabled}}" bind:change="toggleEnabled" />
     </view>
-    <view class="form-actions">
+
+    <view class="badge-form-actions">
       <t-button theme="primary" block bind:tap="save">保存</t-button>
-      <t-button variant="outline" block bind:tap="closeForm">取消</t-button>
+      <t-button theme="default" variant="outline" block bind:tap="closeForm">取消</t-button>
     </view>
   </view>
 
-  <view class="list-card">
-    <view class="row" wx:for="{{list}}" wx:key="_id">
-      <view class="flex-1">
-        <view class="row-title">
-          {{item.name}}
-          <t-tag wx:if="{{!item.enabled}}" theme="default" variant="light" size="small">停用</t-tag>
-        </view>
-        <view class="row-sub">{{item.typeLabel}} ≥ {{item.target}}{{item.tierGroup ? ' · ' + item.tierGroup + ' Lv' + item.tierLevel : ''}}</view>
-      </view>
-      <view class="row-actions">
-        <view class="mini-btn" catch:tap="openEdit" data-id="{{item._id}}">编辑</view>
-        <view class="mini-btn danger" catch:tap="remove" data-id="{{item._id}}">删除</view>
-      </view>
-    </view>
-    <view class="empty-tip" wx:if="{{!list.length && !loading}}">暂无徽章定义</view>
-    <t-loading wx:if="{{loading}}" theme="circular" size="40rpx" class="loading-more" />
+  <!-- ===== 徽章列表 ===== -->
+  <view class="tt-section">
+    <text>徽章列表</text>
+    <text class="tt-section-extra">条件达成自动发放</text>
   </view>
+
+  <view class="tt-card">
+    <block wx:if="{{list.length}}">
+      <view class="tt-row badge-row" wx:for="{{list}}" wx:key="_id">
+        <view class="badge-cap">
+          <t-icon name="star" size="36rpx" color="var(--tt-brand)" />
+        </view>
+        <view class="flex-1">
+          <view class="badge-row-title">
+            <text class="badge-row-name">{{item.name}}</text>
+            <t-tag wx:if="{{!item.enabled}}" theme="default" variant="light" size="small">停用</t-tag>
+            <t-tag wx:else theme="success" variant="light" size="small">启用</t-tag>
+          </view>
+          <view class="tt-row-sub">
+            {{item.typeLabel}} ≥ <text class="num-font tt-num-brand">{{item.target}}</text>
+            <text wx:if="{{item.tierGroup}}"> · {{item.tierGroup}} Lv{{item.tierLevel}}</text>
+          </view>
+        </view>
+        <view class="badge-actions">
+          <view class="badge-btn" catch:tap="openEdit" data-id="{{item._id}}">编辑</view>
+          <view class="badge-btn danger" catch:tap="remove" data-id="{{item._id}}">删除</view>
+        </view>
+      </view>
+    </block>
+    <view class="tt-empty" wx:if="{{!list.length && !loading}}">暂无徽章定义</view>
+    <t-loading wx:if="{{loading}}" theme="circular" size="40rpx" class="badge-loading" />
+  </view>
+
+  <view class="tt-footer">徽章 key 创建后不建议修改，历史记录依赖该值</view>
 </view>

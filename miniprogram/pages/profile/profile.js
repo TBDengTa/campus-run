@@ -7,13 +7,22 @@ Page({
     stats: null,
     monitor: null,
     isAdmin: false,
+    isTeacher: false,
     canManagePerms: false,
     roleText: '学生',
     banned: false,
   },
 
   onShow() {
+    this.syncTabBar();
     this.refresh();
+  },
+
+  // 自定义 tabBar 选中态（教师端导航项与学生不同）
+  syncTabBar() {
+    if (typeof this.getTabBar !== 'function') return;
+    const bar = this.getTabBar();
+    if (bar && typeof bar.setActive === 'function') bar.setActive('/pages/profile/profile');
   },
 
   async refresh() {
@@ -25,11 +34,13 @@ Page({
         banned = true;
       }
       const perms = user.effectivePermissions || [];
+      const isTeacher = user.role === 'teacher';
       this.setData({
         user,
+        isTeacher,
         isAdmin: !!user.isManager,
         canManagePerms: perms.includes('*') || perms.includes('permission.manage'),
-        roleText: user.role === 'teacher' ? '教师' : '学生',
+        roleText: isTeacher ? '教师' : '学生',
         banned,
         stats: {
           totalSteps: fmt.formatNumber(user.totalSteps || 0),
@@ -37,6 +48,7 @@ Page({
           totalDays: user.totalDays || 0,
         },
       });
+      this.syncTabBar();
     } catch (e) {
       if (e.code === 403001) {
         // 封禁用户仍可看基本页
@@ -86,5 +98,24 @@ Page({
 
   goBanned() {
     wx.navigateTo({ url: '/pages/banned/banned' });
+  },
+
+  goChangePwd() {
+    wx.navigateTo({ url: '/pages/password/change' });
+  },
+
+  // 退出登录：清除本机会话 → 回登录页（已绑定微信的账号重新进入会自动登录）
+  logout() {
+    wx.showModal({
+      title: '退出登录',
+      content: '将清除本机登录信息并返回登录页',
+      confirmText: '退出',
+      confirmColor: '#d54941',
+      success: (r) => {
+        if (!r.confirm) return;
+        auth.logout();
+        wx.reLaunch({ url: '/pages/auth-login/auth-login' });
+      },
+    });
   },
 });

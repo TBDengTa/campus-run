@@ -14,10 +14,10 @@
 | schoolId / departmentId | ObjectId → organizations | 组织归属（冗余 schoolName/departmentName 便于展示） |
 | className / specialty | String | 班级 / 专业 |
 | gender / birthdate | Number / Date | 0 未知 1 男 2 女 |
-| role | String | `user` / `admin` |
+| role | String | `student` / `teacher`（管理员 = 持有 `superadmin` 权限组） |
 | status | String | `active` / `banned` |
 | banReason / banType / bannedUntil / bannedAt | — | 封禁信息（banType: sync 系统检测 / manual 人工） |
-| totalSteps / totalDistance / totalDays | Number | 汇总缓存（同步后刷新） |
+| totalSteps / totalDistance / totalDays | Number | 汇总缓存（同步后刷新，供徽章与个人主页展示） |
 
 ### wx_sessions
 `openid`(unique) + `sessionKey` —— 用于解密微信运动数据，登录时更新。
@@ -42,6 +42,21 @@
 ### goal_plans / body_data / user_goals
 BMI 预设计划（bmiMin~bmiMax × 强度偏好匹配）；用户身体数据（height/weight/bmi/bmiLevel）；
 用户当前生效计划（autoMatched 标记）。
+
+## 排行榜
+
+榜单不新增集合，全部由 `run_records` 实时聚合（接口 `GET /api/ranking`），只用既有索引：
+
+| 维度 | 管道 | 说明 |
+|---|---|---|
+| 日榜 `/range=day` | `$match {date: 今天, steps>0}` → `$group by openid` | 走 `(date)` 索引 |
+| 周榜 `/range=week` | `$match {date: 本周一~今天}` → `$group by openid` | 同上 |
+| 总榜 `/range=total` | `$match {steps>0}` → `$group by openid` | 走 `(openid)` 索引；110k 文档实测约 0.2s |
+
+- 组织范围过滤在 `$lookup users` 之后按 `schoolId / departmentId / className` 匹配，并剔除 `status='banned'`。
+- 聚合结果按步数倒序，内部最多扫描 2000 名、对外返回前 50 名；`openid` 不外泄。
+- 服务端对聚合结果做 60s 进程内缓存，避免大集合被高频重复聚合。
+- 不依赖 `users.totalSteps` 缓存（该字段仅由同步刷新，新迁移数据可能为 0，会造成总榜空榜）。
 
 ## 赚步数与反作弊
 

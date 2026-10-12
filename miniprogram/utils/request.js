@@ -35,6 +35,20 @@ function clearAuth() {
   wx.removeStorageSync(USER_KEY);
 }
 
+// 退出登录：清除本机登录信息与内存用户态（下次访问接口时会自动重新登录）
+function logout() {
+  clearAuth();
+  try {
+    const app = getApp();
+    if (app && app.globalData) {
+      app.globalData.userInfo = null;
+      if (app.globalData.today !== undefined) app.globalData.today = null;
+    }
+  } catch (e) {
+    // App 未就绪时忽略
+  }
+}
+
 let loginPromise = null;
 
 // 静默登录：wx.login → code → 后端换 token
@@ -104,6 +118,14 @@ function rawRequest({ url, method = 'GET', data, header = {}, timeout = 15000, _
           reject(err);
           return;
         }
+        // 未绑定账号访问业务接口 → 统一跳登录页
+        if (statusCode === 403 && body.code === 403003) {
+          const err = new Error(body.message || '请先登录账号');
+          err.code = 403003;
+          reject(err);
+          gotoLogin();
+          return;
+        }
         if (statusCode >= 200 && statusCode < 300 && body.code === 0) {
           resolve(body.data);
           return;
@@ -121,7 +143,28 @@ function rawRequest({ url, method = 'GET', data, header = {}, timeout = 15000, _
   });
 }
 
-// 业务请求：401 时自动重登一次再试
+let redirectingToLogin = false;
+function gotoLogin() {
+  if (redirectingToLogin) return;
+  redirectingToLogin = true;
+  // 注意：保留 token（游客 token 需在登录页完成账号绑定），仅清用户信息
+  try {
+    const app = getApp();
+    if (app && app.globalData) app.globalData.userInfo = null;
+  } catch (e) {
+    // App 未就绪时忽略
+  }
+  wx.reLaunch({
+    url: '/pages/auth-login/auth-login',
+    complete: () => {
+      setTimeout(() => {
+        redirectingToLogin = false;
+      }, 1500);
+    },
+  });
+}
+
+// 业务请求：401 时自动重登一次再试（游客跳登录页由 403003 统一处理）
 async function request(options) {
   try {
     return await rawRequest(options);
@@ -132,6 +175,20 @@ async function request(options) {
     }
     throw e;
   }
+}
+
+// 姓名 + 密码 绑定/登录（游客态调用）
+function bindAccount(account, password) {
+  return rawRequest({
+    url: '/api/auth/bind',
+    method: 'POST',
+    data: { account, password },
+    _noAuthRetry: true,
+  }).then((data) => {
+    setAuth(data.token, data.userInfo);
+    getApp().globalData.userInfo = data.userInfo;
+    return data;
+  });
 }
 
 const get = (url, data) => request({ url, method: 'GET', data });
@@ -164,6 +221,7 @@ function uploadFile(filePath) {
 module.exports = {
   env,
   login,
+  bindAccount,
   request,
   get,
   post,
@@ -175,4 +233,5 @@ module.exports = {
   getUser,
   setUser,
   clearAuth,
+  logout,
 };

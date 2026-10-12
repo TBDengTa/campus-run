@@ -1,61 +1,60 @@
-.log-page {
-  padding: 24rpx 0 48rpx;
+/* 版本日志：列表行 + 版本号图标胶囊 */
+
+.log-card {
+  padding: 12rpx 32rpx;
 }
 
-.timeline {
-  padding: 0 24rpx;
+.log-row {
+  align-items: flex-start;
 }
 
-.tl-item {
-  position: relative;
-  padding-left: 36rpx;
-  padding-bottom: 24rpx;
+.log-chip {
+  flex-shrink: 0;
+  width: 76rpx;
+  height: 76rpx;
+  border-radius: 24rpx;
 }
 
-.tl-dot {
-  position: absolute;
-  left: 0;
-  top: 32rpx;
-  width: 16rpx;
-  height: 16rpx;
-  border-radius: 50%;
-  background: var(--td-brand-color);
+.log-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
 }
 
-.tl-item::before {
-  content: '';
-  position: absolute;
-  left: 7rpx;
-  top: 56rpx;
-  bottom: 0;
-  width: 2rpx;
-  background: var(--td-component-stroke);
-}
-
-.tl-item:last-child::before {
-  display: none;
-}
-
-.tl-version {
-  font-size: 34rpx;
+.log-version {
+  font-size: 32rpx;
   font-weight: 700;
-  color: var(--td-brand-color);
+  color: var(--tt-brand);
 }
 
-.tl-title {
-  font-size: 28rpx;
+.log-date {
+  font-size: 23rpx;
+  color: var(--tt-text-3);
+}
+
+.log-title {
+  margin-top: 12rpx;
+  font-size: 32rpx;
   font-weight: 600;
-  margin-bottom: 8rpx;
+  line-height: 1.4;
+  color: var(--tt-text-1);
 }
 
-.tl-content {
-  font-size: 26rpx;
-  line-height: 42rpx;
+.log-content {
+  margin-top: 10rpx;
+  font-size: 27rpx;
+  line-height: 1.7;
+  color: var(--tt-text-2);
   white-space: pre-wrap;
 }
 
-.loading {
+/* ===== 状态 ===== */
+.log-empty-card {
+  padding: 8rpx 32rpx;
+}
+
+.log-loading {
   display: flex;
   justify-content: center;
-  padding: 40rpx;
+  padding: 40rpx 0;
 }

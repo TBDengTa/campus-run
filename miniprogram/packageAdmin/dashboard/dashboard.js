@@ -5,6 +5,7 @@ Page({
   data: {
     overview: null,
     trend: [],
+    trendPeakText: '0',
     days: 14,
     loading: true,
   },
@@ -45,23 +46,34 @@ Page({
       ]);
       this.setData({
         loading: false,
+        // 展示用预格式化字段（仅用于排版展示，不影响业务数据）
         overview: {
           ...overview,
+          totalUsersText: fmt.formatNumber(overview.totalUsers),
+          activeTodayText: fmt.formatNumber(overview.activeToday),
+          newUsersTodayText: fmt.formatNumber(overview.newUsersToday),
           stepsTodayText: fmt.formatNumber(overview.stepsToday),
+          adPvTodayText: fmt.formatNumber(overview.adPvToday),
+          adClickTodayText: fmt.formatNumber(overview.adClickToday),
+          pendingAppealsText: fmt.formatNumber(overview.pendingAppeals),
+          bannedUsersText: fmt.formatNumber(overview.bannedUsers),
         },
         trend: trend.map((t) => ({
           ...t,
           label: t.date.slice(5),
+          activeText: fmt.formatNumber(t.activeUsers),
           maxActive: 0,
         })),
       });
       // 归一化趋势柱高
       const maxActive = Math.max(1, ...this.data.trend.map((t) => t.activeUsers));
+      const peak = Math.max(0, ...this.data.trend.map((t) => t.activeUsers));
       this.setData({
         trend: this.data.trend.map((t) => ({
           ...t,
           barHeight: Math.max(4, Math.round((t.activeUsers / maxActive) * 120)),
         })),
+        trendPeakText: fmt.formatNumber(peak),
       });
     } catch (e) {
       this.setData({ loading: false });

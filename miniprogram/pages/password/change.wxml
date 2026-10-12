@@ -1,0 +1,21 @@
+<view class="page pwd-page">
+  <view class="card">
+    <view class="first-tip" wx:if="{{first}}">
+      <t-icon name="error-circle" size="34rpx" color="var(--td-warning-color-5)" />
+      <text>首次登录，请修改初始密码后再使用</text>
+    </view>
+    <view class="form-row">
+      <text class="form-label">旧密码</text>
+      <input class="form-input" password value="{{oldPassword}}" placeholder="{{first ? '初始密码（学号/身份证后8位）' : '请输入当前密码'}}" bindinput="inputOld" />
+    </view>
+    <view class="form-row">
+      <text class="form-label">新密码</text>
+      <input class="form-input" password value="{{newPassword}}" placeholder="6-20 位" bindinput="inputNew" />
+    </view>
+    <view class="form-row">
+      <text class="form-label">确认新密码</text>
+      <input class="form-input" password value="{{confirmPassword}}" placeholder="再次输入新密码" bindinput="inputConfirm" />
+    </view>
+    <t-button theme="primary" block loading="{{submitting}}" bind:tap="submit" class="mt-24">保存新密码</t-button>
+  </view>
+</view>

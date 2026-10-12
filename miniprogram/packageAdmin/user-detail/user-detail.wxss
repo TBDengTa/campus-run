@@ -1,59 +1,173 @@
-@import '../admin-common.wxss';
-
-.info-grid {
-  display: flex;
-  flex-wrap: wrap;
-  margin-top: 24rpx;
-  gap: 12rpx 0;
+/* 管理端 · 用户详情（白橙设计系统） */
+.udetail-page {
+  padding-bottom: calc(32rpx + env(safe-area-inset-bottom));
 }
 
-.info-item {
-  width: 50%;
-  display: flex;
-  gap: 12rpx;
-  font-size: 26rpx;
-  padding: 8rpx 0;
+/* 卡片内边距局部收紧 */
+.udetail-card {
+  padding: 24rpx;
 }
 
-.ban-info {
+/* ===== 用户主视觉 ===== */
+.udetail-hero-top {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+}
+
+.udetail-avatar {
+  width: 88rpx;
+  height: 88rpx;
+  flex-shrink: 0;
+  border-radius: 28rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.udetail-name {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: #fff;
+}
+
+.udetail-openid {
+  margin-top: 6rpx;
+  font-size: 22rpx;
+  color: rgba(255, 255, 255, 0.8);
+  word-break: break-all;
+}
+
+.udetail-status {
+  flex-shrink: 0;
+  padding: 6rpx 20rpx;
+  border-radius: 999rpx;
+  font-size: 22rpx;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.udetail-status.is-banned {
+  color: var(--td-error-color-6);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.udetail-hero-foot {
   margin-top: 20rpx;
-  padding: 20rpx;
-  background: var(--td-error-color-1, #fff0ed);
-  border-radius: 12rpx;
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+/* ===== 标签-值 两列行 ===== */
+.udetail-field {
+  display: flex;
+  align-items: flex-start;
+  gap: 20rpx;
+  padding: 20rpx 0;
+  border-bottom: 2rpx solid var(--tt-line);
+  font-size: 27rpx;
+}
+
+.udetail-field:last-child {
+  border-bottom: none;
+}
+
+.udetail-label {
+  flex-shrink: 0;
+  width: 150rpx;
+  font-size: 25rpx;
+  color: var(--tt-text-3);
+}
+
+.udetail-value {
+  flex: 1;
+  text-align: right;
+  color: var(--tt-text-1);
+  word-break: break-all;
+}
+
+/* ===== 封禁信息 ===== */
+.udetail-ban {
+  margin-top: 24rpx;
+  padding: 20rpx 24rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--td-error-color-1);
+}
+
+.udetail-ban-row {
+  display: flex;
+  gap: 16rpx;
   font-size: 24rpx;
   line-height: 40rpx;
 }
 
-/* ===== 权限编辑 ===== */
-.group-title {
-  font-size: 28rpx;
-  font-weight: 600;
-  margin-bottom: 20rpx;
+.udetail-ban-label {
+  flex-shrink: 0;
+  color: var(--td-error-color-6);
 }
 
-.chip-row {
+.udetail-ban-text {
+  flex: 1;
+  color: var(--tt-text-1);
+}
+
+/* ===== 账号操作 ===== */
+.udetail-note {
+  text-align: center;
+  font-size: 26rpx;
+  color: var(--tt-text-3);
+  padding: 12rpx 0;
+}
+
+/* ===== 权限编辑 ===== */
+.udetail-group {
+  padding: 4rpx 0;
+}
+
+.udetail-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 12rpx;
+  margin-top: 16rpx;
 }
 
-.chip {
-  font-size: 24rpx;
-  padding: 10rpx 24rpx;
-  border-radius: 999px;
-  background: var(--td-gray-color-2, #eee);
-  color: var(--td-text-color-secondary);
-  border: 2rpx solid transparent;
+.udetail-actions {
+  margin-top: 8rpx;
 }
 
-.chip-active {
-  background: var(--td-brand-color-1, #f2f3ff);
-  border-color: var(--td-brand-color);
-  color: var(--td-brand-color);
-}
-
-.perm-tip {
+.udetail-tip {
   margin-top: 16rpx;
   font-size: 22rpx;
   line-height: 34rpx;
+  color: var(--tt-text-3);
+}
+
+/* ===== 流水 ===== */
+.udetail-log-icon {
+  width: 64rpx;
+  height: 64rpx;
+  flex-shrink: 0;
+  border-radius: 20rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.udetail-log-icon.is-ban {
+  background: var(--td-error-color-1);
+}
+
+.udetail-log-icon.is-unban {
+  background: var(--td-success-color-1);
+}
+
+.udetail-loading {
+  display: flex;
+  justify-content: center;
+  padding: 120rpx 0;
+}
+
+.udetail-reset {
+  margin-top: 16rpx;
 }

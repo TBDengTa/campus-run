@@ -1,93 +1,172 @@
-<view class="admin-page" wx:if="{{user}}">
-  <view class="form-card">
-    <view class="flex-between">
-      <view>
-        <view class="row-title">{{user.nickname || user.realName || '未命名'}}</view>
-        <view class="row-sub">{{user.openid}}</view>
+<view class="page tt-page udetail-page" wx:if="{{user}}">
+  <!-- ===== 用户主视觉 ===== -->
+  <view class="tt-hero">
+    <view class="tt-hero-body">
+      <view class="udetail-hero-top">
+        <view class="udetail-avatar">
+          <t-icon name="user" size="44rpx" color="#ffffff" />
+        </view>
+        <view class="flex-1">
+          <view class="udetail-name">{{user.nickname || user.realName || '未命名'}}</view>
+          <view class="udetail-openid">{{user.openid}}</view>
+        </view>
+        <view class="udetail-status {{user.status === 'banned' ? 'is-banned' : ''}}">
+          {{user.status === 'banned' ? '封禁中' : '正常'}}
+        </view>
       </view>
-      <t-tag theme="{{user.status === 'banned' ? 'danger' : 'success'}}" variant="light" size="small">
-        {{user.status === 'banned' ? '封禁中' : '正常'}}
-      </t-tag>
+      <view class="udetail-hero-foot">
+        <text>{{user.role === 'teacher' ? '教师' : '学生'}}</text>
+        <text wx:if="{{user.schoolName}}"> · {{user.schoolName}}</text>
+        <text wx:if="{{user.studentId}}"> · {{user.studentId}}</text>
+      </view>
     </view>
-    <view class="info-grid">
-      <view class="info-item"><text class="text-secondary">角色</text><text>{{user.role === 'teacher' ? '教师' : '学生'}}</text></view>
-      <view class="info-item"><text class="text-secondary">姓名</text><text>{{user.realName || '-'}}</text></view>
-      <view class="info-item"><text class="text-secondary">学号</text><text>{{user.studentId || '-'}}</text></view>
-      <view class="info-item"><text class="text-secondary">学校</text><text>{{user.schoolName || '-'}}</text></view>
-      <view class="info-item"><text class="text-secondary">院系</text><text>{{user.departmentName || '-'}}</text></view>
-      <view class="info-item"><text class="text-secondary">班级</text><text>{{user.className || '-'}}</text></view>
-      <view class="info-item"><text class="text-secondary">注册</text><text>{{user.createdText}}</text></view>
-      <view class="info-item"><text class="text-secondary">累计步数</text><text class="num-font">{{user.totalSteps || 0}}</text></view>
-      <view class="info-item"><text class="text-secondary">打卡天数</text><text class="num-font">{{user.totalDays || 0}}</text></view>
+  </view>
+
+  <!-- ===== 基本信息 ===== -->
+  <view class="tt-section">基本信息</view>
+  <view class="tt-card udetail-card">
+    <view class="udetail-field">
+      <text class="udetail-label">角色</text>
+      <text class="udetail-value">{{user.role === 'teacher' ? '教师' : '学生'}}</text>
     </view>
-    <view class="ban-info" wx:if="{{user.status === 'banned'}}">
-      <view class="text-error">封禁原因：{{user.banReason}}</view>
-      <view class="text-secondary" wx:if="{{user.bannedUntilText}}">解封时间：{{user.bannedUntilText}}</view>
+    <view class="udetail-field">
+      <text class="udetail-label">姓名</text>
+      <text class="udetail-value">{{user.realName || '-'}}</text>
+    </view>
+    <view class="udetail-field">
+      <text class="udetail-label">学号</text>
+      <text class="udetail-value">{{user.studentId || '-'}}</text>
+    </view>
+    <view class="udetail-field">
+      <text class="udetail-label">学校</text>
+      <text class="udetail-value">{{user.schoolName || '-'}}</text>
+    </view>
+    <view class="udetail-field">
+      <text class="udetail-label">院系</text>
+      <text class="udetail-value">{{user.departmentName || '-'}}</text>
+    </view>
+    <view class="udetail-field">
+      <text class="udetail-label">班级</text>
+      <text class="udetail-value">{{user.className || '-'}}</text>
+    </view>
+    <view class="udetail-field">
+      <text class="udetail-label">注册时间</text>
+      <text class="udetail-value">{{user.createdText || '-'}}</text>
+    </view>
+    <view class="udetail-field">
+      <text class="udetail-label">累计步数</text>
+      <text class="udetail-value num-font">{{user.totalSteps || 0}}</text>
+    </view>
+    <view class="udetail-field">
+      <text class="udetail-label">打卡天数</text>
+      <text class="udetail-value num-font">{{user.totalDays || 0}}</text>
     </view>
 
-    <view class="form-actions" wx:if="{{user.role !== 'admin'}}">
-      <t-button wx:if="{{user.status !== 'banned'}}" theme="danger" block bind:tap="ban">封禁</t-button>
-      <t-button wx:else theme="primary" block bind:tap="unban">解封</t-button>
+    <view class="udetail-ban" wx:if="{{user.status === 'banned'}}">
+      <view class="udetail-ban-row">
+        <text class="udetail-ban-label">封禁原因</text>
+        <text class="udetail-ban-text">{{user.banReason || '-'}}</text>
+      </view>
+      <view class="udetail-ban-row" wx:if="{{user.bannedUntilText}}">
+        <text class="udetail-ban-label">解封时间</text>
+        <text class="udetail-ban-text">{{user.bannedUntilText}}</text>
+      </view>
     </view>
-    <view class="empty-tip" wx:else>管理员账号不可封禁</view>
+  </view>
+
+  <!-- ===== 账号操作 ===== -->
+  <view class="tt-section">账号操作</view>
+  <view class="tt-card udetail-card">
+    <block wx:if="{{user.role !== 'admin'}}">
+      <t-button wx:if="{{user.status !== 'banned'}}" theme="danger" block bind:tap="ban">封禁该用户</t-button>
+      <t-button wx:else theme="primary" block bind:tap="unban">解除封禁</t-button>
+    </block>
+    <view class="udetail-note" wx:else>管理员账号不可封禁</view>
+    <view wx:if="{{canManagePerms}}" class="udetail-reset">
+      <t-button theme="default" block bind:tap="resetPassword">重置登录密码</t-button>
+      <view class="udetail-note">重置为初始密码（学号/身份证后8位），并要求该用户下次登录时修改</view>
+    </view>
+    <view class="udetail-note">微信绑定后不可解绑；其他微信登录该账号会被拒绝</view>
   </view>
 
   <!-- ===== 权限管理（需 permission.manage） ===== -->
-  <view class="form-card" wx:if="{{canManagePerms && user}}">
-    <view class="group-title">权限管理</view>
-
-    <view class="form-item">
-      <text class="form-item-label">用户角色</text>
-      <view class="chip-row">
-        <view class="chip {{draft.role === 'student' ? 'chip-active' : ''}}" bind:tap="pickRole" data-value="student">学生</view>
-        <view class="chip {{draft.role === 'teacher' ? 'chip-active' : ''}}" bind:tap="pickRole" data-value="teacher">教师</view>
-      </view>
+  <block wx:if="{{canManagePerms}}">
+    <view class="tt-section">
+      <text>权限管理</text>
+      <text class="tt-section-extra">已选 {{draft.groups.length}} 组 / {{draft.perms.length}} 项</text>
     </view>
-
-    <view class="form-item">
-      <text class="form-item-label">权限组（{{draft.groups.length}} 组已选）</text>
-      <view class="chip-row">
-        <view
-          wx:for="{{permGroups}}"
-          wx:key="key"
-          class="chip {{draft.groupMap[item.key]}}"
-          bind:tap="toggleGroup"
-          data-key="{{item.key}}"
-        >
-          {{item.name}}{{item.permissions[0] === '*' ? '（全部）' : '（' + item.permissions.length + '项）'}}
+    <view class="tt-card udetail-card">
+      <view class="udetail-group">
+        <text class="udetail-label">用户角色</text>
+        <view class="udetail-chips">
+          <view class="tt-chip {{draft.role === 'student' ? 'active' : ''}}" bind:tap="pickRole" data-value="student">学生</view>
+          <view class="tt-chip {{draft.role === 'teacher' ? 'active' : ''}}" bind:tap="pickRole" data-value="teacher">教师</view>
         </view>
       </view>
-    </view>
 
-    <view class="form-item" wx:for="{{permModules}}" wx:key="name" wx:for-item="mod">
-      <text class="form-item-label">独立权限 · {{mod.name}}</text>
-      <view class="chip-row">
-        <view
-          wx:for="{{mod.list}}"
-          wx:key="key"
-          class="chip {{draft.permMap[item.key]}}"
-          bind:tap="togglePerm"
-          data-key="{{item.key}}"
-        >
-          {{item.name}}
+      <view class="tt-divider"></view>
+
+      <view class="udetail-group">
+        <text class="udetail-label">权限组</text>
+        <view class="udetail-chips">
+          <view
+            wx:for="{{permGroups}}"
+            wx:key="key"
+            class="tt-chip {{draft.groupMap[item.key] ? 'active' : ''}}"
+            bind:tap="toggleGroup"
+            data-key="{{item.key}}"
+          >
+            {{item.name}}{{item.permissions[0] === '*' ? '（全部）' : '（' + item.permissions.length + '项）'}}
+          </view>
         </view>
       </view>
-    </view>
 
-    <view class="form-actions">
-      <t-button theme="primary" block loading="{{savingPerms}}" bind:tap="savePerms">保存权限</t-button>
+      <block wx:for="{{permModules}}" wx:key="name" wx:for-item="mod">
+        <view class="tt-divider"></view>
+        <view class="udetail-group">
+          <text class="udetail-label">独立权限 · {{mod.name}}</text>
+          <view class="udetail-chips">
+            <view
+              wx:for="{{mod.list}}"
+              wx:key="key"
+              class="tt-chip {{draft.permMap[item.key] ? 'active' : ''}}"
+              bind:tap="togglePerm"
+              data-key="{{item.key}}"
+            >
+              {{item.name}}
+            </view>
+          </view>
+        </view>
+      </block>
+
+      <view class="udetail-actions">
+        <t-button theme="primary" block loading="{{savingPerms}}" bind:tap="savePerms">保存权限</t-button>
+      </view>
+      <view class="udetail-tip">有效权限 = 独立权限 ∪ 权限组展开；超级管理员组拥有全部权限</view>
     </view>
-    <view class="perm-tip text-placeholder">有效权限 = 独立权限 ∪ 权限组展开；超级管理员组拥有全部权限</view>
+  </block>
+
+  <!-- ===== 封禁 / 解封流水 ===== -->
+  <view class="tt-section">
+    <text>封禁 / 解封流水</text>
+    <text class="tt-section-extra">{{bans.length}} 条</text>
   </view>
-
-  <view class="section-title">封禁/解封流水</view>
-  <view class="list-card">
-    <view class="row" wx:for="{{bans}}" wx:key="_id">
-      <view class="flex-1">
-        <view class="row-title">{{item.action === 'ban' ? '🔴 封禁' : '🟢 解封'}} · {{item.reason || '-'}}</view>
-        <view class="row-sub">{{item.timeText}} · {{item.operator === 'system' ? '系统自动' : '管理员'}}{{item.durationDays ? ' · ' + item.durationDays + '天' : ''}}</view>
+  <view class="tt-card udetail-card">
+    <view class="tt-row" wx:for="{{bans}}" wx:key="_id">
+      <view class="udetail-log-icon {{item.action === 'ban' ? 'is-ban' : 'is-unban'}}">
+        <t-icon wx:if="{{item.action === 'ban'}}" name="lock-on" size="32rpx" color="var(--td-error-color-6)" />
+        <t-icon wx:else name="lock-off" size="32rpx" color="var(--td-success-color-5)" />
       </view>
+      <view class="flex-1">
+        <view class="tt-row-title">{{item.reason || '-'}}</view>
+        <view class="tt-row-sub">{{item.timeText}} · {{item.operator === 'system' ? '系统自动' : '管理员'}}{{item.durationDays ? ' · ' + item.durationDays + '天' : ''}}</view>
+      </view>
+      <t-tag theme="{{item.action === 'ban' ? 'danger' : 'success'}}" variant="light" size="small">
+        {{item.action === 'ban' ? '封禁' : '解封'}}
+      </t-tag>
     </view>
-    <view class="empty-tip" wx:if="{{!bans.length}}">暂无流水</view>
+    <view class="tt-empty" wx:if="{{!bans.length}}">暂无流水</view>
   </view>
 </view>
+
+<t-loading wx:if="{{loading && !user}}" theme="circular" size="44rpx" text="加载用户…" class="udetail-loading" />

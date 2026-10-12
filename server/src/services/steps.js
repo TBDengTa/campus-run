@@ -12,8 +12,22 @@ function withPace(doc) {
   return doc;
 }
 
+// 教师账号不参与运动记录（步数同步 / GPS 实跑 / 激励视频加步数）
+const TEACHER_BLOCK_MESSAGE = '教师账号不参与运动记录';
+
+function isTeacher(user) {
+  return !!user && user.role === 'teacher';
+}
+
+function teacherBlock(user) {
+  return isTeacher(user) ? { blocked: true, reason: TEACHER_BLOCK_MESSAGE } : null;
+}
+
 // 同步微信运动某日步数（ werun 数据 30 天内逐日同步）
 async function syncWerunDay(user, dateKey, steps, { checkJump = true } = {}) {
+  const blocked = teacherBlock(user);
+  if (blocked) return blocked;
+
   const prev = await RunRecord.findOne({ openid: user.openid, date: dateKey, source: 'werun' }).lean();
   const prevSteps = prev?.steps || 0;
 
@@ -42,6 +56,9 @@ async function syncWerunDay(user, dateKey, steps, { checkJump = true } = {}) {
 
 // 记录一次 GPS 实跑
 async function saveGpsRun(user, { date, distance, durationSeconds, calories, startTime, endTime, routePoints, location }) {
+  const blocked = teacherBlock(user);
+  if (blocked) return blocked;
+
   const result = await anticheat.checkPace(user, distance, durationSeconds);
   if (result.violation) return { banned: true, reason: result.message };
 
@@ -63,6 +80,8 @@ async function saveGpsRun(user, { date, distance, durationSeconds, calories, sta
 
 // 激励视频上报：校验每日上限 → 发步数 → 记录
 async function reportRewardVideo(user) {
+  if (isTeacher(user)) return { error: TEACHER_BLOCK_MESSAGE };
+
   const config = await GoalConfig.getSingleton();
   if (!config.rewardVideo.enabled) {
     return { error: '激励视频活动未开启' };
@@ -114,4 +133,12 @@ async function postSyncRefresh(user, dateKeys = []) {
   return { newBadges };
 }
 
-module.exports = { syncWerunDay, saveGpsRun, reportRewardVideo, postSyncRefresh, withPace };
+module.exports = {
+  syncWerunDay,
+  saveGpsRun,
+  reportRewardVideo,
+  postSyncRefresh,
+  withPace,
+  isTeacher,
+  TEACHER_BLOCK_MESSAGE,
+};

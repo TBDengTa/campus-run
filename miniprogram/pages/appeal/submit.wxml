@@ -1,14 +1,21 @@
-<view class="page appeal-submit-page">
-  <view class="card" wx:if="{{user && user.status === 'banned'}}">
-    <view class="ban-title">封禁信息</view>
-    <view class="ban-reason text-secondary">{{user.banReason || '违反社区规范'}}</view>
-    <view class="ban-until text-secondary" wx:if="{{user.bannedUntil}}">
-      解封时间：{{user.bannedUntil}}
+<view class="page tt-page">
+  <!-- ===== 封禁信息（被封禁时展示） ===== -->
+  <view class="appeal-ban-card" wx:if="{{user && user.status === 'banned'}}">
+    <view class="appeal-ban-head">
+      <t-icon name="error-circle" size="36rpx" color="var(--td-error-color-6)" />
+      <text class="appeal-ban-title">封禁信息</text>
+    </view>
+    <view class="appeal-ban-reason">{{user.banReason || '违反社区规范'}}</view>
+    <view class="appeal-ban-until" wx:if="{{user.bannedUntil}}">
+      <t-icon name="time" size="26rpx" color="var(--td-error-color-6)" />
+      <text>解封时间：{{user.bannedUntil}}</text>
     </view>
   </view>
 
-  <view class="card">
-    <view class="card-title">填写申诉</view>
+  <!-- ===== 填写申诉 ===== -->
+  <view class="tt-section">填写申诉说明</view>
+
+  <view class="tt-card">
     <t-textarea
       placeholder="请说明情况（至少 10 字），例如步数异常的原因…"
       maxlength="500"
@@ -16,9 +23,31 @@
       bind:change="input"
       indicator
     />
-    <t-button theme="primary" block class="mt-24" loading="{{submitting}}" bind:tap="submit">
-      提交申诉
-    </t-button>
-    <view class="tip text-placeholder mt-16">提交后请耐心等待管理员审核，可在「我的申诉」中查看进度</view>
+
+    <view class="appeal-counter">
+      <text class="appeal-counter-min">至少 10 字</text>
+      <text class="num-font appeal-counter-num">{{contentLength}}</text>
+      <text class="appeal-counter-max">/500</text>
+    </view>
   </view>
+
+  <view class="tt-card appeal-notice">
+    <view class="appeal-notice-row">
+      <t-icon name="info-circle" size="28rpx" color="var(--tt-brand)" />
+      <text>提交后请耐心等待管理员审核</text>
+    </view>
+    <view class="appeal-notice-row">
+      <t-icon name="history" size="28rpx" color="var(--tt-brand)" />
+      <text>可在「我的申诉」中查看处理进度</text>
+    </view>
+  </view>
+
+  <view class="appeal-actions">
+    <view class="tt-pill-btn primary {{submitting ? 'appeal-btn-disabled' : ''}}" bind:tap="submit">
+      <t-icon name="check-circle" size="34rpx" color="#ffffff" />
+      <text>{{submitting ? '提交中…' : '提交申诉'}}</text>
+    </view>
+  </view>
+
+  <view class="tt-footer">请如实说明情况，恶意申诉可能影响账号信用</view>
 </view>

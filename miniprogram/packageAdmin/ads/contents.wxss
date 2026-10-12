@@ -1,59 +1,240 @@
-@import '../admin-common.wxss';
-
-.add-bar {
-  padding: 0 28rpx 16rpx;
+/* ===== 广告素材管理 · 白橙 ===== */
+.adc-page {
+  --td-input-vertical-padding: 0;
+  --td-input-label-min-width: 150rpx;
+  --td-input-label-max-width: 230rpx;
+  --td-input-label-text-color: var(--tt-text-2);
+  padding-bottom: calc(32rpx + env(safe-area-inset-bottom));
 }
 
-.row-actions {
+/* 概览条 */
+.adc-head {
   display: flex;
-  flex-direction: column;
-  gap: 12rpx;
+  align-items: center;
+  gap: 16rpx;
+  padding: 24rpx;
 }
 
-.content-img {
-  width: 120rpx;
-  height: 72rpx;
-  border-radius: 8rpx;
-  background: var(--td-gray-color-2, #eee);
-  margin-right: 16rpx;
-  flex-shrink: 0;
+.adc-head-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
 }
 
-.info {
-  margin-right: 12rpx;
+.adc-head-sub {
+  margin-top: 6rpx;
+  font-size: 24rpx;
+  color: var(--tt-text-3);
 }
 
-.img-row {
-  width: 100%;
-  height: 200rpx;
-  border-radius: 12rpx;
-  overflow: hidden;
-  background: var(--td-gray-color-1, #f3f3f3);
+/* 表单 */
+.adc-form-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.adc-form-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.adc-close {
+  width: 56rpx;
+  height: 56rpx;
+  border-radius: 50%;
+  background: var(--td-bg-color-component);
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-.img-preview {
+.adc-close:active {
+  opacity: 0.7;
+}
+
+.adc-field {
+  /* t-input 的标签与内容统一到 28rpx，和页面内其它表单行一致 */
+  --td-font-size-m: 28rpx;
+  padding: 26rpx 0;
+  border-bottom: 2rpx solid var(--tt-line);
+}
+
+.adc-field:last-child {
+  border-bottom: none;
+}
+
+.adc-field-row {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+}
+
+.adc-field-pick {
+  display: flex;
+  align-items: center;
+}
+
+.adc-pick-label {
+  min-width: 150rpx;
+  padding-right: 32rpx;
+}
+
+.adc-pick-body {
+  flex: 1;
+}
+
+.adc-field-label {
+  font-size: 28rpx;
+  color: var(--tt-text-2);
+}
+
+.adc-field-tip {
+  margin-top: 6rpx;
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+.adc-picker {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  font-size: 28rpx;
+  color: var(--tt-text-1);
+}
+
+.adc-picker-text {
+  flex: 1;
+}
+
+.adc-upload {
+  margin-top: 16rpx;
+  width: 100%;
+  height: 240rpx;
+  border-radius: var(--tt-radius-sm);
+  border: 2rpx solid var(--tt-line);
+  background: var(--tt-brand-soft);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.adc-upload-img {
   width: 100%;
   height: 100%;
 }
 
-.img-empty {
+.adc-upload-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10rpx;
   font-size: 24rpx;
+  color: var(--tt-brand);
 }
 
-.form-cols {
+.adc-cols {
+  display: flex;
+  gap: 24rpx;
+  padding: 26rpx 0;
+  border-bottom: 2rpx solid var(--tt-line);
+}
+
+.adc-col {
+  flex: 1;
+  min-width: 0;
+}
+
+.adc-date {
+  margin-top: 14rpx;
+  padding: 14rpx 20rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-brand-soft);
+  font-size: 26rpx;
+  color: var(--tt-text-1);
+  text-align: center;
+}
+
+.adc-form-actions {
   display: flex;
   gap: 16rpx;
+  margin-top: 32rpx;
 }
 
-.form-item.half {
-  flex: 1;
+/* 列表 */
+.adc-list {
+  padding: 8rpx 24rpx;
 }
 
-.loading-more {
+.adc-thumb {
+  width: 152rpx;
+  height: 88rpx;
+  border-radius: 20rpx;
+  border: 2rpx solid var(--tt-line);
+  overflow: hidden;
+  background: var(--td-bg-color-component);
+  flex-shrink: 0;
+}
+
+.adc-thumb-img {
+  width: 100%;
+  height: 100%;
+}
+
+.adc-name {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  flex-wrap: wrap;
+}
+
+.adc-stat {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  margin-top: 8rpx;
+}
+
+.adc-stat-text {
+  font-size: 23rpx;
+  color: var(--tt-text-3);
+}
+
+.adc-stat-num {
+  font-size: 26rpx;
+  font-weight: 700;
+  color: var(--tt-brand);
+}
+
+.adc-acts {
+  display: flex;
+  flex-direction: column;
+  gap: 10rpx;
+  flex-shrink: 0;
+}
+
+.adc-act {
+  padding: 8rpx 22rpx;
+  border-radius: 999rpx;
+  text-align: center;
+  font-size: 23rpx;
+  color: var(--tt-brand);
+  background: var(--tt-brand-soft);
+}
+
+.adc-act.danger {
+  color: var(--td-error-color-6);
+  background: var(--td-error-color-1);
+}
+
+.adc-act:active {
+  opacity: 0.7;
+}
+
+.adc-loading {
   display: flex;
   justify-content: center;
-  padding: 24rpx;
+  padding: 28rpx 0;
 }

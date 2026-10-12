@@ -1,112 +1,62 @@
 <view class="page home-page">
-  <!-- ===== 管理视角面板（教师/管理员优先显示） ===== -->
-  <view class="mgr-panel card" wx:if="{{isManager}}">
-    <view class="flex-between mb-16">
-      <view class="mgr-title">
-        <t-icon name="dashboard" size="36rpx" color="var(--td-brand-color)" />
-        <text>管理视角 · {{roleText}}</text>
-      </view>
-      <t-tag theme="primary" variant="light" size="small">{{mgrEntries.length}} 项管理权限</t-tag>
-    </view>
-
-    <!-- 核心指标 -->
-    <view class="mgr-stats" wx:if="{{overview}}">
-      <view class="mgr-stat">
-        <view class="num-font mgr-num">{{overview.totalUsers}}</view>
-        <view class="text-secondary mgr-label">总用户</view>
-      </view>
-      <view class="mgr-stat">
-        <view class="num-font mgr-num">{{overview.activeToday}}</view>
-        <view class="text-secondary mgr-label">今日活跃</view>
-      </view>
-      <view class="mgr-stat">
-        <view class="num-font mgr-num">{{overview.stepsTodayText}}</view>
-        <view class="text-secondary mgr-label">今日步数</view>
-      </view>
-      <view class="mgr-stat">
-        <view class="num-font mgr-num">{{overview.adPvToday}}</view>
-        <view class="text-secondary mgr-label">广告PV</view>
-      </view>
-    </view>
-    <t-loading wx:else theme="circular" size="36rpx" text="加载看板…" class="mgr-loading" />
-
-    <!-- 按权限过滤的管理入口 -->
-    <view class="mgr-entries" wx:if="{{mgrEntries.length}}">
-      <view class="mgr-entry" wx:for="{{mgrEntries}}" wx:key="key" bind:tap="goAdminPage" data-url="{{item.url}}">
-        <view class="entry-icon" style="background: {{item.bg}}">
-          <t-icon name="{{item.icon}}" size="40rpx" color="{{item.color}}" />
-        </view>
-        <text class="entry-text">{{item.label}}</text>
-      </view>
+  <!-- ===== 顶部插画头（放 assets/home/hero.png 后自动替换为人物场景图） ===== -->
+  <view class="sky">
+    <image wx:if="{{heroImage}}" class="sky-img" src="{{heroImage}}" mode="aspectFill" />
+    <block wx:else>
+      <view class="sky-cloud cloud-1"></view>
+      <view class="sky-cloud cloud-2"></view>
+      <view class="sky-cloud cloud-3"></view>
+      <view class="sky-hill-back"></view>
+      <view class="sky-hill"></view>
+      <view class="sky-track"></view>
+    </block>
+    <view class="sky-body">
+      <view class="sky-title">唐唐快跑</view>
+      <view class="sky-slogan">青春逐风，快乐奔跑</view>
     </view>
   </view>
 
-  <!-- 公告条 -->
-  <t-notice-bar
-    wx:if="{{announcements.length}}"
-    visible
-    prefixIcon="sound"
-    content="{{announcements[0].title}}"
-    bind:click="goAnnouncements"
-  />
-
-  <!-- 封禁提醒 -->
+  <!-- ===== 封禁提醒 ===== -->
   <view class="ban-banner" wx:if="{{banned}}" bind:tap="goBanned">
     <t-icon name="error-circle" size="36rpx" />
     <text>账号已被封禁，点击查看详情并申诉</text>
+    <t-icon name="chevron-right" size="32rpx" />
   </view>
 
-  <!-- 今日步数主卡片 -->
-  <view class="hero-card">
-    <view class="flex-between">
-      <text class="date-text">{{dateText}}</text>
-      <view class="goal-tag" wx:if="{{goalName}}">
-        <t-tag size="small" variant="light" theme="primary">{{goalName}}</t-tag>
+  <!-- ===== 公告条（跑马灯滚动） ===== -->
+  <view class="notice-bar" wx:if="{{noticeText}}" bind:tap="goAnnouncements">
+    <t-icon name="sound" size="30rpx" color="#ffffff" />
+    <view class="notice-viewport">
+      <view class="notice-track {{noticeMarquee ? 'run' : ''}}" style="animation-duration: {{noticeDuration}}s">
+        <text class="notice-text">{{noticeText}}</text>
+        <text class="notice-text" wx:if="{{noticeMarquee}}">{{noticeText}}</text>
       </view>
     </view>
+    <t-icon name="chevron-right" size="28rpx" color="rgba(255,255,255,0.9)" />
+  </view>
 
-    <view class="steps-hero">
-      <t-progress
-        theme="circle"
-        percentage="{{percent}}"
-        size="380rpx"
-        stroke-width="16rpx"
-        track-color="var(--td-gray-color-3)"
-      />
-      <view class="steps-hero-center">
-        <view class="steps-num num-font">{{steps}}</view>
-        <view class="steps-label text-secondary">今日步数 / 目标 {{goalSteps}}</view>
-        <view class="goal-state {{goalAchieved ? 'text-success' : 'text-placeholder'}}">
-          {{goalAchieved ? '✓ 已达成今日目标' : '还差 ' + (goalSteps - steps > 0 ? goalSteps - steps : 0) + ' 步'}}
-        </view>
-      </view>
+  <!-- ===== 教师视角 ===== -->
+  <view class="teacher-card" wx:if="{{isTeacher}}">
+    <view class="teacher-top">
+      <text class="teacher-label">教师视角</text>
+      <text class="teacher-chip">{{roleText}}</text>
     </view>
-
-    <view class="stats-row">
-      <view class="stat-item">
-        <view class="stat-value num-font">{{distance}}</view>
-        <view class="stat-label text-secondary">距离</view>
+    <view class="teacher-title">教师账号不参与运动排名</view>
+    <view class="teacher-sub">运动记录与步数排行仅对学生开放，你可以查看与审核学生数据</view>
+    <view class="teacher-actions">
+      <view class="teacher-btn primary" wx:if="{{isManager}}" bind:tap="goAdmin">
+        <t-icon name="dashboard" size="32rpx" color="var(--tt-brand)" />
+        <text>管理端控制台</text>
       </view>
-      <view class="stat-item">
-        <view class="stat-value num-font">{{calories}}</view>
-        <view class="stat-label text-secondary">千卡</view>
+      <view class="teacher-btn ghost" bind:tap="goAnnouncements">
+        <t-icon name="notification" size="32rpx" color="var(--tt-brand)" />
+        <text>查看公告</text>
       </view>
-      <view class="stat-item">
-        <view class="stat-value num-font">{{durationText}}</view>
-        <view class="stat-label text-secondary">时长</view>
-      </view>
-    </view>
-
-    <view class="action-row">
-      <t-button theme="primary" size="medium" loading="{{syncing}}" bind:tap="syncWerun">
-        同步微信运动
-      </t-button>
-      <t-button theme="default" size="medium" bind:tap="goRun">GPS 实跑</t-button>
     </view>
   </view>
 
-  <!-- 广告轮播 -->
-  <view class="ad-banner card" wx:if="{{ads.length}}">
+  <!-- ===== 广告位 ===== -->
+  <view class="tt-card ad-banner" wx:if="{{ads.length}}">
     <swiper class="ad-swiper" autoplay circular interval="4000" indicator-dots="{{ads.length > 1}}">
       <swiper-item wx:for="{{ads}}" wx:key="_id" bind:tap="onAdTap" data-index="{{index}}">
         <image class="ad-image" src="{{item.imageUrl}}" mode="aspectFill" />
@@ -114,41 +64,190 @@
     </swiper>
   </view>
 
-  <!-- 快捷入口 -->
-  <view class="card">
-    <view class="entry-grid">
-      <view class="entry-item" bind:tap="goWater">
-        <view class="entry-icon" style="background: var(--td-brand-color-1)">
-          <t-icon name="drink" size="44rpx" color="var(--td-brand-color)" />
-        </view>
-        <text class="entry-text">喝水打卡</text>
+  <!-- ===== 今日目标（学生） ===== -->
+  <view class="tt-card today-card" wx:if="{{!isTeacher}}">
+    <view class="today-head">
+      <text class="today-title">今日目标</text>
+      <text class="today-plan" bind:tap="goPlan">{{goalName}} ›</text>
+      <view class="today-sync {{syncing ? 'disabled' : ''}}" bind:tap="syncWerun">
+        <t-icon name="refresh" size="28rpx" color="var(--tt-brand)" />
+        <text>{{syncing ? '同步中' : '同步'}}</text>
       </view>
-      <view class="entry-item" bind:tap="goReward">
-        <view class="entry-icon" style="background: var(--td-warning-color-1)">
-          <t-icon name="play-circle" size="44rpx" color="var(--td-warning-color-5)" />
+    </view>
+
+    <view class="today-sub">
+      <text>{{dateText}}</text>
+      <text class="today-dot">·</text>
+      <text>步数 {{stepsText}} 步</text>
+      <text class="today-dot">·</text>
+      <text>里程 {{kmText}} 公里</text>
+    </view>
+
+    <!-- 本周 7 天 -->
+    <view class="week-days">
+      <view class="day-chip" wx:for="{{weekDays}}" wx:key="key">
+        <view class="day-circle {{item.achieved ? 'achieved' : (item.hasData ? 'partial' : '')}} {{item.isToday ? 'today' : ''}}">
+          <t-icon wx:if="{{item.achieved}}" name="check" size="30rpx" color="#ffffff" />
+          <view wx:elif="{{item.hasData}}" class="day-dot"></view>
         </view>
-        <text class="entry-text">看视频赚步数</text>
+        <text class="day-label {{item.isToday ? 'today' : ''}}">{{item.label}}</text>
+        <text class="day-value {{item.hasData ? '' : 'empty'}}">{{item.stepsText}}</text>
       </view>
-      <view class="entry-item" bind:tap="goBadges">
-        <view class="entry-icon" style="background: var(--td-success-color-1)">
-          <t-icon name="star" size="44rpx" color="var(--td-success-color-5)" />
-        </view>
-        <text class="entry-text">我的徽章</text>
+    </view>
+
+    <!-- 今日四项指标 -->
+    <view class="stat-bar">
+      <view class="stat-bar-item">
+        <text class="stat-bar-value num-font">{{stepsText}}</text>
+        <text class="stat-bar-label">步数</text>
       </view>
-      <view class="entry-item" bind:tap="goBodyData">
-        <view class="entry-icon" style="background: var(--td-error-color-1)">
-          <t-icon name="heart" size="44rpx" color="var(--td-error-color-6)" />
-        </view>
-        <text class="entry-text">身体数据</text>
+      <view class="stat-bar-item">
+        <text class="stat-bar-value num-font">{{kmText}}</text>
+        <text class="stat-bar-label">公里</text>
       </view>
-      <view class="entry-item" bind:tap="goAnnouncements">
-        <view class="entry-icon" style="background: var(--td-gray-color-2)">
-          <t-icon name="notification" size="44rpx" color="var(--td-gray-color-8)" />
-        </view>
-        <text class="entry-text">公告</text>
+      <view class="stat-bar-item">
+        <text class="stat-bar-value num-font">{{durationText}}</text>
+        <text class="stat-bar-label">时长</text>
+      </view>
+      <view class="stat-bar-item">
+        <text class="stat-bar-value num-font">{{calories}}</text>
+        <text class="stat-bar-label">卡路里</text>
+      </view>
+    </view>
+
+    <view class="today-empty" wx:if="{{!hasRecord}}" bind:tap="goRun">
+      <t-icon name="play-circle" size="32rpx" color="var(--tt-brand)" />
+      <text>今天还没有运动记录，去跑一跑 ›</text>
+    </view>
+  </view>
+
+  <!-- ===== 本周目标（学生） ===== -->
+  <view class="tt-card weekly-card" wx:if="{{!isTeacher && weekly}}">
+    <view class="weekly-head">
+      <text class="weekly-title">本周目标</text>
+      <text class="weekly-target">步数 {{weekly.stepsTargetText}} 步 · 里程 {{weekly.distanceTargetText}}</text>
+    </view>
+    <view class="prog-row" wx:for="{{weekly.bars}}" wx:key="key">
+      <view class="prog-top">
+        <text class="prog-label">{{item.label}}</text>
+        <text class="prog-value num-font">{{item.valueText}}</text>
+      </view>
+      <view class="prog-track">
+        <view class="prog-fill" style="width: {{item.percent}}%"></view>
       </view>
     </view>
   </view>
 
-  <view class="footer-tip text-placeholder">坚持每日运动，达成目标更健康</view>
+  <!-- ===== 管理视角面板（教师/管理员） ===== -->
+  <view class="tt-card mgr-panel" wx:if="{{isManager}}">
+    <view class="mgr-head">
+      <view class="mgr-title">
+        <t-icon name="dashboard" size="34rpx" color="var(--tt-brand)" />
+        <text>管理视角 · {{roleText}}</text>
+      </view>
+      <text class="tt-chip tt-chip-brand">{{mgrEntries.length}} 项权限</text>
+    </view>
+
+    <view class="mgr-stats" wx:if="{{overview}}">
+      <view class="mgr-stat">
+        <view class="num-font mgr-num">{{overview.totalUsers}}</view>
+        <view class="tt-muted mgr-label">总用户</view>
+      </view>
+      <view class="mgr-stat">
+        <view class="num-font mgr-num">{{overview.activeToday}}</view>
+        <view class="tt-muted mgr-label">今日活跃</view>
+      </view>
+      <view class="mgr-stat">
+        <view class="num-font mgr-num">{{overview.stepsTodayText}}</view>
+        <view class="tt-muted mgr-label">今日步数</view>
+      </view>
+      <view class="mgr-stat">
+        <view class="num-font mgr-num">{{overview.adPvToday}}</view>
+        <view class="tt-muted mgr-label">广告PV</view>
+      </view>
+    </view>
+    <t-loading wx:else theme="circular" size="36rpx" text="加载看板…" class="mgr-loading" />
+
+    <view class="tt-grid" wx:if="{{mgrEntries.length}}">
+      <view
+        class="tt-grid-item"
+        wx:for="{{mgrEntries}}"
+        wx:key="key"
+        bind:tap="goAdminPage"
+        data-url="{{item.url}}"
+      >
+        <view class="tt-chip-icon" style="background: {{item.bg}}">
+          <t-icon name="{{item.icon}}" size="40rpx" color="{{item.color}}" />
+        </view>
+        <text class="tt-grid-text">{{item.label}}</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- ===== 快捷入口（放 assets/home/entry-*.png 后自动替换为插画图标） ===== -->
+  <view class="tt-card entry-card">
+    <view class="tt-grid">
+      <!-- 学生：饮水管理 / 目标计划 / 徽章成就 / 身体数据 -->
+      <block wx:if="{{!isTeacher}}">
+        <view class="tt-grid-item" bind:tap="goWater">
+          <image wx:if="{{entryImages.water}}" class="entry-img" src="{{entryImages.water}}" mode="aspectFit" />
+          <view wx:else class="entry-icon" style="background: #eef6ff">
+            <t-icon name="drink" size="48rpx" color="#2f7cf6" />
+          </view>
+          <text class="tt-grid-text">饮水管理</text>
+        </view>
+        <view class="tt-grid-item" bind:tap="goPlan">
+          <image wx:if="{{entryImages.plan}}" class="entry-img" src="{{entryImages.plan}}" mode="aspectFit" />
+          <view wx:else class="entry-icon" style="background: var(--tt-brand-soft)">
+            <t-icon name="flag" size="48rpx" color="var(--tt-brand)" />
+          </view>
+          <text class="tt-grid-text">目标计划</text>
+        </view>
+        <view class="tt-grid-item" bind:tap="goBadges">
+          <image wx:if="{{entryImages.badge}}" class="entry-img" src="{{entryImages.badge}}" mode="aspectFit" />
+          <view wx:else class="entry-icon" style="background: #fff8e6">
+            <t-icon name="star" size="48rpx" color="#f5a623" />
+          </view>
+          <text class="tt-grid-text">徽章成就</text>
+        </view>
+        <view class="tt-grid-item" bind:tap="goBodyData">
+          <image wx:if="{{entryImages.body}}" class="entry-img" src="{{entryImages.body}}" mode="aspectFit" />
+          <view wx:else class="entry-icon" style="background: #eafaf1">
+            <t-icon name="heart" size="48rpx" color="#16a34a" />
+          </view>
+          <text class="tt-grid-text">身体数据</text>
+        </view>
+      </block>
+
+      <!-- 教师：饮水管理 / 身体数据 / 公告 / 管理端 -->
+      <block wx:else>
+        <view class="tt-grid-item" bind:tap="goWater">
+          <view class="entry-icon" style="background: #eef6ff">
+            <t-icon name="drink" size="48rpx" color="#2f7cf6" />
+          </view>
+          <text class="tt-grid-text">饮水管理</text>
+        </view>
+        <view class="tt-grid-item" bind:tap="goBodyData">
+          <view class="entry-icon" style="background: #eafaf1">
+            <t-icon name="heart" size="48rpx" color="#16a34a" />
+          </view>
+          <text class="tt-grid-text">身体数据</text>
+        </view>
+        <view class="tt-grid-item" bind:tap="goAnnouncements">
+          <view class="entry-icon" style="background: #fff8e6">
+            <t-icon name="notification" size="48rpx" color="#f5a623" />
+          </view>
+          <text class="tt-grid-text">公告</text>
+        </view>
+        <view class="tt-grid-item" wx:if="{{isManager}}" bind:tap="goAdmin">
+          <view class="entry-icon" style="background: var(--tt-brand-soft)">
+            <t-icon name="dashboard" size="48rpx" color="var(--tt-brand)" />
+          </view>
+          <text class="tt-grid-text">管理端</text>
+        </view>
+      </block>
+    </view>
+  </view>
+
+  <view class="tt-footer">{{isTeacher ? '教师账号不参与运动记录与排名' : '坚持每日运动，达成目标更健康'}}</view>
 </view>

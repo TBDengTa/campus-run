@@ -1,47 +1,79 @@
-<view class="admin-page">
-  <view class="add-bar">
+<view class="page tt-page clog-page">
+  <view class="clog-head">
+    <text class="clog-head-text">共 {{list.length}} 条版本记录</text>
     <t-button theme="primary" size="small" bind:tap="openCreate">+ 新增版本</t-button>
   </view>
 
-  <view class="form-card" wx:if="{{form}}">
-    <view class="form-cols">
-      <view class="form-item half">
-        <text class="form-item-label">版本号 *</text>
-        <input class="form-item-input" value="{{form.version}}" bindinput="onField" data-field="version" placeholder="2.0.1" />
-      </view>
-      <view class="form-item half">
-        <text class="form-item-label">日期</text>
-        <picker mode="date" value="{{form.date}}" bindchange="onDate">
-          <view class="form-item-input">{{form.date || '选择日期'}}</view>
-        </picker>
-      </view>
+  <!-- ===== 编辑表单 ===== -->
+  <view class="tt-card" wx:if="{{form}}">
+    <view class="tt-section clog-form-title">
+      <text>{{form._id ? '编辑版本' : '新增版本'}}</text>
+      <text class="tt-section-extra" bind:tap="closeForm">收起</text>
     </view>
-    <view class="form-item">
-      <text class="form-item-label">标题</text>
-      <input class="form-item-input" value="{{form.title}}" bindinput="onField" data-field="title" />
+
+    <view class="clog-fitem">
+      <text class="clog-flabel">版本号 <text class="clog-req">*</text></text>
+      <input class="clog-input" value="{{form.version}}" bindinput="onField" data-field="version" placeholder="2.0.1" />
     </view>
-    <view class="form-item">
-      <text class="form-item-label">更新内容</text>
-      <textarea class="ta" value="{{form.content}}" bindinput="onContent" maxlength="-1" auto-height placeholder="每行一条…" />
+
+    <view class="clog-fitem">
+      <text class="clog-flabel">发布日期</text>
+      <picker mode="date" value="{{form.date}}" bindchange="onDate">
+        <view class="clog-input clog-picker">{{form.date || '选择日期'}}</view>
+      </picker>
     </view>
-    <view class="form-actions">
+
+    <view class="clog-fitem">
+      <text class="clog-flabel">标题</text>
+      <input class="clog-input" value="{{form.title}}" bindinput="onField" data-field="title" placeholder="如 性能优化与体验改进" />
+    </view>
+
+    <view class="clog-fitem clog-fitem-top">
+      <text class="clog-flabel">更新内容</text>
+      <textarea
+        class="clog-textarea"
+        value="{{form.content}}"
+        bindinput="onContent"
+        maxlength="-1"
+        auto-height
+        placeholder="每行一条…"
+      />
+    </view>
+
+    <view class="clog-form-actions">
       <t-button theme="primary" block bind:tap="save">保存</t-button>
-      <t-button variant="outline" block bind:tap="closeForm">取消</t-button>
+      <t-button theme="default" variant="outline" block bind:tap="closeForm">取消</t-button>
     </view>
   </view>
 
-  <view class="list-card">
-    <view class="row" wx:for="{{list}}" wx:key="_id">
-      <view class="flex-1">
-        <view class="row-title num-font">v{{item.version}} <text class="row-sub-inline">{{item.date}}</text></view>
-        <view class="row-sub">{{item.title}}</view>
-      </view>
-      <view class="row-actions">
-        <view class="mini-btn" catch:tap="openEdit" data-id="{{item._id}}">编辑</view>
-        <view class="mini-btn danger" catch:tap="remove" data-id="{{item._id}}">删除</view>
-      </view>
-    </view>
-    <view class="empty-tip" wx:if="{{!list.length && !loading}}">暂无版本记录</view>
-    <t-loading wx:if="{{loading}}" theme="circular" size="40rpx" class="loading-more" />
+  <!-- ===== 版本列表 ===== -->
+  <view class="tt-section">
+    <text>版本列表</text>
+    <text class="tt-section-extra">按发布日期归档</text>
   </view>
+
+  <view class="tt-card">
+    <block wx:if="{{list.length}}">
+      <view class="tt-row clog-row" wx:for="{{list}}" wx:key="_id">
+        <view class="clog-ver">
+          <text class="num-font">v{{item.version}}</text>
+        </view>
+        <view class="flex-1">
+          <view class="clog-row-title">{{item.title || '版本更新'}}</view>
+          <view class="tt-row-sub">
+            <t-icon name="calendar" size="26rpx" color="var(--tt-text-3)" />
+            <text class="clog-date">{{item.date}}</text>
+          </view>
+        </view>
+        <view class="clog-actions">
+          <view class="clog-btn" catch:tap="openEdit" data-id="{{item._id}}">编辑</view>
+          <view class="clog-btn danger" catch:tap="remove" data-id="{{item._id}}">删除</view>
+        </view>
+      </view>
+    </block>
+    <view class="tt-empty" wx:if="{{!list.length && !loading}}">暂无版本记录</view>
+    <t-loading wx:if="{{loading}}" theme="circular" size="40rpx" class="clog-loading" />
+  </view>
+
+  <view class="tt-footer">版本日志同步展示在用户端「版本日志」页</view>
 </view>

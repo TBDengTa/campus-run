@@ -1,0 +1,100 @@
+.import-page {
+  padding-bottom: 48rpx;
+}
+
+.import-tip {
+  margin-bottom: 20rpx;
+}
+
+.tip-line {
+  font-size: 24rpx;
+  line-height: 40rpx;
+  color: var(--td-text-color-secondary);
+}
+
+.tip-line.warn {
+  color: var(--td-error-color-6);
+}
+
+.import-actions {
+  display: flex;
+  gap: 16rpx;
+  margin-bottom: 16rpx;
+}
+
+.import-btn {
+  padding: 12rpx 32rpx;
+  border-radius: 999px;
+  border: 1rpx solid var(--td-component-border, #dcdcdc);
+  font-size: 24rpx;
+  color: var(--td-text-color-primary);
+}
+
+.import-textarea {
+  width: 100%;
+  min-height: 280rpx;
+  font-size: 24rpx;
+  font-family: monospace;
+  padding: 16rpx 20rpx;
+  border-radius: 12rpx;
+  background: var(--td-gray-color-1, #f3f3f3);
+  box-sizing: border-box;
+  margin-bottom: 16rpx;
+}
+
+.result-row {
+  display: flex;
+  margin-bottom: 20rpx;
+}
+
+.result-stat {
+  flex: 1;
+  text-align: center;
+}
+
+.result-num {
+  font-size: 40rpx;
+  font-weight: 700;
+}
+
+.result-num.ok {
+  color: var(--td-success-color-5);
+}
+
+.result-num.bad {
+  color: var(--td-error-color-6);
+}
+
+.result-label {
+  font-size: 24rpx;
+  color: var(--td-text-color-secondary);
+  margin-top: 4rpx;
+}
+
+.fail-list {
+  border-top: 1rpx solid var(--td-component-stroke);
+  max-height: 400rpx;
+  overflow-y: auto;
+}
+
+.fail-item {
+  display: flex;
+  flex-direction: column;
+  padding: 14rpx 0;
+  border-bottom: 1rpx solid var(--td-component-stroke);
+}
+
+.fail-item:last-child {
+  border-bottom: none;
+}
+
+.fail-row {
+  font-size: 26rpx;
+  font-weight: 500;
+}
+
+.fail-reason {
+  font-size: 24rpx;
+  color: var(--td-error-color-6);
+  margin-top: 4rpx;
+}

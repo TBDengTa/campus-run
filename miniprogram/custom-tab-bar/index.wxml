@@ -1,0 +1,24 @@
+<view class="tabbar">
+  <view
+    class="tabbar-item {{selected === index ? 'active' : ''}} {{item.center ? 'center' : ''}}"
+    wx:for="{{list}}"
+    wx:key="key"
+    data-index="{{index}}"
+    bind:tap="onTap"
+  >
+    <block wx:if="{{item.center}}">
+      <view class="tabbar-center">
+        <t-icon name="{{selected === index ? item.activeIcon : item.icon}}" size="46rpx" color="#ffffff" />
+      </view>
+      <text class="tabbar-text">{{item.text}}</text>
+    </block>
+    <block wx:else>
+      <t-icon
+        name="{{selected === index ? item.activeIcon : item.icon}}"
+        size="46rpx"
+        color="{{selected === index ? '#ff6b00' : '#9aa0a6'}}"
+      />
+      <text class="tabbar-text">{{item.text}}</text>
+    </block>
+  </view>
+</view>

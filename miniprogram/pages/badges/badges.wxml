@@ -1,22 +1,62 @@
-<view class="page badges-page">
-  <view class="card badges-summary">
-    <text class="summary-num num-font">{{earnedCount}}</text>
-    <text class="summary-sep">/</text>
-    <text class="summary-total num-font">{{total}}</text>
-    <text class="text-secondary"> 枚徽章已点亮</text>
+<view class="page tt-page">
+  <!-- ===== 汇总 ===== -->
+  <view class="tt-card badge-sum">
+    <view class="badge-sum-main">
+      <text class="badge-sum-num num-font">{{earnedCount}}</text>
+      <text class="badge-sum-total num-font">/{{total}}</text>
+      <text class="badge-sum-label">枚徽章已点亮</text>
+    </view>
+    <view class="badge-sum-track">
+      <view class="badge-sum-fill" style="width: {{percent}}%"></view>
+    </view>
+    <view class="badge-sum-foot">
+      <text>收集进度</text>
+      <text class="num-font badge-sum-percent">{{percent}}%</text>
+    </view>
   </view>
 
-  <view class="badge-grid">
+  <!-- ===== 徽章网格 ===== -->
+  <view class="tt-section">
+    <text>全部徽章</text>
+    <text class="tt-section-extra">{{earnedCount}}/{{total}} 已获得</text>
+  </view>
+
+  <view class="badge-grid" wx:if="{{list.length}}">
     <view class="badge-cell {{item.earned ? 'earned' : ''}}" wx:for="{{list}}" wx:key="key">
-      <image wx:if="{{item.icon}}" class="badge-icon" src="{{item.icon}}" mode="aspectFit" lazy-load />
-      <view wx:else class="badge-icon-fallback">{{item.earned ? '🏅' : '🔒'}}</view>
+      <view class="badge-icon-wrap">
+        <image
+          wx:if="{{item.icon}}"
+          class="badge-icon"
+          src="{{item.icon}}"
+          mode="aspectFit"
+          lazy-load
+        />
+        <view wx:else class="badge-icon">{{item.earned ? '🏅' : '🔒'}}</view>
+      </view>
       <view class="badge-name">{{item.name}}</view>
-      <view class="badge-desc text-placeholder">{{item.description}}</view>
-      <view class="badge-progress text-secondary" wx:if="{{!item.earned}}">
-        {{item.tierGroup ? item.tierGroup + ' · ' : ''}}目标 {{item.target}}{{item.type === 'total_distance' || item.type === 'single_distance' ? 'm' : item.type === 'total_steps' || item.type === 'single_steps' ? '步' : '天'}}
+      <view class="badge-desc">{{item.description}}</view>
+      <block wx:if="{{!item.earned}}">
+        <view class="badge-target">
+          {{item.tierGroup ? item.tierGroup + ' · ' : ''}}目标 {{item.targetText}}
+        </view>
+        <view class="badge-track">
+          <view class="badge-track-fill"></view>
+        </view>
+      </block>
+      <view class="badge-mark" wx:else>
+        <t-icon name="check-circle-filled" size="24rpx" color="var(--tt-brand)" />
+        <text>已获得</text>
       </view>
     </view>
   </view>
 
-  <t-loading wx:if="{{loading}}" theme="circular" size="48rpx" text="加载中…" class="loading" />
+  <view class="tt-card badge-empty-card" wx:else>
+    <view class="tt-empty">暂无徽章，去跑一跑点亮第一枚吧</view>
+  </view>
+
+  <view class="badge-loading" wx:if="{{loading}}">
+    <t-loading theme="circular" size="48rpx" text="加载中…" />
+  </view>
+
+  <view class="tt-footer">每日坚持运动，徽章会自动点亮</view>
 </view>

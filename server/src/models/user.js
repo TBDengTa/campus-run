@@ -4,11 +4,25 @@ const { Schema } = mongoose;
 
 const userSchema = new Schema(
   {
-    openid: { type: String, required: true, unique: true },
+    // 绑定的微信 openid（绑定后不可解绑/更换）；未绑定账号为空 → 唯一稀疏索引
+    openid: { type: String, unique: true, sparse: true },
+    openidBoundAt: { type: Date },
     unionid: { type: String, index: true },
     nickname: { type: String, default: '' },
     avatarUrl: { type: String, default: '' },
+    // ===== 账号密码体系 =====
+    // 登录账号 = 姓名（同名靠密码区分，不做唯一索引）
+    account: { type: String, index: true },
     realName: { type: String, default: '' },
+    // 当前密码哈希（scrypt$ salt $ hash）
+    passwordHash: { type: String },
+    // 初始密码哈希（学号后8/身份证后8），首次改密后清空
+    initialHashes: { type: [String], default: [] },
+    // 管理员重置专用：初始密码哈希备份（永不失效），重置时同时恢复 initialHashes
+    resetHashes: { type: [String], default: [] },
+    mustChangePassword: { type: Boolean, default: false },
+    failedLogins: { type: Number, default: 0 },
+    lockUntil: { type: Date },
     // 不设默认值：studentId 有唯一稀疏索引，多个空串会撞唯一键；未填写时不落字段
     studentId: { type: String, index: { unique: true, sparse: true } },
     schoolId: { type: Schema.Types.ObjectId, ref: 'Organization' },

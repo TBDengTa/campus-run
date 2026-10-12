@@ -174,4 +174,23 @@ Page({
       },
     });
   },
+
+  // 重置登录密码：恢复为初始密码（学号/身份证后8），需 permission.manage
+  resetPassword() {
+    const that = this;
+    wx.showModal({
+      title: '重置登录密码',
+      content: '该用户的密码将重置为初始密码，并要求下次登录时修改。确认重置？',
+      success: async (res) => {
+        if (!res.confirm) return;
+        try {
+          const r = await auth.post(`/api/admin/users/${that.data.id}/reset-password`);
+          wx.showModal({ title: '已重置', content: r.message, showCancel: false });
+          that.load();
+        } catch (err) {
+          wx.showToast({ title: err.message, icon: 'none' });
+        }
+      },
+    });
+  },
 });

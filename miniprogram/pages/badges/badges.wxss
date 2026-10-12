@@ -1,82 +1,179 @@
-.badges-page {
-  padding: 24rpx 0 48rpx;
+/* 我的徽章：汇总卡 + 徽章网格（已获得橙色高亮 / 未获得灰度） */
+
+/* ===== 汇总 ===== */
+.badge-sum-main {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
 }
 
-.badges-summary {
-  text-align: center;
-  font-size: 30rpx;
-}
-
-.summary-num {
-  font-size: 48rpx;
+.badge-sum-num {
+  font-size: 60rpx;
   font-weight: 700;
-  color: var(--td-brand-color);
+  line-height: 1.1;
+  color: var(--tt-brand);
 }
 
-.summary-sep {
-  margin: 0 8rpx;
-  color: var(--td-text-color-placeholder);
+.badge-sum-total {
+  font-size: 32rpx;
+  color: var(--tt-text-3);
 }
 
+.badge-sum-label {
+  margin-left: 12rpx;
+  font-size: 26rpx;
+  color: var(--tt-text-2);
+}
+
+.badge-sum-track {
+  height: 16rpx;
+  margin-top: 26rpx;
+  border-radius: 999rpx;
+  background: var(--tt-line);
+  overflow: hidden;
+}
+
+.badge-sum-fill {
+  height: 100%;
+  border-radius: 999rpx;
+  background: linear-gradient(90deg, #ff9a3d, var(--tt-brand));
+  transition: width 0.4s ease;
+}
+
+.badge-sum-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14rpx;
+  font-size: 23rpx;
+  color: var(--tt-text-3);
+}
+
+.badge-sum-percent {
+  color: var(--tt-brand);
+  font-weight: 700;
+}
+
+/* ===== 网格 ===== */
 .badge-grid {
   display: flex;
   flex-wrap: wrap;
-  padding: 0 24rpx;
-  gap: 20rpx;
+  padding: 0 var(--tt-gap);
+  gap: var(--tt-gap);
 }
 
 .badge-cell {
-  width: calc((100% - 40rpx) / 3);
-  background: var(--td-bg-color-container);
-  border-radius: 20rpx;
-  padding: 24rpx 16rpx;
+  width: calc((100% - 48rpx) / 3);
+  box-sizing: border-box;
+  padding: 28rpx 16rpx 24rpx;
+  border-radius: 24rpx;
+  background: var(--tt-card);
+  box-shadow: var(--tt-card-shadow);
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
-  filter: grayscale(1);
-  opacity: 0.55;
 }
 
 .badge-cell.earned {
-  filter: none;
-  opacity: 1;
-  box-shadow: var(--td-shadow-1);
+  background: linear-gradient(180deg, var(--tt-brand-soft) 0%, var(--tt-card) 72%);
+  border: 2rpx solid var(--tt-brand-soft-2);
+}
+
+.badge-icon-wrap {
+  width: 96rpx;
+  height: 96rpx;
+  border-radius: 28rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--tt-brand-soft);
+}
+
+.badge-cell:not(.earned) .badge-icon-wrap {
+  background: transparent;
 }
 
 .badge-icon {
   width: 96rpx;
   height: 96rpx;
+  font-size: 60rpx;
+  line-height: 96rpx;
+  text-align: center;
 }
 
-.badge-icon-fallback {
-  width: 96rpx;
-  height: 96rpx;
-  font-size: 64rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.badge-cell:not(.earned) .badge-icon {
+  filter: grayscale(1);
+  opacity: 0.45;
 }
 
 .badge-name {
-  margin-top: 12rpx;
+  margin-top: 16rpx;
   font-size: 26rpx;
   font-weight: 600;
+  color: var(--tt-text-1);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.badge-cell:not(.earned) .badge-name {
+  color: var(--tt-text-2);
 }
 
 .badge-desc {
-  margin-top: 4rpx;
-  font-size: 20rpx;
-  line-height: 30rpx;
-}
-
-.badge-progress {
   margin-top: 8rpx;
   font-size: 20rpx;
+  line-height: 30rpx;
+  color: var(--tt-text-3);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
-.loading {
+.badge-target {
+  margin-top: 12rpx;
+  font-size: 20rpx;
+  line-height: 28rpx;
+  color: var(--tt-text-3);
+}
+
+/* 未获得：橙色进度条底槽（接口未返回实时进度，仅作状态提示） */
+.badge-track {
+  width: 100%;
+  height: 8rpx;
+  margin-top: 12rpx;
+  border-radius: 999rpx;
+  background: var(--tt-line);
+  overflow: hidden;
+}
+
+.badge-track-fill {
+  width: 0;
+  height: 100%;
+  border-radius: 999rpx;
+  background: var(--tt-brand);
+}
+
+.badge-mark {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  margin-top: 12rpx;
+  font-size: 20rpx;
+  font-weight: 600;
+  color: var(--tt-brand);
+}
+
+/* ===== 状态 ===== */
+.badge-empty-card {
+  padding: 8rpx 32rpx;
+}
+
+.badge-loading {
   display: flex;
   justify-content: center;
-  padding: 40rpx;
+  padding: 40rpx 0;
 }

@@ -1,22 +1,50 @@
-<view class="page appeal-list-page">
-  <view class="card submit-entry" bind:tap="goSubmit">
-    <t-icon name="add" size="40rpx" color="var(--td-brand-color)" />
-    <text class="text-brand">提交新的申诉</text>
+<view class="page tt-page">
+  <!-- ===== 入口：提交新申诉 ===== -->
+  <view class="appeal-entry" bind:tap="goSubmit">
+    <view class="appeal-entry-icon">
+      <t-icon name="add" size="40rpx" color="var(--tt-brand)" />
+    </view>
+    <view class="appeal-entry-body">
+      <view class="appeal-entry-title">提交新的申诉</view>
+      <view class="appeal-entry-sub">说明情况后由管理员核实处理</view>
+    </view>
+    <t-icon name="chevron-right" size="32rpx" color="var(--tt-text-3)" />
   </view>
 
+  <!-- ===== 申诉记录 ===== -->
   <block wx:if="{{list.length}}">
-    <view class="card appeal-card" wx:for="{{list}}" wx:key="_id">
-      <view class="flex-between mb-16">
+    <view class="tt-section">
+      申诉记录
+      <text class="tt-section-extra">共 {{list.length}} 条</text>
+    </view>
+
+    <view class="tt-card appeal-card" wx:for="{{list}}" wx:key="_id">
+      <view class="appeal-head">
         <t-tag theme="{{item.statusInfo.theme}}" variant="light" size="small">{{item.statusInfo.text}}</t-tag>
-        <text class="text-placeholder time">{{item.dateText}}</text>
+        <text class="appeal-time">{{item.dateText}}</text>
       </view>
+
       <view class="appeal-content">{{item.content}}</view>
-      <view class="reply" wx:if="{{item.reply}}">
-        <text class="reply-label">管理员回复：</text>{{item.reply}}
+
+      <view class="appeal-reply" wx:if="{{item.reply}}">
+        <view class="appeal-reply-label">
+          <t-icon name="chat" size="28rpx" color="var(--tt-brand)" />
+          <text>管理员回复</text>
+        </view>
+        <view class="appeal-reply-text">{{item.reply}}</view>
       </view>
     </view>
   </block>
-  <t-empty wx:elif="{{!loading}}" content="暂无申诉记录" />
 
-  <t-loading wx:if="{{loading}}" theme="circular" size="48rpx" text="加载中…" class="loading" />
+  <!-- ===== 空状态 ===== -->
+  <view class="tt-card appeal-empty-card" wx:elif="{{!loading}}">
+    <t-icon name="file-paste" size="96rpx" color="var(--tt-text-3)" />
+    <view class="appeal-empty-text">暂无申诉记录</view>
+  </view>
+
+  <view class="appeal-loading" wx:if="{{loading}}">
+    <t-loading theme="circular" size="48rpx" text="加载中…" />
+  </view>
+
+  <view class="tt-footer" wx:if="{{list.length}}">申诉结果以管理员审核为准，如仍有疑问可重新提交</view>
 </view>

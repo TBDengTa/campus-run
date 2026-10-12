@@ -1,37 +1,99 @@
-.banned-page {
-  padding: 24rpx 0 48rpx;
-}
+/* ===== 账号封禁 · 白橙 + 柔和红点缀 ===== */
 
-.ban-hero {
+.banned-hero {
+  margin: 0 var(--tt-gap) var(--tt-gap);
+  padding: 56rpx var(--tt-pad) 48rpx;
+  border-radius: var(--tt-radius);
+  background: var(--tt-card);
+  box-shadow: var(--tt-card-shadow);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   text-align: center;
-  padding: 64rpx 32rpx 40rpx;
 }
 
-.ban-icon {
-  font-size: 96rpx;
+.banned-hero-icon {
+  width: 140rpx;
+  height: 140rpx;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--td-error-color-1);
 }
 
-.ban-title {
-  font-size: 36rpx;
+.banned-hero-title {
+  margin-top: 28rpx;
+  font-size: 38rpx;
   font-weight: 700;
-  margin-top: 16rpx;
+  color: var(--tt-text-1);
 }
 
-.ban-reason {
-  margin-top: 16rpx;
-  font-size: 28rpx;
-  color: var(--td-error-color);
+.banned-hero-sub {
+  margin-top: 12rpx;
+  font-size: 25rpx;
+  color: var(--tt-text-3);
 }
 
-.ban-until {
-  margin-top: 8rpx;
-  font-size: 24rpx;
-  color: var(--td-text-color-secondary);
+/* 封禁详情（柔和红色浅底区块） */
+.banned-info {
+  margin: 0 var(--tt-gap) var(--tt-gap);
+  padding: 28rpx var(--tt-pad);
+  border-radius: var(--tt-radius);
+  background: var(--td-error-color-1);
 }
 
-.tip {
-  text-align: center;
-  font-size: 24rpx;
-  padding: 0 48rpx;
-  line-height: 36rpx;
+.banned-info-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 20rpx;
+}
+
+.banned-info-row + .banned-info-row {
+  margin-top: 22rpx;
+  padding-top: 22rpx;
+  border-top: 2rpx solid rgba(229, 72, 77, 0.16);
+}
+
+.banned-info-label {
+  width: 140rpx;
+  flex-shrink: 0;
+  font-size: 26rpx;
+  color: var(--td-error-color-6);
+}
+
+.banned-info-value {
+  flex: 1;
+  min-width: 0;
+  font-size: 27rpx;
+  line-height: 40rpx;
+  font-weight: 500;
+  color: var(--tt-text-1);
+  word-break: break-all;
+}
+
+.banned-info-muted {
+  font-weight: 400;
+  color: var(--tt-text-2);
+}
+
+/* 操作按钮 */
+.banned-btn-gap {
+  margin-top: 20rpx;
+}
+
+.banned-refresh {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
+  margin-top: 28rpx;
+  padding-top: 26rpx;
+  border-top: 2rpx solid var(--tt-line);
+  font-size: 25rpx;
+  color: var(--tt-text-3);
+}
+
+.banned-refresh:active {
+  opacity: 0.7;
 }

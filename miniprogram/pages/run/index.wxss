@@ -1,24 +1,95 @@
 .run-page {
-  display: flex;
-  flex-direction: column;
+  position: relative;
+  width: 100%;
   height: 100vh;
+  overflow: hidden;
+  background: #e9edf2;
 }
 
 .map {
-  flex: 1;
+  position: absolute;
+  left: 0;
+  top: 0;
   width: 100%;
+  height: 100%;
 }
 
-.panel {
-  padding: 32rpx 32rpx calc(32rpx + env(safe-area-inset-bottom));
-  background: var(--td-bg-color-container);
-  border-radius: 32rpx 32rpx 0 0;
-  box-shadow: var(--td-shadow-2);
-}
-
-.stats-row {
+/* ===== 顶部状态条 ===== */
+.top-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 24rpx;
+  padding: 0 32rpx;
   display: flex;
-  margin-bottom: 32rpx;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.state-chip {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  padding: 12rpx 26rpx;
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 6rpx 20rpx rgba(28, 31, 35, 0.12);
+  font-size: 25rpx;
+  font-weight: 500;
+  color: var(--tt-text-1);
+}
+
+.state-chip .dot {
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+  background: var(--tt-text-3);
+}
+
+.state-chip.running .dot {
+  background: var(--tt-brand);
+  box-shadow: 0 0 0 6rpx rgba(255, 107, 0, 0.16);
+}
+
+.state-chip.paused .dot {
+  background: var(--td-warning-color-5);
+}
+
+.loc-chip {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  padding: 12rpx 22rpx;
+  border-radius: 999rpx;
+  background: var(--tt-brand-soft);
+  font-size: 23rpx;
+  color: var(--tt-brand-deep);
+}
+
+/* ===== 底部控制面板（悬浮于自定义导航栏之上） ===== */
+.sheet {
+  position: absolute;
+  left: 24rpx;
+  right: 24rpx;
+  bottom: calc(156rpx + env(safe-area-inset-bottom));
+  padding: 18rpx 40rpx 32rpx;
+  background: var(--tt-card);
+  border-radius: 40rpx;
+  box-shadow: 0 12rpx 40rpx rgba(28, 31, 35, 0.16);
+}
+
+.sheet-grab {
+  width: 72rpx;
+  height: 8rpx;
+  border-radius: 999rpx;
+  background: var(--tt-line);
+  margin: 0 auto 26rpx;
+}
+
+.stats {
+  display: flex;
+  align-items: flex-end;
+  margin-bottom: 34rpx;
 }
 
 .stat {
@@ -26,21 +97,160 @@
   text-align: center;
 }
 
-.stat-num {
+.stat-main {
+  flex: 1.3;
+}
+
+.stat-v {
   font-size: 44rpx;
   font-weight: 700;
+  color: var(--tt-text-1);
+  line-height: 1.1;
 }
 
-.stat-label {
-  font-size: 24rpx;
-  margin-top: 4rpx;
+.stat-main .stat-v {
+  font-size: 60rpx;
+  color: var(--tt-brand);
 }
 
-.btn-row {
+.stat-u {
+  font-size: 26rpx;
+  font-weight: 500;
+  margin-left: 6rpx;
+  color: var(--tt-brand);
+  opacity: 0.7;
+}
+
+.stat-l {
+  margin-top: 8rpx;
+  font-size: 23rpx;
+  color: var(--tt-text-3);
+}
+
+.ctrls {
   display: flex;
-  gap: 24rpx;
+  justify-content: center;
+  align-items: center;
+  gap: 32rpx;
 }
 
-.btn-row t-button {
-  flex: 1;
+/* 待机大按钮 */
+.big-btn {
+  width: 100%;
+  height: 108rpx;
+  border-radius: 999rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14rpx;
+  font-size: 33rpx;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(135deg, #ff9a3d, var(--tt-brand));
+  box-shadow: 0 12rpx 30rpx rgba(255, 107, 0, 0.3);
+}
+
+.big-btn:active {
+  opacity: 0.88;
+}
+
+/* 圆形控制按钮 */
+.round-btn {
+  width: 180rpx;
+  height: 180rpx;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
+  font-size: 27rpx;
+  font-weight: 600;
+}
+
+.round-btn.primary {
+  color: #fff;
+  background: linear-gradient(135deg, #ff9a3d, var(--tt-brand));
+  box-shadow: 0 12rpx 30rpx rgba(255, 107, 0, 0.3);
+}
+
+.round-btn.ghost {
+  color: var(--tt-brand);
+  background: var(--tt-brand-soft);
+  border: 2rpx solid var(--tt-brand-soft-2);
+}
+
+.round-btn.danger {
+  color: #fff;
+  background: linear-gradient(135deg, #ff7a6b, var(--td-error-color-6));
+  box-shadow: 0 12rpx 30rpx rgba(229, 72, 77, 0.26);
+}
+
+.round-btn:active {
+  opacity: 0.88;
+  transform: scale(0.97);
+}
+
+.tip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
+  margin-top: 30rpx;
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+/* ===== 教师：不参与运动记录 ===== */
+.blocked {
+  width: 100%;
+  height: 100vh;
+  padding: 0 48rpx;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--tt-bg-page);
+}
+
+.blocked-card {
+  width: 100%;
+  padding: 64rpx 48rpx 56rpx;
+  border-radius: 36rpx;
+  background: var(--tt-card);
+  box-shadow: var(--tt-card-shadow);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.blocked-icon {
+  width: 132rpx;
+  height: 132rpx;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #ff9a3d, var(--tt-brand));
+  box-shadow: 0 12rpx 30rpx rgba(255, 107, 0, 0.28);
+}
+
+.blocked-title {
+  margin-top: 32rpx;
+  font-size: 36rpx;
+  font-weight: 700;
+  color: var(--tt-text-1);
+}
+
+.blocked-sub {
+  margin-top: 16rpx;
+  font-size: 25rpx;
+  line-height: 1.6;
+  color: var(--tt-text-3);
+}
+
+.blocked-btn {
+  margin-top: 48rpx;
+  padding: 0 80rpx;
 }

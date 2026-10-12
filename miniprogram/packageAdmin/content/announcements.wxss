@@ -1,25 +1,144 @@
-@import '../admin-common.wxss';
-
-.add-bar {
-  padding: 0 28rpx 16rpx;
+/* 公告管理（白橙设计系统） */
+.ann-page {
+  padding-bottom: 32rpx;
 }
 
-.row-actions {
+.ann-head {
   display: flex;
-  gap: 12rpx;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+  margin: 0 var(--tt-gap) 24rpx;
 }
 
-.ta {
-  width: 100%;
-  min-height: 160rpx;
+.ann-head-text {
   font-size: 26rpx;
-  padding: 16rpx 20rpx;
-  border-radius: 12rpx;
-  background: var(--td-gray-color-1, #f3f3f3);
+  color: var(--tt-text-2);
+}
+
+/* ===== 表单 ===== */
+.ann-form-title {
+  margin: 0 0 20rpx;
+}
+
+.ann-fitem {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding: 22rpx 0;
+  border-bottom: 2rpx solid var(--tt-line);
+}
+
+.ann-fitem:last-of-type {
+  border-bottom: none;
+}
+
+.ann-fitem-switch {
+  justify-content: space-between;
+}
+
+.ann-flabel {
+  flex-shrink: 0;
+  width: 160rpx;
+  font-size: 27rpx;
+  color: var(--tt-text-2);
+}
+
+.ann-flabel-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4rpx;
+}
+
+.ann-flabel-col .ann-flabel {
+  width: auto;
+  color: var(--tt-text-1);
+  font-weight: 500;
+}
+
+.ann-fdesc {
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+.ann-req {
+  color: var(--td-error-color-6);
+}
+
+.ann-input {
+  flex: 1;
+  min-width: 0;
+  height: 68rpx;
+  padding: 0 20rpx;
+  font-size: 27rpx;
+  color: var(--tt-text-1);
+  background: var(--td-bg-color-component);
+  border-radius: 16rpx;
   box-sizing: border-box;
 }
 
-.loading-more {
+.ann-textarea {
+  flex: 1;
+  min-width: 0;
+  min-height: 160rpx;
+  padding: 16rpx 20rpx;
+  font-size: 27rpx;
+  line-height: 1.6;
+  color: var(--tt-text-1);
+  background: var(--td-bg-color-component);
+  border-radius: 16rpx;
+  box-sizing: border-box;
+}
+
+.ann-form-actions {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 24rpx;
+}
+
+/* ===== 列表 ===== */
+.ann-row {
+  align-items: flex-start;
+}
+
+.ann-row-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12rpx;
+}
+
+.ann-row-name {
+  font-size: 29rpx;
+  font-weight: 500;
+  color: var(--tt-text-1);
+}
+
+.ann-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 12rpx;
+  padding-top: 4rpx;
+}
+
+.ann-btn {
+  padding: 10rpx 22rpx;
+  font-size: 23rpx;
+  color: var(--tt-brand);
+  background: var(--tt-brand-soft);
+  border-radius: 999rpx;
+}
+
+.ann-btn.danger {
+  color: var(--td-error-color-6);
+  background: var(--td-error-color-1);
+}
+
+.ann-btn:active {
+  opacity: 0.7;
+}
+
+.ann-loading {
   display: flex;
   justify-content: center;
   padding: 24rpx;

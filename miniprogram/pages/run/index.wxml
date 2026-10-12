@@ -1,56 +1,96 @@
 <view class="run-page">
-  <map
-    id="runMap"
-    class="map"
-    latitude="{{latitude}}"
-    longitude="{{longitude}}"
-    scale="{{scale}}"
-    polyline="{{polyline}}"
-    show-location
-  />
+  <!-- 教师：不参与运动记录 -->
+  <view class="blocked" wx:if="{{isTeacher}}">
+    <view class="blocked-card">
+      <view class="blocked-icon">
+        <t-icon name="info-circle" size="64rpx" color="#ffffff" />
+      </view>
+      <view class="blocked-title">教师账号不参与运动记录</view>
+      <view class="blocked-sub">GPS 实跑与微信运动步数同步仅对学生开放</view>
+      <view class="tt-pill-btn primary blocked-btn" bind:tap="goHome">返回首页</view>
+    </view>
+  </view>
 
-  <view class="panel">
-    <view class="stats-row">
-      <view class="stat">
-        <view class="stat-num num-font">{{distanceText}}</view>
-        <view class="stat-label text-secondary">距离</view>
+  <block wx:else>
+    <map
+      id="runMap"
+      class="map"
+      latitude="{{latitude}}"
+      longitude="{{longitude}}"
+      scale="{{scale}}"
+      polyline="{{polyline}}"
+      show-location
+      enable-traffic="{{false}}"
+      enable-building="{{false}}"
+    />
+
+    <!-- 顶部状态条 -->
+    <view class="top-bar">
+      <view class="state-chip {{state}}">
+        <view class="dot"></view>
+        <text>{{stateText}}</text>
       </view>
-      <view class="stat">
-        <view class="stat-num num-font">{{durationText}}</view>
-        <view class="stat-label text-secondary">时长</view>
-      </view>
-      <view class="stat">
-        <view class="stat-num num-font">{{paceText}}</view>
-        <view class="stat-label text-secondary">配速</view>
+      <view class="loc-chip" wx:if="{{!locationReady}}" bind:tap="initLocation">
+        <t-icon name="location" size="30rpx" color="var(--tt-brand)" />
+        <text>定位中，点击重试</text>
       </view>
     </view>
 
-    <block wx:if="{{state === 'idle'}}">
-      <t-button theme="primary" size="large" block shape="round" bind:tap="start">
-        <t-icon name="play" size="40rpx" /> 开始跑步
-      </t-button>
-    </block>
+    <!-- 底部控制面板 -->
+    <view class="sheet">
+      <view class="sheet-grab"></view>
 
-    <block wx:elif="{{state === 'running'}}">
-      <view class="btn-row">
-        <t-button theme="default" size="large" shape="round" bind:tap="pause">
-          <t-icon name="pause-circle" size="40rpx" /> 暂停
-        </t-button>
-        <t-button theme="danger" size="large" shape="round" loading="{{saving}}" bind:tap="finish">
-          <t-icon name="check-circle" size="40rpx" /> 结束
-        </t-button>
+      <view class="stats">
+        <view class="stat stat-main">
+          <view class="stat-v num-font">{{distanceText}}<text class="stat-u">km</text></view>
+          <view class="stat-l">距离</view>
+        </view>
+        <view class="stat">
+          <view class="stat-v num-font">{{durationText}}</view>
+          <view class="stat-l">时长</view>
+        </view>
+        <view class="stat">
+          <view class="stat-v num-font">{{paceText}}</view>
+          <view class="stat-l">配速</view>
+        </view>
       </view>
-    </block>
 
-    <block wx:elif="{{state === 'paused'}}">
-      <view class="btn-row">
-        <t-button theme="primary" size="large" shape="round" bind:tap="resume">
-          <t-icon name="play" size="40rpx" /> 继续
-        </t-button>
-        <t-button theme="danger" size="large" shape="round" loading="{{saving}}" bind:tap="finish">
-          <t-icon name="check-circle" size="40rpx" /> 结束
-        </t-button>
+      <!-- 待机 -->
+      <view class="ctrls" wx:if="{{state === 'idle'}}">
+        <view class="big-btn" bind:tap="start">
+          <t-icon name="play" size="52rpx" color="#ffffff" />
+          <text>开始跑步</text>
+        </view>
       </view>
-    </block>
-  </view>
+
+      <!-- 跑步中 -->
+      <view class="ctrls" wx:elif="{{state === 'running'}}">
+        <view class="round-btn ghost" bind:tap="pause">
+          <t-icon name="pause-circle" size="48rpx" color="var(--tt-brand)" />
+          <text>暂停</text>
+        </view>
+        <view class="round-btn primary" bind:tap="finish">
+          <t-icon name="check-circle" size="48rpx" color="#ffffff" />
+          <text>{{saving ? '保存中' : '结束'}}</text>
+        </view>
+      </view>
+
+      <!-- 暂停中 -->
+      <view class="ctrls" wx:else>
+        <view class="round-btn primary" bind:tap="resume">
+          <t-icon name="play" size="48rpx" color="#ffffff" />
+          <text>继续</text>
+        </view>
+        <view class="round-btn danger" bind:tap="finish">
+          <t-icon name="check-circle" size="48rpx" color="#ffffff" />
+          <text>{{saving ? '保存中' : '结束'}}</text>
+        </view>
+      </view>
+
+      <view class="tip">
+        <t-icon name="info-circle" size="26rpx" color="var(--tt-text-3)" />
+        <text>GPS 轨迹与配速将用于校园跑成绩统计</text>
+      </view>
+    </view>
+  </block>
 </view>

@@ -16,6 +16,8 @@ const config = {
   uploadMaxMb: Number(process.env.UPLOAD_MAX_MB || 5),
   // 本地测试登录：DEV_LOGIN=true 时接受 dev-student/dev-teacher/dev-admin 约定 code
   devLogin: process.env.DEV_LOGIN === 'true',
+  // 学校后台名单推送密钥（不配置则推送接口关闭）
+  rosterPushKey: process.env.ROSTER_PUSH_KEY || '',
   // 迁移脚本用
   legacyMongoUri: process.env.LEGACY_MONGO_URI || '',
   legacyDbName: process.env.LEGACY_MONGO_DB_NAME || '',

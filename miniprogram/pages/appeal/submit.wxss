@@ -1,18 +1,93 @@
-.appeal-submit-page {
-  padding: 24rpx 0 48rpx;
+/* ===== 提交申诉 · 白橙 ===== */
+
+/* 封禁信息（柔和红点缀） */
+.appeal-ban-card {
+  margin: 0 var(--tt-gap) var(--tt-gap);
+  padding: var(--tt-pad);
+  border-radius: var(--tt-radius);
+  background: var(--td-error-color-1);
+  box-shadow: var(--tt-card-shadow);
 }
 
-.ban-title {
+.appeal-ban-head {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+}
+
+.appeal-ban-title {
+  font-size: 29rpx;
   font-weight: 600;
-  margin-bottom: 8rpx;
+  color: var(--td-error-color-6);
 }
 
-.ban-reason,
-.ban-until {
-  font-size: 26rpx;
-  line-height: 40rpx;
+.appeal-ban-reason {
+  margin-top: 14rpx;
+  font-size: 27rpx;
+  line-height: 42rpx;
+  color: var(--tt-text-1);
+  word-break: break-all;
 }
 
-.tip {
+.appeal-ban-until {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  margin-top: 12rpx;
   font-size: 24rpx;
+  color: var(--td-error-color-6);
+}
+
+/* 字数统计 */
+.appeal-counter {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 4rpx;
+  margin-top: 16rpx;
+  padding-top: 16rpx;
+  border-top: 2rpx solid var(--tt-line);
+}
+
+.appeal-counter-min {
+  margin-right: auto;
+  font-size: 23rpx;
+  color: var(--tt-text-3);
+}
+
+.appeal-counter-num {
+  font-size: 28rpx;
+  font-weight: 700;
+  color: var(--tt-brand);
+}
+
+.appeal-counter-max {
+  font-size: 23rpx;
+  color: var(--tt-text-3);
+}
+
+/* 提示卡片 */
+.appeal-notice {
+  padding: 26rpx var(--tt-pad);
+}
+
+.appeal-notice-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  font-size: 25rpx;
+  color: var(--tt-text-2);
+}
+
+.appeal-notice-row + .appeal-notice-row {
+  margin-top: 16rpx;
+}
+
+/* 提交按钮 */
+.appeal-actions {
+  margin: 8rpx var(--tt-gap) 0;
+}
+
+.appeal-btn-disabled {
+  opacity: 0.6;
 }

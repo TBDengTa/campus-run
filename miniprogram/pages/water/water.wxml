@@ -1,42 +1,84 @@
-<view class="page water-page" wx:if="{{today}}">
-  <view class="card water-hero">
-    <view class="steps-hero">
-      <t-progress theme="circle" percentage="{{percent}}" size="360rpx" stroke-width="16rpx" track-color="var(--td-gray-color-3)" />
-      <view class="steps-hero-center">
-        <view class="water-num num-font">{{today.total}}</view>
-        <view class="text-secondary">/ {{today.target}} ml</view>
+<view class="page tt-page" wx:if="{{today}}">
+  <!-- ===== 主视觉：今日饮水进度 ===== -->
+  <view class="water-hero">
+    <view class="water-hero-head">
+      <view class="water-hero-title">
+        <t-icon name="drink" size="34rpx" color="var(--tt-brand)" />
+        <text>今日饮水</text>
       </view>
+      <text class="water-hero-target">目标 {{today.targetText}} ml</text>
     </view>
-    <view class="target-link text-brand" bind:tap="setTarget">调整每日目标</view>
+
+    <view class="water-hero-num">
+      <text class="num-font water-hero-value">{{today.totalText}}</text>
+      <text class="water-hero-unit">ml</text>
+    </view>
+
+    <view class="water-cup">
+      <view class="water-cup-fill" style="width: {{percent}}%"></view>
+    </view>
+
+    <view class="water-hero-foot">
+      <text class="water-hero-percent num-font">{{percent}}%</text>
+      <text class="water-hero-state {{percent >= 100 ? 'done' : ''}}">
+        {{percent >= 100 ? '已达成今日目标 ✓' : '还差 ' + today.remainingText + ' ml'}}
+      </text>
+    </view>
   </view>
 
-  <view class="card">
-    <view class="card-title">记一笔</view>
-    <view class="quick-row">
-      <view class="quick-item" wx:for="{{quickAmounts}}" wx:key="amount" bind:tap="add" data-amount="{{item.amount}}">
-        <view class="quick-icon">{{item.icon}}</view>
-        <view class="quick-amount num-font">{{item.amount}}ml</view>
-        <view class="quick-label text-secondary">{{item.label}}</view>
-      </view>
-      <view class="quick-item custom">
-        <view class="custom-input-row">
-          <input class="custom-input num-font" type="number" value="{{customAmount}}" bindinput="onCustomInput" />
-          <text class="text-secondary">ml</text>
+  <!-- ===== 记一笔 ===== -->
+  <view class="tt-section">记一笔<text class="tt-section-extra">点击即记录</text></view>
+  <view class="tt-card">
+    <view class="water-quick-row">
+      <view
+        class="water-quick-item"
+        wx:for="{{quickAmounts}}"
+        wx:key="amount"
+        bind:tap="add"
+        data-amount="{{item.amount}}"
+      >
+        <view class="water-quick-icon">
+          <t-icon name="{{item.tIcon}}" size="40rpx" color="#ffffff" />
         </view>
-        <t-button size="small" theme="primary" bind:tap="addCustom">记录</t-button>
+        <view class="water-quick-amount num-font">{{item.amountText}}</view>
+        <view class="water-quick-label">{{item.label}}</view>
+      </view>
+    </view>
+
+    <view class="tt-divider"></view>
+
+    <view class="water-custom">
+      <text class="water-custom-label">自定义</text>
+      <view class="water-custom-input-wrap">
+        <input class="water-custom-input num-font" type="number" value="{{customAmount}}" bindinput="onCustomInput" />
+        <text class="water-custom-unit">ml</text>
+      </view>
+      <view class="water-custom-btn" bind:tap="addCustom">
+        <t-icon name="check" size="30rpx" color="#ffffff" />
+        <text>记录</text>
       </view>
     </view>
   </view>
 
-  <view class="card">
-    <view class="card-title">今日记录（{{logs.length}} 笔）</view>
+  <!-- ===== 今日记录 ===== -->
+  <view class="tt-section">今日记录<text class="tt-section-extra">{{logs.length}} 笔</text></view>
+  <view class="tt-card">
     <block wx:if="{{logs.length}}">
-      <view class="log-item" wx:for="{{logs}}" wx:key="time">
-        <text class="log-time num-font">{{item.timeText}}</text>
-        <text class="flex-1">{{item.type}}</text>
-        <text class="log-amount num-font">+{{item.amount}}ml</text>
+      <view class="water-log" wx:for="{{logs}}" wx:key="time">
+        <view class="water-log-dot"></view>
+        <text class="water-log-time num-font">{{item.timeText}}</text>
+        <text class="water-log-type">{{item.type}}</text>
+        <text class="water-log-amount num-font">+{{item.amount}} ml</text>
       </view>
     </block>
-    <t-empty wx:else content="今天还没喝水，快记一笔吧" size="small" />
+    <view class="tt-empty" wx:else>今天还没喝水，快记一笔吧</view>
   </view>
+
+  <!-- ===== 调整目标 ===== -->
+  <view class="water-target-btn tt-pill-btn ghost" bind:tap="setTarget">
+    <t-icon name="setting-1" size="32rpx" color="var(--tt-brand)" />
+    <text>调整每日目标</text>
+  </view>
+
+  <view class="tt-footer">每天 1500-2000ml，少量多次更健康</view>
 </view>

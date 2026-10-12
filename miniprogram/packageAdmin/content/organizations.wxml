@@ -1,73 +1,116 @@
-<view class="admin-page">
-  <view class="add-bar">
-    <t-button theme="primary" size="small" bind:tap="openCreate">+ 新增学校</t-button>
-  </view>
+vview class="page tt-page org-page">
+  v!-- ===== 编辑表单 ===== -->
+  vview class="tt-card org-form" wx:if="{{form}}">
+    vview class="tt-section org-form-title">
+      vtext>{{form._id ? '编辑节点' : '新增节点'}}v/text>
+      vtext class="tt-section-extra" bind:tap="closeForm">收起v/text>
+    v/view>
 
-  <view class="form-card" wx:if="{{form}}">
-    <view class="form-item">
-      <text class="form-item-label">上级</text>
-      <view class="form-item-input">{{parentName}}</view>
-    </view>
-    <view class="form-item">
-      <text class="form-item-label">类型</text>
-      <picker range="{{types}}" range-key="label" value="{{typeIndex}}" disabled="{{!!form.parentId === false && form._id === '' && parentName === '（作为学校）'}}">
-        <view class="form-item-input">{{types[typeIndex].label}}</view>
-      </picker>
-    </view>
-    <view class="form-item">
-      <text class="form-item-label">名称 *</text>
-      <input class="form-item-input" value="{{form.name}}" bindinput="onField" data-field="name" />
-    </view>
-    <view class="form-item">
-      <text class="form-item-label">排序（小者靠前）</text>
-      <input class="form-item-input" type="number" value="{{form.sort}}" bindinput="onField" data-field="sort" />
-    </view>
-    <view class="form-actions">
-      <t-button theme="primary" block bind:tap="save">保存</t-button>
-      <t-button variant="outline" block bind:tap="closeForm">取消</t-button>
-    </view>
-  </view>
+    vview class="org-fitem">
+      vtext class="org-flabel">上级v/text>
+      vview class="org-static">{{parentName}}v/view>
+    v/view>
 
-  <view class="list-card">
-    <block wx:for="{{tree}}" wx:key="_id">
-      <!-- 学校 -->
-      <view class="row level-1">
-        <view class="flex-1">
-          <view class="row-title">🏫 {{item.name}}</view>
-          <view class="row-sub">{{item.children.length}} 个院系</view>
-        </view>
-        <view class="row-actions">
-          <view class="mini-btn" catch:tap="openCreate" data-parent-id="{{item._id}}" data-parent-name="{{item.name}}" data-type="department">+院系</view>
-          <view class="mini-btn" catch:tap="openEdit" data-id="{{item._id}}" data-name="{{item.name}}" data-type="school" data-sort="{{item.sort}}">编辑</view>
-          <view class="mini-btn danger" catch:tap="remove" data-id="{{item._id}}">删除</view>
-        </view>
-      </view>
-      <!-- 院系 -->
-      <block wx:for="{{item.children}}" wx:for-item="dept" wx:key="_id">
-        <view class="row level-2">
-          <view class="flex-1">
-            <view class="row-title">📚 {{dept.name}}</view>
-            <view class="row-sub">{{dept.children.length}} 个专业</view>
-          </view>
-          <view class="row-actions">
-            <view class="mini-btn" catch:tap="openCreate" data-parent-id="{{dept._id}}" data-parent-name="{{dept.name}}" data-type="specialty">+专业</view>
-            <view class="mini-btn" catch:tap="openEdit" data-id="{{dept._id}}" data-name="{{dept.name}}" data-type="department" data-sort="{{dept.sort}}" data-parentname="{{item.name}}">编辑</view>
-            <view class="mini-btn danger" catch:tap="remove" data-id="{{dept._id}}">删除</view>
-          </view>
-        </view>
-        <!-- 专业 -->
-        <view class="row level-3" wx:for="{{dept.children}}" wx:for-item="spec" wx:key="_id">
-          <view class="flex-1">
-            <view class="row-sub">· {{spec.name}}</view>
-          </view>
-          <view class="row-actions">
-            <view class="mini-btn" catch:tap="openEdit" data-id="{{spec._id}}" data-name="{{spec.name}}" data-type="specialty" data-sort="{{spec.sort}}" data-parentname="{{dept.name}}">编辑</view>
-            <view class="mini-btn danger" catch:tap="remove" data-id="{{spec._id}}">删除</view>
-          </view>
-        </view>
-      </block>
-    </block>
-    <view class="empty-tip" wx:if="{{!tree.length && !loading}}">暂无组织数据</view>
-    <t-loading wx:if="{{loading}}" theme="circular" size="40rpx" class="loading-more" />
-  </view>
-</view>
+    vview class="org-fitem">
+      vtext class="org-flabel">类型v/text>
+      vpicker
+        range="{{types}}"
+        range-key="label"
+        value="{{typeIndex}}"
+        disabled="{{!!form.parentId === false && form._id === '' && parentName === '（作为学校）'}}"
+      >
+        vview class="org-static org-picker">
+          vtext>{{types[typeIndex].label}}v/text>
+          vt-icon name="chevron-down" size="28rpx" color="var(--tt-text-3)" />
+        v/view>
+      v/picker>
+    v/view>
+
+    vview class="org-fitem">
+      vtext class="org-flabel">名称 vtext class="org-req">*v/text>v/text>
+      vinput class="org-input" value="{{form.name}}" bindinput="onField" data-field="name" placeholder="请输入节点名称" />
+    v/view>
+
+    vview class="org-fitem">
+      vtext class="org-flabel">排序v/text>
+      vinput class="org-input" type="number" value="{{form.sort}}" bindinput="onField" data-field="sort" placeholder="数值小者靠前" />
+    v/view>
+
+    vview class="org-form-actions">
+      vt-button theme="primary" block bind:tap="save">保存v/t-button>
+      vt-button theme="default" variant="outline" block bind:tap="closeForm">取消v/t-button>
+    v/view>
+  v/view>
+
+  v!-- ===== 组织架构树 ===== -->
+  vview class="tt-section">
+    vtext>组织架构v/text>
+    vtext class="tt-section-extra">共 {{tree.length}} 所学校v/text>
+  v/view>
+
+  vview class="tt-card org-tree">
+    vblock wx:if="{{tree.length}}">
+      vview class="org-node org-node-l1" wx:for="{{tree}}" wx:key="_id">
+        vview class="org-line">v/view>
+        vview class="org-node-body">
+          vview class="org-cap" style="background: var(--tt-brand-soft)">
+            vt-icon name="layers" size="34rpx" color="var(--tt-brand)" />
+          v/view>
+          vview class="flex-1">
+            vview class="org-name">{{item.name}}v/view>
+            vview class="org-meta">{{item.children.length}} 个院系v/view>
+          v/view>
+          vview class="org-actions">
+            vview class="org-btn" catch:tap="openCreate" data-parent-id="{{item._id}}" data-parent-name="{{item.name}}" data-type="department">+ 院系v/view>
+            vview class="org-btn" catch:tap="openEdit" data-id="{{item._id}}" data-name="{{item.name}}" data-type="school" data-sort="{{item.sort}}">编辑v/view>
+            vview class="org-btn danger" catch:tap="remove" data-id="{{item._id}}">删除v/view>
+          v/view>
+        v/view>
+      v/view>
+
+      v!-- 院系 -->
+      vblock wx:for="{{item.children}}" wx:for-item="dept" wx:key="_id">
+        vview class="org-node org-node-l2">
+          vview class="org-line">v/view>
+          vview class="org-node-body">
+            vview class="org-cap" style="background: var(--td-bg-color-component)">
+              vt-icon name="folder" size="32rpx" color="var(--tt-text-2)" />
+            v/view>
+            vview class="flex-1">
+              vview class="org-name">{{dept.name}}v/view>
+              vview class="org-meta">{{dept.children.length}} 个专业v/view>
+            v/view>
+            vview class="org-actions">
+              vview class="org-btn" catch:tap="openCreate" data-parent-id="{{dept._id}}" data-parent-name="{{dept.name}}" data-type="specialty">+ 专业v/view>
+              vview class="org-btn" catch:tap="openEdit" data-id="{{dept._id}}" data-name="{{dept.name}}" data-type="department" data-sort="{{dept.sort}}" data-parentname="{{item.name}}">编辑v/view>
+              vview class="org-btn danger" catch:tap="remove" data-id="{{dept._id}}">删除v/view>
+            v/view>
+          v/view>
+        v/view>
+
+        v!-- 专业 -->
+        vview class="org-node org-node-l3" wx:for="{{dept.children}}" wx:for-item="spec" wx:key="_id">
+          vview class="org-line">v/view>
+          vview class="org-node-body">
+            vt-icon name="bulletpoint" size="26rpx" color="var(--tt-brand)" />
+            vview class="flex-1">
+              vview class="org-name org-name-3">{{spec.name}}v/view>
+            v/view>
+            vview class="org-actions">
+              vview class="org-btn" catch:tap="openEdit" data-id="{{spec._id}}" data-name="{{spec.name}}" data-type="specialty" data-sort="{{spec.sort}}" data-parentname="{{dept.name}}">编辑v/view>
+              vview class="org-btn danger" catch:tap="remove" data-id="{{spec._id}}">删除v/view>
+            v/view>
+          v/view>
+        v/view>
+      v/block>
+    v/block>
+    vview class="tt-empty" wx:if="{{!tree.length && !loading}}">暂无组织数据v/view>
+    vt-loading wx:if="{{loading}}" theme="circular" size="40rpx" class="org-loading" />
+  v/view>
+
+  vview class="org-add">
+    vt-button theme="primary" block bind:tap="openCreate">+ 新增学校v/t-button>
+  v/view>
+
+  vview class="tt-footer">删除节点会一并删除其下级院系与专业v/view>
+v/view>

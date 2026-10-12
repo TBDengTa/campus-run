@@ -2,9 +2,12 @@
   "darkmode": true,
   "pages": [
     "pages/home/home",
-    "pages/calendar/calendar",
-    "pages/profile/profile",
     "pages/run/index",
+    "pages/records/records",
+    "pages/ranking/ranking",
+    "pages/profile/profile",
+    "pages/password/change",
+    "pages/auth-login/auth-login",
     "pages/run/detail",
     "pages/body-data/body-data",
     "pages/water/water",
@@ -24,6 +27,7 @@
       "pages": [
         "dashboard/dashboard",
         "users/users",
+        "users/import",
         "user-detail/user-detail",
         "appeals/appeals",
         "ads/sponsors",
@@ -41,10 +45,11 @@
     }
   ],
   "tabBar": {
-    "color": "#8b8b8b",
-    "selectedColor": "#0052d9",
+    "custom": true,
+    "color": "#9aa0a6",
+    "selectedColor": "#ff6b00",
     "backgroundColor": "#ffffff",
-    "borderStyle": "black",
+    "borderStyle": "white",
     "list": [
       {
         "pagePath": "pages/home/home",
@@ -53,10 +58,22 @@
         "selectedIconPath": "assets/tabbar/home-active.png"
       },
       {
-        "pagePath": "pages/calendar/calendar",
-        "text": "日历",
-        "iconPath": "assets/tabbar/calendar.png",
-        "selectedIconPath": "assets/tabbar/calendar-active.png"
+        "pagePath": "pages/run/index",
+        "text": "跑步",
+        "iconPath": "assets/tabbar/run.png",
+        "selectedIconPath": "assets/tabbar/run-active.png"
+      },
+      {
+        "pagePath": "pages/records/records",
+        "text": "记录",
+        "iconPath": "assets/tabbar/records.png",
+        "selectedIconPath": "assets/tabbar/records-active.png"
+      },
+      {
+        "pagePath": "pages/ranking/ranking",
+        "text": "排行",
+        "iconPath": "assets/tabbar/ranking.png",
+        "selectedIconPath": "assets/tabbar/ranking-active.png"
       },
       {
         "pagePath": "pages/profile/profile",
@@ -67,7 +84,7 @@
     ]
   },
   "window": {
-    "navigationBarTitleText": "校园跑",
+    "navigationBarTitleText": "唐唐快跑",
     "navigationBarBackgroundColor": "@navBgColor",
     "navigationBarTextStyle": "@navTxtStyle",
     "backgroundColor": "@bgColor",
