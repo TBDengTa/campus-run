@@ -14,6 +14,8 @@ const config = {
     .filter(Boolean),
   adPageBaseUrl: process.env.AD_PAGE_BASE_URL || '',
   uploadMaxMb: Number(process.env.UPLOAD_MAX_MB || 5),
+  // 本地测试登录：DEV_LOGIN=true 时接受 dev-student/dev-teacher/dev-admin 约定 code
+  devLogin: process.env.DEV_LOGIN === 'true',
   // 迁移脚本用
   legacyMongoUri: process.env.LEGACY_MONGO_URI || '',
   legacyDbName: process.env.LEGACY_MONGO_DB_NAME || '',

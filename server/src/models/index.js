@@ -21,6 +21,8 @@ const AdPage = require('./ad-page');
 const Holiday = require('./holiday');
 const Announcement = require('./announcement');
 const Changelog = require('./changelog');
+const Permission = require('./permission');
+const PermissionGroup = require('./permission-group');
 
 module.exports = {
   User,
@@ -46,4 +48,6 @@ module.exports = {
   Holiday,
   Announcement,
   Changelog,
+  Permission,
+  PermissionGroup,
 };

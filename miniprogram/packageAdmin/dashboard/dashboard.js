@@ -17,10 +17,11 @@ Page({
     try {
       await getApp().ensureLogin();
       const user = await getApp().refreshUser();
-      if (user.role !== 'admin') {
+      const perms = user.effectivePermissions || [];
+      if (!user.isManager || (!perms.includes('dashboard.view') && !perms.includes('*'))) {
         wx.showModal({
           title: '无权限',
-          content: '该功能仅管理员可用',
+          content: '该功能仅限持有看板权限的教师/管理员使用',
           showCancel: false,
           success: () => wx.switchTab({ url: '/pages/home/home' }),
         });

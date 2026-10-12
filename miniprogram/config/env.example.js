@@ -5,4 +5,10 @@ module.exports = {
   BASE_URL: 'https://your-server.example.com',
   // 广告落地页 H5 基础地址（web-view 业务域名）
   AD_PAGE_BASE_URL: 'https://your-adpage-domain.example.com',
+
+  // ===== 本地测试登录（配合后端 DEV_LOGIN=true 使用）=====
+  // 开启后不走微信登录，直接用约定账号，便于本地切换角色测试
+  DEV_LOGIN: false,
+  // 可选值：dev-student（学生视角）/ dev-teacher（教师视角）/ dev-admin（管理员视角）
+  DEV_ROLE: 'dev-student',
 };

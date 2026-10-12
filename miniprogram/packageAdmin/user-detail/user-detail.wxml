@@ -10,6 +10,7 @@
       </t-tag>
     </view>
     <view class="info-grid">
+      <view class="info-item"><text class="text-secondary">角色</text><text>{{user.role === 'teacher' ? '教师' : '学生'}}</text></view>
       <view class="info-item"><text class="text-secondary">姓名</text><text>{{user.realName || '-'}}</text></view>
       <view class="info-item"><text class="text-secondary">学号</text><text>{{user.studentId || '-'}}</text></view>
       <view class="info-item"><text class="text-secondary">学校</text><text>{{user.schoolName || '-'}}</text></view>
@@ -29,6 +30,54 @@
       <t-button wx:else theme="primary" block bind:tap="unban">解封</t-button>
     </view>
     <view class="empty-tip" wx:else>管理员账号不可封禁</view>
+  </view>
+
+  <!-- ===== 权限管理（需 permission.manage） ===== -->
+  <view class="form-card" wx:if="{{canManagePerms && user}}">
+    <view class="group-title">权限管理</view>
+
+    <view class="form-item">
+      <text class="form-item-label">用户角色</text>
+      <view class="chip-row">
+        <view class="chip {{draft.role === 'student' ? 'chip-active' : ''}}" bind:tap="pickRole" data-value="student">学生</view>
+        <view class="chip {{draft.role === 'teacher' ? 'chip-active' : ''}}" bind:tap="pickRole" data-value="teacher">教师</view>
+      </view>
+    </view>
+
+    <view class="form-item">
+      <text class="form-item-label">权限组（{{draft.groups.length}} 组已选）</text>
+      <view class="chip-row">
+        <view
+          wx:for="{{permGroups}}"
+          wx:key="key"
+          class="chip {{draft.groupMap[item.key]}}"
+          bind:tap="toggleGroup"
+          data-key="{{item.key}}"
+        >
+          {{item.name}}{{item.permissions[0] === '*' ? '（全部）' : '（' + item.permissions.length + '项）'}}
+        </view>
+      </view>
+    </view>
+
+    <view class="form-item" wx:for="{{permModules}}" wx:key="name" wx:for-item="mod">
+      <text class="form-item-label">独立权限 · {{mod.name}}</text>
+      <view class="chip-row">
+        <view
+          wx:for="{{mod.list}}"
+          wx:key="key"
+          class="chip {{draft.permMap[item.key]}}"
+          bind:tap="togglePerm"
+          data-key="{{item.key}}"
+        >
+          {{item.name}}
+        </view>
+      </view>
+    </view>
+
+    <view class="form-actions">
+      <t-button theme="primary" block loading="{{savingPerms}}" bind:tap="savePerms">保存权限</t-button>
+    </view>
+    <view class="perm-tip text-placeholder">有效权限 = 独立权限 ∪ 权限组展开；超级管理员组拥有全部权限</view>
   </view>
 
   <view class="section-title">封禁/解封流水</view>

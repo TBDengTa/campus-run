@@ -1,4 +1,46 @@
 <view class="page home-page">
+  <!-- ===== 管理视角面板（教师/管理员优先显示） ===== -->
+  <view class="mgr-panel card" wx:if="{{isManager}}">
+    <view class="flex-between mb-16">
+      <view class="mgr-title">
+        <t-icon name="dashboard" size="36rpx" color="var(--td-brand-color)" />
+        <text>管理视角 · {{roleText}}</text>
+      </view>
+      <t-tag theme="primary" variant="light" size="small">{{mgrEntries.length}} 项管理权限</t-tag>
+    </view>
+
+    <!-- 核心指标 -->
+    <view class="mgr-stats" wx:if="{{overview}}">
+      <view class="mgr-stat">
+        <view class="num-font mgr-num">{{overview.totalUsers}}</view>
+        <view class="text-secondary mgr-label">总用户</view>
+      </view>
+      <view class="mgr-stat">
+        <view class="num-font mgr-num">{{overview.activeToday}}</view>
+        <view class="text-secondary mgr-label">今日活跃</view>
+      </view>
+      <view class="mgr-stat">
+        <view class="num-font mgr-num">{{overview.stepsTodayText}}</view>
+        <view class="text-secondary mgr-label">今日步数</view>
+      </view>
+      <view class="mgr-stat">
+        <view class="num-font mgr-num">{{overview.adPvToday}}</view>
+        <view class="text-secondary mgr-label">广告PV</view>
+      </view>
+    </view>
+    <t-loading wx:else theme="circular" size="36rpx" text="加载看板…" class="mgr-loading" />
+
+    <!-- 按权限过滤的管理入口 -->
+    <view class="mgr-entries" wx:if="{{mgrEntries.length}}">
+      <view class="mgr-entry" wx:for="{{mgrEntries}}" wx:key="key" bind:tap="goAdminPage" data-url="{{item.url}}">
+        <view class="entry-icon" style="background: {{item.bg}}">
+          <t-icon name="{{item.icon}}" size="40rpx" color="{{item.color}}" />
+        </view>
+        <text class="entry-text">{{item.label}}</text>
+      </view>
+    </view>
+  </view>
+
   <!-- 公告条 -->
   <t-notice-bar
     wx:if="{{announcements.length}}"
@@ -104,12 +146,6 @@
           <t-icon name="notification" size="44rpx" color="var(--td-gray-color-8)" />
         </view>
         <text class="entry-text">公告</text>
-      </view>
-      <view class="entry-item" wx:if="{{isAdmin}}" bind:tap="goAdmin">
-        <view class="entry-icon" style="background: var(--td-brand-color-light)">
-          <t-icon name="dashboard" size="44rpx" color="var(--td-brand-color)" />
-        </view>
-        <text class="entry-text">管理端</text>
       </view>
     </view>
   </view>

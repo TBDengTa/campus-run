@@ -36,6 +36,7 @@ Page({
       this.setData({
         list: res.list.map((a) => ({
           ...a,
+          openidShort: (a.openid || '').slice(0, 8),
           statusInfo: STATUS[a.status] || STATUS.pending,
           timeText: (a.createdAt || '').slice(0, 16).replace('T', ' '),
         })),

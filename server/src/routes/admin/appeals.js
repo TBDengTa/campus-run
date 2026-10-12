@@ -1,5 +1,6 @@
 const express = require('express');
 const { wrap, ok, ApiError, parsePagination } = require('../../utils/response');
+const { requirePermission } = require('../../middlewares/admin');
 const Appeal = require('../../models/appeal');
 const User = require('../../models/user');
 const BanRecord = require('../../models/ban-record');
@@ -21,9 +22,10 @@ router.get(
   })
 );
 
-// 审核：approve=true 解封并采纳；false 驳回
+// 审核：approve=true 解封并采纳；false 驳回（需 appeal.review）
 router.post(
   '/:id/review',
+  requirePermission('appeal.review'),
   wrap(async (req, res) => {
     const { approve, reply } = req.body || {};
     const appeal = await Appeal.findById(req.params.id);

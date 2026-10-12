@@ -7,6 +7,8 @@ Page({
     stats: null,
     monitor: null,
     isAdmin: false,
+    canManagePerms: false,
+    roleText: '学生',
     banned: false,
   },
 
@@ -22,9 +24,12 @@ Page({
       if (user.status === 'banned' && user.bannedUntil && new Date(user.bannedUntil) > new Date()) {
         banned = true;
       }
+      const perms = user.effectivePermissions || [];
       this.setData({
         user,
-        isAdmin: user.role === 'admin',
+        isAdmin: !!user.isManager,
+        canManagePerms: perms.includes('*') || perms.includes('permission.manage'),
+        roleText: user.role === 'teacher' ? '教师' : '学生',
         banned,
         stats: {
           totalSteps: fmt.formatNumber(user.totalSteps || 0),
@@ -72,6 +77,11 @@ Page({
 
   goAdmin() {
     wx.navigateTo({ url: '/packageAdmin/dashboard/dashboard' });
+  },
+
+  // 权限管理：进用户列表选人（持有 permission.manage 时显示）
+  goPerms() {
+    wx.navigateTo({ url: '/packageAdmin/users/users?selectForPerms=1' });
   },
 
   goBanned() {

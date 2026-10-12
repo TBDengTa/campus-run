@@ -113,7 +113,11 @@
       "desc": "GPS 实跑功能需要获取您的位置信息用于记录跑步轨迹"
     }
   },
-  "requiredPrivateInfos": ["getLocation", "onLocationChange", "startLocationUpdate"],
+  "requiredPrivateInfos": [
+    "getLocation",
+    "onLocationChange",
+    "startLocationUpdate"
+  ],
   "sitemapLocation": "sitemap.json",
   "lazyCodeLoading": "requiredComponents"
 }

@@ -38,33 +38,41 @@ function clearAuth() {
 let loginPromise = null;
 
 // 静默登录：wx.login → code → 后端换 token
+// 本地测试模式（env.DEV_LOGIN）直接用约定角色 code，无需微信 AppSecret
 function login() {
   if (loginPromise) return loginPromise;
   loginPromise = new Promise((resolve, reject) => {
+    if (env.DEV_LOGIN) {
+      resolve(env.DEV_ROLE || 'dev-student');
+      return;
+    }
     wx.login({
       success: (res) => {
         if (!res.code) {
           reject(new Error('wx.login 未返回 code'));
           return;
         }
-        rawRequest({
-          url: '/api/auth/login',
-          method: 'POST',
-          data: { code: res.code },
-          _noAuthRetry: true,
-        })
-          .then((data) => {
-            setAuth(data.token, data.userInfo);
-            getApp().globalData.userInfo = data.userInfo;
-            resolve(data);
-          })
-          .catch(reject);
+        resolve(res.code);
       },
       fail: reject,
     });
-  }).finally(() => {
-    loginPromise = null;
-  });
+  })
+    .then((code) =>
+      rawRequest({
+        url: '/api/auth/login',
+        method: 'POST',
+        data: { code },
+        _noAuthRetry: true,
+      })
+    )
+    .then((data) => {
+      setAuth(data.token, data.userInfo);
+      getApp().globalData.userInfo = data.userInfo;
+      return data;
+    })
+    .finally(() => {
+      loginPromise = null;
+    });
   return loginPromise;
 }
 

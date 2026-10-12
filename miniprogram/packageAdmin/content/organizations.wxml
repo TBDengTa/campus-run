@@ -34,7 +34,7 @@
       <view class="row level-1">
         <view class="flex-1">
           <view class="row-title">🏫 {{item.name}}</view>
-          <view class="row-sub">{{(item.children || []).length}} 个院系</view>
+          <view class="row-sub">{{item.children.length}} 个院系</view>
         </view>
         <view class="row-actions">
           <view class="mini-btn" catch:tap="openCreate" data-parent-id="{{item._id}}" data-parent-name="{{item.name}}" data-type="department">+院系</view>
@@ -47,7 +47,7 @@
         <view class="row level-2">
           <view class="flex-1">
             <view class="row-title">📚 {{dept.name}}</view>
-            <view class="row-sub">{{(dept.children || []).length}} 个专业</view>
+            <view class="row-sub">{{dept.children.length}} 个专业</view>
           </view>
           <view class="row-actions">
             <view class="mini-btn" catch:tap="openCreate" data-parent-id="{{dept._id}}" data-parent-name="{{dept.name}}" data-type="specialty">+专业</view>

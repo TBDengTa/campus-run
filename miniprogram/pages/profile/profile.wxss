@@ -43,6 +43,12 @@
   font-size: 34rpx;
   font-weight: 600;
   height: 56rpx;
+  flex: 1;
+  min-width: 0;
+}
+
+.gap-8 {
+  gap: 8rpx;
 }
 
 .user-meta {

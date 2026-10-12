@@ -9,7 +9,8 @@ const userSchema = new Schema(
     nickname: { type: String, default: '' },
     avatarUrl: { type: String, default: '' },
     realName: { type: String, default: '' },
-    studentId: { type: String, default: '', index: { unique: true, sparse: true } },
+    // 不设默认值：studentId 有唯一稀疏索引，多个空串会撞唯一键；未填写时不落字段
+    studentId: { type: String, index: { unique: true, sparse: true } },
     schoolId: { type: Schema.Types.ObjectId, ref: 'Organization' },
     schoolName: { type: String, default: '' },
     departmentId: { type: Schema.Types.ObjectId, ref: 'Organization' },
@@ -18,7 +19,11 @@ const userSchema = new Schema(
     specialty: { type: String, default: '' },
     gender: { type: Number, default: 0 }, // 0 未知 1 男 2 女
     birthdate: { type: Date },
-    role: { type: String, enum: ['user', 'admin'], default: 'user' },
+    // 用户角色：学生 / 教师（"管理员"由权限组授予，不是角色）
+    role: { type: String, enum: ['student', 'teacher'], default: 'student' },
+    // 权限：permissionGroups 为权限组 key，permissions 为直接授予的独立权限
+    permissionGroups: { type: [String], default: [] },
+    permissions: { type: [String], default: [] },
     status: { type: String, enum: ['active', 'banned'], default: 'active' },
     banReason: { type: String, default: '' },
     banType: { type: String, default: '' }, // sync 同步异常 / manual 人工
@@ -37,6 +42,28 @@ userSchema.methods.toSafeJSON = function () {
   const obj = this.toJSON();
   delete obj.__v;
   return obj;
+};
+
+// 有效权限 = 直接授予 + 权限组展开；'*' 通配全部
+userSchema.methods.getEffectivePermissions = async function () {
+  const PermissionGroup = require('./permission-group');
+  const direct = Array.isArray(this.permissions) ? this.permissions : [];
+  if (direct.includes('*')) return ['*'];
+  const groupKeys = Array.isArray(this.permissionGroups) ? this.permissionGroups : [];
+  const groups = groupKeys.length ? await PermissionGroup.find({ key: { $in: groupKeys } }).lean() : [];
+  const set = new Set(direct);
+  for (const g of groups) {
+    for (const p of g.permissions || []) {
+      if (p === '*') return ['*'];
+      set.add(p);
+    }
+  }
+  return [...set];
+};
+
+userSchema.methods.isManager = async function () {
+  const perms = await this.getEffectivePermissions();
+  return perms.length > 0;
 };
 
 module.exports = mongoose.model('User', userSchema, 'users');

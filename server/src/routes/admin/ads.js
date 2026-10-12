@@ -1,6 +1,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const { wrap, ok, ApiError, parsePagination } = require('../../utils/response');
+const { requirePermission } = require('../../middlewares/admin');
 const AdSponsor = require('../../models/ad-sponsor');
 const AdSlot = require('../../models/ad-slot');
 const AdContent = require('../../models/ad-content');
@@ -34,6 +35,7 @@ for (const [name, Model] of Object.entries(MODEL_MAP)) {
 
   router.post(
     `/${name}`,
+    requirePermission('ad.manage'),
     wrap(async (req, res) => {
       const doc = await Model.create(req.body);
       ok(res, doc);
@@ -42,6 +44,7 @@ for (const [name, Model] of Object.entries(MODEL_MAP)) {
 
   router.put(
     `/${name}/:id`,
+    requirePermission('ad.manage'),
     wrap(async (req, res) => {
       const doc = await Model.findByIdAndUpdate(req.params.id, { $set: req.body }, { new: true, runValidators: true });
       if (!doc) throw new ApiError(404, 404, '不存在');
@@ -51,6 +54,7 @@ for (const [name, Model] of Object.entries(MODEL_MAP)) {
 
   router.delete(
     `/${name}/:id`,
+    requirePermission('ad.manage'),
     wrap(async (req, res) => {
       const doc = await Model.findByIdAndDelete(req.params.id);
       if (!doc) throw new ApiError(404, 404, '不存在');

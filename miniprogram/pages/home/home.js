@@ -20,6 +20,13 @@ Page({
     isAdmin: false,
     syncing: false,
     rewardVideo: { enabled: true, remaining: 0 },
+    // ===== 角色权限 =====
+    role: 'student',
+    roleText: '学生',
+    isManager: false,
+    perms: [],
+    mgrEntries: [],
+    overview: null,
   },
 
   onLoad() {
@@ -49,13 +56,37 @@ Page({
       if (user.status === 'banned' && user.bannedUntil && new Date(user.bannedUntil) > new Date()) {
         banned = true;
       }
+      const isManager = !!user.isManager;
+      const perms = user.effectivePermissions || [];
+      // 按权限过滤的管理入口（WXML 无法调用方法，这里预计算）
+      const allEntries = [
+        { key: 'dashboard', perm: 'dashboard.view', icon: 'dashboard', label: '数据看板', url: '/packageAdmin/dashboard/dashboard', bg: 'var(--td-brand-color-1)', color: 'var(--td-brand-color)' },
+        { key: 'users', perm: 'user.view', icon: 'user-add', label: '用户管理', url: '/packageAdmin/users/users', bg: 'var(--td-success-color-1)', color: 'var(--td-success-color-5)' },
+        { key: 'appeals', perm: 'appeal.view', icon: 'assignment', label: '申诉审核', url: '/packageAdmin/appeals/appeals', bg: 'var(--td-warning-color-1)', color: 'var(--td-warning-color-5)' },
+        { key: 'ads', perm: 'ad.view', icon: 'chart-bar', label: '广告管理', url: '/packageAdmin/ads/contents', bg: 'var(--td-error-color-1)', color: 'var(--td-error-color-6)' },
+        { key: 'content', perm: 'content.view', icon: 'book', label: '内容管理', url: '/packageAdmin/content/announcements', bg: 'var(--td-gray-color-2)', color: 'var(--td-gray-color-8)' },
+        { key: 'config', perm: 'config.view', icon: 'setting', label: '系统配置', url: '/packageAdmin/config/config', bg: 'var(--td-brand-color-light)', color: 'var(--td-brand-color)' },
+      ];
+      const mgrEntries = allEntries.filter((e) => perms.includes('*') || perms.includes(e.perm));
+      this.setData({
+        isManager,
+        perms,
+        mgrEntries,
+        role: user.role || 'student',
+        roleText: user.role === 'teacher' ? '教师' : '学生',
+        isAdmin: isManager,
+      });
       this.applyToday(today.status === 'fulfilled' ? today.value : null);
       // 广告曝光 PV 上报
       const adList = today.status === 'fulfilled' && ads.status === 'fulfilled' ? ads.value : [];
-      this.setData({ ads: adList, announcements: announcements.status === 'fulfilled' ? announcements.value : [], banned, isAdmin: user.role === 'admin' });
+      this.setData({ ads: adList, announcements: announcements.status === 'fulfilled' ? announcements.value : [], banned });
       adList.forEach((ad) => {
         auth.post(`/api/ads/${ad._id}/pv`).catch(() => {});
       });
+      // 管理视角：拉取看板概览（无 dashboard.view 权限时静默忽略）
+      if (isManager) {
+        this.loadOverview();
+      }
     } catch (e) {
       if (e.code === 403001) {
         wx.navigateTo({ url: '/pages/banned/banned' });
@@ -64,6 +95,17 @@ Page({
       wx.showToast({ title: e.message || '加载失败', icon: 'none' });
     } finally {
       this.setData({ loading: false });
+    }
+  },
+
+  async loadOverview() {
+    try {
+      const overview = await auth.get('/api/admin/dashboard/overview');
+      this.setData({
+        overview: { ...overview, stepsTodayText: fmt.formatNumber(overview.stepsToday) },
+      });
+    } catch (e) {
+      // 无 dashboard.view 权限，忽略
     }
   },
 
@@ -163,6 +205,13 @@ Page({
 
   goAdmin() {
     wx.navigateTo({ url: '/packageAdmin/dashboard/dashboard' });
+  },
+
+  // 管理面板入口跳转（url 由权限过滤后的列表带出）
+  goAdminPage(e) {
+    if (e.currentTarget.dataset.url) {
+      wx.navigateTo({ url: e.currentTarget.dataset.url });
+    }
   },
 
   // 广告点击

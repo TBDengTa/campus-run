@@ -5,6 +5,13 @@
 
 ## 功能总览
 
+**角色与权限（单小程序统一登录）**
+
+- 用户角色只有两种：**学生 / 教师**；"管理员"通过权限组授予，不是独立角色
+- 权限系统 = **独立权限项**（看板/用户/申诉/广告/内容/配置/权限管理 共 12 项）+ **权限组**（如内置的"超级管理员组"= 全部权限、"教师管理组"= 可看可审不可改）
+- 用户的有效权限 = 直接授予的独立权限 ∪ 所在权限组的权限；教师/管理员首页**优先显示管理内容**（核心指标 + 按权限过滤的管理入口），学生首页显示运动数据
+- 持有 `permission.manage` 权限者可在「用户详情 → 权限管理」中改角色、勾权限组、勾独立权限
+
 **用户端**
 - 微信运动步数同步（WeRun 解密）+ 每日/每周目标 + 分时段目标进度
 - GPS 实跑（地图轨迹、距离/配速/卡路里）
@@ -66,8 +73,9 @@ npm run migrate           # 正式迁移到新库
 
 1. 微信开发者工具打开仓库根目录
 2. 复制 `miniprogram/config/env.example.js` 为 `env.js`，填入后端地址
-3. 详情 → 本地设置 → 勾选「不校验合法域名」（开发阶段）
-4. 编译运行
+3. 本地无 AppSecret 也可测试：`env.js` 中 `DEV_LOGIN: true`，用 `DEV_ROLE` 切换 `dev-student` / `dev-teacher` / `dev-admin` 三种角色（后端需同样开启 `DEV_LOGIN=true`）
+4. 详情 → 本地设置 → 勾选「不校验合法域名」（开发阶段）
+5. 编译运行
 
 ## 部署清单（上线前）
 
@@ -79,7 +87,7 @@ npm run migrate           # 正式迁移到新库
 | 微信 AppSecret | 后端 `.env` 的 `WX_APPSECRET`（code2session / WeRun 解密必需） |
 | 微信运动 | 小程序需具备「微信运动」类目权限（沿用 1.0 appid 则已有） |
 | 流量主 | 激励视频广告位 ID 在 `miniprogram/pages/reward/reward.js` 中替换 |
-| 管理员 | 方式一：`.env` 的 `ADMIN_BOOTSTRAP_OPENIDS`（登录自动授权）；方式二：`npm run admin:add -- <openid>` |
+| 管理员 | 方式一：`.env` 的 `ADMIN_BOOTSTRAP_OPENIDS`（登录自动授予超级管理员权限组）；方式二：`npm run admin:add -- <openid>`；方式三：管理员在小程序「用户详情 → 权限管理」里勾选权限组 |
 | JWT_SECRET | 务必设置为随机长字符串 |
 
 ## 安全约定

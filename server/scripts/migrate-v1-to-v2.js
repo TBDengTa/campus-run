@@ -169,7 +169,9 @@ async function main() {
     userIdMap.set(String(u._id), newId);
     openidMap.set(openid, newId);
     const banned = u.banned === true;
-    const role = u.role && u.role !== 'user' ? 'admin' : 'user';
+    // 2.0 角色：student/teacher；旧 admin → 教师 + 超级管理员权限组
+    const wasAdmin = u.role && u.role !== 'user' && u.role !== 'student';
+    const role = wasAdmin ? 'teacher' : 'student';
     let avatarUrl = u.avatarUrl || '';
     if (typeof avatarUrl === 'string' && avatarUrl.startsWith('data:') && avatarUrl.length > 2000) {
       avatarUrl = ''; // 内联 base64 头像不入库
@@ -190,6 +192,8 @@ async function main() {
       gender: toNum(u.gender, 0) || 0,
       birthdate: toDate(u.birthdate),
       role,
+      permissionGroups: wasAdmin ? ['superadmin'] : [],
+      permissions: [],
       status: banned ? 'banned' : 'active',
       banReason: u.banReason || '',
       banType: u.banType || '',

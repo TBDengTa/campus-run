@@ -8,7 +8,7 @@
   <view class="list-card">
     <view class="appeal-row" wx:for="{{list}}" wx:key="_id">
       <view class="flex-between mb-16">
-        <view class="row-title">{{item.realName || item.openid.slice(0, 8) + '…'}}</view>
+        <view class="row-title">{{item.realName || item.openidShort + '…'}}</view>
         <text class="text-placeholder time">{{item.timeText}}</text>
       </view>
       <view class="row-sub mb-16" wx:if="{{item.banReason}}">封禁原因：{{item.banReason}}</view>

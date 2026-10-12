@@ -1,5 +1,6 @@
 const express = require('express');
 const { wrap, ok } = require('../../utils/response');
+const { requirePermission } = require('../../middlewares/admin');
 const GoalConfig = require('../../models/goal-config');
 
 const router = express.Router();
@@ -13,6 +14,7 @@ router.get(
 
 router.put(
   '/',
+  requirePermission('config.manage'),
   wrap(async (req, res) => {
     const doc = await GoalConfig.getSingleton();
     const { daily, weekly, graded, anticheat, rewardVideo } = req.body || {};

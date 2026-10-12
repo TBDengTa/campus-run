@@ -15,6 +15,10 @@ async function main() {
   });
   console.log(`[mongo] 已连接 ${config.dbName}`);
 
+  // 播种权限目录/内置权限组，并迁移旧版 admin/user 角色（幂等）
+  const { seedRbac } = require('./services/rbac');
+  await seedRbac();
+
   // 启动时确保全局配置存在
   const GoalConfig = require('./models/goal-config');
   await GoalConfig.getSingleton();

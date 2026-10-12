@@ -23,3 +23,37 @@
   font-size: 24rpx;
   line-height: 40rpx;
 }
+
+/* ===== 权限编辑 ===== */
+.group-title {
+  font-size: 28rpx;
+  font-weight: 600;
+  margin-bottom: 20rpx;
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+}
+
+.chip {
+  font-size: 24rpx;
+  padding: 10rpx 24rpx;
+  border-radius: 999px;
+  background: var(--td-gray-color-2, #eee);
+  color: var(--td-text-color-secondary);
+  border: 2rpx solid transparent;
+}
+
+.chip-active {
+  background: var(--td-brand-color-1, #f2f3ff);
+  border-color: var(--td-brand-color);
+  color: var(--td-brand-color);
+}
+
+.perm-tip {
+  margin-top: 16rpx;
+  font-size: 22rpx;
+  line-height: 34rpx;
+}

@@ -1,5 +1,6 @@
 const express = require('express');
 const { wrap, ok, ApiError } = require('../../utils/response');
+const { requirePermission } = require('../../middlewares/admin');
 const Announcement = require('../../models/announcement');
 const Changelog = require('../../models/changelog');
 const Holiday = require('../../models/holiday');
@@ -33,6 +34,7 @@ for (const [name, Model] of CRUD) {
 
   router.post(
     `/${name}`,
+    requirePermission('content.manage'),
     wrap(async (req, res) => {
       ok(res, await Model.create(req.body));
     })
@@ -40,6 +42,7 @@ for (const [name, Model] of CRUD) {
 
   router.put(
     `/${name}/:id`,
+    requirePermission('content.manage'),
     wrap(async (req, res) => {
       const doc = await Model.findByIdAndUpdate(req.params.id, { $set: req.body }, { new: true, runValidators: true });
       if (!doc) throw new ApiError(404, 404, '不存在');
@@ -49,6 +52,7 @@ for (const [name, Model] of CRUD) {
 
   router.delete(
     `/${name}/:id`,
+    requirePermission('content.manage'),
     wrap(async (req, res) => {
       const doc = await Model.findByIdAndDelete(req.params.id);
       if (!doc) throw new ApiError(404, 404, '不存在');
