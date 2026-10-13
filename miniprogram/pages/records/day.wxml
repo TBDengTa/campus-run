@@ -1,68 +1,66 @@
 <view class="page tt-page day-page">
-  <!-- ===== 标题 ===== -->
-  <view class="day-hero">
-    <view class="day-hero-date">{{dateText}}</view>
-    <view class="day-hero-tags">
-      <text class="tt-chip tt-chip-brand" wx:if="{{holiday}}">{{holiday.name}}</text>
-      <text class="achieve-chip {{goalAchieved ? 'ok' : ''}}">{{goalAchieved ? '✓ 当日目标达成' : '当日目标未达成'}}</text>
+  <!-- ===== 概要卡：日期 + 标签 + 四项指标 + 目标进度（合并原标题区与汇总卡） ===== -->
+  <view class="tt-card day-card" wx:if="{{totals}}">
+    <view class="day-head">
+      <view class="day-head-left">
+        <text class="day-date">{{dateText}}</text>
+        <text class="tt-chip tt-chip-brand day-holiday" wx:if="{{holiday}}">{{holiday.name}}</text>
+      </view>
+      <text class="day-flag {{goalAchieved ? 'ok' : ''}}">{{goalAchieved ? '已达标' : '未达标'}}</text>
+    </view>
+
+    <view class="tt-stat-row day-stat-row">
+      <view class="tt-stat">
+        <view class="tt-stat-value day-stat-value num-font">{{totals.steps}}</view>
+        <view class="tt-stat-label day-stat-label">步数</view>
+      </view>
+      <view class="tt-stat">
+        <view class="tt-stat-value day-stat-value num-font">{{totals.distance}}</view>
+        <view class="tt-stat-label day-stat-label">距离</view>
+      </view>
+      <view class="tt-stat">
+        <view class="tt-stat-value day-stat-value num-font">{{totals.calories}}</view>
+        <view class="tt-stat-label day-stat-label">千卡</view>
+      </view>
+      <view class="tt-stat">
+        <view class="tt-stat-value day-stat-value num-font">{{totals.durationText}}</view>
+        <view class="tt-stat-label day-stat-label">时长</view>
+      </view>
+    </view>
+
+    <view class="day-goal" wx:if="{{goal}}">
+      <view class="day-goal-head">
+        <text class="day-goal-text">每日目标 {{goalStepsText}} 步</text>
+        <text class="day-goal-percent num-font">{{goalPercent}}%</text>
+      </view>
+      <t-progress theme="line" percentage="{{goalPercent}}" stroke-width="8rpx" />
     </view>
   </view>
 
-  <!-- ===== 当日汇总 ===== -->
-  <view class="tt-card" wx:if="{{totals}}">
-    <view class="tt-stat-row">
-      <view class="tt-stat">
-        <view class="tt-stat-value num-font">{{totals.steps}}</view>
-        <view class="tt-stat-label">步数</view>
-      </view>
-      <view class="tt-stat">
-        <view class="tt-stat-value num-font">{{totals.distance}}</view>
-        <view class="tt-stat-label">距离</view>
-      </view>
-      <view class="tt-stat">
-        <view class="tt-stat-value num-font">{{totals.calories}}</view>
-        <view class="tt-stat-label">千卡</view>
-      </view>
-      <view class="tt-stat">
-        <view class="tt-stat-value num-font">{{totals.durationText}}</view>
-        <view class="tt-stat-label">时长</view>
-      </view>
-    </view>
-
-    <!-- 目标进度 -->
-    <view class="goal-row" wx:if="{{goal}}">
-      <view class="goal-head">
-        <text class="text-secondary">每日目标 {{goal.daily.steps}} 步</text>
-        <text class="num-font goal-percent">{{goalPercent}}%</text>
-      </view>
-      <t-progress theme="line" percentage="{{goalPercent}}" stroke-width="12rpx" />
-    </view>
-  </view>
-
-  <!-- ===== 当日记录明细 ===== -->
+  <!-- ===== 当日明细 ===== -->
   <view class="tt-section">
     <text>当日明细</text>
-    <text class="tt-section-extra">{{records.length}} 条记录</text>
+    <text class="tt-section-extra">{{records.length}} 条</text>
   </view>
-  <view class="tt-card">
+  <view class="tt-card day-card">
     <block wx:if="{{records.length}}">
-      <view class="tt-row" wx:for="{{records}}" wx:key="_id" bind:tap="openRecord" data-id="{{item._id}}">
-        <view class="row-icon">
-          <t-icon name="{{item.sourceIcon}}" size="40rpx" color="var(--tt-brand)" />
+      <view class="tt-row day-row" wx:for="{{records}}" wx:key="_id" bind:tap="openRecord" data-id="{{item._id}}">
+        <view class="day-row-icon">
+          <t-icon name="{{item.sourceIcon}}" size="30rpx" color="var(--tt-brand)" />
         </view>
         <view class="flex-1">
-          <view class="tt-row-title">{{item.timeText}} · {{item.sourceText}}</view>
-          <view class="tt-row-sub">{{item.durationText}} · {{item.distanceText}}</view>
+          <view class="tt-row-title day-row-title">{{item.timeText}} · {{item.sourceText}}</view>
+          <view class="tt-row-sub day-row-sub">{{item.durationText}} · {{item.distanceText}}</view>
         </view>
-        <view class="row-value">
+        <view class="day-row-value">
           <text class="num-font">{{item.stepsText}}</text>
-          <text class="row-unit">步</text>
+          <text class="day-row-unit">步</text>
         </view>
-        <t-icon name="chevron-right" size="34rpx" color="var(--tt-text-3)" />
+        <t-icon name="chevron-right" size="28rpx" color="var(--tt-text-3)" />
       </view>
     </block>
-    <view class="tt-empty" wx:else>当天无运动记录</view>
+    <view class="tt-empty day-empty" wx:else>当天无运动记录</view>
   </view>
 
-  <t-loading wx:if="{{loading}}" theme="circular" size="48rpx" text="加载中…" class="loading" />
+  <t-loading wx:if="{{loading}}" theme="circular" size="40rpx" text="加载中…" class="day-loading" />
 </view>

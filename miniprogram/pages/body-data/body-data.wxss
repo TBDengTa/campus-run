@@ -1,11 +1,6 @@
-/* ===== 身体数据 / 目标计划 · 白橙 ===== */
+/* ===== 身体数据 · 白橙 ===== */
 
-/* 主视觉内层 */
-.body-hero-body {
-  position: relative;
-  z-index: 1;
-}
-
+/* ---------- ① 概览（BMI 主视觉，外层用 .tt-hero） ---------- */
 .body-hero-top {
   display: flex;
   align-items: center;
@@ -27,11 +22,16 @@
   background: #fff;
 }
 
+.body-hero-badge.ghost {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.22);
+}
+
 .body-hero-num {
   display: flex;
   align-items: flex-end;
   gap: 12rpx;
-  margin: 18rpx 0 20rpx;
+  margin: 20rpx 0 12rpx;
 }
 
 .body-hero-value {
@@ -42,34 +42,69 @@
   color: #fff;
 }
 
-.body-hero-sub {
+.body-hero-unit {
+  padding-bottom: 12rpx;
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.body-hero-tip {
+  font-size: 25rpx;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.94);
+}
+
+.body-hero-meta {
   display: flex;
   align-items: center;
-  gap: 8rpx;
+  flex-wrap: wrap;
+  gap: 10rpx;
+  margin-top: 22rpx;
   padding-top: 20rpx;
   border-top: 2rpx solid rgba(255, 255, 255, 0.2);
   font-size: 24rpx;
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(255, 255, 255, 0.92);
 }
 
-/* 表单行 */
-.body-row {
+.body-hero-dot {
+  opacity: 0.6;
+}
+
+/* ---------- ② 关键指标 ---------- */
+.body-metric-text {
+  font-size: 30rpx;
+}
+
+.body-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10rpx;
+  font-size: 23rpx;
+  line-height: 1.5;
+  color: var(--tt-text-3);
+}
+
+/* ---------- ③ 编辑表单 ---------- */
+.body-field {
   display: flex;
   align-items: center;
+  gap: 20rpx;
   padding: 18rpx 0;
 }
 
 .body-label {
-  width: 150rpx;
+  width: 120rpx;
+  flex-shrink: 0;
   font-size: 29rpx;
   color: var(--tt-text-2);
 }
 
 .body-input-wrap {
   flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
-  gap: 10rpx;
+  gap: 12rpx;
   padding: 0 24rpx;
   height: 84rpx;
   border-radius: var(--tt-radius-sm);
@@ -78,6 +113,7 @@
 
 .body-input {
   flex: 1;
+  min-width: 0;
   height: 84rpx;
   font-size: 34rpx;
   font-weight: 600;
@@ -98,6 +134,7 @@
 /* 性别药丸 */
 .body-gender {
   flex: 1;
+  min-width: 0;
   display: flex;
   gap: 16rpx;
 }
@@ -121,6 +158,27 @@
   box-shadow: 0 8rpx 20rpx rgba(255, 107, 0, 0.24);
 }
 
+/* 体重单位切换 */
+.body-unit-switch {
+  display: flex;
+  border-radius: 999rpx;
+  overflow: hidden;
+  border: 2rpx solid var(--tt-line);
+}
+
+.unit-chip {
+  padding: 8rpx 20rpx;
+  font-size: 22rpx;
+  color: var(--tt-text-2);
+  background: var(--tt-card);
+}
+
+.unit-chip.active {
+  color: #fff;
+  font-weight: 600;
+  background: var(--tt-brand);
+}
+
 /* 运动强度偏好 */
 .body-pref-group {
   display: flex;
@@ -129,11 +187,13 @@
 
 .body-pref-chip {
   flex: 1;
+  min-width: 0;
   padding: 22rpx 12rpx;
   border-radius: var(--tt-radius-sm);
   text-align: center;
   background: var(--td-bg-color-component);
   border: 2rpx solid transparent;
+  box-sizing: border-box;
 }
 
 .body-pref-chip.active {
@@ -162,16 +222,27 @@
   padding: 8rpx var(--tt-gap) 0;
 }
 
-/* 目标计划 */
-.body-plan-head {
+/* ---------- ④ 目标计划入口 ---------- */
+.body-plan-entry {
   display: flex;
   align-items: center;
-  gap: 12rpx;
+  gap: 20rpx;
+}
+
+.body-plan-icon {
+  width: 76rpx;
+  height: 76rpx;
+  flex-shrink: 0;
+  border-radius: 24rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #ff9a3d, var(--tt-brand));
+  box-shadow: 0 8rpx 20rpx rgba(255, 107, 0, 0.24);
 }
 
 .body-plan-name {
-  flex: 1;
-  font-size: 32rpx;
+  font-size: 30rpx;
   font-weight: 600;
   color: var(--tt-text-1);
   overflow: hidden;
@@ -179,56 +250,11 @@
   text-overflow: ellipsis;
 }
 
-.body-plan-label {
-  margin: 4rpx 0 16rpx;
-  font-size: 25rpx;
+.body-plan-sub {
+  margin-top: 6rpx;
+  font-size: 23rpx;
   color: var(--tt-text-3);
-}
-
-.body-plan-row {
-  margin-bottom: 28rpx;
-}
-
-.tt-stat-value.body-plan-stat {
-  font-size: 34rpx;
-}
-
-/* ===== 体重单位切换 ===== */
-.body-unit-switch {
-  display: flex;
-  gap: 0;
-  border-radius: 999px;
   overflow: hidden;
-  border: 1rpx solid var(--td-component-border, #dcdcdc);
-}
-
-.unit-chip {
-  font-size: 22rpx;
-  padding: 8rpx 22rpx;
-  color: var(--td-text-color-secondary);
-  background: var(--td-bg-color-container, #fff);
-}
-
-.unit-chip.active {
-  background: var(--tt-brand, #ff6b00);
-  color: #fff;
-}
-
-/* ===== 目标计划中心入口 ===== */
-.menu-row {
-  display: flex;
-  align-items: center;
-  gap: 16rpx;
-  padding: 22rpx 0;
-}
-
-.menu-label {
-  font-size: 28rpx;
-  font-weight: 500;
-}
-
-.menu-sub {
-  font-size: 22rpx;
-  color: var(--td-text-color-secondary);
-  margin-top: 4rpx;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }

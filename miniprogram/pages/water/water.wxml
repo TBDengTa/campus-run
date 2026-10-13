@@ -26,6 +26,19 @@
     </view>
   </view>
 
+  <!-- ===== 目标构成说明（系统自动计算，不可手动调整） ===== -->
+  <view class="tt-card water-formula" wx:if="{{today.targetInfo}}">
+    <view class="water-formula-row">
+      <t-icon name="chart-bubble" size="30rpx" color="var(--tt-brand)" />
+      <text class="water-formula-text">{{today.targetInfo.formula}}</text>
+    </view>
+    <view class="water-formula-detail">
+      <text>基础 {{today.targetInfo.base}} ml</text>
+      <text>运动补充 +{{today.targetInfo.stepBonus}} ml</text>
+      <text wx:if="{{today.targetInfo.hasBodyData}}">BMI 系数 ×{{today.targetInfo.bmiFactor}}</text>
+    </view>
+  </view>
+
   <!-- ===== 记一笔 ===== -->
   <view class="tt-section">记一笔<text class="tt-section-extra">点击即记录</text></view>
   <view class="tt-card">
@@ -74,11 +87,20 @@
     <view class="tt-empty" wx:else>今天还没喝水，快记一笔吧</view>
   </view>
 
-  <!-- ===== 调整目标 ===== -->
-  <view class="water-target-btn tt-pill-btn ghost" bind:tap="setTarget">
-    <t-icon name="setting-1" size="32rpx" color="var(--tt-brand)" />
-    <text>调整每日目标</text>
+  <!-- ===== 历史记录 ===== -->
+  <view class="tt-section">历史记录<text class="tt-section-extra">近 {{history.length}} 天</text></view>
+  <view class="tt-card">
+    <block wx:if="{{history.length}}">
+      <view class="water-his-row" wx:for="{{history}}" wx:key="date">
+        <text class="water-his-date">{{item.dateText}}</text>
+        <view class="water-his-bar-wrap">
+          <view class="water-his-bar {{item.percent >= 100 ? 'ok' : ''}}" style="width: {{item.percent}}%"></view>
+        </view>
+        <text class="water-his-num num-font">{{item.totalText}}/{{item.targetText}}</text>
+      </view>
+    </block>
+    <view class="tt-empty" wx:else>暂无历史数据</view>
   </view>
 
-  <view class="tt-footer">每天 1500-2000ml，少量多次更健康</view>
+  <view class="tt-footer">饮水目标按体重与今日步数由系统自动计算</view>
 </view>

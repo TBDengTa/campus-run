@@ -49,3 +49,50 @@
   justify-content: center;
   padding: 40rpx 0;
 }
+
+/* ===== 联系客服 ===== */
+.ann-contact {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.ann-contact-icon {
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 50%;
+  background: #e8f7ef;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.ann-contact-info {
+  flex: 1;
+}
+
+.ann-contact-title {
+  font-size: 28rpx;
+  font-weight: 600;
+}
+
+.ann-contact-sub {
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+  margin-top: 4rpx;
+}
+
+.ann-contact-btn {
+  background: var(--tt-brand, #ff6b00);
+  color: #fff;
+  font-size: 24rpx;
+  border-radius: 999px;
+  padding: 10rpx 32rpx;
+  line-height: 1.4;
+  border: none;
+}
+
+.ann-contact-btn::after {
+  border: none;
+}

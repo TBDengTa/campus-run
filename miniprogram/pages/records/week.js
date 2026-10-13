@@ -21,6 +21,8 @@ Page({
     rangeText: '',
     totals: null,
     goal: null,
+    goalStepsText: '',
+    goalPercent: 0,
     goalAchieved: false,
     activeDays: 0,
     days: [], // 7 天逐日
@@ -29,6 +31,8 @@ Page({
   },
 
   onLoad(options) {
+    // 未登录 / 已退出 / 游客：统一跳登录页，不执行任何业务逻辑
+    if (!getApp().requireLogin()) return;
     this.setData({ start: options.start || '' });
     this.load();
   },
@@ -41,6 +45,7 @@ Page({
       const data = await auth.get(`/api/run/week-detail/${start}`);
       const s = fmt.parseDateKey(start);
       const e = fmt.parseDateKey(data.weekEnd);
+      const today = fmt.todayKey();
 
       const maxSteps = Math.max(1, ...data.days.map((d) => d.steps));
       const days = data.days.map((d, i) => {
@@ -49,23 +54,26 @@ Page({
           ...d,
           label: `${p.m}/${p.d}`,
           weekText: WEEKDAY_TEXT[i],
-          isToday: d.date === fmt.todayKey(),
+          isToday: d.date === today,
+          isFuture: d.date > today,
           stepsText: fmt.formatNumber(d.steps),
-          barHeight: d.steps > 0 ? Math.max(12, Math.round((d.steps / maxSteps) * 100)) : 4,
+          barHeight: d.steps > 0 ? Math.max(10, Math.round((d.steps / maxSteps) * 100)) : 3,
         };
       });
 
-      const goalPercent = Math.min(100, Math.round(((data.totals.steps || 0) / (data.goal.weekly.steps || 1)) * 100));
+      const goalSteps = (data.goal && data.goal.weekly && data.goal.weekly.steps) || 0;
+      const goalPercent = Math.min(100, Math.round(((data.totals.steps || 0) / (goalSteps || 1)) * 100));
       this.setData({
         loading: false,
         rangeText: `${s.m}月${s.d}日 - ${e.m}月${e.d}日`,
         totals: {
           steps: fmt.formatNumber(data.totals.steps),
           distance: fmt.formatDistance(data.totals.distance),
-          calories: data.totals.calories,
+          calories: fmt.formatNumber(data.totals.calories),
           durationText: fmt.formatDuration(data.totals.durationSeconds),
         },
         goal: data.goal,
+        goalStepsText: fmt.formatNumber(goalSteps),
         goalPercent,
         goalAchieved: !!data.goalAchieved,
         activeDays: data.activeDays,

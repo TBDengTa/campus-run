@@ -14,6 +14,7 @@ Page({
     quickAmounts: QUICK_AMOUNTS,
     customAmount: 200,
     logs: [],
+    history: [],
   },
 
   onShow() {
@@ -25,8 +26,19 @@ Page({
   async load() {
     try {
       await getApp().ensureLogin();
-      const today = await auth.get('/api/water/today');
+      const [today, history] = await Promise.all([
+        auth.get('/api/water/today'),
+        auth.get('/api/water/history', { limit: 14 }).catch(() => ({ list: [] })),
+      ]);
       this.apply(today);
+      this.setData({
+        history: (history.list || []).map((d) => ({
+          ...d,
+          dateText: `${Number(d.date.slice(5, 7))}月${Number(d.date.slice(8, 10))}日`,
+          totalText: fmt.formatNumber(d.total),
+          targetText: fmt.formatNumber(d.target),
+        })),
+      });
     } catch (e) {
       wx.showToast({ title: e.message, icon: 'none' });
     }
@@ -73,28 +85,10 @@ Page({
     try {
       const today = await auth.post('/api/water/record', { amount });
       this.apply(today);
+      this.load(); // 同步历史列表
       wx.vibrateShort({ type: 'light' });
     } catch (e) {
       wx.showToast({ title: e.message, icon: 'none' });
     }
-  },
-
-  async setTarget() {
-    const that = this;
-    wx.showModal({
-      title: '设置每日饮水目标 (ml)',
-      editable: true,
-      placeholderText: String(this.data.today.target || 2000),
-      success: async (res) => {
-        if (res.confirm && res.content) {
-          try {
-            const today = await auth.put('/api/water/target', { target: Number(res.content) });
-            that.apply(today);
-          } catch (e) {
-            wx.showToast({ title: e.message, icon: 'none' });
-          }
-        }
-      },
-    });
   },
 });

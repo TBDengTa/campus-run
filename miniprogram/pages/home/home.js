@@ -330,12 +330,20 @@ Page({
     const days = [];
     let weekSteps = 0;
     let weekDistance = 0;
+    // 环形进度条：conic-gradient 画每日完成度（不支持时退化为纯灰环 + 内部图标）
+    const RING_TRACK = '#eef0f3';
+    const RING_BRAND = '#ff6b00';
+    const ringStyle = (pct, future) => {
+      if (future) return `background: ${RING_TRACK};`;
+      return `background: conic-gradient(${RING_BRAND} 0 ${pct}%, ${RING_TRACK} ${pct}% 100%);`;
+    };
 
     for (let i = 0; i < 7; i++) {
       const key = addDaysToKey(monday, i);
       const isFuture = key > today;
       const steps = stepsMap.get(key) || 0;
       const hasData = !isFuture && steps > 0;
+      const pct = !isFuture && goalSteps > 0 ? Math.min(100, Math.round((steps / goalSteps) * 100)) : 0;
       days.push({
         key,
         label: WEEK_LABELS[i],
@@ -343,6 +351,8 @@ Page({
         hasData,
         achieved: hasData && goalSteps > 0 && steps >= goalSteps,
         isToday: key === today,
+        percent: pct,
+        ringStyle: ringStyle(pct, isFuture),
       });
       if (!isFuture) {
         weekSteps += steps;

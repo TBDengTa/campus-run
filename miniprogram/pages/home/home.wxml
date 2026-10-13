@@ -85,26 +85,26 @@
       </view>
     </view>
 
-    <!-- 今日摘要：有记录才显示步数/里程，无记录只留日期 -->
-    <view class="today-sub">
-      <text>{{dateText}}</text>
-      <block wx:if="{{hasRecord}}">
-        <text class="today-dot">·</text>
-        <text>步数 {{stepsText}} 步</text>
-        <text class="today-dot">·</text>
-        <text>里程 {{kmText}} 公里</text>
-      </block>
+    <!-- 每日目标步数（原来的日期·步数·里程那句改为每日目标；进度由下方 7 天圆弧表达） -->
+    <view class="today-sub today-goal-line">
+      <text class="today-goal-label">每日目标</text>
+      <text class="today-goal-value num-font">{{goalStepsText}}</text>
+      <text class="today-goal-unit">步</text>
+      <text class="today-goal-right" wx:if="{{hasRecord}}">已完成 {{percent}}%</text>
+      <text class="today-goal-right" wx:else>未开始</text>
     </view>
 
-    <!-- 本周 7 天 -->
+    <!-- 本周 7 天：圆形背景即当日完成度的环形进度条 -->
     <view class="week-days">
       <view class="day-chip" wx:for="{{weekDays}}" wx:key="key">
-        <view class="day-circle {{item.achieved ? 'achieved' : (item.hasData ? 'partial' : '')}} {{item.isToday ? 'today' : ''}}">
-          <image
-            class="day-ico"
-            mode="aspectFit"
-            src="{{item.achieved ? '/assets/home/day-run-white.png' : (item.hasData ? '/assets/home/day-run-orange.png' : '/assets/home/day-run-gray.png')}}"
-          />
+        <view class="day-ring {{item.isToday ? 'today' : ''}} {{item.achieved ? 'achieved' : ''}}" style="{{item.ringStyle}}">
+          <view class="day-ring-inner">
+            <image
+              class="day-ico"
+              mode="aspectFit"
+              src="{{item.achieved ? '/assets/home/day-run-white.png' : (item.hasData ? '/assets/home/day-run-orange.png' : '/assets/home/day-run-gray.png')}}"
+            />
+          </view>
         </view>
         <text class="day-label {{item.isToday ? 'today' : ''}}">{{item.label}}</text>
         <text class="day-value {{item.hasData ? '' : 'empty'}}">{{item.stepsText}}</text>

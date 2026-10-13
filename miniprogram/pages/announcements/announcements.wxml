@@ -30,5 +30,16 @@
     <t-loading theme="circular" size="48rpx" text="加载中…" />
   </view>
 
-  <view class="tt-footer" wx:if="{{list.length}}">公告由管理员发布，如有疑问请联系客服</view>
+  <!-- ===== 联系客服 ===== -->
+  <view class="tt-card ann-contact" wx:if="{{list.length}}">
+    <view class="ann-contact-icon">
+      <t-icon name="service" size="38rpx" color="#16a34a" />
+    </view>
+    <view class="ann-contact-info">
+      <view class="ann-contact-title">联系客服</view>
+      <view class="ann-contact-sub">唐唐快跑高级客服经理 · 24小时在线</view>
+    </view>
+    <button class="ann-contact-btn" open-type="contact">咨询</button>
+  </view>
+  <view class="tt-footer" wx:if="{{list.length}}">公告由管理员发布</view>
 </view>

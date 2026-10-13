@@ -1,51 +1,51 @@
 <view class="page tt-page gp-page">
-  <!-- ===== 当前目标 ===== -->
-  <view class="tt-section">我的当前目标</view>
-  <view class="tt-card gp-current" wx:if="{{effective}}">
-    <view class="gp-current-head">
-      <t-icon name="flag" size="36rpx" color="var(--tt-brand)" />
-      <text class="gp-current-name">{{effective.planName || '系统默认目标'}}</text>
-      <text class="tt-chip tt-chip-brand">{{sourceText}}</text>
+  <!-- ===== 当前生效目标（橙色渐变主视觉卡） ===== -->
+  <view class="tt-hero gp-hero" wx:if="{{effective}}">
+    <view class="gp-hero-label">当前生效目标</view>
+    <view class="gp-hero-name">{{effective.planName || '系统默认目标'}}</view>
+    <view class="gp-hero-chips">
+      <text class="gp-hero-chip">{{sourceText}}</text>
+      <text class="gp-hero-chip" wx:if="{{bmi != null}}">BMI {{bmi}} · {{bmiLevelText}}</text>
     </view>
-    <view class="tt-stat-row gp-stat-row">
-      <view class="tt-stat">
-        <view class="tt-stat-value num-font">{{effective.dailyStepsText}}</view>
-        <view class="tt-stat-label">每日步数</view>
+
+    <view class="gp-hero-stats">
+      <view class="gp-hero-stat">
+        <text class="gp-hero-num num-font">{{effective.dailyStepsText}}</text>
+        <text class="gp-hero-stat-label">每日步数</text>
       </view>
-      <view class="tt-stat">
-        <view class="tt-stat-value num-font">{{effective.dailyDistanceText}}</view>
-        <view class="tt-stat-label">每日距离</view>
+      <view class="gp-hero-stat">
+        <text class="gp-hero-num num-font">{{effective.dailyDistanceText}}</text>
+        <text class="gp-hero-stat-label">每日距离</text>
       </view>
-      <view class="tt-stat">
-        <view class="tt-stat-value num-font">{{effective.dailyCalories}}</view>
-        <view class="tt-stat-label">每日千卡</view>
+      <view class="gp-hero-stat">
+        <text class="gp-hero-num num-font">{{effective.dailyCaloriesText}}</text>
+        <text class="gp-hero-stat-label">每日千卡</text>
       </view>
-      <view class="tt-stat">
-        <view class="tt-stat-value num-font">{{effective.weeklyStepsText}}</view>
-        <view class="tt-stat-label">每周步数</view>
+      <view class="gp-hero-stat">
+        <text class="gp-hero-num num-font">{{effective.weeklyStepsText}}</text>
+        <text class="gp-hero-stat-label">每周步数</text>
       </view>
     </view>
-    <view class="gp-current-tip" bind:tap="goBodyData">
-      <t-icon name="edit" size="28rpx" color="var(--tt-text-2)" />
+
+    <view class="gp-hero-tip" bind:tap="goBodyData">
+      <t-icon name="edit" size="26rpx" color="#ffffff" />
       <text>修改身体数据可自动重新匹配</text>
-      <t-icon name="chevron-right" size="28rpx" color="var(--tt-text-3)" />
+      <t-icon name="chevron-right" size="26rpx" color="#ffffff" />
     </view>
   </view>
 
-  <!-- ===== AI 智能匹配 ===== -->
+  <!-- ===== AI 智能匹配（优先展示） ===== -->
   <view class="tt-section">
     <text>AI 智能匹配</text>
     <text class="tt-section-extra">按 BMI 与运动偏好推荐</text>
   </view>
-  <view class="tt-card gp-ai">
+  <view class="tt-card">
     <block wx:if="{{!aiResult}}">
       <view class="gp-ai-desc">
         <t-icon name="chart-bubble" size="40rpx" color="var(--tt-brand)" />
         <text>根据您的 BMI 与运动偏好，AI 将从预设计划中为你挑选最合适的目标</text>
       </view>
-      <t-button theme="primary" block loading="{{aiLoading}}" bind:tap="aiMatch">
-        AI 智能匹配我的目标
-      </t-button>
+      <t-button theme="primary" block loading="{{aiLoading}}" bind:tap="aiMatch">AI 智能匹配我的目标</t-button>
     </block>
     <block wx:else>
       <view class="gp-ai-head">
@@ -55,52 +55,88 @@
       <view class="gp-ai-plan-name">{{aiResult.plan.name}}</view>
       <view class="gp-ai-reasons">
         <view class="gp-reason" wx:for="{{aiResult.reasons}}" wx:key="*this">
-          <t-icon name="check-circle-filled" size="28rpx" color="#16a34a" />
+          <t-icon name="check-circle-filled" size="28rpx" color="var(--tt-brand)" />
           <text>{{item}}</text>
         </view>
       </view>
-      <view class="form-actions">
-        <t-button theme="primary" block loading="{{applyingPlanId === aiResult.plan._id}}" bind:tap="applyAi">
-          应用此计划
-        </t-button>
+      <view class="gp-actions">
+        <t-button theme="primary" block loading="{{applyingPlanId === aiResult.plan._id}}" bind:tap="applyAi">应用此计划</t-button>
         <t-button theme="default" block bind:tap="aiMatch" disabled="{{aiLoading}}">重新匹配</t-button>
       </view>
     </block>
   </view>
 
-  <!-- ===== 候选计划 ===== -->
+  <!-- ===== 适合你的计划（唯一的手动选择范围，只展示匹配结果） ===== -->
   <view class="tt-section">
-    <text>全部候选计划</text>
-    <text class="tt-section-extra">{{plans.length}} 个</text>
+    <text>适合你的计划</text>
+    <text class="tt-section-extra">{{matchBasisText}}</text>
   </view>
-  <view class="gp-plan-list">
-    <view class="tt-card gp-plan-card" wx:for="{{plans}}" wx:key="_id">
+
+  <view class="gp-cards">
+    <view class="tt-card gp-plan" wx:for="{{suitablePlans}}" wx:key="_id">
+      <!-- 标题行：强度标签 + 计划名 + 状态 -->
       <view class="gp-plan-head">
+        <text class="gp-lv gp-lv-{{item.level}}">{{item.levelText}}</text>
         <text class="gp-plan-name">{{item.name}}</text>
-        <text class="gp-suit-chip {{item.suitable ? 'ok' : ''}}">{{item.suitable ? '适合你' : item.bmiRangeText}}</text>
+        <text class="tt-chip tt-chip-brand gp-plan-state" wx:if="{{item.isCurrent}}">使用中</text>
+        <text class="tt-chip tt-chip-brand gp-plan-state" wx:elif="{{item.prefMatched}}">推荐</text>
       </view>
-      <view class="gp-plan-meta">
-        <text>{{item.prefText}}强度</text>
-        <text>每日 {{item.dailyStepsText}} 步</text>
-        <text>{{item.dailyDistanceText}}</text>
+
+      <!-- 一句话摘要：每天的目标 -->
+      <view class="gp-plan-sum">
+        <text class="gp-sum-k">每日</text>
+        <text class="gp-sum-v num-font">{{item.dailyStepsText}}</text>
+        <text class="gp-sum-u">步</text>
+        <text class="gp-sum-dot">·</text>
+        <text class="gp-sum-v2">{{item.dailyDistanceText}}</text>
+        <text class="gp-sum-dot">·</text>
+        <text class="gp-sum-v2">{{item.dailyCaloriesText}} 千卡</text>
       </view>
-      <view class="form-actions">
-        <t-button
-          theme="primary"
-          size="small"
-          variant="outline"
-          loading="{{applyingPlanId === item._id}}"
-          bind:tap="applyCandidate"
-          data-id="{{item._id}}"
-        >
-          应用此计划
-        </t-button>
+
+      <!-- 匹配依据：一行小字 -->
+      <view class="gp-plan-basis">
+        <text>{{item.genderText}}</text>
+        <text class="gp-plan-dot">·</text>
+        <text>BMI {{item.bmiRangeText}}</text>
+        <block wx:for="{{item.reasons}}" wx:for-item="reason" wx:key="*this">
+          <text class="gp-plan-dot">·</text>
+          <text>{{reason}}</text>
+        </block>
+      </view>
+
+      <view class="gp-plan-foot">
+        <text class="gp-plan-week">每周 {{item.weeklyStepsText}} 步</text>
+        <!-- t-button 宿主不收缩，必须包 .tt-btn-right，否则按钮右侧留空缺 -->
+        <view class="tt-btn-right">
+          <t-button
+            theme="primary"
+            size="small"
+            loading="{{applyingPlanId === item._id}}"
+            disabled="{{item.isCurrent}}"
+            bind:tap="applyCandidate"
+            data-id="{{item._id}}"
+          >
+            {{item.isCurrent ? '正在使用' : '应用此计划'}}
+          </t-button>
+        </view>
       </view>
     </view>
-    <view class="tt-empty" wx:if="{{!plans.length && !loading}}">暂无候选计划，请联系管理员配置</view>
+
+    <view class="tt-card gp-empty" wx:if="{{!suitablePlans.length && !loading}}">
+      <t-icon name="info-circle" size="44rpx" color="var(--tt-brand)" />
+      <view class="gp-empty-title">{{plans.length ? '暂无完全匹配的计划' : '暂无候选计划'}}</view>
+      <view class="gp-empty-sub">
+        {{plans.length ? '先完善下方身体数据（身高/体重/性别），系统会按 BMI + 强度重新匹配' : '请联系管理员在「系统配置」里添加计划'}}
+      </view>
+    </view>
+  </view>
+
+  <!-- 身体数据缺失提示：此时只按「强度 + 性别」粗略匹配 -->
+  <view class="tt-card gp-hint" wx:if="{{needBodyData && !loading}}" bind:tap="goBodyData">
+    <t-icon name="info-circle" size="32rpx" color="var(--tt-brand)" />
+    <text class="gp-hint-text">还没填身高体重，当前按「强度 + 性别」粗略匹配，完善后可按 BMI 精准匹配。</text>
+    <text class="gp-hint-link">去填写 ›</text>
   </view>
 
   <t-loading wx:if="{{loading}}" theme="circular" size="48rpx" text="加载中…" class="gp-loading" />
-
-  <view class="tt-footer">计划目标可在「系统配置」中由管理员调整</view>
 </view>

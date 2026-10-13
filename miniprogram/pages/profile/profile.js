@@ -25,10 +25,21 @@ function enrollOf(user) {
   };
 }
 
+// 顶部用户卡的一行关键信息（学籍卡已列全部字段，这里只做摘要，避免重复）
+function heroMetaOf(user, enroll, isTeacher) {
+  const e = enroll || enrollOf(user);
+  if (isTeacher) return '教师账号不参与运动记录与排名';
+  const parts = [e.departmentName, e.className].filter(Boolean);
+  if (parts.length) return parts.join(' · ');
+  if (e.studentId) return `学号 ${e.studentId}`;
+  return '点击昵称可修改';
+}
+
 Page({
   data: {
     user: null,
     enroll: enrollOf(null),
+    heroMeta: '',
     stats: null,
     monitor: null,
     isAdmin: false,
@@ -63,9 +74,11 @@ Page({
       }
       const perms = user.effectivePermissions || [];
       const isTeacher = user.role === 'teacher';
+      const enroll = enrollOf(user);
       this.setData({
         user,
-        enroll: enrollOf(user),
+        enroll,
+        heroMeta: heroMetaOf(user, enroll, isTeacher),
         isTeacher,
         isAdmin: !!user.isManager,
         canManagePerms: perms.includes('*') || perms.includes('permission.manage'),
@@ -103,7 +116,8 @@ Page({
   async applyProfile(patch) {
     try {
       const user = await auth.put('/api/auth/profile', patch);
-      this.setData({ user, enroll: enrollOf(user) });
+      const enroll = enrollOf(user);
+      this.setData({ user, enroll, heroMeta: heroMetaOf(user, enroll, user.role === 'teacher') });
       getApp().globalData.userInfo = user;
       auth.setUser(user);
       wx.showToast({ title: '已保存', icon: 'success' });
@@ -116,7 +130,7 @@ Page({
   onEnrollTip() {
     wx.showModal({
       title: '学籍信息',
-      content: '姓名 / 学号 / 院系 / 专业 / 班级 / 年级来自学校名单同步，不能自行修改。如有误请联系管理员或老师。',
+      content: '姓名 / 学号 / 院系 / 专业 / 班级 / 年级来自学校名单同步，不能自行修改。有问题请找班主任。',
       showCancel: false,
       confirmText: '知道了',
     });
@@ -143,13 +157,23 @@ Page({
     wx.navigateTo({ url: '/pages/password/change' });
   },
 
+  // 授权管理：打开微信授权设置
+  openAuthSetting() {
+    wx.openSetting({});
+  },
+
+  goAbout() {
+    wx.navigateTo({ url: '/pages/about/about' });
+  },
+
   // 退出登录：清除本机会话 → 回登录页（已绑定微信的账号重新进入会自动登录）
   logout() {
     wx.showModal({
       title: '退出登录',
       content: '将清除本机登录信息并返回登录页',
       confirmText: '退出',
-      confirmColor: '#d54941',
+      // 微信 API 只接受 hex 字符串，取值同 --td-error-color-6
+      confirmColor: '#e5484d',
       success: (r) => {
         if (!r.confirm) return;
         auth.logout();

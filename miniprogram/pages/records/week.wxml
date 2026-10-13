@@ -1,64 +1,57 @@
 <view class="page tt-page week-page">
-  <!-- ===== 标题 ===== -->
-  <view class="week-hero">
-    <view class="week-hero-range">{{rangeText}}</view>
-    <view class="week-hero-tags">
-      <text class="tt-chip tt-chip-brand">周一 至 周日</text>
-      <text class="achieve-chip {{goalAchieved ? 'ok' : ''}}">{{goalAchieved ? '✓ 周目标达成' : '周目标未达成'}}</text>
+  <!-- ===== 概要卡：区间 + 四项指标 + 目标进度 + 7 天柱状图 ===== -->
+  <view class="tt-card week-card" wx:if="{{totals}}">
+    <view class="week-head">
+      <text class="week-range">{{rangeText}}</text>
+      <text class="week-flag {{goalAchieved ? 'ok' : ''}}">{{goalAchieved ? '已达标' : '未达标'}}</text>
     </view>
-  </view>
 
-  <!-- ===== 周汇总 ===== -->
-  <view class="tt-card" wx:if="{{totals}}">
-    <view class="tt-stat-row">
+    <view class="tt-stat-row week-stat-row">
       <view class="tt-stat">
-        <view class="tt-stat-value num-font">{{totals.steps}}</view>
-        <view class="tt-stat-label">周步数</view>
+        <view class="tt-stat-value week-stat-value num-font">{{totals.steps}}</view>
+        <view class="tt-stat-label week-stat-label">周步数</view>
       </view>
       <view class="tt-stat">
-        <view class="tt-stat-value num-font">{{totals.distance}}</view>
-        <view class="tt-stat-label">距离</view>
+        <view class="tt-stat-value week-stat-value num-font">{{totals.distance}}</view>
+        <view class="tt-stat-label week-stat-label">距离</view>
       </view>
       <view class="tt-stat">
-        <view class="tt-stat-value num-font">{{totals.calories}}</view>
-        <view class="tt-stat-label">千卡</view>
+        <view class="tt-stat-value week-stat-value num-font">{{totals.calories}}</view>
+        <view class="tt-stat-label week-stat-label">千卡</view>
       </view>
       <view class="tt-stat">
-        <view class="tt-stat-value num-font">{{activeDays}}/7</view>
-        <view class="tt-stat-label">活跃天</view>
+        <view class="tt-stat-value week-stat-value num-font">{{activeDays}}/7</view>
+        <view class="tt-stat-label week-stat-label">活跃天</view>
       </view>
     </view>
-    <view class="goal-row" wx:if="{{goal}}">
-      <view class="goal-head">
-        <text class="text-secondary">周目标 {{goal.weekly.steps}} 步</text>
-        <text class="num-font goal-percent">{{goalPercent}}%</text>
-      </view>
-      <t-progress theme="line" percentage="{{goalPercent}}" stroke-width="12rpx" />
-    </view>
-  </view>
 
-  <!-- ===== 7 天逐日 ===== -->
-  <view class="tt-section">
-    <text>逐日明细</text>
-    <text class="tt-section-extra">点击查看单日详情</text>
-  </view>
-  <view class="tt-card">
-    <view class="week-day-row" wx:for="{{days}}" wx:key="date" bind:tap="openDay" data-date="{{item.date}}">
-      <view class="wd-label {{item.isToday ? 'today' : ''}}">
-        <text class="wd-week">周{{item.weekText}}</text>
-        <text class="wd-date">{{item.label}}</text>
+    <view class="week-goal" wx:if="{{goal}}">
+      <view class="week-goal-head">
+        <text class="week-goal-text">周目标 {{goalStepsText}} 步</text>
+        <text class="week-goal-percent num-font">{{goalPercent}}%</text>
       </view>
-      <view class="wd-bar-wrap">
-        <view class="wd-bar-track">
-          <view class="wd-bar {{item.goalAchieved ? 'ok' : (item.steps > 0 ? 'active' : '')}}" style="width: {{item.barHeight}}%"></view>
+      <t-progress theme="line" percentage="{{goalPercent}}" stroke-width="8rpx" />
+    </view>
+
+    <!-- 7 天柱状图：点击进单日详情 -->
+    <view class="week-chart">
+      <view
+        class="week-col {{item.isToday ? 'today' : ''}} {{item.isFuture ? 'future' : ''}}"
+        wx:for="{{days}}"
+        wx:key="date"
+        bind:tap="openDay"
+        data-date="{{item.date}}"
+      >
+        <view class="week-col-track">
+          <view
+            class="week-col-bar {{item.goalAchieved ? 'ok' : (item.steps > 0 ? 'active' : '')}}"
+            style="height: {{item.barHeight}}%"
+          ></view>
         </view>
-        <text class="wd-steps num-font">{{item.stepsText}}</text>
+        <text class="week-col-steps num-font">{{item.isFuture ? '—' : item.stepsText}}</text>
+        <text class="week-col-label">周{{item.weekText}}</text>
+        <text class="week-col-date">{{item.label}}</text>
       </view>
-      <view class="wd-flag">
-        <t-icon wx:if="{{item.goalAchieved}}" name="check-circle-filled" size="34rpx" color="#16a34a" />
-        <t-icon wx:else name="circle" size="34rpx" color="var(--tt-text-3)" />
-      </view>
-      <t-icon name="chevron-right" size="30rpx" color="var(--tt-text-3)" />
     </view>
   </view>
 
@@ -67,25 +60,25 @@
     <text>本周记录</text>
     <text class="tt-section-extra">{{records.length}} 条</text>
   </view>
-  <view class="tt-card">
+  <view class="tt-card week-card">
     <block wx:if="{{records.length}}">
-      <view class="tt-row" wx:for="{{records}}" wx:key="_id" bind:tap="openRecord" data-id="{{item._id}}">
-        <view class="row-icon">
-          <t-icon name="{{item.sourceIcon}}" size="40rpx" color="var(--tt-brand)" />
+      <view class="tt-row week-row" wx:for="{{records}}" wx:key="_id" bind:tap="openRecord" data-id="{{item._id}}">
+        <view class="week-row-icon">
+          <t-icon name="{{item.sourceIcon}}" size="30rpx" color="var(--tt-brand)" />
         </view>
         <view class="flex-1">
-          <view class="tt-row-title">{{item.dateText}} · {{item.sourceText}}</view>
-          <view class="tt-row-sub">{{item.durationText}} · {{item.distanceText}}</view>
+          <view class="tt-row-title week-row-title">{{item.dateText}} · {{item.sourceText}}</view>
+          <view class="tt-row-sub week-row-sub">{{item.durationText}} · {{item.distanceText}}</view>
         </view>
-        <view class="row-value">
+        <view class="week-row-value">
           <text class="num-font">{{item.stepsText}}</text>
-          <text class="row-unit">步</text>
+          <text class="week-row-unit">步</text>
         </view>
-        <t-icon name="chevron-right" size="34rpx" color="var(--tt-text-3)" />
+        <t-icon name="chevron-right" size="28rpx" color="var(--tt-text-3)" />
       </view>
     </block>
-    <view class="tt-empty" wx:else>本周暂无运动记录</view>
+    <view class="tt-empty week-empty" wx:else>本周暂无运动记录</view>
   </view>
 
-  <t-loading wx:if="{{loading}}" theme="circular" size="48rpx" text="加载中…" class="loading" />
+  <t-loading wx:if="{{loading}}" theme="circular" size="40rpx" text="加载中…" class="week-loading" />
 </view>

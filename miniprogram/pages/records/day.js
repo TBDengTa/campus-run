@@ -23,11 +23,14 @@ Page({
     goal: null,
     goalPercent: 0,
     goalAchieved: false,
+    goalStepsText: '',
     records: [],
     loading: true,
   },
 
   onLoad(options) {
+    // 未登录 / 已退出 / 游客：统一跳登录页，不执行任何业务逻辑
+    if (!getApp().requireLogin()) return;
     this.setData({ date: options.date || '' });
     this.load();
   },
@@ -39,18 +42,21 @@ Page({
       await getApp().ensureLogin();
       const data = await auth.get(`/api/run/day/${date}`);
       const p = fmt.parseDateKey(date);
-      const percent = Math.min(100, Math.round(((data.totals.steps || 0) / (data.goal.daily.steps || 1)) * 100));
+      const goalSteps = (data.goal && data.goal.daily && data.goal.daily.steps) || 0;
+      const percent = Math.min(100, Math.round(((data.totals.steps || 0) / (goalSteps || 1)) * 100));
       this.setData({
         loading: false,
         dateText: `${p.m}月${p.d}日 ${p.week}`,
+        weekText: p.week,
         holiday: data.holiday,
         totals: {
           steps: fmt.formatNumber(data.totals.steps),
           distance: fmt.formatDistance(data.totals.distance),
-          calories: data.totals.calories,
+          calories: fmt.formatNumber(data.totals.calories),
           durationText: fmt.formatDuration(data.totals.durationSeconds),
         },
         goal: data.goal,
+        goalStepsText: fmt.formatNumber(goalSteps),
         goalPercent: percent,
         goalAchieved: !!data.goalAchieved,
         records: data.records.map(decorate),

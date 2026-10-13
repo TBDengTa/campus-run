@@ -1,0 +1,77 @@
+<view class="page about-page">
+  <!-- ===== 应用标题 ===== -->
+  <view class="about-hero">
+    <view class="about-app-name">唐唐快跑</view>
+    <view class="about-version">Version {{version}}</view>
+  </view>
+
+  <!-- ===== 应用简介 ===== -->
+  <view class="about-card">
+    <view class="about-card-head">
+      <view class="about-bar"></view>
+      <text class="about-card-title">应用简介</text>
+    </view>
+    <view class="about-intro">{{intro}}</view>
+  </view>
+
+  <!-- ===== 开发运营 ===== -->
+  <view class="about-card">
+    <view class="about-card-head">
+      <view class="about-bar"></view>
+      <text class="about-card-title">开发运营</text>
+    </view>
+    <view class="about-dev">
+      <view class="about-dev-avatar">
+        <t-icon name="user" size="44rpx" color="#7c5cff" />
+      </view>
+      <view class="about-dev-info">
+        <view class="about-dev-name">{{company}}</view>
+        <view class="about-dev-sub">开发运营团队</view>
+      </view>
+    </view>
+  </view>
+
+  <!-- ===== 联系我们 ===== -->
+  <view class="about-card">
+    <view class="about-card-head">
+      <view class="about-bar"></view>
+      <text class="about-card-title">联系我们</text>
+    </view>
+
+    <view class="about-contact-row">
+      <view class="about-contact-icon" style="background: #e8f7ef">
+        <t-icon name="service" size="38rpx" color="#16a34a" />
+      </view>
+      <view class="about-contact-info">
+        <view class="about-contact-label">唐唐快跑高级客服经理</view>
+        <view class="about-contact-value">24小时在线</view>
+      </view>
+      <button class="about-contact-btn" open-type="contact">
+        咨询
+        <t-icon name="chevron-right" size="26rpx" color="var(--tt-text-3)" />
+      </button>
+    </view>
+
+    <view class="about-contact-divider"></view>
+
+    <view class="about-contact-row">
+      <view class="about-contact-icon" style="background: #e8f3ff">
+        <t-icon name="service" size="38rpx" color="#2f7cf6" />
+      </view>
+      <view class="about-contact-info">
+        <view class="about-contact-label">微信公众号</view>
+        <view class="about-contact-value">{{officialAccount}}</view>
+      </view>
+      <button class="about-contact-btn" bind:tap="copyOfficialAccount">
+        关注
+        <t-icon name="chevron-right" size="26rpx" color="var(--tt-text-3)" />
+      </button>
+    </view>
+  </view>
+
+  <!-- ===== 页脚 ===== -->
+  <view class="about-footer">
+    <view>唐唐快跑 由 {{company}} 开发运营</view>
+    <view>Copyright 2026 Hebei TangBo Technology Co., Ltd. All rights reserved.</view>
+  </view>
+</view>

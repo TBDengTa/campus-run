@@ -22,7 +22,8 @@
     "pages/webview/webview",
     "pages/banned/banned",
     "pages/records/day",
-    "pages/records/week"
+    "pages/records/week",
+    "pages/about/about"
   ],
   "subpackages": [
     {

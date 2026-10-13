@@ -1,7 +1,9 @@
 <view class="page tt-page badge-page">
   <view class="badge-head">
     <text class="badge-head-text">共 {{list.length}} 枚徽章</text>
-    <t-button theme="primary" size="small" bind:tap="openCreate">+ 新增徽章</t-button>
+    <view class="tt-btn-right">
+      <t-button theme="primary" size="small" bind:tap="openCreate">+ 新增徽章</t-button>
+    </view>
   </view>
 
   <!-- ===== 编辑表单 ===== -->

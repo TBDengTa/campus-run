@@ -1,7 +1,9 @@
 <view class="page tt-page ann-page">
   <view class="ann-head">
     <text class="ann-head-text">共 {{list.length}} 条公告</text>
-    <t-button theme="primary" size="small" bind:tap="openCreate">+ 发布公告</t-button>
+    <view class="tt-btn-right">
+      <t-button theme="primary" size="small" bind:tap="openCreate">+ 发布公告</t-button>
+    </view>
   </view>
 
   <!-- ===== 编辑表单 ===== -->

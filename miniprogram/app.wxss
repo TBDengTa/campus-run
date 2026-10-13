@@ -392,6 +392,16 @@ page {
   box-shadow: var(--tt-card-shadow);
 }
 
+/* 行内靠右按钮容器：t-button 组件宿主节点在 flex 行里不会收缩，
+   直接放进 space-between 行会让按钮停在中途、右侧留出空缺 —— 包一层这个类即可收缩到内容宽度并贴右。
+   用法：<view class="tt-btn-right"><t-button ... /></view> */
+.tt-btn-right {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+}
+
 .num-font {
   font-family: TCloudNumber;
 }

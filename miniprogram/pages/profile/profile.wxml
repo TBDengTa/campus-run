@@ -1,7 +1,8 @@
 <view class="page tt-page tt-page-tab profile-page">
-  <!-- ===== 用户卡（橙色渐变） ===== -->
-  <view class="ucard">
-    <view class="ucard-inner">
+  <!-- ===== 顶部身份卡：异形拱底 + 装饰光环 + 斜向高光（学籍只读，学生不可自改） ===== -->
+  <view class="tt-hero id-card">
+    <view class="id-sheen"></view>
+    <view class="tt-hero-body hero-body">
       <button class="avatar-btn" open-type="chooseAvatar" bind:chooseavatar="chooseAvatar">
         <image wx:if="{{user.avatarUrl}}" class="avatar" src="{{user.avatarUrl}}" mode="aspectFill" />
         <view wx:else class="avatar avatar-ph">
@@ -9,186 +10,197 @@
         </view>
       </button>
 
-      <view class="ucard-info">
-        <view class="name-row">
+      <view class="hero-info">
+        <view class="hero-name-row">
           <input
-            class="nickname-input"
+            class="hero-name"
             type="nickname"
             value="{{user.nickname}}"
             placeholder="点击设置昵称"
-            placeholder-class="nick-ph"
+            placeholder-class="hero-name-ph"
             bind:blur="nicknameInput"
           />
-          <text class="role-chip">{{roleText}}</text>
+          <text class="hero-role">{{roleText}}</text>
         </view>
-
-        <view class="u-meta" wx:if="{{enroll.realName || enroll.studentId}}">{{enroll.realName || '未实名'}} · {{enroll.studentId || '未绑学号'}}</view>
-        <view class="u-meta" wx:elif="{{user.nickname}}">点击昵称可修改</view>
-        <view class="u-meta" wx:else>点击昵称可修改</view>
+        <!-- 学生的学籍信息已由下方网格完整展示，这里只在教师端补一行角色提示 -->
+        <view class="hero-meta" wx:if="{{isTeacher}}">{{heroMeta}}</view>
       </view>
     </view>
-  </view>
 
-  <!-- ===== 本地测试模式提示 ===== -->
-  <view class="dev-banner" wx:if="{{devMode}}">
-    <t-icon name="info-circle" size="30rpx" color="#b06e00" />
-    <text>当前为本地测试登录（DEV_LOGIN=true）：登录的是 dev 测试账号，不是你的真实学籍；微信运动同步也不可用。</text>
-  </view>
-
-  <!-- ===== 学籍信息（来自学校名单，学生不可自行修改） ===== -->
-  <view class="tt-section">
-    <text>学籍信息</text>
-    <text class="tt-section-extra" bind:tap="onEnrollTip">来自学校名单</text>
-  </view>
-  <view class="tt-card enroll-card" bind:tap="onEnrollTip">
-    <view class="enroll-row">
-      <text class="enroll-label">姓名</text>
-      <text class="enroll-value">{{enroll.realName || '—'}}</text>
-    </view>
-    <view class="enroll-row">
-      <text class="enroll-label">学号</text>
-      <text class="enroll-value num-font">{{enroll.studentId || '—'}}</text>
-    </view>
-    <view class="enroll-row">
-      <text class="enroll-label">学校</text>
-      <text class="enroll-value">{{enroll.schoolName || '—'}}</text>
-    </view>
-    <view class="enroll-row">
-      <text class="enroll-label">院系</text>
-      <text class="enroll-value">{{enroll.departmentName || '—'}}</text>
-    </view>
-    <view class="enroll-row">
-      <text class="enroll-label">专业</text>
-      <text class="enroll-value">{{enroll.specialty || '—'}}</text>
-    </view>
-    <view class="enroll-row">
-      <text class="enroll-label">班级</text>
-      <text class="enroll-value">{{enroll.className || '—'}}</text>
-    </view>
-    <view class="enroll-row">
-      <text class="enroll-label">年级</text>
-      <text class="enroll-value">{{enroll.gradeText}}</text>
-    </view>
-    <view class="enroll-tip">
-      <t-icon name="lock-on" size="24rpx" color="var(--tt-text-3)" />
-      <text>学籍信息由学校名单同步，如有误请联系管理员</text>
-    </view>
-  </view>
-
-  <!-- ===== 累计数据（学生） ===== -->
-  <view class="tt-card stats-card" wx:if="{{stats && !isTeacher}}">
-    <view class="tt-stat-row">
-      <view class="tt-stat">
-        <view class="tt-stat-value num-font">{{stats.totalSteps}}</view>
-        <view class="tt-stat-label">累计步数</view>
+    <!-- 学籍信息：两列紧凑排布，与身份信息同一张卡 -->
+    <view class="enroll-grid" wx:if="{{!isTeacher}}" bind:tap="onEnrollTip">
+      <view class="enroll-cell">
+        <text class="enroll-k">姓名</text>
+        <text class="enroll-v">{{enroll.realName || '—'}}</text>
       </view>
-      <view class="tt-stat">
-        <view class="tt-stat-value num-font">{{stats.totalDistance}}</view>
-        <view class="tt-stat-label">累计距离</view>
+      <view class="enroll-cell">
+        <text class="enroll-k">学号</text>
+        <text class="enroll-v num-font">{{enroll.studentId || '—'}}</text>
       </view>
-      <view class="tt-stat">
-        <view class="tt-stat-value num-font">{{stats.totalDays}}</view>
-        <view class="tt-stat-label">打卡天数</view>
+      <view class="enroll-cell">
+        <text class="enroll-k">学校</text>
+        <text class="enroll-v">{{enroll.schoolName || '—'}}</text>
       </view>
+      <view class="enroll-cell">
+        <text class="enroll-k">院系</text>
+        <text class="enroll-v">{{enroll.departmentName || '—'}}</text>
+      </view>
+      <view class="enroll-cell">
+        <text class="enroll-k">专业</text>
+        <text class="enroll-v">{{enroll.specialty || '—'}}</text>
+      </view>
+      <view class="enroll-cell">
+        <text class="enroll-k">班级</text>
+        <text class="enroll-v">{{enroll.className || '—'}}</text>
+      </view>
+      <view class="enroll-cell">
+        <text class="enroll-k">年级</text>
+        <text class="enroll-v">{{enroll.gradeText}}</text>
+      </view>
+    </view>
+    <view class="enroll-tip" wx:if="{{!isTeacher}}" bind:tap="onEnrollTip">
+      <t-icon name="lock-on" size="22rpx" color="rgba(255,255,255,0.85)" />
+      <text>学籍信息由学校名单同步，有问题请找班主任</text>
     </view>
   </view>
 
   <!-- ===== 封禁提醒 ===== -->
   <view class="ban-banner" wx:if="{{banned}}" bind:tap="goBanned">
-    <t-icon name="error-circle" size="36rpx" />
+    <t-icon name="error-circle" size="34rpx" color="var(--td-error-color-6)" />
     <text>账号已被封禁，点击查看详情并申诉</text>
-    <t-icon name="chevron-right" size="30rpx" />
+    <t-icon name="chevron-right" size="30rpx" color="var(--td-error-color-6)" />
   </view>
+
+  <!-- ===== 本地测试模式提示（DEV_LOGIN=true 时显示） ===== -->
+  <view class="dev-banner" wx:if="{{devMode}}">
+    <t-icon name="info-circle" size="30rpx" color="var(--td-warning-color-7)" />
+    <text>当前为本地测试登录（DEV_LOGIN=true）：登录的是 dev 测试账号，不是你的真实学籍；微信运动同步也不可用。</text>
+  </view>
+
+  <!-- ===== 累计数据（学生可见，教师隐藏） ===== -->
+  <block wx:if="{{stats && !isTeacher}}">
+    <view class="tt-section">累计数据</view>
+    <view class="tt-card">
+      <view class="tt-stat-row">
+        <view class="tt-stat">
+          <view class="tt-stat-value num-font">{{stats.totalSteps}}</view>
+          <view class="tt-stat-label">累计步数</view>
+        </view>
+        <view class="tt-stat">
+          <view class="tt-stat-value num-font">{{stats.totalDistance}}</view>
+          <view class="tt-stat-label">累计距离</view>
+        </view>
+        <view class="tt-stat">
+          <view class="tt-stat-value num-font">{{stats.totalDays}}</view>
+          <view class="tt-stat-label">打卡天数</view>
+        </view>
+      </view>
+    </view>
+  </block>
 
   <!-- ===== 运动与健康 ===== -->
   <view class="tt-section">运动与健康</view>
   <view class="tt-card menu-card">
-    <view class="menu-row" bind:tap="go" data-url="/pages/body-data/body-data">
-      <view class="menu-icon" style="background: #eafaf1">
-        <t-icon name="heart" size="38rpx" color="#16a34a" />
+    <view class="tt-row menu-row" bind:tap="go" data-url="/pages/body-data/body-data">
+      <view class="menu-icon">
+        <t-icon name="heart" size="36rpx" color="var(--tt-brand)" />
       </view>
       <text class="menu-label">身体数据 / 目标计划</text>
-      <t-icon name="chevron-right" size="34rpx" color="var(--tt-text-3)" />
+      <t-icon name="chevron-right" size="32rpx" color="var(--tt-text-3)" />
     </view>
-    <view class="menu-row" bind:tap="go" data-url="/pages/water/water">
-      <view class="menu-icon" style="background: #eef6ff">
-        <t-icon name="drink" size="38rpx" color="#2f7cf6" />
+    <view class="tt-row menu-row" bind:tap="go" data-url="/pages/water/water">
+      <view class="menu-icon">
+        <t-icon name="drink" size="36rpx" color="var(--tt-brand)" />
       </view>
       <text class="menu-label">喝水打卡</text>
-      <t-icon name="chevron-right" size="34rpx" color="var(--tt-text-3)" />
+      <t-icon name="chevron-right" size="32rpx" color="var(--tt-text-3)" />
     </view>
-    <view class="menu-row" wx:if="{{!isTeacher}}" bind:tap="go" data-url="/pages/reward/reward">
+    <view class="tt-row menu-row" wx:if="{{!isTeacher}}" bind:tap="go" data-url="/pages/reward/reward">
       <view class="menu-icon">
-        <t-icon name="play-circle" size="38rpx" color="var(--tt-brand)" />
+        <t-icon name="play-circle" size="36rpx" color="var(--tt-brand)" />
       </view>
       <text class="menu-label">看视频赚步数</text>
-      <t-icon name="chevron-right" size="34rpx" color="var(--tt-text-3)" />
+      <t-icon name="chevron-right" size="32rpx" color="var(--tt-text-3)" />
     </view>
-    <view class="menu-row" wx:if="{{!isTeacher}}" bind:tap="go" data-url="/pages/badges/badges">
-      <view class="menu-icon" style="background: #fff8e6">
-        <t-icon name="star" size="38rpx" color="#f5a623" />
+    <view class="tt-row menu-row" wx:if="{{!isTeacher}}" bind:tap="go" data-url="/pages/badges/badges">
+      <view class="menu-icon">
+        <t-icon name="star" size="36rpx" color="var(--tt-brand)" />
       </view>
       <text class="menu-label">我的徽章</text>
-      <t-icon name="chevron-right" size="34rpx" color="var(--tt-text-3)" />
+      <t-icon name="chevron-right" size="32rpx" color="var(--tt-text-3)" />
     </view>
   </view>
 
   <!-- ===== 账号与帮助 ===== -->
   <view class="tt-section">账号与帮助</view>
   <view class="tt-card menu-card">
-    <view class="menu-row" bind:tap="goChangePwd">
-      <view class="menu-icon" style="background: #fff8e6">
-        <t-icon name="lock-on" size="38rpx" color="#f5a623" />
+    <view class="tt-row menu-row" bind:tap="goChangePwd">
+      <view class="menu-icon">
+        <t-icon name="lock-on" size="36rpx" color="var(--tt-brand)" />
       </view>
       <text class="menu-label">修改密码</text>
-      <t-icon name="chevron-right" size="34rpx" color="var(--tt-text-3)" />
+      <t-icon name="chevron-right" size="32rpx" color="var(--tt-text-3)" />
     </view>
-    <view class="menu-row" bind:tap="go" data-url="/pages/appeal/list">
-      <view class="menu-icon" style="background: var(--td-error-color-1)">
-        <t-icon name="error-circle" size="38rpx" color="var(--td-error-color-6)" />
+    <view class="tt-row menu-row" bind:tap="openAuthSetting">
+      <view class="menu-icon">
+        <t-icon name="setting" size="36rpx" color="var(--tt-brand)" />
+      </view>
+      <text class="menu-label">授权管理</text>
+      <t-icon name="chevron-right" size="32rpx" color="var(--tt-text-3)" />
+    </view>
+    <view class="tt-row menu-row" bind:tap="goAbout">
+      <view class="menu-icon">
+        <t-icon name="info-circle" size="36rpx" color="var(--tt-brand)" />
+      </view>
+      <text class="menu-label">关于我们</text>
+      <t-icon name="chevron-right" size="32rpx" color="var(--tt-text-3)" />
+    </view>
+    <view class="tt-row menu-row" bind:tap="go" data-url="/pages/appeal/list">
+      <view class="menu-icon">
+        <t-icon name="error-circle" size="36rpx" color="var(--tt-brand)" />
       </view>
       <text class="menu-label">我的申诉</text>
-      <t-icon name="chevron-right" size="34rpx" color="var(--tt-text-3)" />
+      <t-icon name="chevron-right" size="32rpx" color="var(--tt-text-3)" />
     </view>
-    <view class="menu-row" bind:tap="go" data-url="/pages/announcements/announcements">
-      <view class="menu-icon" style="background: #eef6ff">
-        <t-icon name="notification" size="38rpx" color="#2f7cf6" />
+    <view class="tt-row menu-row" bind:tap="go" data-url="/pages/announcements/announcements">
+      <view class="menu-icon">
+        <t-icon name="notification" size="36rpx" color="var(--tt-brand)" />
       </view>
       <text class="menu-label">公告</text>
-      <t-icon name="chevron-right" size="34rpx" color="var(--tt-text-3)" />
+      <t-icon name="chevron-right" size="32rpx" color="var(--tt-text-3)" />
     </view>
-    <view class="menu-row" bind:tap="go" data-url="/pages/changelogs/changelogs">
-      <view class="menu-icon" style="background: var(--td-bg-color-component)">
-        <t-icon name="history" size="38rpx" color="var(--tt-text-2)" />
+    <view class="tt-row menu-row" bind:tap="go" data-url="/pages/changelogs/changelogs">
+      <view class="menu-icon">
+        <t-icon name="history" size="36rpx" color="var(--tt-brand)" />
       </view>
       <text class="menu-label">版本日志</text>
-      <t-icon name="chevron-right" size="34rpx" color="var(--tt-text-3)" />
+      <t-icon name="chevron-right" size="32rpx" color="var(--tt-text-3)" />
     </view>
   </view>
 
-  <!-- ===== 管理功能 ===== -->
+  <!-- ===== 管理功能（仅有权限时显示） ===== -->
   <block wx:if="{{isAdmin}}">
     <view class="tt-section">管理功能</view>
     <view class="tt-card menu-card">
-      <view class="menu-row" bind:tap="goAdmin">
+      <view class="tt-row menu-row" bind:tap="goAdmin">
         <view class="menu-icon">
-          <t-icon name="dashboard" size="38rpx" color="var(--tt-brand)" />
+          <t-icon name="dashboard" size="36rpx" color="var(--tt-brand)" />
         </view>
         <view class="flex-1">
           <view class="menu-label">管理端控制台</view>
           <view class="menu-sub">用户 / 申诉 / 广告 / 配置</view>
         </view>
-        <t-icon name="chevron-right" size="34rpx" color="var(--tt-text-3)" />
+        <t-icon name="chevron-right" size="32rpx" color="var(--tt-text-3)" />
       </view>
-      <view class="menu-row" wx:if="{{canManagePerms}}" bind:tap="goPerms">
-        <view class="menu-icon" style="background: #eafaf1">
-          <t-icon name="user-add" size="38rpx" color="#16a34a" />
+      <view class="tt-row menu-row" wx:if="{{canManagePerms}}" bind:tap="goPerms">
+        <view class="menu-icon">
+          <t-icon name="user-add" size="36rpx" color="var(--tt-brand)" />
         </view>
         <view class="flex-1">
           <view class="menu-label">用户权限管理</view>
           <view class="menu-sub">角色 / 权限组 / 独立权限</view>
         </view>
-        <t-icon name="chevron-right" size="34rpx" color="var(--tt-text-3)" />
+        <t-icon name="chevron-right" size="32rpx" color="var(--tt-text-3)" />
       </view>
     </view>
   </block>

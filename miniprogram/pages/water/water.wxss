@@ -232,3 +232,73 @@
 .water-target-btn {
   margin: 0 var(--tt-gap);
 }
+
+/* ===== 目标构成说明 ===== */
+.water-formula {
+  padding: 22rpx 28rpx;
+}
+
+.water-formula-row {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  margin-bottom: 10rpx;
+}
+
+.water-formula-text {
+  font-size: 24rpx;
+  color: var(--td-text-color-secondary);
+  flex: 1;
+}
+
+.water-formula-detail {
+  display: flex;
+  gap: 24rpx;
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+/* ===== 历史记录 ===== */
+.water-his-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 16rpx 0;
+  border-bottom: 1rpx solid var(--tt-line, rgba(0, 0, 0, 0.06));
+}
+
+.water-his-row:last-child {
+  border-bottom: none;
+}
+
+.water-his-date {
+  width: 110rpx;
+  font-size: 24rpx;
+  color: var(--td-text-color-secondary);
+}
+
+.water-his-bar-wrap {
+  flex: 1;
+  height: 14rpx;
+  border-radius: 999px;
+  background: var(--tt-line, rgba(0, 0, 0, 0.05));
+  overflow: hidden;
+}
+
+.water-his-bar {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--tt-brand, #ff6b00);
+  opacity: 0.75;
+}
+
+.water-his-bar.ok {
+  background: #16a34a;
+  opacity: 1;
+}
+
+.water-his-num {
+  font-size: 22rpx;
+  color: var(--td-text-color-secondary);
+  white-space: nowrap;
+}

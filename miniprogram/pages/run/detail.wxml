@@ -1,114 +1,122 @@
-<view class="page tt-page" wx:if="{{record}}">
-  <!-- ===== 主视觉：步数结论 ===== -->
-  <view class="tt-hero">
-    <view class="detail-hero-body">
-      <view class="detail-hero-top">
-        <text class="detail-hero-label">{{record.sourceText}}</text>
-        <text class="detail-hero-badge {{record.goalAchieved ? 'done' : ''}}">
+<view class="page tt-page rd-page" wx:if="{{record}}">
+  <!-- ===== 主视觉：步数结论（压缩为窄条） ===== -->
+  <view class="tt-hero rd-hero">
+    <view class="tt-hero-body rd-hero-body">
+      <view class="rd-hero-top">
+        <text class="rd-hero-label">{{record.sourceText}}</text>
+        <text class="rd-hero-badge {{record.goalAchieved ? 'done' : ''}}">
           {{record.goalAchieved ? '已达标 ✓' : record.dateText}}
         </text>
       </view>
 
-      <view class="detail-hero-num">
-        <text class="num-font detail-hero-steps">{{record.stepsText}}</text>
-        <text class="detail-hero-unit">步</text>
+      <view class="rd-hero-num">
+        <text class="num-font rd-hero-steps">{{record.stepsText}}</text>
+        <text class="rd-hero-unit">步</text>
       </view>
 
-      <view class="detail-hero-sub">
-        <t-icon name="flag" size="26rpx" color="rgba(255,255,255,0.9)" />
+      <view class="rd-hero-sub">
+        <t-icon name="flag" size="22rpx" color="rgba(255,255,255,0.9)" />
         <text>{{record.dateWeekText || record.dateText}}</text>
       </view>
     </view>
   </view>
 
-  <!-- ===== 核心数据 ===== -->
-  <view class="tt-card">
-    <view class="tt-stat-row">
+  <!-- ===== 核心数据（含平均配速，四列紧凑） ===== -->
+  <view class="tt-card rd-card">
+    <view class="tt-stat-row rd-stat-row">
       <view class="tt-stat">
-        <view class="tt-stat-value detail-stat-value num-font">{{record.distanceText}}</view>
-        <view class="tt-stat-label">距离</view>
+        <view class="tt-stat-value rd-stat-value num-font">{{record.distanceText}}</view>
+        <view class="tt-stat-label rd-stat-label">距离</view>
       </view>
       <view class="tt-stat">
-        <view class="tt-stat-value detail-stat-value num-font">{{record.durationText}}</view>
-        <view class="tt-stat-label">时长</view>
+        <view class="tt-stat-value rd-stat-value num-font">{{record.durationText}}</view>
+        <view class="tt-stat-label rd-stat-label">时长</view>
       </view>
       <view class="tt-stat">
-        <view class="tt-stat-value detail-stat-value num-font">{{record.caloriesText}}</view>
-        <view class="tt-stat-label">千卡</view>
+        <view class="tt-stat-value rd-stat-value num-font">{{record.caloriesText}}</view>
+        <view class="tt-stat-label rd-stat-label">千卡</view>
+      </view>
+      <view class="tt-stat" wx:if="{{record.paceText}}">
+        <view class="tt-stat-value rd-stat-value num-font">{{record.paceText}}</view>
+        <view class="tt-stat-label rd-stat-label">配速/公里</view>
       </view>
     </view>
   </view>
 
   <!-- ===== 记录信息 ===== -->
-  <view class="tt-section">记录信息</view>
-  <view class="tt-card">
-    <view class="tt-row">
-      <t-icon name="flag" size="34rpx" color="var(--tt-brand)" />
-      <view class="detail-row-body">
-        <view class="tt-row-title">数据来源</view>
+  <view class="tt-section"><text>记录信息</text></view>
+  <view class="tt-card rd-card">
+    <view class="tt-row rd-row">
+      <view class="rd-row-icon">
+        <t-icon name="flag" size="28rpx" color="var(--tt-brand)" />
       </view>
-      <text class="detail-row-value">{{record.sourceText}}</text>
+      <view class="rd-row-body">
+        <view class="tt-row-title rd-row-title">数据来源</view>
+      </view>
+      <text class="rd-row-value">{{record.sourceText}}</text>
     </view>
 
-    <view class="tt-row">
-      <t-icon name="calendar" size="34rpx" color="var(--tt-brand)" />
-      <view class="detail-row-body">
-        <view class="tt-row-title">日期</view>
+    <view class="tt-row rd-row">
+      <view class="rd-row-icon">
+        <t-icon name="calendar" size="28rpx" color="var(--tt-brand)" />
       </view>
-      <text class="detail-row-value">{{record.dateWeekText || record.dateText}}</text>
+      <view class="rd-row-body">
+        <view class="tt-row-title rd-row-title">日期</view>
+      </view>
+      <text class="rd-row-value">{{record.dateWeekText || record.dateText}}</text>
     </view>
 
-    <view class="tt-row" wx:if="{{record.paceText}}">
-      <t-icon name="activity" size="34rpx" color="var(--tt-brand)" />
-      <view class="detail-row-body">
-        <view class="tt-row-title">平均配速</view>
-        <view class="tt-row-sub">{{record.paceText}} / 公里</view>
+    <view class="tt-row rd-row" wx:if="{{record.timeRangeText}}">
+      <view class="rd-row-icon">
+        <t-icon name="time" size="28rpx" color="var(--tt-brand)" />
       </view>
-    </view>
-
-    <view class="tt-row" wx:if="{{record.timeRangeText}}">
-      <t-icon name="time" size="34rpx" color="var(--tt-brand)" />
-      <view class="detail-row-body">
-        <view class="tt-row-title">运动时段</view>
-        <view class="tt-row-sub detail-time">
-          <text>{{record.startTimeText}}</text>
-          <t-icon name="chevron-right" size="24rpx" color="var(--tt-text-3)" />
-          <text>{{record.endTimeText}}</text>
-        </view>
+      <view class="rd-row-body">
+        <view class="tt-row-title rd-row-title">运动时段</view>
       </view>
-    </view>
-
-    <view class="tt-row" wx:if="{{record.location}}">
-      <t-icon name="location" size="34rpx" color="var(--tt-brand)" />
-      <view class="detail-row-body">
-        <view class="tt-row-title">运动地点</view>
-      </view>
-      <text class="detail-row-value">{{record.location}}</text>
-    </view>
-
-    <view class="tt-row" wx:if="{{hasRoute}}">
-      <t-icon name="gps" size="34rpx" color="var(--tt-brand)" />
-      <view class="detail-row-body">
-        <view class="tt-row-title">GPS 轨迹</view>
-        <view class="tt-row-sub">已在下方地图中展示</view>
+      <view class="rd-time">
+        <text>{{record.startTimeText}}</text>
+        <t-icon name="chevron-right" size="22rpx" color="var(--tt-text-3)" />
+        <text>{{record.endTimeText}}</text>
       </view>
     </view>
 
-    <view class="tt-row" wx:else>
-      <t-icon name="info-circle" size="34rpx" color="var(--tt-text-3)" />
-      <view class="detail-row-body">
-        <view class="tt-row-title">GPS 轨迹</view>
-        <view class="tt-row-sub">本次记录无轨迹数据</view>
+    <view class="tt-row rd-row" wx:if="{{record.location}}">
+      <view class="rd-row-icon">
+        <t-icon name="location" size="28rpx" color="var(--tt-brand)" />
       </view>
+      <view class="rd-row-body">
+        <view class="tt-row-title rd-row-title">运动地点</view>
+      </view>
+      <text class="rd-row-value">{{record.location}}</text>
+    </view>
+
+    <view class="tt-row rd-row" wx:if="{{hasRoute}}">
+      <view class="rd-row-icon">
+        <t-icon name="gps" size="28rpx" color="var(--tt-brand)" />
+      </view>
+      <view class="rd-row-body">
+        <view class="tt-row-title rd-row-title">GPS 轨迹</view>
+      </view>
+      <text class="rd-row-value">见下方地图</text>
+    </view>
+
+    <view class="tt-row rd-row" wx:else>
+      <view class="rd-row-icon rd-row-icon-muted">
+        <t-icon name="info-circle" size="28rpx" color="var(--tt-text-3)" />
+      </view>
+      <view class="rd-row-body">
+        <view class="tt-row-title rd-row-title">GPS 轨迹</view>
+      </view>
+      <text class="rd-row-value rd-row-value-muted">无轨迹数据</text>
     </view>
   </view>
 
   <!-- ===== 轨迹地图 ===== -->
   <block wx:if="{{hasRoute}}">
-    <view class="tt-section">运动轨迹</view>
-    <view class="tt-card detail-map-card">
+    <view class="tt-section"><text>运动轨迹</text></view>
+    <view class="tt-card rd-card rd-map-card">
       <map
-        class="detail-map"
+        class="rd-map"
         latitude="{{latitude}}"
         longitude="{{longitude}}"
         scale="15"
@@ -119,12 +127,12 @@
   </block>
 
   <!-- ===== 再次开跑 ===== -->
-  <view class="detail-action">
-    <view class="tt-pill-btn primary" bind:tap="goRun">
-      <t-icon name="play-circle" size="34rpx" color="#ffffff" />
+  <view class="rd-action">
+    <view class="tt-pill-btn primary rd-action-btn" bind:tap="goRun">
+      <t-icon name="play-circle" size="30rpx" color="#ffffff" />
       <text>再跑一次</text>
     </view>
   </view>
 
-  <view class="tt-footer">坚持运动，每一次记录都算数</view>
+  <view class="tt-footer rd-footer">坚持运动，每一次记录都算数</view>
 </view>

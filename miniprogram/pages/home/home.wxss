@@ -226,16 +226,40 @@
 
 .today-sub {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   flex-wrap: wrap;
-  gap: 6rpx;
+  gap: 8rpx;
   margin-top: 10rpx;
   font-size: 22rpx;
   color: var(--tt-text-3);
 }
 
-.today-dot {
-  color: var(--tt-line);
+/* 每日目标步数这一行：标签小字 + 大号目标值 + 右侧完成度 */
+.today-goal-line {
+  align-items: baseline;
+}
+
+.today-goal-label {
+  font-size: 23rpx;
+  color: var(--tt-text-2);
+}
+
+.today-goal-value {
+  font-size: 40rpx;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--tt-brand-deep);
+}
+
+.today-goal-unit {
+  font-size: 22rpx;
+  color: var(--tt-text-2);
+}
+
+.today-goal-right {
+  margin-left: auto;
+  font-size: 22rpx;
+  color: var(--tt-text-3);
 }
 
 /* 本周 7 天 */
@@ -253,36 +277,49 @@
   gap: 6rpx;
 }
 
-.day-circle {
-  width: 52rpx;
-  height: 52rpx;
+/* 每日环形进度条：外圈 conic-gradient 表示当日完成度，内圈白底放小人图标 */
+.day-ring {
+  width: 56rpx;
+  height: 56rpx;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   background: var(--td-bg-color-component);
-  border: 3rpx solid transparent;
   box-sizing: border-box;
 }
 
-.day-circle.partial {
+.day-ring.achieved {
+  box-shadow: 0 4rpx 12rpx rgba(255, 107, 0, 0.26);
+}
+
+/* 今天：用 box-shadow 画外环（outline 在微信 WebView 里会被画成矩形方框，不要用） */
+.day-ring.today {
+  box-shadow: 0 0 0 4rpx rgba(255, 107, 0, 0.35);
+}
+
+.day-ring.today.achieved {
+  box-shadow: 0 0 0 4rpx rgba(255, 107, 0, 0.35), 0 4rpx 12rpx rgba(255, 107, 0, 0.26);
+}
+
+.day-ring-inner {
+  width: 42rpx;
+  height: 42rpx;
+  border-radius: 50%;
   background: var(--tt-card);
-  border-color: var(--tt-brand-soft-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.day-circle.achieved {
+.day-ring.achieved .day-ring-inner {
   background: linear-gradient(135deg, #ff9a3d, #ff6b00);
-  box-shadow: 0 4rpx 12rpx rgba(255, 107, 0, 0.28);
-}
-
-.day-circle.today {
-  border-color: var(--tt-brand);
 }
 
 /* 圆点里的小人图标（三态：白/橙/灰，由 WXML 按状态选图） */
 .day-ico {
-  width: 30rpx;
-  height: 30rpx;
+  width: 26rpx;
+  height: 26rpx;
 }
 
 .day-label {

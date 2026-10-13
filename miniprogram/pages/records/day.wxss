@@ -1,82 +1,145 @@
+/* ===== 每日记录 · 白橙（紧凑版式） ===== */
+
 .day-page {
-  padding-bottom: 48rpx;
+  padding: 16rpx 0 calc(40rpx + env(safe-area-inset-bottom));
 }
 
-.day-hero {
-  padding: 32rpx 32rpx 24rpx;
+/* 卡片收紧：内边距 32→20rpx、卡片间距 24→16rpx */
+.tt-card.day-card {
+  padding: 20rpx 22rpx;
+  margin-bottom: 16rpx;
 }
 
-.day-hero-date {
-  font-size: 40rpx;
+/* ---- 概要卡首行：日期 + 节假日 + 达标标记 ---- */
+.day-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+  padding-bottom: 16rpx;
+  border-bottom: 2rpx solid var(--tt-line);
+}
+
+.day-head-left {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  min-width: 0;
+}
+
+.day-date {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.tt-chip.day-holiday {
+  padding: 4rpx 14rpx;
+  font-size: 20rpx;
+}
+
+.day-flag {
+  flex-shrink: 0;
+  padding: 4rpx 16rpx;
+  border-radius: 999rpx;
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+  background: var(--tt-line);
+}
+
+.day-flag.ok {
+  color: var(--td-success-color-5);
+  background: var(--td-success-color-1);
+}
+
+/* ---- 四项指标 ---- */
+.day-stat-row {
+  padding: 18rpx 0 6rpx;
+}
+
+.tt-stat-value.day-stat-value {
+  font-size: 30rpx;
   font-weight: 700;
 }
 
-.day-hero-tags {
+.tt-stat-label.day-stat-label {
+  margin-top: 4rpx;
+  font-size: 20rpx;
+}
+
+/* ---- 目标进度 ---- */
+.day-goal {
+  margin-top: 16rpx;
+  padding-top: 14rpx;
+  border-top: 2rpx solid var(--tt-line);
+}
+
+.day-goal-head {
   display: flex;
-  gap: 12rpx;
-  margin-top: 12rpx;
   align-items: center;
-}
-
-.achieve-chip {
-  font-size: 22rpx;
-  color: var(--tt-text-3);
-  background: var(--tt-line, rgba(0, 0, 0, 0.05));
-  border-radius: 999px;
-  padding: 6rpx 18rpx;
-}
-
-.achieve-chip.ok {
-  color: #16a34a;
-  background: #eafaf1;
-}
-
-.goal-row {
-  margin-top: 28rpx;
-}
-
-.goal-head {
-  display: flex;
   justify-content: space-between;
-  font-size: 24rpx;
-  margin-bottom: 10rpx;
+  margin-bottom: 8rpx;
 }
 
-.goal-percent {
-  font-weight: 600;
+.day-goal-text {
+  font-size: 21rpx;
+  color: var(--tt-text-3);
+}
+
+.day-goal-percent {
+  font-size: 22rpx;
+  font-weight: 700;
   color: var(--tt-brand);
 }
 
-.row-icon {
-  width: 72rpx;
-  height: 72rpx;
-  border-radius: 50%;
-  background: var(--tt-brand-weak, rgba(255, 107, 0, 0.08));
+/* ---- 明细行 ---- */
+.tt-row.day-row {
+  gap: 16rpx;
+  padding: 16rpx 0;
+}
+
+.day-row-icon {
+  width: 52rpx;
+  height: 52rpx;
+  border-radius: 16rpx;
+  background: var(--tt-brand-soft);
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-right: 16rpx;
+  flex-shrink: 0;
 }
 
-.loading {
-  display: flex;
-  justify-content: center;
-  padding: 40rpx;
+.tt-row-title.day-row-title {
+  font-size: 25rpx;
 }
 
-.row-value {
+.tt-row-sub.day-row-sub {
+  margin-top: 2rpx;
+  font-size: 21rpx;
+}
+
+.day-row-value {
   display: flex;
   align-items: baseline;
   gap: 4rpx;
-  margin: 0 8rpx;
+  font-size: 27rpx;
+  font-weight: 700;
+  color: var(--tt-text-1);
 }
 
-.row-value .num-font {
-  font-size: 30rpx;
-  font-weight: 600;
-}
-
-.row-unit {
-  font-size: 20rpx;
+.day-row-unit {
+  font-size: 19rpx;
+  font-weight: 400;
   color: var(--tt-text-3);
+}
+
+.tt-empty.day-empty {
+  padding: 36rpx 0;
+  font-size: 23rpx;
+}
+
+.day-loading {
+  display: flex;
+  justify-content: center;
+  padding: 32rpx;
 }

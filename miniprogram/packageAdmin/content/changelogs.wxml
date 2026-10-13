@@ -1,7 +1,9 @@
 <view class="page tt-page clog-page">
   <view class="clog-head">
     <text class="clog-head-text">共 {{list.length}} 条版本记录</text>
-    <t-button theme="primary" size="small" bind:tap="openCreate">+ 新增版本</t-button>
+    <view class="tt-btn-right">
+      <t-button theme="primary" size="small" bind:tap="openCreate">+ 新增版本</t-button>
+    </view>
   </view>
 
   <!-- ===== 编辑表单 ===== -->

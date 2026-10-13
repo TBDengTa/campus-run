@@ -1,25 +1,72 @@
 <view class="page tt-page">
-  <!-- ===== 主视觉：我的 BMI ===== -->
-  <view class="tt-hero" wx:if="{{saved && saved.bmi}}">
-    <view class="body-hero-body">
+  <!-- ===== ① 概览：BMI 主视觉 ===== -->
+  <view class="tt-hero">
+    <view class="tt-hero-body">
       <view class="body-hero-top">
         <text class="body-hero-label">我的 BMI</text>
-        <text class="body-hero-badge">{{saved.bmiLevelText || '待评估'}}</text>
+        <text class="body-hero-badge" wx:if="{{saved && saved.bmi}}">{{saved.bmiLevelText || '待评估'}}</text>
+        <text class="body-hero-badge ghost" wx:else>待完善</text>
       </view>
+
       <view class="body-hero-num">
-        <text class="num-font body-hero-value">{{saved.bmi}}</text>
+        <text class="num-font body-hero-value">{{saved && saved.bmi ? saved.bmi : '--'}}</text>
+        <text class="body-hero-unit">kg/m²</text>
       </view>
-      <view class="body-hero-sub">
-        <t-icon name="heart" size="26rpx" color="rgba(255,255,255,0.9)" />
-        <text>已按身体数据为你匹配目标计划</text>
+
+      <view class="body-hero-tip">{{bmiTip}}</view>
+
+      <view class="body-hero-meta" wx:if="{{height || weight}}">
+        <text>{{height || '--'}} cm</text>
+        <text class="body-hero-dot">·</text>
+        <text>{{weight || '--'}} {{weightUnit === 'jin' ? '斤' : 'kg'}}</text>
+        <text class="body-hero-dot">·</text>
+        <text>{{genderText}}</text>
       </view>
     </view>
   </view>
 
-  <!-- ===== 基础资料 ===== -->
-  <view class="tt-section" id="base-card">基础资料</view>
+  <!-- ===== ② 关键指标 ===== -->
+  <view class="tt-section" id="base-card">
+    <text>关键指标</text>
+    <text class="tt-section-extra" wx:if="{{saved && saved.bmi}}">已保存</text>
+    <text class="tt-section-extra" wx:else>待填写</text>
+  </view>
   <view class="tt-card">
-    <view class="body-row">
+    <view class="tt-stat-row">
+      <view class="tt-stat">
+        <view class="tt-stat-value num-font">{{height || '--'}}</view>
+        <view class="tt-stat-label">身高 cm</view>
+      </view>
+      <view class="tt-stat">
+        <view class="tt-stat-value num-font">{{weight || '--'}}</view>
+        <view class="tt-stat-label">体重 {{weightUnit === 'jin' ? '斤' : 'kg'}}</view>
+      </view>
+      <view class="tt-stat">
+        <view class="tt-stat-value body-metric-text">{{genderText}}</view>
+        <view class="tt-stat-label">性别</view>
+      </view>
+      <view class="tt-stat">
+        <view class="tt-stat-value body-metric-text">{{preferenceText}}</view>
+        <view class="tt-stat-label">运动强度</view>
+      </view>
+    </view>
+
+    <view class="tt-divider"></view>
+
+    <view class="body-note">
+      <t-icon name="info-circle" size="28rpx" color="var(--tt-brand)" />
+      <text>BMI = 体重(kg) ÷ 身高(m)²，成人 18.5 ~ 23.9 为正常范围</text>
+    </view>
+  </view>
+
+  <!-- ===== ③ 编辑表单 ===== -->
+  <view class="tt-section">
+    <text>编辑身体数据</text>
+    <text class="tt-section-extra">保存后自动匹配计划</text>
+  </view>
+
+  <view class="tt-card">
+    <view class="body-field">
       <text class="body-label">性别</text>
       <view class="body-gender">
         <view class="body-gender-chip {{gender === 1 ? 'active' : ''}}" bind:tap="pickGender" data-value="1">男</view>
@@ -30,18 +77,32 @@
 
     <view class="tt-divider"></view>
 
-    <view class="body-row">
+    <view class="body-field">
       <text class="body-label">身高</text>
       <view class="body-input-wrap">
-        <input class="body-input num-font" type="digit" value="{{height}}" placeholder="如 170" placeholder-class="body-ph" bindinput="inputHeight" />
+        <input
+          class="body-input num-font"
+          type="digit"
+          value="{{height}}"
+          placeholder="如 170"
+          placeholder-class="body-ph"
+          bindinput="inputHeight"
+        />
         <text class="body-unit">cm</text>
       </view>
     </view>
 
-    <view class="body-row">
+    <view class="body-field">
       <text class="body-label">体重</text>
       <view class="body-input-wrap">
-        <input class="body-input num-font" type="digit" value="{{weight}}" placeholder="{{weightUnit === 'jin' ? '如 120' : '如 60'}}" placeholder-class="body-ph" bindinput="inputWeight" />
+        <input
+          class="body-input num-font"
+          type="digit"
+          value="{{weight}}"
+          placeholder="{{weightUnit === 'jin' ? '如 120' : '如 60'}}"
+          placeholder-class="body-ph"
+          bindinput="inputWeight"
+        />
         <view class="body-unit-switch">
           <view class="unit-chip {{weightUnit === 'kg' ? 'active' : ''}}" bind:tap="switchUnit" data-unit="kg">kg</view>
           <view class="unit-chip {{weightUnit === 'jin' ? 'active' : ''}}" bind:tap="switchUnit" data-unit="jin">斤</view>
@@ -51,7 +112,10 @@
   </view>
 
   <!-- ===== 运动强度偏好 ===== -->
-  <view class="tt-section">运动强度偏好</view>
+  <view class="tt-section">
+    <text>运动强度偏好</text>
+    <text class="tt-section-extra">影响计划匹配</text>
+  </view>
   <view class="tt-card">
     <view class="body-pref-group">
       <view
@@ -74,63 +138,21 @@
     </t-button>
   </view>
 
-  <!-- ===== 已匹配计划 ===== -->
-  <block wx:if="{{saved && saved.plan}}">
-    <view class="tt-section" id="plan-card">我的目标计划<text class="tt-section-extra">每日 / 每周</text></view>
-    <view class="tt-card">
-      <view class="body-plan-head">
-        <t-icon name="flag" size="34rpx" color="var(--tt-brand)" />
-        <text class="body-plan-name">{{saved.plan.name}}</text>
-        <text class="tt-chip tt-chip-brand">已匹配</text>
-      </view>
-
-      <view class="tt-divider"></view>
-
-      <view class="tt-stat-row body-plan-row">
-        <view class="tt-stat">
-          <view class="tt-stat-value body-plan-stat num-font">{{saved.plan.daily.stepsText}}</view>
-          <view class="tt-stat-label">步数</view>
-        </view>
-        <view class="tt-stat">
-          <view class="tt-stat-value body-plan-stat num-font">{{saved.plan.daily.distanceText}}</view>
-          <view class="tt-stat-label">距离</view>
-        </view>
-        <view class="tt-stat">
-          <view class="tt-stat-value body-plan-stat num-font">{{saved.plan.daily.calories}}</view>
-          <view class="tt-stat-label">千卡</view>
-        </view>
-        <view class="tt-stat">
-          <view class="tt-stat-value body-plan-stat num-font">{{saved.plan.daily.durationMinutes}}</view>
-          <view class="tt-stat-label">分钟</view>
-        </view>
-      </view>
-
-      <block wx:if="{{saved.plan.weekly}}">
-        <view class="body-plan-label">每周目标</view>
-        <view class="tt-stat-row body-plan-row">
-          <view class="tt-stat">
-            <view class="tt-stat-value body-plan-stat num-font">{{saved.plan.weekly.stepsText}}</view>
-            <view class="tt-stat-label">步数</view>
-          </view>
-          <view class="tt-stat">
-            <view class="tt-stat-value body-plan-stat num-font">{{saved.plan.weekly.distanceText}}</view>
-            <view class="tt-stat-label">距离</view>
-          </view>
-        </view>
-      </block>
-
-      <view class="tt-divider"></view>
-
-      <view class="menu-row" bind:tap="goGoalPlan">
-        <t-icon name="flag" size="34rpx" color="var(--tt-brand)" />
-        <view class="flex-1">
-          <view class="menu-label">进入目标计划中心</view>
-          <view class="menu-sub">AI 智能匹配 · 候选计划 · 一键应用</view>
-        </view>
-        <t-icon name="chevron-right" size="34rpx" color="var(--tt-text-3)" />
-      </view>
+  <!-- ===== ④ 目标计划：只保留跳转入口（详细内容在独立页面） ===== -->
+  <view class="tt-section" id="plan-card">
+    <text>我的目标计划</text>
+    <text class="tt-section-extra" wx:if="{{saved && saved.plan}}">已匹配</text>
+  </view>
+  <view class="tt-card body-plan-entry" bind:tap="goGoalPlan">
+    <view class="body-plan-icon">
+      <t-icon name="flag" size="36rpx" color="#ffffff" />
     </view>
-  </block>
+    <view class="flex-1">
+      <view class="body-plan-name">{{saved && saved.plan ? saved.plan.name : '还没有匹配目标计划'}}</view>
+      <view class="body-plan-sub">{{planSummary}}</view>
+    </view>
+    <t-icon name="chevron-right" size="34rpx" color="var(--tt-text-3)" />
+  </view>
 
   <view class="tt-footer">BMI 与计划仅供健康参考，运动请量力而行</view>
 </view>

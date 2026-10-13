@@ -1,41 +1,71 @@
+/* ============================================================
+   我的（profile）· 白橙设计系统
+   字号层级：昵称 36 / 主文案 28 / 字段名 26 / 关键信息 24 / 副文案 22
+   颜色与圆角全部走 --tt-* / --td-* 令牌，公共结构用 .tt-* 类
+   ============================================================ */
+
 .profile-page {
-  padding: 0 0 calc(200rpx + env(safe-area-inset-bottom));
+  padding-top: 12rpx;
 }
 
-/* ===== 用户卡 ===== */
-.ucard {
-  position: relative;
-  margin: 0;
-  padding: 44rpx 36rpx 108rpx;
-  border-radius: 0 0 40rpx 40rpx;
-  overflow: hidden;
-  background: linear-gradient(135deg, #ff9a3d 0%, #ff6b00 62%, #f25a00 100%);
+/* ===== 顶部身份卡：异形（盾形拱底 + 装饰光环 + 斜向高光） =====
+   只在本页覆盖公共 .tt-hero 的形状，不影响 body-data / goal-plan 等页面 */
+.tt-hero.id-card {
+  padding: 34rpx 36rpx 92rpx;
+  /* 8 值圆角语法做「盾形」拱底：左右下角各展开半个卡宽，底边形成平缓拱形 */
+  border-radius: 40rpx 40rpx 50% 50% / 40rpx 40rpx 64rpx 64rpx;
+  box-shadow: 0 16rpx 40rpx rgba(255, 107, 0, 0.26), inset 0 2rpx 0 rgba(255, 255, 255, 0.28);
 }
 
-.ucard::after {
+/* 右上装饰光环（公共 .tt-hero::after 的实心圆之外再加一圈细环，形成层次） */
+.tt-hero.id-card::before {
   content: '';
   position: absolute;
-  right: -140rpx;
-  top: -160rpx;
-  width: 420rpx;
-  height: 420rpx;
+  top: -176rpx;
+  right: -136rpx;
+  width: 400rpx;
+  height: 400rpx;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.14);
+  border: 20rpx solid rgba(255, 255, 255, 0.12);
 }
 
-.ucard-inner {
+/* 斜向高光带 */
+.id-sheen {
+  position: absolute;
+  top: -40%;
+  left: 34%;
+  width: 132rpx;
+  height: 180%;
+  transform: rotate(20deg);
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.18) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  pointer-events: none;
+}
+
+/* 身份信息与学籍面板压在装饰层之上 */
+.hero-body,
+.enroll-grid,
+.enroll-tip {
   position: relative;
   z-index: 1;
+}
+
+/* ===== 顶部用户卡（结构用 .tt-hero / .tt-hero-body） ===== */
+.hero-body {
   display: flex;
   align-items: center;
   gap: 26rpx;
 }
 
 .avatar-btn {
+  width: 132rpx;
+  height: 132rpx;
   padding: 0;
   margin: 0;
-  width: 140rpx;
-  height: 140rpx;
   border-radius: 50%;
   overflow: hidden;
   background: transparent;
@@ -48,83 +78,119 @@
 }
 
 .avatar {
-  width: 140rpx;
-  height: 140rpx;
+  width: 132rpx;
+  height: 132rpx;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.25);
-  border: 4rpx solid rgba(255, 255, 255, 0.65);
   box-sizing: border-box;
+  border: 6rpx solid rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.25);
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  box-shadow: 0 8rpx 22rpx rgba(150, 55, 0, 0.18);
 }
 
-/* 未设置头像时的占位（圆底 + 图标居中） */
+/* 未设置头像时的占位（稍亮一点，避免和已设置头像混淆） */
 .avatar-ph {
-  background: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.3);
 }
 
-.ucard-info {
+.hero-info {
   flex: 1;
   min-width: 0;
 }
 
-.name-row {
+.hero-name-row {
   display: flex;
   align-items: center;
   gap: 14rpx;
 }
 
-.nickname-input {
-  font-size: 38rpx;
-  font-weight: 700;
-  color: #ffffff;
-  height: 60rpx;
+.hero-name {
   flex: 1;
   min-width: 0;
+  height: 60rpx;
+  font-size: 40rpx;
+  font-weight: 700;
+  letter-spacing: 1rpx;
+  color: #ffffff;
 }
 
-.nick-ph {
+.hero-name-ph {
   color: rgba(255, 255, 255, 0.7);
   font-weight: 500;
 }
 
-.role-chip {
+.hero-role {
   flex-shrink: 0;
-  padding: 6rpx 20rpx;
+  padding: 6rpx 22rpx;
   border-radius: 999rpx;
   font-size: 22rpx;
-  color: #fff;
-  background: rgba(255, 255, 255, 0.24);
+  line-height: 1.4;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.22);
+  border: 2rpx solid rgba(255, 255, 255, 0.36);
 }
 
-.u-meta {
-  margin-top: 8rpx;
+/* 一行关键信息：院系 · 班级（无学籍时给出对应提示） */
+.hero-meta {
+  margin-top: 10rpx;
   font-size: 24rpx;
+  line-height: 1.4;
   color: rgba(255, 255, 255, 0.86);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
-.u-tags {
+/* ===== 学籍信息（融在顶部卡里：两列紧凑网格 + 一行提示） ===== */
+.enroll-grid {
   display: flex;
   flex-wrap: wrap;
+  margin-top: 24rpx;
+  padding: 18rpx 22rpx 4rpx;
+  border-radius: var(--tt-radius-sm);
+  background: rgba(255, 255, 255, 0.16);
+  border: 2rpx solid rgba(255, 255, 255, 0.2);
+}
+
+.enroll-cell {
+  width: 50%;
+  box-sizing: border-box;
+  display: flex;
+  align-items: baseline;
   gap: 10rpx;
-  margin-top: 14rpx;
+  margin-bottom: 14rpx;
+  padding-right: 12rpx;
+  min-width: 0;
 }
 
-.u-tag {
-  padding: 6rpx 18rpx;
-  border-radius: 999rpx;
+.enroll-k {
+  flex-shrink: 0;
   font-size: 21rpx;
-  color: #fff;
-  background: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.75);
 }
 
-/* ===== 累计数据（上移叠在渐变卡上） ===== */
-.stats-card {
-  margin-top: -76rpx;
-  position: relative;
-  z-index: 2;
+.enroll-v {
+  flex: 1;
+  min-width: 0;
+  font-size: 24rpx;
+  font-weight: 500;
+  color: #ffffff;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.enroll-tip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
+  margin-top: 2rpx;
+  font-size: 21rpx;
+  color: rgba(255, 255, 255, 0.8);
 }
 
 /* ===== 封禁提醒 ===== */
@@ -144,50 +210,6 @@
   flex: 1;
 }
 
-/* ===== 菜单 ===== */
-.menu-card {
-  padding: 8rpx var(--tt-pad);
-}
-
-.menu-row {
-  display: flex;
-  align-items: center;
-  gap: 22rpx;
-  padding: 26rpx 0;
-  border-bottom: 2rpx solid var(--tt-line);
-}
-
-.menu-row:last-child {
-  border-bottom: none;
-}
-
-.menu-row:active {
-  opacity: 0.7;
-}
-
-.menu-icon {
-  width: 72rpx;
-  height: 72rpx;
-  border-radius: 24rpx;
-  background: var(--tt-brand-soft);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.menu-label {
-  flex: 1;
-  font-size: 29rpx;
-  color: var(--tt-text-1);
-}
-
-.menu-sub {
-  margin-top: 6rpx;
-  font-size: 23rpx;
-  color: var(--tt-text-3);
-}
-
 /* ===== 本地测试模式提示 ===== */
 .dev-banner {
   display: flex;
@@ -200,52 +222,45 @@
   border: 2rpx solid var(--td-warning-color-2);
   font-size: 22rpx;
   line-height: 1.5;
-  color: #b06e00;
+  color: var(--td-warning-color-7);
 }
 
 .dev-banner text {
   flex: 1;
 }
 
-/* ===== 学籍信息（只读，学生不可自行修改） ===== */
-.enroll-card {
-  padding: 8rpx var(--tt-pad) 18rpx;
+/* （旧的高行距学籍卡样式已随融合改造移除，见上方 .enroll-grid / .enroll-cell） */
+
+/* ===== 菜单（结构用 .tt-row，样式统一） ===== */
+.menu-card {
+  padding: 6rpx var(--tt-pad);
 }
 
-.enroll-row {
+.menu-row:active {
+  opacity: 0.7;
+}
+
+/* 图标底色统一 --tt-brand-soft，图形统一品牌色 */
+.menu-icon {
+  width: 68rpx;
+  height: 68rpx;
+  border-radius: 22rpx;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 20rpx;
-  padding: 20rpx 0;
-  border-bottom: 2rpx solid var(--tt-line);
+  justify-content: center;
+  background: var(--tt-brand-soft);
 }
 
-.enroll-row:last-of-type {
-  border-bottom: none;
-}
-
-.enroll-label {
-  width: 120rpx;
-  flex-shrink: 0;
-  font-size: 26rpx;
-  color: var(--tt-text-3);
-}
-
-.enroll-value {
+.menu-label {
   flex: 1;
-  min-width: 0;
   font-size: 28rpx;
   color: var(--tt-text-1);
-  word-break: break-all;
 }
 
-.enroll-tip {
-  display: flex;
-  align-items: center;
-  gap: 8rpx;
+/* 副文案只在必要时出现（管理功能的说明） */
+.menu-sub {
   margin-top: 6rpx;
-  padding-top: 16rpx;
-  border-top: 2rpx solid var(--tt-line);
   font-size: 22rpx;
   color: var(--tt-text-3);
 }
@@ -258,8 +273,12 @@
 
 .logout-btn {
   text-align: center;
-  padding: 26rpx 0;
+  padding: 28rpx 0;
   font-size: 30rpx;
   font-weight: 500;
   color: var(--td-error-color-6);
+}
+
+.logout-btn:active {
+  background: var(--td-bg-color-container-active);
 }
