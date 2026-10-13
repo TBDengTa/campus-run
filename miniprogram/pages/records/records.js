@@ -96,6 +96,7 @@ function weekStartOf(dateKey) {
 
 Page({
   data: {
+    weekRangeText: '',
     tab: 'sport', // sport 运动记录 | day 每日记录 | week 每周记录
     weekStats: null,
     bars: [],
@@ -145,7 +146,11 @@ Page({
       const weekDistance = thisWeekRecords.reduce((s, r) => s + (r.distance || 0), 0);
       const activeDays = new Set(thisWeekRecords.map((r) => r.date)).size;
       const daysGone = new Date().getDay() === 0 ? 7 : new Date().getDay();
+      const ws = fmt.parseDateKey(week.weekStart || todayStr);
+      const we = fmt.parseDateKey(week.weekEnd || todayStr);
+      const weekRangeText = `${ws.m}月${ws.d}日 - ${we.m}月${we.d}日`;
       this.setData({
+        weekRangeText,
         weekStats: {
           steps: fmt.formatNumber(weekSteps),
           distance: fmt.formatDistance(weekDistance),

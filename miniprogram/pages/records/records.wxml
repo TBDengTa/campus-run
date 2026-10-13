@@ -3,7 +3,7 @@
   <view class="tt-card sum-card">
     <view class="sum-head">
       <text class="sum-title">本周概览</text>
-      <text class="tt-chip tt-chip-brand">本周（周一起）</text>
+      <text class="tt-chip tt-chip-brand">{{weekRangeText}}</text>
     </view>
 
     <view class="tt-stat-row" wx:if="{{weekStats}}">
