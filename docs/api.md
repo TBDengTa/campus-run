@@ -7,10 +7,13 @@
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| POST | /login | `{code}` → code2session，返回 `{token, isNew, userInfo}` |
+| POST | /login | `{code}` → code2session。已绑定 → `{token, deviceToken, bound:true, mustChangePassword, userInfo}`；未绑定 → `{token, bound:false}`（游客 token，仅可访问 `/api/auth/*`） |
+| POST | /bind | 游客 token + `{account, password}` → 绑定当前微信并返回正式 token（含 `deviceToken`）。一个账号只认第一个绑定的微信，重复绑定返回 `403 403004` |
+| POST | /device-login | `{deviceToken}` → 一键登录。令牌用后轮换（返回新的 `deviceToken`，旧令牌立即失效）；失效返回 `401 401001` |
+| POST | /device-revoke | `{deviceToken}` → 撤销该设备令牌（登录页删除历史登录记录时调用） |
 | GET | /me | 当前用户（含 isClassMonitor） |
-| PUT | /profile | 更新 nickname/avatarUrl/realName/studentId/className/specialty/gender/birthdate |
-| PUT | /school | 绑定 `{schoolId, departmentId, className}` |
+| PUT | /profile | 更新 `nickname/avatarUrl/gender/birthdate`；**学籍字段（realName/studentId/院系/专业/班级/年级）来自名单，提交即 `403 403005`** |
+| PUT | /school | 绑定 `{schoolId, departmentId, className}`；**学生调用返回 `403 403005`** |
 
 ## 跑步 /api/run
 

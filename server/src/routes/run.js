@@ -1,6 +1,7 @@
 const express = require('express');
 const { wrap, ok, ApiError } = require('../utils/response');
 const { auth } = require('../middlewares/auth');
+const config = require('../config');
 const RunRecord = require('../models/run-record');
 const WxSession = require('../models/wx-session');
 const Holiday = require('../models/holiday');
@@ -80,7 +81,18 @@ router.post(
     const { encryptedData, iv } = req.body || {};
     if (!encryptedData || !iv) throw new ApiError(400, 400, '缺少 encryptedData/iv');
     const session = await WxSession.findOne({ openid: req.user.openid });
-    if (!session) throw new ApiError(400, 400002, '会话不存在，请重新登录');
+    if (!session || !session.sessionKey) {
+      // 会话缺失的两种原因分别给出可操作提示：
+      // 1) 本地测试登录（DEV_LOGIN）不走 code2session，永远不会写入 sessionKey
+      // 2) 正常登录，但小程序 session_key 已轮换/过期
+      throw new ApiError(
+        400,
+        400002,
+        config.devLogin
+          ? '当前为本地测试登录（DEV_LOGIN=true），无法解密微信运动：请在 miniprogram/config/env.js 关闭 DEV_LOGIN，用真实微信登录后重试'
+          : '登录会话已过期，请重新进入小程序后再同步'
+      );
+    }
 
     const data = wechat.decryptWeRun(session.sessionKey, encryptedData, iv);
     const list = (data.stepInfoList || []).filter((d) => d && typeof d.step === 'number');

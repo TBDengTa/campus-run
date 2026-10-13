@@ -19,6 +19,7 @@ function parseCsv(text) {
   const iDept = idx(['院系', 'department']);
   const iClass = idx(['班级', 'className']);
   const iSpec = idx(['专业', 'specialty']);
+  const iGrade = idx(['年级', '级', 'grade']);
   if (iName < 0 || iSid < 0) throw new Error('CSV 需包含表头：姓名,学号');
   return lines.slice(1).map((line) => {
     const cols = line.split(',').map((c) => c.trim());
@@ -28,6 +29,7 @@ function parseCsv(text) {
     if (iDept >= 0) row.department = cols[iDept];
     if (iClass >= 0) row.className = cols[iClass];
     if (iSpec >= 0) row.specialty = cols[iSpec];
+    if (iGrade >= 0) row.grade = cols[iGrade];
     return row;
   });
 }
@@ -42,6 +44,11 @@ function parseRows(payload) {
     return arr;
   }
   return parseCsv(text);
+}
+
+// 年级归一化：去掉结尾的「级」，只留年份文本（如 "2024级" → "2024"）
+function normalizeGrade(v) {
+  return String(v || '').replace(/级$/, '').trim();
 }
 
 // 规范化一行
@@ -59,6 +66,7 @@ function normalizeRow(row, index) {
     department: String(row.department || row.院系 || '').trim(),
     className: String(row.className || row.班级 || '').trim(),
     specialty: String(row.specialty || row.专业 || '').trim(),
+    grade: normalizeGrade(row.grade || row.年级 || row.级),
   };
 }
 
@@ -105,6 +113,7 @@ async function importRows(rows) {
         if (item.department) existing.departmentName = item.department;
         if (item.className) existing.className = item.className;
         if (item.specialty) existing.specialty = item.specialty;
+        if (item.grade) existing.grade = item.grade;
         await existing.save();
         result.updated += 1;
         continue;
@@ -135,6 +144,7 @@ async function importRows(rows) {
         departmentName: item.department,
         className: item.className,
         specialty: item.specialty,
+        grade: item.grade,
         role: 'student',
         passwordHash: pwd.hashPassword(initials[0]),
         initialHashes: initials.map((p) => pwd.hashPassword(p)),

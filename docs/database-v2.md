@@ -13,6 +13,7 @@
 | realName / studentId | String | 实名（studentId 唯一稀疏索引） |
 | schoolId / departmentId | ObjectId → organizations | 组织归属（冗余 schoolName/departmentName 便于展示） |
 | className / specialty | String | 班级 / 专业 |
+| grade | String | 年级（如 `2024`，展示为 2024级）；名单未提供时前端按学号前 4 位推导 |
 | gender / birthdate | Number / Date | 0 未知 1 男 2 女 |
 | role | String | `student` / `teacher`（管理员 = 持有 `superadmin` 权限组） |
 | status | String | `active` / `banned` |
@@ -21,6 +22,12 @@
 
 ### wx_sessions
 `openid`(unique) + `sessionKey` —— 用于解密微信运动数据，登录时更新。
+
+### login_devices
+设备登录令牌（历史登录「一键登录」）：`userId`(index) + `account`/`studentId`(冗余便于排查) + `tokenHash`(unique，**只存 sha256**) +
+`label`(UA 截断) + `lastUsedAt` + `expiresAt`(30 天) + `revoked`。
+索引：`userId_1`、`tokenHash_1`(unique)、`expiresAt_1`、`userId_1_revoked_1_lastUsedAt_-1`（按最久未用淘汰，单用户最多 5 条）。
+明文令牌只在签发时返回给客户端一次；**用后即轮换**（旧记录撤销并新增一条）。
 
 ## 跑步与目标
 

@@ -133,6 +133,8 @@ Page({
   },
 
   onLoad() {
+    // 未登录 / 已退出 / 游客：统一跳登录页，不执行任何业务逻辑
+    if (!getApp().requireLogin()) return;
     console.log('[compile-marker] home.js v3 已加载', new Date().toISOString());
     const d = fmt.parseDateKey(fmt.todayKey());
     const { hero, entries } = resolveAssets();
@@ -145,6 +147,8 @@ Page({
   },
 
   onShow() {
+    // 未登录 / 已退出 / 游客：统一跳登录页，不执行任何业务逻辑
+    if (!getApp().requireLogin()) return;
     this.syncTabBar();
     this.refresh();
   },
@@ -379,22 +383,41 @@ Page({
     });
   },
 
+  // 取一次微信运动数据
+  getWeRunData() {
+    return new Promise((resolve, reject) => {
+      wx.getWeRunData({
+        success: resolve,
+        fail: (e) => reject(new Error(e.errMsg || '获取微信运动数据失败')),
+      });
+    });
+  },
+
+  // 上报一次同步
+  async postSyncWerun() {
+    const runData = await this.getWeRunData();
+    return auth.post('/api/run/sync-werun', {
+      encryptedData: runData.encryptedData,
+      iv: runData.iv,
+    });
+  },
+
   // 同步微信运动
   async syncWerun() {
     if (this.data.syncing) return;
     this.setData({ syncing: true });
     wx.showLoading({ title: '同步中…', mask: true });
     try {
-      const runData = await new Promise((resolve, reject) => {
-        wx.getWeRunData({
-          success: resolve,
-          fail: (e) => reject(new Error(e.errMsg || '获取微信运动数据失败')),
-        });
-      });
-      const result = await auth.post('/api/run/sync-werun', {
-        encryptedData: runData.encryptedData,
-        iv: runData.iv,
-      });
+      await getApp().ensureLogin();
+      let result;
+      try {
+        result = await this.postSyncWerun();
+      } catch (e) {
+        // 会话缺失/过期（400002/400001）：重新登录拿新的 sessionKey 后重试一次
+        if (e.code !== 400002 && e.code !== 400001) throw e;
+        await auth.login();
+        result = await this.postSyncWerun();
+      }
       wx.hideLoading();
       const earned = (result.newBadges || []).length;
       wx.showToast({
@@ -410,6 +433,10 @@ Page({
       }
       if (e.code === 403003) {
         wx.showToast({ title: e.message || '教师账号不参与运动记录', icon: 'none' });
+        return;
+      }
+      if (e.code === 400002 || e.code === 400001) {
+        wx.showModal({ title: '同步失败', content: e.message || '登录会话已过期，请重新进入小程序', showCancel: false });
         return;
       }
       // 授权拒绝 → 引导开启
@@ -442,9 +469,9 @@ Page({
     wx.navigateTo({ url: '/pages/badges/badges' });
   },
 
-  // 目标计划 / 身体数据同页，用锚点区分
+  // 目标计划中心（AI 匹配 / 候选计划 / 一键应用）
   goPlan() {
-    wx.navigateTo({ url: '/pages/body-data/body-data?focus=plan' });
+    wx.navigateTo({ url: '/pages/goal-plan/goal-plan' });
   },
 
   goBodyData() {

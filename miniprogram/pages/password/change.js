@@ -10,6 +10,8 @@ Page({
   },
 
   onLoad(options) {
+    // 未登录 / 已退出：统一跳登录页，不展示改密表单
+    if (!getApp().requireLogin()) return;
     this.setData({ first: options.first === '1' });
   },
 

@@ -41,8 +41,11 @@
     <view class="body-row">
       <text class="body-label">体重</text>
       <view class="body-input-wrap">
-        <input class="body-input num-font" type="digit" value="{{weight}}" placeholder="如 60" placeholder-class="body-ph" bindinput="inputWeight" />
-        <text class="body-unit">kg</text>
+        <input class="body-input num-font" type="digit" value="{{weight}}" placeholder="{{weightUnit === 'jin' ? '如 120' : '如 60'}}" placeholder-class="body-ph" bindinput="inputWeight" />
+        <view class="body-unit-switch">
+          <view class="unit-chip {{weightUnit === 'kg' ? 'active' : ''}}" bind:tap="switchUnit" data-unit="kg">kg</view>
+          <view class="unit-chip {{weightUnit === 'jin' ? 'active' : ''}}" bind:tap="switchUnit" data-unit="jin">斤</view>
+        </view>
       </view>
     </view>
   </view>
@@ -115,6 +118,17 @@
           </view>
         </view>
       </block>
+
+      <view class="tt-divider"></view>
+
+      <view class="menu-row" bind:tap="goGoalPlan">
+        <t-icon name="flag" size="34rpx" color="var(--tt-brand)" />
+        <view class="flex-1">
+          <view class="menu-label">进入目标计划中心</view>
+          <view class="menu-sub">AI 智能匹配 · 候选计划 · 一键应用</view>
+        </view>
+        <t-icon name="chevron-right" size="34rpx" color="var(--tt-text-3)" />
+      </view>
     </view>
   </block>
 

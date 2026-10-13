@@ -12,13 +12,38 @@ try {
 const TOKEN_KEY = 'tt_token';
 const USER_KEY = 'tt_user';
 const UID_KEY = 'tt_uid'; // 设备级匿名标识，用于静默重试
+const BOUND_KEY = 'tt_bound'; // '1' = 已绑定名单账号（游客 token 不算登录）
+const LOGOUT_KEY = 'tt_logged_out'; // '1' = 用户主动退出，禁止静默重登
+
+const history = require('./login-history');
 
 function getToken() {
   return wx.getStorageSync(TOKEN_KEY) || '';
 }
 
-function setAuth(token, userInfo) {
+// 用户是否主动退出过（退出后必须手动登录，不再静默登录）
+function isLoggedOut() {
+  return wx.getStorageSync(LOGOUT_KEY) === '1';
+}
+
+function markLoggedOut() {
+  wx.setStorageSync(LOGOUT_KEY, '1');
+}
+
+function clearLoggedOut() {
+  wx.removeStorageSync(LOGOUT_KEY);
+}
+
+// 是否处于「已登录且已绑定账号」状态：游客 token（未绑定）不算
+function isBound() {
+  return !!getToken() && wx.getStorageSync(BOUND_KEY) === '1' && !isLoggedOut();
+}
+
+function setAuth(token, userInfo, bound = true) {
+  clearLoggedOut(); // 拿到 token 即视为已登录
   wx.setStorageSync(TOKEN_KEY, token);
+  if (bound) wx.setStorageSync(BOUND_KEY, '1');
+  else wx.removeStorageSync(BOUND_KEY);
   if (userInfo) wx.setStorageSync(USER_KEY, userInfo);
 }
 
@@ -33,11 +58,13 @@ function setUser(userInfo) {
 function clearAuth() {
   wx.removeStorageSync(TOKEN_KEY);
   wx.removeStorageSync(USER_KEY);
+  wx.removeStorageSync(BOUND_KEY);
 }
 
-// 退出登录：清除本机登录信息与内存用户态（下次访问接口时会自动重新登录）
+// 退出登录：清除本机登录信息 + 打「已退出」标记（不会被 ensureLogin 静默登回）
 function logout() {
   clearAuth();
+  markLoggedOut();
   try {
     const app = getApp();
     if (app && app.globalData) {
@@ -53,7 +80,14 @@ let loginPromise = null;
 
 // 静默登录：wx.login → code → 后端换 token
 // 本地测试模式（env.DEV_LOGIN）直接用约定角色 code，无需微信 AppSecret
+// 注意：用户主动退出登录后不再静默登录，必须由登录页显式调用（先 clearLoggedOut）
 function login() {
+  if (isLoggedOut()) {
+    const err = new Error('已退出登录，请重新登录');
+    err.code = 401;
+    err.loggedOut = true;
+    return Promise.reject(err);
+  }
   if (loginPromise) return loginPromise;
   loginPromise = new Promise((resolve, reject) => {
     if (env.DEV_LOGIN) {
@@ -80,8 +114,11 @@ function login() {
       })
     )
     .then((data) => {
-      setAuth(data.token, data.userInfo);
-      getApp().globalData.userInfo = data.userInfo;
+      // 游客（未绑定名单账号）只存 token，不标记为已登录
+      setAuth(data.token, data.userInfo, data.bound !== false);
+      getApp().globalData.userInfo = data.userInfo || null;
+      // 记录登录历史（供登录页一键登录）
+      if (data.bound !== false && data.deviceToken) history.push(data.userInfo, data.deviceToken);
       return data;
     })
     .finally(() => {
@@ -164,13 +201,22 @@ function gotoLogin() {
   });
 }
 
-// 业务请求：401 时自动重登一次再试（游客跳登录页由 403003 统一处理）
+// 业务请求：401 时自动重登一次再试（已主动退出登录时不再自动重登，直接跳登录页）
 async function request(options) {
   try {
     return await rawRequest(options);
   } catch (e) {
     if (e.code === 401 && !options._noAuthRetry) {
-      await login();
+      if (isLoggedOut()) {
+        gotoLogin();
+        throw e;
+      }
+      try {
+        await login();
+      } catch (err) {
+        gotoLogin();
+        throw e;
+      }
       return rawRequest({ ...options, _noAuthRetry: true });
     }
     throw e;
@@ -185,10 +231,41 @@ function bindAccount(account, password) {
     data: { account, password },
     _noAuthRetry: true,
   }).then((data) => {
-    setAuth(data.token, data.userInfo);
+    setAuth(data.token, data.userInfo, true);
     getApp().globalData.userInfo = data.userInfo;
+    if (data.deviceToken) history.push(data.userInfo, data.deviceToken);
     return data;
   });
+}
+
+// 设备令牌一键登录（登录页历史登录列表）
+function deviceLogin(deviceToken) {
+  return rawRequest({
+    url: '/api/auth/device-login',
+    method: 'POST',
+    data: { deviceToken },
+    _noAuthRetry: true,
+  }).then((data) => {
+    clearLoggedOut(); // 主动登录动作
+    setAuth(data.token, data.userInfo, true);
+    getApp().globalData.userInfo = data.userInfo;
+    // 服务端已轮换令牌：覆盖本地历史里的旧令牌
+    if (data.deviceToken && data.userInfo) {
+      history.refreshToken(data.userInfo.account || data.userInfo.realName, data.userInfo.studentId, data.deviceToken);
+    }
+    return data;
+  });
+}
+
+// 撤销设备令牌（删除历史登录记录）
+function revokeDevice(deviceToken) {
+  if (!deviceToken) return Promise.resolve();
+  return rawRequest({
+    url: '/api/auth/device-revoke',
+    method: 'POST',
+    data: { deviceToken },
+    _noAuthRetry: true,
+  }).catch(() => null);
 }
 
 const get = (url, data) => request({ url, method: 'GET', data });
@@ -222,6 +299,8 @@ module.exports = {
   env,
   login,
   bindAccount,
+  deviceLogin,
+  revokeDevice,
   request,
   get,
   post,
@@ -234,4 +313,8 @@ module.exports = {
   setUser,
   clearAuth,
   logout,
+  isLoggedOut,
+  markLoggedOut,
+  clearLoggedOut,
+  isBound,
 };

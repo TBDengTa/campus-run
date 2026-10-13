@@ -22,16 +22,56 @@
           <text class="role-chip">{{roleText}}</text>
         </view>
 
-        <view class="u-meta" wx:if="{{user.studentId}}">{{user.realName}} · {{user.studentId}}</view>
+        <view class="u-meta" wx:if="{{enroll.realName || enroll.studentId}}">{{enroll.realName || '未实名'}} · {{enroll.studentId || '未绑学号'}}</view>
         <view class="u-meta" wx:elif="{{user.nickname}}">点击昵称可修改</view>
-        <view class="u-meta" wx:else>完善资料有助于班长核对</view>
-
-        <view class="u-tags" wx:if="{{user.schoolName || user.departmentName || user.className}}">
-          <text class="u-tag" wx:if="{{user.schoolName}}">{{user.schoolName}}</text>
-          <text class="u-tag" wx:if="{{user.departmentName}}">{{user.departmentName}}</text>
-          <text class="u-tag" wx:if="{{user.className}}">{{user.className}}</text>
-        </view>
+        <view class="u-meta" wx:else>点击昵称可修改</view>
       </view>
+    </view>
+  </view>
+
+  <!-- ===== 本地测试模式提示 ===== -->
+  <view class="dev-banner" wx:if="{{devMode}}">
+    <t-icon name="info-circle" size="30rpx" color="#b06e00" />
+    <text>当前为本地测试登录（DEV_LOGIN=true）：登录的是 dev 测试账号，不是你的真实学籍；微信运动同步也不可用。</text>
+  </view>
+
+  <!-- ===== 学籍信息（来自学校名单，学生不可自行修改） ===== -->
+  <view class="tt-section">
+    <text>学籍信息</text>
+    <text class="tt-section-extra" bind:tap="onEnrollTip">来自学校名单</text>
+  </view>
+  <view class="tt-card enroll-card" bind:tap="onEnrollTip">
+    <view class="enroll-row">
+      <text class="enroll-label">姓名</text>
+      <text class="enroll-value">{{enroll.realName || '—'}}</text>
+    </view>
+    <view class="enroll-row">
+      <text class="enroll-label">学号</text>
+      <text class="enroll-value num-font">{{enroll.studentId || '—'}}</text>
+    </view>
+    <view class="enroll-row">
+      <text class="enroll-label">学校</text>
+      <text class="enroll-value">{{enroll.schoolName || '—'}}</text>
+    </view>
+    <view class="enroll-row">
+      <text class="enroll-label">院系</text>
+      <text class="enroll-value">{{enroll.departmentName || '—'}}</text>
+    </view>
+    <view class="enroll-row">
+      <text class="enroll-label">专业</text>
+      <text class="enroll-value">{{enroll.specialty || '—'}}</text>
+    </view>
+    <view class="enroll-row">
+      <text class="enroll-label">班级</text>
+      <text class="enroll-value">{{enroll.className || '—'}}</text>
+    </view>
+    <view class="enroll-row">
+      <text class="enroll-label">年级</text>
+      <text class="enroll-value">{{enroll.gradeText}}</text>
+    </view>
+    <view class="enroll-tip">
+      <t-icon name="lock-on" size="24rpx" color="var(--tt-text-3)" />
+      <text>学籍信息由学校名单同步，如有误请联系管理员</text>
     </view>
   </view>
 
@@ -101,13 +141,6 @@
         <t-icon name="lock-on" size="38rpx" color="#f5a623" />
       </view>
       <text class="menu-label">修改密码</text>
-      <t-icon name="chevron-right" size="34rpx" color="var(--tt-text-3)" />
-    </view>
-    <view class="menu-row" bind:tap="go" data-url="/pages/org/bind">
-      <view class="menu-icon" style="background: #f2efff">
-        <t-icon name="book" size="38rpx" color="#7c5cff" />
-      </view>
-      <text class="menu-label">学生认证 / 院系班级</text>
       <t-icon name="chevron-right" size="34rpx" color="var(--tt-text-3)" />
     </view>
     <view class="menu-row" bind:tap="go" data-url="/pages/appeal/list">

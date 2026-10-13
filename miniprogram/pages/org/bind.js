@@ -23,10 +23,13 @@ Page({
     className: '',
     specialtyName: '',
     boundCount: 0,
+    readOnly: false, // 学生只读：学籍信息由学校名单同步，不能自行修改
     submitting: false,
   },
 
   onLoad() {
+    // 未登录 / 已退出 / 游客：统一跳登录页，不执行任何业务逻辑
+    if (!getApp().requireLogin()) return;
     const user = getApp().globalData.userInfo || auth.getUser() || {};
     this.setData({
       realName: user.realName || '',
@@ -34,6 +37,7 @@ Page({
       className: user.className || '',
       specialtyName: user.specialty || '',
       boundCount: countBound(user),
+      readOnly: user.role !== 'teacher',
     });
     this.loadTree();
   },
@@ -48,7 +52,7 @@ Page({
       });
       // 回显已保存的选择
       const user = getApp().globalData.userInfo || {};
-      this.setData({ boundCount: countBound(user) });
+      this.setData({ boundCount: countBound(user), readOnly: user.role !== 'teacher' });
       if (user.schoolName) {
         const si = tree.findIndex((s) => s.name === user.schoolName);
         if (si >= 0) {
@@ -123,6 +127,10 @@ Page({
   async submit() {
     const { schoolIndex, departmentIndex, tree, realName, studentId, className, specialtyName, submitting } = this.data;
     if (submitting) return;
+    if (this.data.readOnly) {
+      wx.showToast({ title: '学籍信息由学校名单同步，不能自行修改', icon: 'none' });
+      return;
+    }
     if (schoolIndex < 0 || departmentIndex < 0) {
       wx.showToast({ title: '请选择学校和院系', icon: 'none' });
       return;

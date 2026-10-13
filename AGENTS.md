@@ -34,6 +34,23 @@
 - 新增管理能力时：先在 `Permission.DEFAULT_CATALOG` 加权限项（启动自动播种），再挂到对应路由。
 - 本地测试登录：后端 `DEV_LOGIN=true` + 前端 `env.js` `DEV_LOGIN: true, DEV_ROLE: 'dev-student|dev-teacher|dev-admin'`；生产必须关闭。
 
+## 登录态与退出登录（小程序）
+- 登录态 = `utils/request.js` 的 `isBound()`：**有 token 且已绑定名单账号**（游客 token 不算登录），且未被主动退出。
+- 三态与处理：
+  | 状态 | 判定 | 行为 |
+  |---|---|---|
+  | 未登录 / 游客（未绑定） | `!isBound()` | 统一 `wx.reLaunch` 到 `pages/auth-login/auth-login` |
+  | 已主动退出 | `auth.isLoggedOut()`（本地 `tt_logged_out` 标记） | **不再静默重登**，必须由登录页手动登录（登录页会先 `clearLoggedOut()`） |
+  | 已登录 | `isBound()` | 正常执行业务逻辑 |
+- **新增业务页必须在 `onLoad`/`onShow` 首行加闸门**：`if (!getApp().requireLogin()) return;` —— 未登录时**不发起任何业务请求**（不是靠接口报错后再跳）。
+- `request.js` 的 401 自动重登同样尊重「已退出」标记；游客访问业务接口由服务端 `403003` + `gotoLogin()` 兜底。
+- 公开页（无需登录）：`announcements`、`changelogs`、`webview`、`banned`、`auth-login`。
+- 登录页必须调 `wx.hideHomeButton()`：非 tabBar 页面且页面栈只有它一个时，微信会在胶囊旁显示「返回首页」按钮（平台行为，只能用这个官方 API 隐藏）。
+- **历史登录 / 一键登录**：登录或绑定成功后服务端签发 `deviceToken`（随机 32 字节，**只存 sha256 到 `login_devices`**，30 天有效，单用户最多 5 条按最久未用淘汰）；
+  小程序用 `utils/login-history.js` 存本地（最多 5 条，**绝不存密码**），登录页列表点「一键登录」调 `POST /api/auth/device-login`。
+  令牌**用后即轮换**（旧令牌立刻失效，客户端需用返回值覆盖本地记录），删除记录时调 `POST /api/auth/device-revoke`。
+  退出登录**不撤销** deviceToken（否则"退出后一键登回"就没意义），只有用户删除历史记录或管理员踢下线才撤销。
+
 ## 迁移
 - 旧库（1.0）只读；任何迁移通过 `server/scripts/migrate-v1-to-v2.js`，先 `--dry-run` 再正式执行。
 - 启动期迁移（`services/rbac.js` 的 `seedRbac`）必须**先归一化历史角色，再保存任何用户文档**：

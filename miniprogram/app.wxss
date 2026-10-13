@@ -383,6 +383,15 @@ page {
 }
 
 /* ============ 业务公共样式 ============ */
+/* .card：历史/别名卡片类（等价于 .tt-card），保持与设计系统一致的圆角、内边距与投影 */
+.card {
+  background: var(--tt-card);
+  border-radius: var(--tt-radius);
+  padding: var(--tt-pad);
+  margin: 0 var(--tt-gap) var(--tt-gap);
+  box-shadow: var(--tt-card-shadow);
+}
+
 .num-font {
   font-family: TCloudNumber;
 }

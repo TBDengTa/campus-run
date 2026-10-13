@@ -1,0 +1,106 @@
+<view class="page tt-page gp-page">
+  <!-- ===== 当前目标 ===== -->
+  <view class="tt-section">我的当前目标</view>
+  <view class="tt-card gp-current" wx:if="{{effective}}">
+    <view class="gp-current-head">
+      <t-icon name="flag" size="36rpx" color="var(--tt-brand)" />
+      <text class="gp-current-name">{{effective.planName || '系统默认目标'}}</text>
+      <text class="tt-chip tt-chip-brand">{{sourceText}}</text>
+    </view>
+    <view class="tt-stat-row gp-stat-row">
+      <view class="tt-stat">
+        <view class="tt-stat-value num-font">{{effective.dailyStepsText}}</view>
+        <view class="tt-stat-label">每日步数</view>
+      </view>
+      <view class="tt-stat">
+        <view class="tt-stat-value num-font">{{effective.dailyDistanceText}}</view>
+        <view class="tt-stat-label">每日距离</view>
+      </view>
+      <view class="tt-stat">
+        <view class="tt-stat-value num-font">{{effective.dailyCalories}}</view>
+        <view class="tt-stat-label">每日千卡</view>
+      </view>
+      <view class="tt-stat">
+        <view class="tt-stat-value num-font">{{effective.weeklyStepsText}}</view>
+        <view class="tt-stat-label">每周步数</view>
+      </view>
+    </view>
+    <view class="gp-current-tip" bind:tap="goBodyData">
+      <t-icon name="edit" size="28rpx" color="var(--tt-text-2)" />
+      <text>修改身体数据可自动重新匹配</text>
+      <t-icon name="chevron-right" size="28rpx" color="var(--tt-text-3)" />
+    </view>
+  </view>
+
+  <!-- ===== AI 智能匹配 ===== -->
+  <view class="tt-section">
+    <text>AI 智能匹配</text>
+    <text class="tt-section-extra">按 BMI 与运动偏好推荐</text>
+  </view>
+  <view class="tt-card gp-ai">
+    <block wx:if="{{!aiResult}}">
+      <view class="gp-ai-desc">
+        <t-icon name="chart-bubble" size="40rpx" color="var(--tt-brand)" />
+        <text>根据您的 BMI 与运动偏好，AI 将从预设计划中为你挑选最合适的目标</text>
+      </view>
+      <t-button theme="primary" block loading="{{aiLoading}}" bind:tap="aiMatch">
+        AI 智能匹配我的目标
+      </t-button>
+    </block>
+    <block wx:else>
+      <view class="gp-ai-head">
+        <text class="gp-ai-title">AI 推荐计划</text>
+        <text class="tt-chip tt-chip-brand">BMI {{aiResult.bmi}} · {{aiResult.bmiLevelText}}</text>
+      </view>
+      <view class="gp-ai-plan-name">{{aiResult.plan.name}}</view>
+      <view class="gp-ai-reasons">
+        <view class="gp-reason" wx:for="{{aiResult.reasons}}" wx:key="*this">
+          <t-icon name="check-circle-filled" size="28rpx" color="#16a34a" />
+          <text>{{item}}</text>
+        </view>
+      </view>
+      <view class="form-actions">
+        <t-button theme="primary" block loading="{{applyingPlanId === aiResult.plan._id}}" bind:tap="applyAi">
+          应用此计划
+        </t-button>
+        <t-button theme="default" block bind:tap="aiMatch" disabled="{{aiLoading}}">重新匹配</t-button>
+      </view>
+    </block>
+  </view>
+
+  <!-- ===== 候选计划 ===== -->
+  <view class="tt-section">
+    <text>全部候选计划</text>
+    <text class="tt-section-extra">{{plans.length}} 个</text>
+  </view>
+  <view class="gp-plan-list">
+    <view class="tt-card gp-plan-card" wx:for="{{plans}}" wx:key="_id">
+      <view class="gp-plan-head">
+        <text class="gp-plan-name">{{item.name}}</text>
+        <text class="gp-suit-chip {{item.suitable ? 'ok' : ''}}">{{item.suitable ? '适合你' : item.bmiRangeText}}</text>
+      </view>
+      <view class="gp-plan-meta">
+        <text>{{item.prefText}}强度</text>
+        <text>每日 {{item.dailyStepsText}} 步</text>
+        <text>{{item.dailyDistanceText}}</text>
+      </view>
+      <view class="form-actions">
+        <t-button
+          theme="primary"
+          size="small"
+          variant="outline"
+          loading="{{applyingPlanId === item._id}}"
+          bind:tap="applyCandidate"
+          data-id="{{item._id}}"
+        >
+          应用此计划
+        </t-button>
+      </view>
+    </view>
+    <view class="tt-empty" wx:if="{{!plans.length && !loading}}">暂无候选计划，请联系管理员配置</view>
+  </view>
+
+  <t-loading wx:if="{{loading}}" theme="circular" size="48rpx" text="加载中…" class="gp-loading" />
+
+  <view class="tt-footer">计划目标可在「系统配置」中由管理员调整</view>
+</view>

@@ -1,5 +1,18 @@
 /* ===== 学生认证 · 白橙 ===== */
 
+/* 只读提示（学生：学籍信息由学校名单同步） */
+.bind-readonly {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin: 0 var(--tt-gap) var(--tt-gap);
+  padding: 20rpx 26rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-brand-soft);
+  font-size: 24rpx;
+  color: var(--tt-brand-deep);
+}
+
 /* 顶部说明 */
 .bind-hero {
   display: flex;

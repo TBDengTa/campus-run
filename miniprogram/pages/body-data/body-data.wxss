@@ -192,3 +192,43 @@
 .tt-stat-value.body-plan-stat {
   font-size: 34rpx;
 }
+
+/* ===== 体重单位切换 ===== */
+.body-unit-switch {
+  display: flex;
+  gap: 0;
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1rpx solid var(--td-component-border, #dcdcdc);
+}
+
+.unit-chip {
+  font-size: 22rpx;
+  padding: 8rpx 22rpx;
+  color: var(--td-text-color-secondary);
+  background: var(--td-bg-color-container, #fff);
+}
+
+.unit-chip.active {
+  background: var(--tt-brand, #ff6b00);
+  color: #fff;
+}
+
+/* ===== 目标计划中心入口 ===== */
+.menu-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 22rpx 0;
+}
+
+.menu-label {
+  font-size: 28rpx;
+  font-weight: 500;
+}
+
+.menu-sub {
+  font-size: 22rpx;
+  color: var(--td-text-color-secondary);
+  margin-top: 4rpx;
+}

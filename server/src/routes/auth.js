@@ -8,6 +8,7 @@ const WxSession = require('../models/wx-session');
 const ClassMonitor = require('../models/class-monitor');
 const wechat = require('../services/wechat');
 const pwd = require('../services/password');
+const deviceSvc = require('../services/login-device');
 
 const router = express.Router();
 
@@ -79,6 +80,8 @@ router.post(
       const effective = await user.getEffectivePermissions();
       return ok(res, {
         token: signToken(user),
+        // 设备令牌：客户端存本地，用于「历史登录一键登录」
+        deviceToken: await deviceSvc.issue(user, req),
         bound: true,
         mustChangePassword: !!user.mustChangePassword,
         isNew: false,
@@ -143,6 +146,7 @@ router.post(
     const effective = await user.getEffectivePermissions();
     ok(res, {
       token: signToken(user),
+      deviceToken: await deviceSvc.issue(user, req),
       bound: true,
       mustChangePassword: !!user.mustChangePassword,
       isNew: false,
@@ -195,13 +199,60 @@ router.get(
   })
 );
 
+// 设备令牌一键登录：本地历史登录记录里存的 deviceToken 直接换取正式 token
+// 规则：令牌随机 32 字节、只存哈希、30 天有效、可撤销；每次使用后轮换（旧的立即失效）
+router.post(
+  '/device-login',
+  wrap(async (req, res) => {
+    const { deviceToken } = req.body || {};
+    if (!deviceToken) throw new ApiError(400, 400, '缺少 deviceToken');
+
+    const doc = await deviceSvc.verify(deviceToken);
+    if (!doc) throw new ApiError(401, 401001, '该登录记录已失效，请重新输入姓名和密码登录');
+
+    const user = await User.findById(doc.userId);
+    if (!user) throw new ApiError(401, 401001, '账号不存在，请重新登录');
+
+    // 轮换：立即撤销旧令牌并下发新令牌（客户端需覆盖本地历史记录）
+    await deviceSvc.revoke(deviceToken);
+    const newDeviceToken = await deviceSvc.issue(user, req);
+
+    const effective = await user.getEffectivePermissions();
+    ok(res, {
+      token: signToken(user),
+      deviceToken: newDeviceToken,
+      bound: true,
+      mustChangePassword: !!user.mustChangePassword,
+      userInfo: { ...user.toSafeJSON(), effectivePermissions: effective, isManager: effective.length > 0 },
+    });
+  })
+);
+
+// 撤销设备令牌（用户在登录页删除某条历史登录记录时调用）
+router.post(
+  '/device-revoke',
+  wrap(async (req, res) => {
+    const { deviceToken } = req.body || {};
+    if (!deviceToken) throw new ApiError(400, 400, '缺少 deviceToken');
+    await deviceSvc.revoke(deviceToken);
+    ok(res, { revoked: true });
+  })
+);
+
 // 更新资料
+// 注意：学籍信息（姓名/学号/院系/班级/专业/年级）来自学校名单导入，学生不能自行修改
+const ENROLLMENT_FIELDS = ['realName', 'studentId', 'schoolName', 'schoolId', 'departmentName', 'departmentId', 'className', 'specialty', 'grade'];
+
 router.put(
   '/profile',
   auth,
   wrap(async (req, res) => {
     if (req.guestOpenid) throw new ApiError(403, 403003, '请先绑定账号');
-    const allowed = ['nickname', 'avatarUrl', 'realName', 'studentId', 'className', 'specialty', 'gender', 'birthdate'];
+    const touched = ENROLLMENT_FIELDS.filter((k) => req.body && req.body[k] !== undefined);
+    if (touched.length) {
+      throw new ApiError(403, 403005, `学籍信息由学校名单同步，不能自行修改（${touched.join('、')}）`);
+    }
+    const allowed = ['nickname', 'avatarUrl', 'gender', 'birthdate'];
     const $set = {};
     for (const k of allowed) {
       if (req.body[k] !== undefined) $set[k] = req.body[k];
@@ -214,12 +265,15 @@ router.put(
   })
 );
 
-// 绑定学校/院系（组织架构）
+// 绑定学校/院系（组织架构）：学生不能改学籍，仅教师/管理员可代为处理
 router.put(
   '/school',
   auth,
   wrap(async (req, res) => {
     if (req.guestOpenid) throw new ApiError(403, 403003, '请先绑定账号');
+    if (req.user.role === 'student') {
+      throw new ApiError(403, 403005, '学籍信息由学校名单同步，学生不能自行修改；如有误请联系管理员');
+    }
     const { schoolId, departmentId, className } = req.body || {};
     const Organization = require('../models/organization');
     const $set = {};

@@ -4,6 +4,18 @@
     <view class="login-sub text-secondary">使用学校提供的姓名与初始密码登录，并绑定当前微信</view>
   </view>
 
+  <!-- 已主动退出登录 -->
+  <view class="logout-banner" wx:if="{{loggedOut}}">
+    <t-icon name="check-circle" size="30rpx" color="var(--tt-brand)" />
+    <text>你已退出登录。重新登录后即可继续查看学籍、步数与排行。</text>
+  </view>
+
+  <!-- 本地测试模式提示：DEV_LOGIN 会强制使用 dev_* 测试账号，姓名/密码不生效 -->
+  <view class="dev-banner" wx:if="{{devRoles}}">
+    <t-icon name="info-circle" size="30rpx" color="#b06e00" />
+    <text>当前 DEV_LOGIN=true：会直接以测试账号登录，姓名与密码不生效，也看不到真实学籍 / 无法同步微信运动。要登录真实账号请配置 WX_APPSECRET 并关闭 DEV_LOGIN。</text>
+  </view>
+
   <view class="card login-card">
     <view class="form-row">
       <text class="form-label">姓名</text>
@@ -15,6 +27,37 @@
     </view>
     <t-button theme="primary" block loading="{{submitting}}" bind:tap="submit" class="mt-24">登录并绑定微信</t-button>
   </view>
+
+  <!-- 历史登录：本地记录，一键登录 -->
+  <block wx:if="{{historyList.length}}">
+    <view class="tt-section">
+      <text>历史登录</text>
+      <text class="tt-section-extra">点右侧按钮直接登录</text>
+    </view>
+    <view class="tt-card history-card">
+      <view class="his-row" wx:for="{{historyList}}" wx:key="key">
+        <view class="his-avatar">{{item.initial}}</view>
+        <view class="his-info" bind:tap="fillAccount" data-key="{{item.key}}">
+          <view class="his-name-row">
+            <text class="his-name">{{item.name}}</text>
+            <text class="his-role">{{item.roleText}}</text>
+          </view>
+          <view class="his-sub">{{item.subText}}</view>
+          <view class="his-time">上次登录 {{item.timeText}}</view>
+        </view>
+        <view class="his-actions">
+          <view
+            class="his-quick {{quickLoadingKey === item.key ? 'loading' : ''}}"
+            bind:tap="quickLogin"
+            data-key="{{item.key}}"
+          >{{quickLoadingKey === item.key ? '登录中' : '一键登录'}}</view>
+          <view class="his-del" bind:tap="removeHistory" data-key="{{item.key}}">
+            <t-icon name="close" size="26rpx" color="var(--tt-text-3)" />
+          </view>
+        </view>
+      </view>
+    </view>
+  </block>
 
   <view class="card tips-card">
     <view class="tip-title text-secondary">登录说明</view>

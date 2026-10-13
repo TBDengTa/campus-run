@@ -87,12 +87,15 @@ async function getEffectiveGoal(openid) {
     GoalConfig.getSingleton(),
   ]);
   if (userGoal) {
+    // 兼容历史数据：迁移来的 user_goals 可能缺 daily/weekly，缺啥用全局默认补
+    const daily = userGoal.daily && userGoal.daily.steps ? userGoal.daily : globalConfig.daily;
+    const weekly = userGoal.weekly && userGoal.weekly.steps ? userGoal.weekly : globalConfig.weekly;
     return {
       source: 'plan',
       planName: userGoal.planName,
       autoMatched: userGoal.autoMatched,
-      daily: userGoal.daily,
-      weekly: userGoal.weekly,
+      daily,
+      weekly,
       graded: globalConfig.graded,
     };
   }

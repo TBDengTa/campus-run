@@ -60,6 +60,11 @@
   overflow: hidden;
 }
 
+/* 未设置头像时的占位（圆底 + 图标居中） */
+.avatar-ph {
+  background: rgba(255, 255, 255, 0.28);
+}
+
 .ucard-info {
   flex: 1;
   min-width: 0;
@@ -180,6 +185,68 @@
 .menu-sub {
   margin-top: 6rpx;
   font-size: 23rpx;
+  color: var(--tt-text-3);
+}
+
+/* ===== 本地测试模式提示 ===== */
+.dev-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12rpx;
+  margin: 0 var(--tt-gap) var(--tt-gap);
+  padding: 18rpx 22rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--td-warning-color-1);
+  border: 2rpx solid var(--td-warning-color-2);
+  font-size: 22rpx;
+  line-height: 1.5;
+  color: #b06e00;
+}
+
+.dev-banner text {
+  flex: 1;
+}
+
+/* ===== 学籍信息（只读，学生不可自行修改） ===== */
+.enroll-card {
+  padding: 8rpx var(--tt-pad) 18rpx;
+}
+
+.enroll-row {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding: 20rpx 0;
+  border-bottom: 2rpx solid var(--tt-line);
+}
+
+.enroll-row:last-of-type {
+  border-bottom: none;
+}
+
+.enroll-label {
+  width: 120rpx;
+  flex-shrink: 0;
+  font-size: 26rpx;
+  color: var(--tt-text-3);
+}
+
+.enroll-value {
+  flex: 1;
+  min-width: 0;
+  font-size: 28rpx;
+  color: var(--tt-text-1);
+  word-break: break-all;
+}
+
+.enroll-tip {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  margin-top: 6rpx;
+  padding-top: 16rpx;
+  border-top: 2rpx solid var(--tt-line);
+  font-size: 22rpx;
   color: var(--tt-text-3);
 }
 

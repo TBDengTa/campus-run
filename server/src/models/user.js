@@ -31,6 +31,8 @@ const userSchema = new Schema(
     departmentName: { type: String, default: '' },
     className: { type: String, default: '' },
     specialty: { type: String, default: '' },
+    // 年级（如 "2024"，展示为 2024级）；名单未提供时前端按学号前 4 位推导
+    grade: { type: String, default: '' },
     gender: { type: Number, default: 0 }, // 0 未知 1 男 2 女
     birthdate: { type: Date },
     // 用户角色：学生 / 教师（"管理员"由权限组授予，不是角色）

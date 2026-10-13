@@ -10,6 +10,8 @@ Page({
   },
 
   onLoad(options) {
+    // 未登录 / 已退出 / 游客：统一跳登录页，不执行任何业务逻辑
+    if (!getApp().requireLogin()) return;
     this.load(options.id);
   },
 
