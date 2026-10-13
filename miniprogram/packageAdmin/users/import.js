@@ -2,9 +2,14 @@ const auth = require('../../utils/request');
 
 Page({
   data: {
+    mode: 'create', // create 导入新用户 | update 仅更新已有用户
     payload: '',
     submitting: false,
     result: null, // { total, created, updated, failed: [{row, reason}] }
+  },
+
+  switchMode(e) {
+    this.setData({ mode: e.currentTarget.dataset.mode });
   },
 
   inputPayload(e) {
@@ -39,9 +44,10 @@ Page({
   },
 
   fillSample() {
-    const sample = `姓名,学号,身份证号,学校,院系,班级,专业
-张三,2023010101,110101200401011234,北校区,机电建工系,23级机电1班,机电一体化
-李四,2023010102,110101200402025678,北校区,机电建工系,23级机电1班,机电一体化`;
+    const sample =
+      this.data.mode === 'update'
+        ? '学号,性别,出生日期\n2023010101,男,2004-01-01\n2023010102,女,2004-02-02'
+        : '姓名,学号,身份证号,学校,院系,班级,专业,性别,出生日期\n张三,2023010101,110101200401011234,北校区,机电建工系,23级机电1班,机电一体化,男,2004-01-01\n李四,2023010102,110101200402025678,北校区,机电建工系,23级机电1班,机电一体化,女,2004-02-02';
     this.setData({ payload: sample });
   },
 
@@ -55,7 +61,7 @@ Page({
     this.setData({ submitting: true });
     try {
       await getApp().ensureLogin();
-      const result = await auth.post('/api/admin/users/import', { payload });
+      const result = await auth.post('/api/admin/users/import', { mode: this.data.mode, payload });
       this.setData({ result });
       const failed = (result.failed || []).length;
       wx.showToast({

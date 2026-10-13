@@ -1,0 +1,81 @@
+.ae-page {
+  padding-bottom: 48rpx;
+}
+
+.ae-role-row {
+  display: flex;
+  gap: 16rpx;
+}
+
+.ae-role {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6rpx;
+  padding: 24rpx 0;
+  border-radius: 16rpx;
+  border: 2rpx solid var(--td-component-border, #e0e0e0);
+  font-size: 28rpx;
+  color: var(--td-text-color-secondary);
+}
+
+.ae-role.active {
+  border-color: var(--tt-brand, #ff6b00);
+  color: var(--tt-brand, #ff6b00);
+  background: var(--tt-brand-weak, rgba(255, 107, 0, 0.06));
+  font-weight: 600;
+}
+
+.ae-role-sub {
+  font-size: 20rpx;
+  opacity: 0.7;
+}
+
+.ae-row {
+  display: flex;
+  align-items: center;
+  padding: 22rpx 0;
+}
+
+.ae-label {
+  width: 190rpx;
+  font-size: 28rpx;
+  color: var(--td-text-color-secondary);
+  flex-shrink: 0;
+}
+
+.ae-input {
+  flex: 1;
+  font-size: 28rpx;
+}
+
+.ae-picker {
+  font-size: 28rpx;
+}
+
+.ae-ph {
+  color: var(--td-text-color-placeholder);
+}
+
+.ae-chips {
+  display: flex;
+  gap: 14rpx;
+}
+
+.ae-chip {
+  font-size: 24rpx;
+  padding: 10rpx 30rpx;
+  border-radius: 999px;
+  background: var(--td-gray-color-2, #eee);
+  color: var(--td-text-color-secondary);
+}
+
+.ae-chip.active {
+  background: var(--tt-brand, #ff6b00);
+  color: #fff;
+}
+
+.ae-submit {
+  padding: 16rpx 24rpx;
+}

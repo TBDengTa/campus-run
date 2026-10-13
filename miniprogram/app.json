@@ -32,6 +32,7 @@
       "pages": [
         "dashboard/dashboard",
         "users/users",
+        "users/account-edit/account-edit",
         "users/import",
         "user-detail/user-detail",
         "appeals/appeals",

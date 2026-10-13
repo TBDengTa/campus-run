@@ -52,21 +52,52 @@ function normalizeGrade(v) {
 }
 
 // 规范化一行
+// 性别解析：支持 男/女/保密 与 1/2/0；无法识别返回 null
+function parseGender(v) {
+  const s = String(v == null ? '' : v).trim();
+  if (['男', '1'].includes(s)) return 1;
+  if (['女', '2'].includes(s)) return 2;
+  if (['保密', '0'].includes(s)) return 0;
+  return null;
+}
+
+// 出生日期解析：YYYY-MM-DD / YYYY.M.D / Excel 日期序列号；失败返回 null
+function parseBirthdate(v) {
+  if (v == null || v === '') return null;
+  const s = String(v).trim();
+  if (/^\d{5}$/.test(s)) {
+    const d = new Date(Date.UTC(1899, 11, 30) + Number(s) * 86400000);
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+  }
+  const m = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+  if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+  return null;
+}
+
 function normalizeRow(row, index) {
   const name = String(row.name || row.姓名 || '').trim();
   const studentId = String(row.studentId || row.学号 || '').trim();
   const idCardNo = String(row.idCardNo || row.idcard || row.身份证号 || row.身份证 || '').trim();
-  if (!name) return { error: `第 ${index + 1} 行缺少姓名` };
   if (!studentId) return { error: `第 ${index + 1} 行缺少学号` };
+  const gender = parseGender(row.gender != null ? row.gender : row.性别);
+  const birthdate = parseBirthdate(row.birthdate != null ? row.birthdate : row.出生日期);
+  if (row.性别 != null && String(row.性别).trim() !== '' && gender == null) {
+    return { error: `第 ${index + 1} 行性别无法识别：${row.性别}` };
+  }
+  if (row.出生日期 != null && String(row.出生日期).trim() !== '' && birthdate == null) {
+    return { error: `第 ${index + 1} 行出生日期格式错误：${row.出生日期}` };
+  }
   return {
     name,
     studentId,
     idCardNo,
+    gender,
+    birthdate,
     school: String(row.school || row.学校 || '').trim(),
     department: String(row.department || row.院系 || '').trim(),
     className: String(row.className || row.班级 || '').trim(),
     specialty: String(row.specialty || row.专业 || '').trim(),
-    grade: normalizeGrade(row.grade || row.年级 || row.级),
+    grade: normalizeGrade(row.grade || row.年级 || ''),
   };
 }
 
@@ -82,15 +113,17 @@ function initialPasswords(row) {
 
 /**
  * 导入名单（管理端导入与学校推送共用）
- * 规则：
- * - 按 studentId upsert：已存在 → 仅更新院系班级等信息（绑定后不改密码/账号）
- * - 新建 → 生成初始密码哈希（身份证后8/学号后8），mustChangePassword=true，未绑定微信
- * - 同名且同初始密码 → 拒绝该行（学校需保证唯一）
- * 返回 { created, updated, failed: [{ row, reason }] }
+ * mode='create'（默认，导入新用户）：
+ * - 按 studentId upsert：已存在 → 更新学籍信息 + 附加更新性别与出生日期（不改密码/微信绑定）
+ * - 新建 → 初始密码（身份证后8/学号后8），mustChangePassword=true
+ * - 同名且同初始密码 → 拒绝该行
+ * mode='update'（仅更新已有用户）：表头只需 学号、性别、出生日期；
+ * - 按学号匹配已有用户，仅更新性别与出生日期；学号不存在则失败报告，绝不创建
+ * 返回 { mode, created, updated, failed: [{ row, reason }] }
  */
-async function importRows(rows) {
+async function importRows(rows, mode = 'create') {
   if (rows.length > MAX_ROWS) throw new Error(`单次导入上限 ${MAX_ROWS} 行`);
-  const result = { total: rows.length, created: 0, updated: 0, failed: [] };
+  const result = { mode, total: rows.length, created: 0, updated: 0, failed: [] };
   // 先归一化，收集合法行
   const items = [];
   for (let i = 0; i < rows.length; i++) {
@@ -102,20 +135,50 @@ async function importRows(rows) {
     items.push(n);
   }
 
+  // ===== 更新模式：仅更新已有用户的性别与出生日期 =====
+  if (mode === 'update') {
+    for (const item of items) {
+      const existing = await User.findOne({ studentId: item.studentId });
+      if (!existing) {
+        result.failed.push({ row: `${item.studentId}`, reason: '学号不存在，仅支持更新已有用户' });
+        continue;
+      }
+      if (item.gender != null) existing.gender = item.gender;
+      if (item.birthdate) existing.birthdate = new Date(item.birthdate);
+      if (item.gender == null && !item.birthdate) {
+        result.failed.push({ row: item.studentId, reason: '该行无可更新的性别/出生日期' });
+        continue;
+      }
+      await existing.save();
+      result.updated += 1;
+    }
+    return result;
+  }
+
+  // ===== 创建模式 =====
   for (const item of items) {
     try {
       const existing = await User.findOne({ studentId: item.studentId });
       if (existing) {
-        // 已存在：仅更新学籍信息，不动账号/密码/微信绑定
-        existing.realName = item.name;
-        if (!existing.account) existing.account = item.name;
+        // 已存在：更新学籍信息 + 附加更新性别与出生日期，不动账号/密码/微信绑定（姓名可选更新）
+        if (item.name) {
+          existing.realName = item.name;
+          if (!existing.account) existing.account = item.name;
+        }
         if (item.school) existing.schoolName = item.school;
         if (item.department) existing.departmentName = item.department;
         if (item.className) existing.className = item.className;
         if (item.specialty) existing.specialty = item.specialty;
         if (item.grade) existing.grade = item.grade;
+        if (item.gender != null) existing.gender = item.gender;
+        if (item.birthdate) existing.birthdate = new Date(item.birthdate);
         await existing.save();
         result.updated += 1;
+        continue;
+      }
+
+      if (!item.name) {
+        result.failed.push({ row: `${item.studentId}`, reason: '新用户缺少姓名（创建模式必填）' });
         continue;
       }
 
@@ -145,6 +208,8 @@ async function importRows(rows) {
         className: item.className,
         specialty: item.specialty,
         grade: item.grade,
+        gender: item.gender != null ? item.gender : 0,
+        birthdate: item.birthdate ? new Date(item.birthdate) : undefined,
         role: 'student',
         passwordHash: pwd.hashPassword(initials[0]),
         initialHashes: initials.map((p) => pwd.hashPassword(p)),

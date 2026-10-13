@@ -4,7 +4,17 @@
     <t-search placeholder="昵称 / 姓名 / 学号 / openid" value="{{keyword}}" bind:change="onSearch" bind:clear="onClear" />
   </view>
 
-  <!-- ===== 筛选 ===== -->
+  <!-- ===== 下拉筛选 ===== -->
+  <t-dropdown-menu>
+    <t-dropdown-item label="院校" value="{{filters.school}}" options="{{filterOptions.schools}}" bind:change="onDropdownChange" data-key="school" />
+    <t-dropdown-item label="系部" value="{{filters.department}}" options="{{filterOptions.departments}}" bind:change="onDropdownChange" data-key="department" />
+    <t-dropdown-item label="专业" value="{{filters.specialty}}" options="{{filterOptions.specialties}}" bind:change="onDropdownChange" data-key="specialty" />
+    <t-dropdown-item label="年级" value="{{filters.grade}}" options="{{filterOptions.grades}}" bind:change="onDropdownChange" data-key="grade" />
+    <t-dropdown-item label="日目标" value="{{filters.dailyGoal}}" options="{{filterOptions.dailyGoals}}" bind:change="onDropdownChange" data-key="dailyGoal" />
+    <t-dropdown-item label="周目标" value="{{filters.weeklyGoal}}" options="{{filterOptions.weeklyGoals}}" bind:change="onDropdownChange" data-key="weeklyGoal" />
+  </t-dropdown-menu>
+
+  <!-- ===== 状态筛选 ===== -->
   <view class="users-filter">
     <view class="tt-segment">
       <view class="tt-segment-item {{!status ? 'active' : ''}}" bind:tap="filterStatus" data-status="">全部</view>
@@ -19,9 +29,9 @@
       <t-icon name="upload" size="32rpx" />
       <text>导入名单</text>
     </view>
-    <view class="users-action-btn" bind:tap="createTeacher">
+    <view class="users-action-btn" bind:tap="goCreateAccount">
       <t-icon name="user-add" size="32rpx" />
-      <text>创建教师</text>
+      <text>创建账户</text>
     </view>
   </view>
 
@@ -30,44 +40,36 @@
     <text class="tt-section-extra">共 {{total}} 人</text>
   </view>
 
-  <!-- ===== 列表 ===== -->
-  <view class="tt-card users-card">
-    <view class="tt-row" wx:for="{{list}}" wx:key="_id">
-      <view class="users-avatar">
-        <t-icon name="user" size="34rpx" color="var(--tt-brand)" />
-      </view>
-      <view class="flex-1" bind:tap="openDetail" data-id="{{item._id}}">
-        <view class="users-name">
-          <text class="tt-row-title">{{item.nickname || item.realName || '未命名'}}</text>
-          <t-tag wx:if="{{item.role === 'admin'}}" theme="primary" variant="light" size="small">管理员</t-tag>
-          <t-tag wx:elif="{{item.role === 'teacher'}}" theme="default" variant="light" size="small">教师</t-tag>
-          <t-tag wx:if="{{item.status === 'banned'}}" theme="danger" variant="light" size="small">封禁中</t-tag>
+  <!-- ===== 列表（滑动操作） ===== -->
+  <view class="users-swipe-list">
+    <t-swipe-cell
+      wx:for="{{list}}"
+      wx:key="_id"
+      right="{{item.swipeRight}}"
+      bind:click="onSwipeAction"
+    >
+      <view class="tt-card user-row">
+        <view class="users-avatar">
+          <t-icon name="user" size="34rpx" color="var(--tt-brand)" />
         </view>
-        <view class="tt-row-sub">{{item.studentId || '无学号'}} · {{item.schoolName || '未认证'}} · 累计 {{item.totalSteps || 0}} 步</view>
+        <view class="flex-1">
+          <view class="users-name">
+            <text class="tt-row-title">{{item.account || item.nickname || item.realName || '未命名'}}</text>
+            <t-tag wx:if="{{item.isSuper}}" theme="primary" variant="light" size="small">管理员</t-tag>
+            <t-tag wx:elif="{{item.role === 'teacher'}}" theme="default" variant="light" size="small">教师</t-tag>
+            <t-tag wx:if="{{item.status === 'banned'}}" theme="danger" variant="light" size="small">封禁中</t-tag>
+          </view>
+          <view class="tt-row-sub">
+            {{item.studentId || '无学号'}} · {{item.schoolName || '未认证'}}{{item.departmentName ? ' / ' + item.departmentName : ''}}
+          </view>
+          <view class="tt-row-sub" wx:if="{{item.className || item.specialty}}">{{item.className || '-'}}{{item.specialty ? ' · ' + item.specialty : ''}}</view>
+        </view>
       </view>
-      <view class="users-actions">
-        <t-button
-          wx:if="{{item.status !== 'banned' && item.role !== 'admin'}}"
-          theme="danger"
-          variant="outline"
-          size="small"
-          catch:tap="quickBan"
-          data-id="{{item._id}}"
-          data-nickname="{{item.nickname}}"
-        >封禁</t-button>
-        <t-button
-          wx:if="{{item.status === 'banned'}}"
-          theme="primary"
-          size="small"
-          catch:tap="quickUnban"
-          data-id="{{item._id}}"
-        >解封</t-button>
-      </view>
-    </view>
+    </t-swipe-cell>
 
     <view class="tt-empty" wx:if="{{!list.length && !loading}}">没有找到用户</view>
     <t-loading wx:if="{{loading || loadingMore}}" theme="circular" size="40rpx" class="users-loading" />
   </view>
 
-  <view class="tt-footer">滚动到底部自动加载更多 · 共 {{total}} 人</view>
+  <view class="tt-footer">左滑用户卡片可编辑 / 详细 / 封禁 / 删除</view>
 </view>

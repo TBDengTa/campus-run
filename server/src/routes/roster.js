@@ -13,9 +13,10 @@ router.post(
     if (!config.rosterPushKey) throw new ApiError(403, 403, '推送接口未启用（未配置 ROSTER_PUSH_KEY）');
     const key = req.get('X-Roster-Key') || '';
     if (key !== config.rosterPushKey) throw new ApiError(401, 401, '推送密钥错误');
+    const mode = req.body?.mode === 'update' ? 'update' : 'create';
     const rows = roster.parseRows(req.body?.rows || req.body);
     if (!rows.length) throw new ApiError(400, 400, '未解析到数据');
-    const result = await roster.importRows(rows);
+    const result = await roster.importRows(rows, mode);
     ok(res, result);
   })
 );

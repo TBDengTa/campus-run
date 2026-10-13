@@ -171,3 +171,31 @@
 .udetail-reset {
   margin-top: 16rpx;
 }
+
+/* ===== 运动数据 ===== */
+.udetail-sport-row {
+  margin-bottom: 8rpx;
+}
+
+.udetail-sport-sub {
+  display: flex;
+  justify-content: space-between;
+  font-size: 24rpx;
+  color: var(--td-text-color-secondary);
+  padding: 8rpx 0;
+}
+
+.udetail-sport-val {
+  color: var(--td-text-color-primary);
+  font-size: 24rpx;
+}
+
+.udetail-run-steps {
+  font-size: 26rpx;
+  font-weight: 600;
+  margin-right: 8rpx;
+}
+
+.udetail-edit-btn {
+  margin-bottom: 16rpx;
+}

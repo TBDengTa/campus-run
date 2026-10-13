@@ -74,3 +74,23 @@
   border-color: var(--tt-brand, #ff6b00);
   color: #fff;
 }
+
+/* ===== 滑动列表 ===== */
+.users-swipe-list {
+  margin: 0 24rpx;
+}
+
+.users-swipe-list t-swipe-cell {
+  display: block;
+  margin-bottom: 12rpx;
+  border-radius: 16rpx;
+  overflow: hidden;
+}
+
+.user-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 20rpx 24rpx;
+  background: var(--td-bg-color-container, #fff);
+}

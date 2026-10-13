@@ -98,3 +98,34 @@
   color: var(--td-error-color-6);
   margin-top: 4rpx;
 }
+
+/* ===== 导入模式 ===== */
+.imp-mode-row {
+  display: flex;
+  gap: 14rpx;
+  margin-bottom: 18rpx;
+}
+
+.imp-mode {
+  flex: 1;
+  padding: 18rpx 20rpx;
+  border-radius: 14rpx;
+  border: 2rpx solid var(--td-component-border, #e0e0e0);
+  text-align: center;
+}
+
+.imp-mode.active {
+  border-color: var(--tt-brand, #ff6b00);
+  background: var(--tt-brand-weak, rgba(255, 107, 0, 0.06));
+}
+
+.imp-mode-title {
+  font-size: 26rpx;
+  font-weight: 600;
+}
+
+.imp-mode-desc {
+  font-size: 20rpx;
+  color: var(--td-text-color-secondary);
+  margin-top: 4rpx;
+}

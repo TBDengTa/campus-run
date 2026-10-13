@@ -1,5 +1,13 @@
 const auth = require('../../utils/request');
 
+const BTN_STYLE = {
+  edit: 'background:#0052d9;color:#fff;font-size:24rpx;width:104rpx',
+  detail: 'background:#16a34a;color:#fff;font-size:24rpx;width:104rpx',
+  ban: 'background:#d54941;color:#fff;font-size:24rpx;width:104rpx',
+  unban: 'background:#16a34a;color:#fff;font-size:24rpx;width:104rpx',
+  del: 'background:#383838;color:#fff;font-size:24rpx;width:104rpx',
+};
+
 Page({
   data: {
     keyword: '',
@@ -10,77 +18,51 @@ Page({
     list: [],
     loading: false,
     loadingMore: false,
+    // 下拉筛选
+    filterOptions: {
+      schools: [],
+      departments: [],
+      specialties: [],
+      grades: [],
+      dailyGoals: [],
+      weeklyGoals: [],
+    },
+    filters: { school: '', department: '', specialty: '', grade: '', dailyGoal: '', weeklyGoal: '' },
+    canManage: false,
   },
 
   onShow() {
     this.reload();
+    this.loadFilters();
   },
 
-  goImport() {
-    wx.navigateTo({ url: '/packageAdmin/users/import' });
-  },
-
-  // 创建教师账号：输入姓名 → 系统生成初始密码，一次性展示
-  createTeacher() {
-    const that = this;
-    wx.showModal({
-      title: '创建教师账号',
-      editable: true,
-      placeholderText: '教师姓名（作为登录账号）',
-      success: async (res) => {
-        if (!res.confirm) return;
-        const name = (res.content || '').trim();
-        if (!name) {
-          wx.showToast({ title: '请输入姓名', icon: 'none' });
-          return;
-        }
-        try {
-          await getApp().ensureLogin();
-          const created = await auth.post('/api/admin/users/teachers', { name });
-          wx.showModal({
-            title: '教师账号已创建',
-            content: `账号：${created.account}\n初始密码：${created.initialPassword}\n\n请立即告知该教师，密码仅显示这一次，教师首次登录后需修改。`,
-            showCancel: false,
-          });
-          that.reload();
-        } catch (e) {
-          wx.showToast({ title: e.message, icon: 'none' });
-        }
-      },
-    });
-  },
-
-  async reload() {
-    this.setData({ page: 1, list: [] });
-    this.load();
-  },
-
-  async load() {
-    const { page, limit, keyword, status, loading } = this.data;
-    if (loading) return;
-    this.setData({ loading: page === 1, loadingMore: page > 1 });
+  // ===== 筛选选项 =====
+  async loadFilters() {
     try {
       await getApp().ensureLogin();
-      const params = { page, limit };
-      if (keyword) params.keyword = keyword;
-      if (status) params.status = status;
-      const res = await auth.get('/api/admin/users', params);
+      const opt = await auth.get('/api/admin/users/filters').catch(() => null);
+      if (!opt) return; // 无 user.view 以外权限等
+      const toOptions = (arr) => (arr || []).map((v) => ({ label: String(v), value: String(v) }));
       this.setData({
-        list: [...this.data.list, ...res.list],
-        total: res.total,
+        filterOptions: {
+          schools: toOptions(opt.schools),
+          departments: toOptions(opt.departments),
+          specialties: toOptions(opt.specialties),
+          grades: toOptions(opt.grades),
+          dailyGoals: toOptions(opt.dailyGoals).map((o) => ({ label: `${o.label} 步`, value: o.value })),
+          weeklyGoals: toOptions(opt.weeklyGoals).map((o) => ({ label: `${o.label} 步`, value: o.value })),
+        },
       });
     } catch (e) {
-      wx.showToast({ title: e.message, icon: 'none' });
-    } finally {
-      this.setData({ loading: false, loadingMore: false });
+      /* 筛选项加载失败不阻塞列表 */
     }
   },
 
-  onReachBottom() {
-    if (this.data.list.length < this.data.total) {
-      this.setData({ page: this.data.page + 1 });
-      this.load();
-    }
+  onDropdownChange(e) {
+    const key = e.currentTarget.dataset.key;
+    const value = e.detail.value || '';
+    this.setData({ [`filters.${key}`]: value });
+    this.reload();
   },
 
   onSearch(e) {
@@ -99,38 +81,136 @@ Page({
     this.reload();
   },
 
-  openDetail(e) {
-    wx.navigateTo({ url: `/packageAdmin/user-detail/user-detail?id=${e.currentTarget.dataset.id}` });
-  },
-
-  async quickBan(e) {
-    const { id, nickname } = e.currentTarget.dataset;
-    const that = this;
-    wx.showModal({
-      title: `封禁 ${nickname || '用户'}`,
-      editable: true,
-      placeholderText: '封禁原因',
-      success: async (res) => {
-        if (!res.confirm) return;
-        try {
-          await auth.post(`/api/admin/users/${id}/ban`, { reason: res.content || '违反社区规范', days: 7 });
-          wx.showToast({ title: '已封禁 7 天', icon: 'success' });
-          that.reload();
-        } catch (err) {
-          wx.showToast({ title: err.message, icon: 'none' });
-        }
-      },
-    });
-  },
-
-  async quickUnban(e) {
-    const { id } = e.currentTarget.dataset;
-    try {
-      await auth.post(`/api/admin/users/${id}/unban`);
-      wx.showToast({ title: '已解封', icon: 'success' });
-      this.reload();
-    } catch (err) {
-      wx.showToast({ title: err.message, icon: 'none' });
+  buildQuery(extra = {}) {
+    const { keyword, status, filters } = this.data;
+    const q = { ...extra };
+    if (keyword) q.keyword = keyword;
+    if (status) q.status = status;
+    for (const k of ['school', 'department', 'specialty', 'grade', 'dailyGoal', 'weeklyGoal']) {
+      if (filters[k]) q[k] = filters[k];
     }
+    return q;
+  },
+
+  async reload() {
+    this.setData({ page: 1, list: [] });
+    await this.load();
+  },
+
+  async load() {
+    const { page, limit, loading } = this.data;
+    if (loading) return;
+    this.setData({ loading: page === 1, loadingMore: page > 1 });
+    try {
+      await getApp().ensureLogin();
+      const me = getApp().globalData.userInfo;
+      if (me && !this.data.canManage) this.setData({ canManage: !!me.isManager });
+      const res = await auth.get('/api/admin/users', this.buildQuery({ page, limit }));
+      const list = res.list.map((u) => ({
+        ...u,
+        isSuper: (u.permissionGroups || []).includes('superadmin'),
+        swipeRight: this.buildSwipeButtons(u),
+      }));
+      this.setData({ list, total: res.total });
+    } catch (e) {
+      wx.showToast({ title: e.message, icon: 'none' });
+    } finally {
+      this.setData({ loading: false, loadingMore: false });
+    }
+  },
+
+  // 每行滑动按钮（对象里带 uid/type 供回调分发）
+  buildSwipeButtons(u) {
+    const id = u._id;
+    const btns = [
+      { text: '编辑', type: 'edit', uid: id, style: BTN_STYLE.edit },
+      { text: '详细', type: 'detail', uid: id, style: BTN_STYLE.detail },
+    ];
+    if (u.status !== 'banned' && !u.isSuper) {
+      btns.push({ text: '封禁', type: 'ban', uid: id, nickname: u.nickname || u.realName, style: BTN_STYLE.ban });
+    }
+    if (u.status === 'banned') {
+      btns.push({ text: '解封', type: 'unban', uid: id, style: BTN_STYLE.unban });
+    }
+    if (!u.isSuper) {
+      btns.push({ text: '删除', type: 'del', uid: id, nickname: u.nickname || u.realName, style: BTN_STYLE.del });
+    }
+    return btns;
+  },
+
+  // 滑动按钮点击分发
+  async onSwipeAction(e) {
+    const act = e.detail || {};
+    if (act.type === 'edit') {
+      wx.navigateTo({ url: `/packageAdmin/users/account-edit?id=${act.uid}` });
+      return;
+    }
+    if (act.type === 'detail') {
+      wx.navigateTo({ url: `/packageAdmin/user-detail/user-detail?id=${act.uid}` });
+      return;
+    }
+    if (act.type === 'ban') {
+      const that = this;
+      wx.showModal({
+        title: '封禁用户',
+        editable: true,
+        placeholderText: '封禁原因',
+        success: async (res) => {
+          if (!res.confirm) return;
+          try {
+            await auth.post(`/api/admin/users/${act.uid}/ban`, { reason: res.content || '违反社区规范', days: 7 });
+            wx.showToast({ title: '已封禁 7 天', icon: 'success' });
+            that.reload();
+          } catch (err) {
+            wx.showToast({ title: err.message, icon: 'none' });
+          }
+        },
+      });
+      return;
+    }
+    if (act.type === 'unban') {
+      try {
+        await auth.post(`/api/admin/users/${act.uid}/unban`);
+        wx.showToast({ title: '已解封', icon: 'success' });
+        this.reload();
+      } catch (err) {
+        wx.showToast({ title: err.message, icon: 'none' });
+      }
+      return;
+    }
+    if (act.type === 'del') {
+      const that = this;
+      wx.showModal({
+        title: '删除用户',
+        content: '将删除该用户及其全部运动/饮水/徽章等数据，不可恢复！确认删除？',
+        confirmColor: '#d54941',
+        success: async (res) => {
+          if (!res.confirm) return;
+          try {
+            await auth.del(`/api/admin/users/${act.uid}`);
+            wx.showToast({ title: '已删除', icon: 'success' });
+            that.reload();
+          } catch (err) {
+            wx.showToast({ title: err.message, icon: 'none' });
+          }
+        },
+      });
+    }
+  },
+
+  onReachBottom() {
+    if (this.data.list.length < this.data.total) {
+      this.setData({ page: this.data.page + 1 });
+      this.load();
+    }
+  },
+
+  goImport() {
+    wx.navigateTo({ url: '/packageAdmin/users/import' });
+  },
+
+  // 创建账户：独立页面填写
+  goCreateAccount() {
+    wx.navigateTo({ url: '/packageAdmin/users/account-edit' });
   },
 });

@@ -74,9 +74,61 @@
     </view>
   </view>
 
+  <!-- ===== 运动数据 ===== -->
+  <view class="tt-section">运动数据</view>
+  <view class="tt-card udetail-card" wx:if="{{sport}}">
+    <view class="tt-stat-row udetail-sport-row">
+      <view class="tt-stat">
+        <view class="tt-stat-value num-font">{{sport.totalStepsText}}</view>
+        <view class="tt-stat-label">累计步数</view>
+      </view>
+      <view class="tt-stat">
+        <view class="tt-stat-value num-font">{{sport.totalDistanceText}}</view>
+        <view class="tt-stat-label">累计距离</view>
+      </view>
+      <view class="tt-stat">
+        <view class="tt-stat-value num-font">{{sport.totalDays}}</view>
+        <view class="tt-stat-label">打卡天数</view>
+      </view>
+      <view class="tt-stat">
+        <view class="tt-stat-value num-font">{{sport.badgeCount}}</view>
+        <view class="tt-stat-label">徽章</view>
+      </view>
+    </view>
+
+    <view class="udetail-sport-sub">
+      <text>今日饮水</text>
+      <text class="num-font udetail-sport-val">{{sport.waterToday.total}} / {{sport.waterToday.target}} ml</text>
+    </view>
+    <view class="udetail-sport-sub" wx:if="{{goal && goal.planName}}">
+      <text>当前计划</text>
+      <text class="udetail-sport-val">{{goal.planName}}{{goal.autoMatched ? '（AI）' : ''}}</text>
+    </view>
+
+    <block wx:if="{{sport.recentRuns.length}}">
+      <view class="tt-divider"></view>
+      <view class="udetail-sport-sub" style="margin-top: 16rpx">
+        <text>最近运动</text>
+        <text class="udetail-sport-val">{{sport.recentRuns.length}} 条</text>
+      </view>
+      <view class="tt-row" wx:for="{{sport.recentRuns}}" wx:key="_id" bind:tap="openRun" data-id="{{item._id}}">
+        <view class="udetail-log-icon">
+          <t-icon name="{{item.source === 'gps' ? 'location' : 'logo-wechat-stroke'}}" size="32rpx" color="var(--tt-brand)" />
+        </view>
+        <view class="flex-1">
+          <view class="tt-row-title">{{item.dateText}} · {{item.sourceText}}</view>
+          <view class="tt-row-sub">{{item.durationText}} · {{item.distanceKm}} km</view>
+        </view>
+        <view class="udetail-run-steps num-font">{{item.steps}} 步</view>
+        <t-icon name="chevron-right" size="30rpx" color="var(--tt-text-3)" />
+      </view>
+    </block>
+  </view>
+
   <!-- ===== 账号操作 ===== -->
   <view class="tt-section">账号操作</view>
   <view class="tt-card udetail-card">
+    <t-button wx:if="{{canManagePerms}}" theme="default" block bind:tap="goEdit" class="udetail-edit-btn">编辑账户资料</t-button>
     <block wx:if="{{user.role !== 'admin'}}">
       <t-button wx:if="{{user.status !== 'banned'}}" theme="danger" block bind:tap="ban">封禁该用户</t-button>
       <t-button wx:else theme="primary" block bind:tap="unban">解除封禁</t-button>

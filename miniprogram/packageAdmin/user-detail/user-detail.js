@@ -29,7 +29,17 @@ Page({
   async load() {
     try {
       await getApp().ensureLogin();
-      const { user, bans } = await auth.get(`/api/admin/users/${this.data.id}`);
+      const { user, bans, sport: sportArg, goal: goalArg } = await auth.get(
+        `/api/admin/users/${this.data.id}`
+      );
+      const fmt = require('../../utils/format');
+      const recentRuns = ((sportArg && sportArg.recentRuns) || []).map((r) => ({
+        ...r,
+        dateText: r.date ? `${Number(r.date.slice(5, 7))}月${Number(r.date.slice(8, 10))}日` : '',
+        distanceText: fmt.formatDistance(r.distance),
+        durationText: fmt.formatDuration(r.durationSeconds),
+        sourceText: r.source === 'gps' ? 'GPS 实跑' : '微信运动',
+      }));
       this.setData({
         loading: false,
         user: {
@@ -41,12 +51,29 @@ Page({
           ...b,
           timeText: (b.createdAt || '').slice(0, 16).replace('T', ' '),
         })),
+        sport: {
+          totalStepsText: fmt.formatNumber(user.totalSteps || 0),
+          totalDistanceText: fmt.formatDistance(user.totalDistance || 0),
+          totalDays: user.totalDays || 0,
+          badgeCount: (sportArg && sportArg.badgeCount) || 0,
+          waterToday: (sportArg && sportArg.waterToday) || { total: 0, target: 0 },
+          recentRuns,
+        },
+        goal: goalArg || null,
       });
       this.loadPermEditor(user);
     } catch (e) {
       this.setData({ loading: false });
       wx.showToast({ title: e.message, icon: 'none' });
     }
+  },
+
+  openRun(e) {
+    wx.navigateTo({ url: `/pages/run/detail?id=${e.currentTarget.dataset.id}` });
+  },
+
+  goEdit() {
+    wx.navigateTo({ url: `/packageAdmin/users/account-edit?id=${this.data.id}` });
   },
 
   // 尝试加载权限编辑数据（无 permission.manage 权限时 403，静默降级）
