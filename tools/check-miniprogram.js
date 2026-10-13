@@ -131,12 +131,14 @@ for (const wxml of wxmls) {
     }
   }
 
-  for (const tag of ['view', 'block', 'text', 'picker', 'swiper', 'scroll-view', 'image']) {
+  // 标签配平：**所有**标签都查（含 t-icon / t-switch 等组件标签 —— 少一个 /> 就是白屏）
+  const tagNames = new Set([...src.matchAll(/<\/?([a-zA-Z][\w-]*)/g)].map((m) => m[1]));
+  for (const tag of tagNames) {
     const open = (src.match(new RegExp(`<${tag}(?=[\\s>/])`, 'g')) || []).length;
     const close = (src.match(new RegExp(`</${tag}>`, 'g')) || []).length;
-    const self = (src.match(new RegExp(`<${tag}\\b[^>]*/>`, 'g')) || []).length;
+    const self = (src.match(new RegExp(`<${tag}\\b[^>]*?/>`, 'g')) || []).length;
     if (open - self !== close) {
-      problems.push(`${r}: <${tag}> 不配平 open=${open} self=${self} close=${close}`);
+      problems.push(`${r}: <${tag}> 不配平（会导致该页白屏）open=${open} 自闭合=${self} close=${close}`);
     }
   }
 
@@ -169,6 +171,19 @@ if (fs.existsSync(tabBarJs)) {
   for (const m of fs.readFileSync(tabBarJs, 'utf8').matchAll(/\b(?:icon|activeIcon):\s*'([a-z0-9-]+)'/g)) {
     iconUse++;
     if (!iconNames.has(m[1])) problems.push(`custom-tab-bar/index.js: 图标不存在 -> ${m[1]}`);
+  }
+}
+
+// JS 里写死的图标名（t-icon 用 {{item.icon}} 动态绑定时 WXML 查不到，必须在这里兜底）
+// 排除 showToast / showModal 的 icon 参数：none / success / error / loading / warn / info
+const TOAST_ICONS = new Set(['none', 'success', 'error', 'loading', 'warn', 'info', 'failed', 'exception']);
+for (const f of jss) {
+  const src = fs.readFileSync(f, 'utf8');
+  for (const m of src.matchAll(/\bicon(?:Name|Active)?:\s*'([a-z0-9-]+)'/g)) {
+    const name = m[1];
+    if (TOAST_ICONS.has(name)) continue;
+    iconUse++;
+    if (!iconNames.has(name)) problems.push(`${rel(f)}: JS 里的图标不存在（会渲染空白）-> ${name}`);
   }
 }
 

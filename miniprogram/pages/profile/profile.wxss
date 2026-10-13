@@ -265,6 +265,8 @@
   color: var(--tt-text-3);
 }
 
+/* 「账号与帮助」与「运动与健康」共用 .menu-card / .tt-row / .menu-icon / .menu-label，无需额外样式 */
+
 /* ===== 退出登录 ===== */
 .logout-card {
   padding: 0;

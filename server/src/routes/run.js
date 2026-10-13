@@ -80,16 +80,17 @@ router.get(
   })
 );
 
-// 周统计（近 7 天）
+// 周统计（自然周：周一至周日）
 router.get(
   '/week',
   wrap(async (req, res) => {
     const today = todayKey();
-    const start = addDays(today, -6);
-    const records = await RunRecord.find({ openid: req.user.openid, date: { $gte: start, $lte: today } })
+    const start = mondayKey(today);
+    const end = addDays(start, 6);
+    const records = await RunRecord.find({ openid: req.user.openid, date: { $gte: start, $lte: end } })
       .select('date steps distance calories durationSeconds source goalAchieved')
       .lean();
-    ok(res, { start, end: today, records });
+    ok(res, { start, end: today, weekStart: start, weekEnd: end, records });
   })
 );
 

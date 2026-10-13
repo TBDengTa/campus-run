@@ -1,114 +1,138 @@
+/* ============================================================
+   排行榜 · 白橙设计系统
+   三段结构：筛选面板（榜单/时间/范围 各一行）→ 榜单列表（一行一人）→ 我的排名（顶部一行卡）
+   只使用 --tt-* / --td-* 令牌，禁止硬编码品牌色
+   ============================================================ */
+
 .ranking-page {
-  padding-bottom: 220rpx;
+  padding-bottom: 24rpx; /* 「我的排名」已移到顶部，不再需要为悬浮条留位 */
 }
 
-/* ===== 榜单类型选择 ===== */
-.metric-grid {
+/* ===== 筛选面板 ===== */
+.rank-filter {
+  padding: 8rpx var(--tt-pad) 14rpx;
+}
+
+.flt-row {
   display: flex;
-  gap: 14rpx;
-  padding: 24rpx 24rpx 8rpx;
+  align-items: flex-start;
+  gap: 16rpx;
+  padding: 14rpx 0;
+  border-bottom: 2rpx solid var(--tt-line);
 }
 
-.metric-chip {
+.flt-row:last-of-type {
+  border-bottom: none;
+}
+
+.flt-label {
+  width: 56rpx;
+  flex-shrink: 0;
+  padding-top: 14rpx;
+  font-size: 23rpx;
+  color: var(--tt-text-3);
+}
+
+.flt-opts {
   flex: 1;
+  min-width: 0;
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
+  gap: 12rpx;
+}
+
+/* 选项胶囊：点击区域 58rpx 高；未选中用白底 + 描边，
+   这样橙色走步小人/橙色图标在高对比度底上才清楚（浅灰底会把橙色洗白得看起来像空的） */
+.flt-chip {
+  display: inline-flex;
   align-items: center;
-  gap: 6rpx;
-  padding: 18rpx 0;
-  border-radius: 16rpx;
-  background: var(--td-bg-color-container, #fff);
+  gap: 8rpx;
+  padding: 11rpx 20rpx;
+  border-radius: 999rpx;
+  background: var(--tt-card);
+  border: 2rpx solid var(--tt-line);
   font-size: 24rpx;
-  color: var(--td-text-color-secondary);
-  border: 2rpx solid transparent;
+  line-height: 1.4;
+  color: var(--tt-text-2);
+  transition: all 0.18s ease;
 }
 
-.metric-chip.active {
-  background: var(--tt-brand-weak, rgba(255, 107, 0, 0.1));
-  border-color: var(--tt-brand, #ff6b00);
-  color: var(--tt-brand, #ff6b00);
+.flt-chip.active {
+  background: var(--tt-brand);
+  border-color: var(--tt-brand);
+  color: #ffffff;
   font-weight: 600;
+  box-shadow: 0 4rpx 12rpx rgba(255, 107, 0, 0.24);
 }
 
-.seg-wrap {
-  margin: 12rpx 24rpx 8rpx;
+/* 选项里的走步小人图片（图标字体没有走步图形，用 assets/home/day-run-*.png）
+   34rpx 是实测能看清细节的下限，别调小 */
+.flt-ico {
+  width: 34rpx;
+  height: 34rpx;
+  flex-shrink: 0;
 }
 
-/* ===== 范围选择 ===== */
-.scope-row {
-  display: flex;
-  align-items: center;
-  gap: 14rpx;
-  padding: 8rpx 28rpx 4rpx;
-}
-
-.scope-chip {
-  font-size: 24rpx;
-  padding: 10rpx 26rpx;
-  border-radius: 999px;
-  background: var(--td-bg-color-container, #fff);
-  color: var(--td-text-color-secondary);
-  border: 1rpx solid var(--td-component-border, #e0e0e0);
-}
-
-.scope-chip.active {
-  background: var(--tt-brand, #ff6b00);
-  border-color: var(--tt-brand, #ff6b00);
-  color: #fff;
-  font-weight: 600;
-}
-
-.scope-chip.disabled {
+.flt-chip.disabled {
   opacity: 0.4;
 }
 
-.gp-privacy-entry {
-  margin-left: auto;
-  padding: 8rpx;
-}
-
-/* ===== 说明条 ===== */
-.rank-note {
+.flt-foot {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 8rpx 32rpx;
-  font-size: 22rpx;
-  color: var(--tt-text-3);
+  gap: 16rpx;
+  padding: 12rpx 0 2rpx;
 }
 
-.rank-note-link {
+.flt-foot-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 21rpx;
+  color: var(--tt-text-3);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.flt-privacy {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4rpx;
+  padding: 8rpx 16rpx;
+  border-radius: 999rpx;
+  font-size: 21rpx;
   color: var(--tt-brand);
+  background: var(--tt-brand-soft);
 }
 
+.flt-privacy:active {
+  opacity: 0.8;
+}
+
+/* ===== 教师提示 ===== */
 .rank-excluded {
-  margin: 8rpx 24rpx;
+  margin: 16rpx var(--tt-gap) 0;
   padding: 16rpx 24rpx;
-  border-radius: 12rpx;
-  background: var(--td-warning-color-1, #fff1e9);
-  color: var(--td-warning-color-5);
-  font-size: 24rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--td-warning-color-1);
+  border: 2rpx solid var(--td-warning-color-2);
+  color: var(--td-warning-color-7);
+  font-size: 23rpx;
+  line-height: 1.5;
 }
 
-/* ===== 榜单列表 ===== */
+/* ===== 榜单列表：一行一人 ===== */
 .rank-card {
-  padding: 8rpx 24rpx;
-}
-
-.rank-head {
-  display: flex;
-  align-items: center;
-  padding: 16rpx 0;
-  font-size: 20rpx;
-  color: var(--tt-text-3);
-  border-bottom: 1rpx solid var(--tt-line, rgba(0, 0, 0, 0.06));
+  padding: 6rpx var(--tt-pad);
 }
 
 .rank-row {
   display: flex;
   align-items: center;
-  padding: 18rpx 0;
-  border-bottom: 1rpx solid var(--tt-line, rgba(0, 0, 0, 0.04));
+  gap: 18rpx;
+  padding: 20rpx 0;
+  border-bottom: 2rpx solid var(--tt-line);
 }
 
 .rank-row:last-child {
@@ -116,143 +140,264 @@
 }
 
 .rank-row.me {
-  background: var(--tt-brand-weak, rgba(255, 107, 0, 0.06));
-  border-radius: 12rpx;
-  padding-left: 12rpx;
-  padding-right: 12rpx;
+  margin: 0 -16rpx;
+  padding-left: 16rpx;
+  padding-right: 16rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-brand-soft);
+  border-bottom-color: transparent;
 }
 
+/* 名次徽章 */
 .rank-no {
-  width: 64rpx;
-  text-align: center;
-  font-size: 28rpx;
-  font-weight: 600;
-  color: var(--tt-text-2);
+  width: 56rpx;
+  height: 56rpx;
   flex-shrink: 0;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26rpx;
+  font-weight: 700;
+  color: var(--tt-text-2);
+  background: var(--td-bg-color-component);
+}
+
+.rank-no.top {
+  color: #ffffff;
+  background: linear-gradient(135deg, #ff9a3d, var(--tt-brand));
+  box-shadow: 0 6rpx 16rpx rgba(255, 107, 0, 0.28);
 }
 
 .medal {
-  font-size: 34rpx;
+  font-size: 30rpx;
+  line-height: 1;
 }
 
-.rank-user {
-  width: 150rpx;
-  flex-shrink: 0;
-  margin-right: 8rpx;
+/* 中间：姓名 + 班级（含上下文） */
+.rank-main {
+  flex: 1;
+  min-width: 0;
 }
 
 .rank-name {
-  font-size: 26rpx;
-  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  min-width: 0;
+}
+
+.rank-name-text {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+  max-width: 300rpx;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.rank-class {
-  font-size: 20rpx;
-  margin-top: 4rpx;
-  overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.rank-plan {
-  width: 150rpx;
-  flex-shrink: 0;
-  margin-right: 8rpx;
+.rank-sub {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  margin-top: 6rpx;
+  min-width: 0;
 }
 
-.plan-chip {
-  font-size: 20rpx;
-  color: var(--tt-brand);
-  background: var(--tt-brand-weak, rgba(255, 107, 0, 0.08));
-  border-radius: 6rpx;
-  padding: 4rpx 10rpx;
-  display: inline-block;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.plan-chip.none {
+.rank-sub-text {
+  font-size: 21rpx;
   color: var(--tt-text-3);
-  background: transparent;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
-.rank-steps {
-  width: 96rpx;
-  text-align: right;
-  font-size: 26rpx;
+.rank-dot {
   flex-shrink: 0;
+  font-size: 21rpx;
+  color: var(--tt-line);
 }
 
-.rank-km {
-  width: 84rpx;
-  text-align: right;
-  font-size: 24rpx;
-  color: var(--tt-text-2);
-  flex-shrink: 0;
-  margin-right: 8rpx;
-}
-
+/* 右侧：当前榜单维度的数值（唯一的大数字） */
 .rank-value {
-  width: 130rpx;
-  text-align: right;
   flex-shrink: 0;
+  min-width: 108rpx;
+  text-align: right;
 }
 
 .rv-num {
-  font-size: 26rpx;
+  display: block;
+  font-size: 32rpx;
   font-weight: 700;
+  line-height: 1.1;
   color: var(--tt-brand);
 }
 
-/* ===== 我的排名卡 ===== */
-.me-card {
-  position: fixed;
-  left: 24rpx;
-  right: 24rpx;
-  bottom: calc(180rpx + env(safe-area-inset-bottom));
-  z-index: 20;
-  box-shadow: var(--tt-card-shadow);
+.rv-label {
+  display: block;
+  margin-top: 2rpx;
+  font-size: 19rpx;
+  color: var(--tt-text-3);
 }
 
-.me-rank-box {
+/* ===== 我的排名：顶部一行卡（跟在筛选面板后，不再悬浮遮挡列表） ===== */
+.me-card {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  margin-bottom: 16rpx;
+  align-items: center;
+  gap: 8rpx;
+  padding: 18rpx 24rpx;
+}
+
+.me-rank {
+  display: flex;
+  flex-direction: column;
+  gap: 2rpx;
+  padding-right: 18rpx;
+  border-right: 2rpx solid var(--tt-line);
+  flex-shrink: 0;
 }
 
 .me-rank-label {
-  font-size: 24rpx;
-  color: var(--td-text-color-secondary);
+  font-size: 19rpx;
+  color: var(--tt-text-3);
 }
 
 .me-rank-num {
-  font-size: 36rpx;
+  font-size: 32rpx;
   font-weight: 700;
+  line-height: 1.1;
   color: var(--tt-brand);
 }
 
-.me-metrics {
+.me-cell {
+  flex: 1;
   display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2rpx;
+  min-width: 0;
 }
 
-.me-metric {
+.me-cell-v {
+  font-size: 27rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.me-cell-l {
+  font-size: 18rpx;
+  color: var(--tt-text-3);
+}
+
+/* 我的排名骨架：与真实内容同位置同尺寸，切换时不跳版；微光动画与列表骨架一致 */
+.me-skel {
+  border-radius: 8rpx;
+  background: linear-gradient(90deg, var(--tt-line) 25%, var(--td-bg-color-component) 37%, var(--tt-line) 63%);
+  background-size: 400% 100%;
+  animation: sk-shimmer 1.4s ease infinite;
+}
+
+.me-skel-rank {
+  width: 128rpx;
+  height: 52rpx;
+  margin-right: 18rpx;
+  flex-shrink: 0;
+}
+
+.me-skel-cell {
   flex: 1;
+  height: 38rpx;
+  margin: 0 12rpx;
+}
+
+/* ===== 加载失败 / 无数据 ===== */
+.rank-fail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16rpx;
+  padding: 48rpx var(--tt-pad);
+}
+
+.rank-fail-text {
+  font-size: 24rpx;
+  color: var(--tt-text-3);
   text-align: center;
 }
 
-.me-metric-value {
-  font-size: 30rpx;
+.rank-fail-btn {
+  padding: 12rpx 40rpx;
+  border-radius: 999rpx;
+  font-size: 25rpx;
   font-weight: 600;
+  color: #ffffff;
+  background: var(--tt-brand);
 }
 
-.me-metric-label {
-  font-size: 20rpx;
-  color: var(--td-text-color-secondary);
-  margin-top: 4rpx;
+.rank-fail-btn:active {
+  opacity: 0.86;
+}
+
+/* ===== 加载中：骨架屏（微光扫过就是加载动画） ===== */
+.rank-skeleton {
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+  padding: 20rpx 0;
+  border-bottom: 2rpx solid var(--tt-line);
+}
+
+.rank-skeleton:last-child {
+  border-bottom: none;
+}
+
+.sk-no {
+  width: 56rpx;
+  height: 56rpx;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.sk-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.sk-line1 {
+  width: 46%;
+  height: 26rpx;
+  border-radius: 8rpx;
+}
+
+.sk-line2 {
+  width: 72%;
+  height: 20rpx;
+  margin-top: 12rpx;
+  border-radius: 8rpx;
+}
+
+.sk-val {
+  width: 96rpx;
+  height: 30rpx;
+  border-radius: 8rpx;
+  flex-shrink: 0;
+}
+
+.sk-no,
+.sk-line1,
+.sk-line2,
+.sk-val {
+  background: linear-gradient(90deg, var(--tt-line) 25%, var(--td-bg-color-component) 37%, var(--tt-line) 63%);
+  background-size: 400% 100%;
+  animation: sk-shimmer 1.4s ease infinite;
+}
+
+@keyframes sk-shimmer {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0 50%;
+  }
 }

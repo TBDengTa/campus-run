@@ -11,23 +11,36 @@ function dateKey(y, m, d) {
   return `${y}-${pad(m)}-${pad(d)}`;
 }
 
-// 近 7 天柱状图数据
+// 本周（自然周，周一起）柱状图数据：周一 → 周日，未来日期留空
 function buildBars(records) {
   const map = new Map();
   for (const r of records || []) {
     map.set(r.date, (map.get(r.date) || 0) + (r.steps || 0));
   }
-  const bars = [];
   const today = new Date();
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i);
+  const todayKeyStr = dateKey(today.getFullYear(), today.getMonth() + 1, today.getDate());
+  // 本周一
+  const diff = today.getDay() === 0 ? 6 : today.getDay() - 1;
+  const monday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - diff);
+
+  const bars = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i);
     const key = dateKey(d.getFullYear(), d.getMonth() + 1, d.getDate());
-    bars.push({ key, label: WEEKDAYS[d.getDay()], steps: map.get(key) || 0, isToday: i === 0 });
+    const isFuture = key > todayKeyStr;
+    const steps = map.get(key) || 0;
+    bars.push({
+      key,
+      label: WEEKDAYS[d.getDay()],
+      steps: isFuture ? 0 : steps,
+      isToday: key === todayKeyStr,
+      isFuture,
+    });
   }
   const max = Math.max(1, ...bars.map((b) => b.steps));
   for (const b of bars) {
-    b.height = b.steps > 0 ? Math.max(10, Math.round((b.steps / max) * 100)) : 4;
-    b.stepsText = b.steps > 0 ? fmt.formatNumber(b.steps) : '';
+    b.height = b.isFuture ? 0 : b.steps > 0 ? Math.max(10, Math.round((b.steps / max) * 100)) : 4;
+    b.stepsText = !b.isFuture && b.steps > 0 ? fmt.formatNumber(b.steps) : '';
   }
   return bars;
 }
@@ -125,14 +138,18 @@ Page({
     try {
       await getApp().ensureLogin();
       const [week] = await Promise.all([auth.get('/api/run/week').catch(() => ({ records: [] }))]);
-      const weekSteps = week.records.reduce((s, r) => s + (r.steps || 0), 0);
-      const weekDistance = week.records.reduce((s, r) => s + (r.distance || 0), 0);
-      const activeDays = new Set(week.records.map((r) => r.date)).size;
+      // 自然周（周一起）：仅统计今天及之前的日期
+      const todayStr = fmt.todayKey();
+      const thisWeekRecords = (week.records || []).filter((r) => r.date <= todayStr);
+      const weekSteps = thisWeekRecords.reduce((s, r) => s + (r.steps || 0), 0);
+      const weekDistance = thisWeekRecords.reduce((s, r) => s + (r.distance || 0), 0);
+      const activeDays = new Set(thisWeekRecords.map((r) => r.date)).size;
+      const daysGone = new Date().getDay() === 0 ? 7 : new Date().getDay();
       this.setData({
         weekStats: {
           steps: fmt.formatNumber(weekSteps),
           distance: fmt.formatDistance(weekDistance),
-          activeDays: `${activeDays}/7`,
+          activeDays: `${activeDays}/${daysGone}`,
         },
         bars: buildBars(week.records),
       });

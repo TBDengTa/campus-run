@@ -131,7 +131,7 @@
     </view>
   </view>
 
-  <!-- ===== 账号与帮助 ===== -->
+  <!-- ===== 账号与帮助：列（行）形式，与「运动与健康」同款结构 ===== -->
   <view class="tt-section">账号与帮助</view>
   <view class="tt-card menu-card">
     <view class="tt-row menu-row" bind:tap="goChangePwd">
@@ -148,18 +148,11 @@
       <text class="menu-label">授权管理</text>
       <t-icon name="chevron-right" size="32rpx" color="var(--tt-text-3)" />
     </view>
-    <view class="tt-row menu-row" bind:tap="goAbout">
-      <view class="menu-icon">
-        <t-icon name="info-circle" size="36rpx" color="var(--tt-brand)" />
-      </view>
     <view class="tt-row menu-row" bind:tap="goPrivacy">
       <view class="menu-icon">
-        <t-icon name="setting" size="36rpx" color="var(--tt-brand)" />
+        <t-icon name="secured" size="36rpx" color="var(--tt-brand)" />
       </view>
       <text class="menu-label">隐私设置</text>
-      <t-icon name="chevron-right" size="32rpx" color="var(--tt-text-3)" />
-    </view>
-      <text class="menu-label">关于我们</text>
       <t-icon name="chevron-right" size="32rpx" color="var(--tt-text-3)" />
     </view>
     <view class="tt-row menu-row" bind:tap="go" data-url="/pages/appeal/list">
@@ -174,6 +167,13 @@
         <t-icon name="notification" size="36rpx" color="var(--tt-brand)" />
       </view>
       <text class="menu-label">公告</text>
+      <t-icon name="chevron-right" size="32rpx" color="var(--tt-text-3)" />
+    </view>
+    <view class="tt-row menu-row" bind:tap="goAbout">
+      <view class="menu-icon">
+        <t-icon name="info-circle" size="36rpx" color="var(--tt-brand)" />
+      </view>
+      <text class="menu-label">关于我们</text>
       <t-icon name="chevron-right" size="32rpx" color="var(--tt-text-3)" />
     </view>
     <view class="tt-row menu-row" bind:tap="go" data-url="/pages/changelogs/changelogs">
