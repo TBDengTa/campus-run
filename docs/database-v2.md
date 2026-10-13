@@ -32,13 +32,26 @@
 ## 跑步与目标
 
 ### run_records
+**同一天会有多条记录**：三种来源各自独立成条，当日指标 = 该日所有记录之和（不要再用 `findOne({date})` 取当日数据）。
+
 | 字段 | 说明 |
 |---|---|
 | openid + date | 复合索引；date 为 YYYY-MM-DD |
-| source | `werun`（当日微信运动汇总）/ `gps`（单次实跑） |
+| source | `werun` 微信运动同步 / `gps` GPS 实跑 / `beidou` 北斗（激励视频奖励步数） |
 | steps / distance(m) / calories / durationSeconds / pace | 指标 |
-| goalAchieved | 当日步数是否达标 |
+| goalAchieved | 当日总量是否达标（在最后一条 werun 记录上标记，判定必须用当日总量） |
 | routePoints | GPS 轨迹 `[{latitude, longitude, timestamp}]`（上限 5000 点） |
+
+**werun 记录的窗口规则**（`services/steps.js::syncWerunDay`，常量 `SYNC_WINDOW_MS = 1 小时`）：
+- 该日最后一条 werun 记录在 1 小时内 → **合并更新该条**；超过 1 小时 → **新建当日下一条**
+- 每条记录只存**增量**：`steps = 微信累计 − 该条之前的当日已记录总量`（所以当日总量是各条之和）
+- 没有增量时不建空记录（返回 `skipped`）
+- 反作弊 `checkStepJump` 按「当日累计 vs 本次微信累计」比对，不再是单条记录比对
+- 注意：schema 开了 `timestamps`，`createdAt` 在 Mongoose 里是 **immutable**，
+  测试/脚本要回拨时间必须用原生驱动（`db.collection('run_records').updateMany({$set:{createdAt}})`）
+
+**beidou 记录**：激励视频每看一次 `$inc` 一次（当日一条累加）。单独成条的目的就是
+**让下一次微信同步不会把奖励步数覆盖掉**（旧实现把奖励 `$inc` 进 werun 记录，当日同步 `$set` 时会清掉）。
 
 索引：`(openid, date)`、`(date)`
 

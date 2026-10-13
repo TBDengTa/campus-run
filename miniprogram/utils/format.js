@@ -35,4 +35,16 @@ function parseDateKey(key) {
   return { y, m, d, week: `周${week}` };
 }
 
-module.exports = { formatNumber, formatDistance, formatDuration, todayKey, parseDateKey };
+// 记录来源展示（run_records.source）：微信运动 / GPS 实跑 / 北斗（激励视频奖励步数）
+const SOURCE_MAP = {
+  werun: { sourceText: '微信运动', sourceIcon: 'logo-wechat-stroke' },
+  gps: { sourceText: 'GPS 实跑', sourceIcon: 'location' },
+  beidou: { sourceText: '北斗', sourceIcon: 'map-aiming' },
+};
+
+// 统一来源文案与图标，避免各页面各写一套三元表达式
+function sourceOf(source) {
+  return SOURCE_MAP[source] || { sourceText: '运动记录', sourceIcon: 'chart-bar' };
+}
+
+module.exports = { formatNumber, formatDistance, formatDuration, todayKey, parseDateKey, sourceOf, SOURCE_MAP };

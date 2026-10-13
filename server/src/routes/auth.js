@@ -181,6 +181,21 @@ router.post(
   })
 );
 
+// 隐私设置（排行榜展示）
+router.put(
+  '/privacy',
+  auth,
+  wrap(async (req, res) => {
+    if (req.guestOpenid) throw new ApiError(403, 403003, '请先绑定账号');
+    const allowed = ['hideClass', 'hideName', 'hidePlan', 'exitRanking'];
+    for (const k of allowed) {
+      if (req.body[k] !== undefined) req.user.privacy[k] = !!req.body[k];
+    }
+    await req.user.save();
+    ok(res, req.user.privacy);
+  })
+);
+
 // 当前用户信息（含有效权限）
 router.get(
   '/me',

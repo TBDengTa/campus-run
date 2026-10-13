@@ -1,0 +1,21 @@
+<view class="page tt-page privacy-page">
+  <view class="tt-section">排行榜隐私设置</view>
+  <view class="tt-card">
+    <view class="pv-row" wx:for="{{items}}" wx:key="key">
+      <view class="flex-1">
+        <view class="pv-label">{{item.label}}</view>
+        <view class="pv-desc">{{item.desc}}</view>
+      </view>
+      <t-switch value="{{privacy[item.key]}}" bind:change="toggle" data-key="{{item.key}}" />
+    </view>
+  </view>
+
+  <view class="pv-note-card">
+    <view class="pv-note-title">说明</view>
+    <view class="pv-note-line">· 隐私设置仅影响排行榜等公开展示场景，不影响你自己的数据记录</view>
+    <view class="pv-note-line">· 「不参与排名」开启后，所有榜单将不再包含你，关闭后会重新加入</view>
+    <view class="pv-note-line">· 设置即时生效，服务端执行，任何人（包括自己）都无法绕过</view>
+  </view>
+
+  <view class="tt-footer">保护隐私，运动更安心</view>
+</view>

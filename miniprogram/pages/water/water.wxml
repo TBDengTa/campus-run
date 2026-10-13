@@ -1,106 +1,124 @@
-<view class="page tt-page" wx:if="{{today}}">
-  <!-- ===== 主视觉：今日饮水进度 ===== -->
-  <view class="water-hero">
-    <view class="water-hero-head">
-      <view class="water-hero-title">
-        <t-icon name="drink" size="34rpx" color="var(--tt-brand)" />
+<view class="page water-page" wx:if="{{today}}">
+  <!-- ===== 首屏舞台：水瓶居中占满一屏，其余信息下滑可见 ===== -->
+  <view class="wt-stage">
+    <view class="wt-stage-top">
+      <view class="wt-stage-title">
+        <t-icon name="drink" size="32rpx" color="var(--wt-water-deep)" />
         <text>今日饮水</text>
       </view>
-      <text class="water-hero-target">目标 {{today.targetText}} ml</text>
+      <text class="wt-target-chip">目标 {{today.targetText}} ml</text>
     </view>
 
-    <view class="water-hero-num">
-      <text class="num-font water-hero-value">{{today.totalText}}</text>
-      <text class="water-hero-unit">ml</text>
-    </view>
-
-    <view class="water-cup">
-      <view class="water-cup-fill" style="width: {{percent}}%"></view>
-    </view>
-
-    <view class="water-hero-foot">
-      <text class="water-hero-percent num-font">{{percent}}%</text>
-      <text class="water-hero-state {{percent >= 100 ? 'done' : ''}}">
-        {{percent >= 100 ? '已达成今日目标 ✓' : '还差 ' + today.remainingText + ' ml'}}
-      </text>
-    </view>
-  </view>
-
-  <!-- ===== 目标构成说明（系统自动计算，不可手动调整） ===== -->
-  <view class="tt-card water-formula" wx:if="{{today.targetInfo}}">
-    <view class="water-formula-row">
-      <t-icon name="chart-bubble" size="30rpx" color="var(--tt-brand)" />
-      <text class="water-formula-text">{{today.targetInfo.formula}}</text>
-    </view>
-    <view class="water-formula-detail">
-      <text>基础 {{today.targetInfo.base}} ml</text>
-      <text>运动补充 +{{today.targetInfo.stepBonus}} ml</text>
-      <text wx:if="{{today.targetInfo.hasBodyData}}">BMI 系数 ×{{today.targetInfo.bmiFactor}}</text>
-    </view>
-  </view>
-
-  <!-- ===== 记一笔 ===== -->
-  <view class="tt-section">记一笔<text class="tt-section-extra">点击即记录</text></view>
-  <view class="tt-card">
-    <view class="water-quick-row">
-      <view
-        class="water-quick-item"
-        wx:for="{{quickAmounts}}"
-        wx:key="amount"
-        bind:tap="add"
-        data-amount="{{item.amount}}"
-      >
-        <view class="water-quick-icon">
-          <t-icon name="{{item.tIcon}}" size="40rpx" color="#ffffff" />
+    <view class="wt-stage-center">
+      <!-- 玻璃杯：水位高度 = 完成度；水面用两层反向旋转的圆做波浪（纯 WXSS） -->
+      <view class="wt-glass-wrap">
+        <view class="wt-glass {{percent >= 100 ? 'done' : ''}}">
+          <view class="wt-water" style="height: {{waterPercent}}%">
+            <view class="wt-wave-glow"></view>
+            <view class="wt-wave"></view>
+          </view>
+          <view class="wt-scale wt-scale-1"></view>
+          <view class="wt-scale wt-scale-2"></view>
+          <view class="wt-scale wt-scale-3"></view>
+          <view class="wt-gloss"></view>
+          <view class="wt-rim"></view>
         </view>
-        <view class="water-quick-amount num-font">{{item.amountText}}</view>
-        <view class="water-quick-label">{{item.label}}</view>
+        <view class="wt-glass-badge" wx:if="{{percent >= 100}}">已达标</view>
+      </view>
+
+      <view class="wt-cup-stat">
+        <text class="wt-cup-value num-font">{{today.totalText}}</text>
+        <text class="wt-cup-unit">/ {{today.targetText}} ml</text>
+      </view>
+      <view class="wt-cup-state {{percent >= 100 ? 'done' : ''}}">
+        {{percent >= 100 ? '已达成今日目标 ✓' : '还差 ' + today.remainingText + ' ml · 已完成 ' + percent + '%'}}
       </view>
     </view>
 
-    <view class="tt-divider"></view>
-
-    <view class="water-custom">
-      <text class="water-custom-label">自定义</text>
-      <view class="water-custom-input-wrap">
-        <input class="water-custom-input num-font" type="number" value="{{customAmount}}" bindinput="onCustomInput" />
-        <text class="water-custom-unit">ml</text>
-      </view>
-      <view class="water-custom-btn" bind:tap="addCustom">
-        <t-icon name="check" size="30rpx" color="#ffffff" />
-        <text>记录</text>
-      </view>
+    <view class="wt-stage-foot">
+      <t-icon name="chevron-down" size="26rpx" color="var(--tt-text-3)" />
+      <text>下滑记录喝水、查看历史</text>
     </view>
   </view>
 
-  <!-- ===== 今日记录 ===== -->
-  <view class="tt-section">今日记录<text class="tt-section-extra">{{logs.length}} 笔</text></view>
-  <view class="tt-card">
-    <block wx:if="{{logs.length}}">
-      <view class="water-log" wx:for="{{logs}}" wx:key="time">
-        <view class="water-log-dot"></view>
-        <text class="water-log-time num-font">{{item.timeText}}</text>
-        <text class="water-log-type">{{item.type}}</text>
-        <text class="water-log-amount num-font">+{{item.amount}} ml</text>
-      </view>
-    </block>
-    <view class="tt-empty" wx:else>今天还没喝水，快记一笔吧</view>
-  </view>
-
-  <!-- ===== 历史记录 ===== -->
-  <view class="tt-section">历史记录<text class="tt-section-extra">近 {{history.length}} 天</text></view>
-  <view class="tt-card">
-    <block wx:if="{{history.length}}">
-      <view class="water-his-row" wx:for="{{history}}" wx:key="date">
-        <text class="water-his-date">{{item.dateText}}</text>
-        <view class="water-his-bar-wrap">
-          <view class="water-his-bar {{item.percent >= 100 ? 'ok' : ''}}" style="width: {{item.percent}}%"></view>
+  <!-- ===== 以下为下滑内容：紧密排版 ===== -->
+  <view class="wt-sheet">
+    <!-- 记一笔 -->
+    <view class="tt-section">记一笔<text class="tt-section-extra">点击即记录</text></view>
+    <view class="tt-card wt-add">
+      <view class="water-quick-row">
+        <view
+          class="water-quick-item"
+          wx:for="{{quickAmounts}}"
+          wx:key="amount"
+          bind:tap="add"
+          data-amount="{{item.amount}}"
+        >
+          <view class="water-quick-icon">
+            <t-icon name="{{item.tIcon}}" size="34rpx" color="#ffffff" />
+          </view>
+          <view class="water-quick-amount num-font">{{item.amountText}}</view>
+          <view class="water-quick-label">{{item.label}}</view>
         </view>
-        <text class="water-his-num num-font">{{item.totalText}}/{{item.targetText}}</text>
       </view>
-    </block>
-    <view class="tt-empty" wx:else>暂无历史数据</view>
-  </view>
 
-  <view class="tt-footer">饮水目标按体重与今日步数由系统自动计算</view>
+      <view class="water-custom">
+        <text class="water-custom-label">自定义</text>
+        <view class="water-custom-input-wrap">
+          <input class="water-custom-input num-font" type="number" value="{{customAmount}}" bindinput="onCustomInput" />
+          <text class="water-custom-unit">ml</text>
+        </view>
+        <view class="water-custom-btn" bind:tap="addCustom">
+          <t-icon name="check" size="28rpx" color="#ffffff" />
+        </view>
+      </view>
+    </view>
+
+    <!-- 今日记录：紧凑标签流（时间 + 毫升），不再一行一笔占高度 -->
+    <view class="tt-section">今日记录<text class="tt-section-extra">{{logs.length}} 笔</text></view>
+    <view class="tt-card wt-logs">
+      <view class="wt-chips" wx:if="{{logs.length}}">
+        <view class="wt-chip" wx:for="{{logs}}" wx:key="time">
+          <text class="wt-chip-time num-font">{{item.timeText}}</text>
+          <text class="wt-chip-amount num-font">+{{item.amount}}</text>
+        </view>
+      </view>
+      <view class="tt-empty" wx:else>今天还没喝水，快记一笔吧</view>
+    </view>
+
+    <!-- 历史记录：与首页「本周」同款圆环 -->
+    <view class="tt-section">历史记录<text class="tt-section-extra">近 {{history.length}} 天达标 {{historyOk}} 天</text></view>
+    <view class="tt-card wt-days">
+      <block wx:if="{{history.length}}">
+        <view class="wt-day" wx:for="{{history}}" wx:key="date">
+          <view
+            class="wt-ring {{item.achieved ? 'achieved' : ''}} {{item.isToday ? 'today' : ''}}"
+            style="{{item.ringStyle}}"
+          >
+            <view class="wt-ring-inner">
+              <text class="wt-ring-num num-font">{{item.percent}}</text>
+            </view>
+          </view>
+          <text class="wt-day-label {{item.isToday ? 'today' : ''}}">{{item.label}}</text>
+          <text class="wt-day-value num-font">{{item.totalText}}</text>
+        </view>
+      </block>
+      <view class="tt-empty" wx:else>暂无历史数据</view>
+    </view>
+
+    <!-- 目标构成（次要信息，放最后） -->
+    <view class="tt-card water-formula" wx:if="{{today.targetInfo}}">
+      <view class="water-formula-row">
+        <t-icon name="chart-bubble" size="28rpx" color="var(--tt-brand)" />
+        <text class="water-formula-text">{{today.targetInfo.formula}}</text>
+      </view>
+      <view class="water-formula-detail">
+        <text>基础 {{today.targetInfo.base}} ml</text>
+        <text>运动补充 +{{today.targetInfo.stepBonus}} ml</text>
+        <text wx:if="{{today.targetInfo.hasBodyData}}">BMI 系数 ×{{today.targetInfo.bmiFactor}}</text>
+      </view>
+    </view>
+
+    <view class="tt-footer">饮水目标按体重与今日步数由系统自动计算</view>
+  </view>
 </view>

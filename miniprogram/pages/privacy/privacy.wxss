@@ -1,0 +1,46 @@
+.privacy-page {
+  padding-bottom: 48rpx;
+}
+
+.pv-row {
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+  padding: 26rpx 0;
+  border-bottom: 1rpx solid var(--tt-line, rgba(0, 0, 0, 0.06));
+}
+
+.pv-row:last-child {
+  border-bottom: none;
+}
+
+.pv-label {
+  font-size: 28rpx;
+  font-weight: 500;
+}
+
+.pv-desc {
+  font-size: 22rpx;
+  color: var(--td-text-color-secondary);
+  margin-top: 6rpx;
+  line-height: 34rpx;
+}
+
+.pv-note-card {
+  margin: 24rpx;
+  padding: 24rpx 28rpx;
+  border-radius: 20rpx;
+  background: var(--td-bg-color-secondarycontainer, #f3f3f3);
+}
+
+.pv-note-title {
+  font-size: 26rpx;
+  font-weight: 600;
+  margin-bottom: 12rpx;
+}
+
+.pv-note-line {
+  font-size: 24rpx;
+  color: var(--td-text-color-secondary);
+  line-height: 40rpx;
+}

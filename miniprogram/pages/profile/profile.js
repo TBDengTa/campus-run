@@ -166,6 +166,10 @@ Page({
     wx.navigateTo({ url: '/pages/about/about' });
   },
 
+  goPrivacy() {
+    wx.navigateTo({ url: '/pages/privacy/privacy' });
+  },
+
   // 退出登录：清除本机会话 → 回登录页（已绑定微信的账号重新进入会自动登录）
   logout() {
     wx.showModal({

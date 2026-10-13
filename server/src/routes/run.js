@@ -13,13 +13,13 @@ const { todayKey, monthRange, isValidDateKey, addDays } = require('../utils/date
 const router = express.Router();
 router.use(auth);
 
-// 今日概览：步数记录 + 生效目标 + 进度
+// 今日概览：当日聚合（微信运动可能被拆成多条记录）+ 生效目标 + 进度
 router.get(
   '/today',
   wrap(async (req, res) => {
     const date = todayKey();
-    const [record, goal] = await Promise.all([
-      RunRecord.findOne({ openid: req.user.openid, date, source: 'werun' }).lean(),
+    const [records, goal] = await Promise.all([
+      RunRecord.find({ openid: req.user.openid, date }).select('-routePoints -__v').lean(),
       goalsSvc.getEffectiveGoal(req.user.openid),
     ]);
     // 分时段应完成百分比
@@ -30,10 +30,32 @@ router.get(
       const [h, m] = (seg.time || '00:00').split(':').map(Number);
       if (nowMinutes >= h * 60 + m) expectedPercent = seg.percent;
     }
-    const gpsCount = await RunRecord.countDocuments({ openid: req.user.openid, date, source: 'gps' });
+    const totals = records.reduce(
+      (acc, r) => {
+        acc.steps += r.steps || 0;
+        acc.distance += r.distance || 0;
+        acc.calories += r.calories || 0;
+        acc.durationSeconds += r.durationSeconds || 0;
+        return acc;
+      },
+      { steps: 0, distance: 0, calories: 0, durationSeconds: 0 }
+    );
+    const gpsCount = records.filter((r) => r.source === 'gps').length;
+    const syncCount = records.filter((r) => r.source === 'werun').length;
+    const record = records.length
+      ? {
+          date,
+          ...totals,
+          goalAchieved: totals.steps >= (goal.daily.steps || Infinity),
+          recordCount: records.length,
+          syncCount,
+          gpsRunCount: gpsCount,
+          sources: [...new Set(records.map((r) => r.source))],
+        }
+      : null;
     ok(res, {
       date,
-      record: record || null,
+      record,
       goal,
       expectedPercent,
       gpsRunCount: gpsCount,
@@ -98,7 +120,7 @@ router.post(
     const list = (data.stepInfoList || []).filter((d) => d && typeof d.step === 'number');
     if (!list.length) return ok(res, { synced: 0, newBadges: [] });
 
-    // 最近 30 天逐日 upsert；仅同步最近 7 天防止历史数据被覆盖，当日之外只增不减
+    // 最近 30 天逐日同步，只取最近 7 天；服务层按「1 小时窗口」决定合并还是新建下一条记录
     const syncedDates = [];
     let banned = null;
     for (const item of list) {
@@ -106,18 +128,13 @@ router.post(
       if (!dateKey) continue;
       const daysAgo = Math.round((Date.now() - item.timestamp * 1000) / 86400000);
       if (daysAgo > 7) continue;
-      const prev = await RunRecord.findOne({ openid: req.user.openid, date: dateKey, source: 'werun' }).lean();
-      const prevSteps = prev?.steps || 0;
-      let steps = item.step;
-      // 非当日：只增不减（保留激励视频等奖励步数）
-      if (dateKey !== todayKey() && steps < prevSteps) steps = prevSteps;
-      const result = await stepsSvc.syncWerunDay(req.user, dateKey, steps, { checkJump: dateKey === todayKey() });
+      const result = await stepsSvc.syncWerunDay(req.user, dateKey, item.step, { checkJump: dateKey === todayKey() });
       if (result.blocked) throw new ApiError(403, 403003, result.reason);
       if (result.banned) {
         banned = result.reason;
         break;
       }
-      syncedDates.push(dateKey);
+      if (!result.skipped) syncedDates.push(dateKey);
     }
     if (banned) {
       throw new ApiError(403, 403001, `检测到数据异常，账号已被封禁：${banned}`, { banned: true });
@@ -273,13 +290,13 @@ router.get(
       },
       { steps: 0, distance: 0, calories: 0, durationSeconds: 0 }
     );
-    const werun = records.find((r) => r.source === 'werun');
     ok(res, {
       date,
       records,
       totals,
       goal,
-      goalAchieved: (werun && werun.goalAchieved) || totals.steps >= (goal.daily.steps || Infinity),
+      // 达成按当日总量判定（微信同步可能拆成多条记录）
+      goalAchieved: totals.steps >= (goal.daily.steps || Infinity),
       holiday: holiday || null,
     });
   })

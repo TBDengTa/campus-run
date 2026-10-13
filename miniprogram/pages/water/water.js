@@ -7,14 +7,55 @@ const QUICK_AMOUNTS = [
   { amount: 500, label: '一瓶', tIcon: 'liquor', amountText: fmt.formatNumber(500) },
 ];
 
+const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+
+// 历史记录圆环（与首页「本周 7 天」同款）：外圈 conic-gradient 表示当日完成度
+function ringStyleOf(percent, achieved) {
+  const pct = Math.max(0, Math.min(100, percent || 0));
+  const fill = achieved ? 'var(--tt-brand)' : 'var(--wt-water-deep)';
+  return `background: conic-gradient(${fill} 0 ${pct}%, var(--wt-track) ${pct}% 100%);`;
+}
+
+// 历史记录装饰：圆环样式 + 日期短标签 + 达标标记
+function decorateHistory(list) {
+  const today = fmt.todayKey();
+  const todayMonth = Number(String(today).slice(5, 7));
+  return (list || []).map((d) => {
+    const parts = String(d.date || '').split('-').map(Number);
+    const [y, m, day] = parts;
+    const valid = parts.length === 3 && parts.every((n) => Number.isFinite(n));
+    const weekday = valid ? WEEKDAYS[new Date(y, m - 1, day).getDay()] : '';
+    const isToday = d.date === today;
+    const percent =
+      typeof d.percent === 'number' ? d.percent : Math.min(100, Math.round(((d.total || 0) / (d.target || 1)) * 100));
+    const achieved = percent >= 100;
+    const dayText = isToday ? '今天' : m === todayMonth ? `${day}日` : `${m}月${day}日`;
+    return {
+      ...d,
+      percent,
+      achieved,
+      isToday,
+      dayText,
+      weekday,
+      // 圆环下只放短标签：今天 / 12日（跨月显示 9月30日）
+      label: dayText,
+      ringStyle: ringStyleOf(percent, achieved),
+      totalText: fmt.formatNumber(d.total),
+      targetText: fmt.formatNumber(d.target),
+    };
+  });
+}
+
 Page({
   data: {
     today: null,
     percent: 0,
+    waterPercent: 0, // 杯内水位高度（含视觉最小值，仅用于显示）
     quickAmounts: QUICK_AMOUNTS,
     customAmount: 200,
     logs: [],
     history: [],
+    historyOk: 0, // 近 N 天达标天数
   },
 
   onShow() {
@@ -31,13 +72,10 @@ Page({
         auth.get('/api/water/history', { limit: 14 }).catch(() => ({ list: [] })),
       ]);
       this.apply(today);
+      const historyList = decorateHistory(history.list);
       this.setData({
-        history: (history.list || []).map((d) => ({
-          ...d,
-          dateText: `${Number(d.date.slice(5, 7))}月${Number(d.date.slice(8, 10))}日`,
-          totalText: fmt.formatNumber(d.total),
-          targetText: fmt.formatNumber(d.target),
-        })),
+        history: historyList,
+        historyOk: historyList.filter((d) => d.achieved).length,
       });
     } catch (e) {
       wx.showToast({ title: e.message, icon: 'none' });
@@ -51,6 +89,8 @@ Page({
       return;
     }
     const percent = Math.min(100, Math.round((today.total / (today.target || 1)) * 100));
+    // 视觉最小水位：杯内已有水时至少显示 16% 高度，否则水位太低会被水面波浪"咬"掉看不到
+    const waterPercent = today.total > 0 ? Math.max(percent, 16) : 0;
     const logs = [...today.logs].reverse().map((l) => ({
       ...l,
       timeText: new Date(l.time).toTimeString().slice(0, 5),
@@ -63,6 +103,7 @@ Page({
         remainingText: fmt.formatNumber(Math.max(0, (today.target || 0) - (today.total || 0))),
       },
       percent,
+      waterPercent,
       logs,
     });
   },

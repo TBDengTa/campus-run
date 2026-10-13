@@ -9,11 +9,14 @@ const routePointSchema = new mongoose.Schema(
   { _id: false }
 );
 
-// 跑步/步数日记录：werun 来源为当日微信运动汇总，gps 来源为单次实跑
+// 跑步/步数记录：三种来源各自独立成条
+//   werun  微信运动同步（1 小时内的多次同步合并为一条，超过 1 小时新建当日下一条，记增量）
+//   gps    GPS 实跑（单次一条，一天可多条）
+//   beidou 北斗：激励视频奖励的步数（当日一条累加）
 const runRecordSchema = new mongoose.Schema(
   {
     openid: { type: String, required: true, index: true },
-    source: { type: String, enum: ['werun', 'gps'], required: true },
+    source: { type: String, enum: ['werun', 'gps', 'beidou'], required: true },
     date: { type: String, required: true }, // YYYY-MM-DD
     steps: { type: Number, default: 0 },
     distance: { type: Number, default: 0 }, // 米

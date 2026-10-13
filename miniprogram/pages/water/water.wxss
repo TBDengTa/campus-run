@@ -1,99 +1,298 @@
-/* ===== 喝水打卡 · 白橙 ===== */
-
-/* 主视觉（白底卡 + 橙色水杯进度） */
-.water-hero {
-  margin: 0 var(--tt-gap) var(--tt-gap);
-  padding: 34rpx 36rpx 32rpx;
-  border-radius: 36rpx;
-  background: var(--tt-card);
-  box-shadow: var(--tt-card-shadow);
+/* ============================================================
+   喝水打卡 · 白橙 + 水蓝
+   全部色值集中在本页变量里定义，规则内只引用变量（不散落硬编码）
+   ============================================================ */
+page {
+  /* 水色 */
+  --wt-water: #7cc4ff; /* 水体主色 */
+  --wt-water-deep: #2f7cf6; /* 水体深色 / 强调 */
+  --wt-water-light: #cfe9ff; /* 水体浅色（水面高光） */
+  --wt-water-grad: linear-gradient(180deg, #cfe9ff 0%, #7cc4ff 42%, #2f7cf6 100%);
+  /* 玻璃杯 */
+  --wt-glass-inner: #f5faff; /* 杯内底色（波浪用它"咬"出水面，必须与杯子内部同色） */
+  --wt-glass-border: rgba(47, 124, 246, 0.18);
+  --wt-glass-shadow: rgba(47, 124, 246, 0.14);
+  --wt-glass-inner-shadow: rgba(47, 124, 246, 0.08);
+  --wt-scale: rgba(47, 124, 246, 0.18);
+  --wt-gloss: rgba(255, 255, 255, 0.92);
+  --wt-gloss-end: rgba(255, 255, 255, 0.22);
+  --wt-rim: rgba(255, 255, 255, 0.98);
+  /* 品牌色（橙）在本页的统一引用 */
+  --wt-brand-grad: linear-gradient(135deg, #ff9a3d, #ff6b00);
+  --wt-his-grad: linear-gradient(90deg, #ffb273, #ff6b00);
+  --wt-log-dot-grad: linear-gradient(135deg, #cfe9ff, #2f7cf6);
+  --wt-on-brand: #ffffff; /* 品牌底上的文字 */
+  --wt-shadow-brand: rgba(255, 107, 0, 0.24);
+  --wt-shadow-brand-btn: rgba(255, 107, 0, 0.26);
+  --wt-shadow-brand-badge: rgba(255, 107, 0, 0.3);
+  /* 达标描边 */
+  --wt-done-border: rgba(255, 107, 0, 0.42);
+  --wt-done-shadow: rgba(255, 107, 0, 0.22);
+  --wt-done-inner-shadow: rgba(255, 107, 0, 0.08);
+  --wt-track: rgba(47, 124, 246, 0.16); /* 历史圆环的底环 */
 }
 
-.water-hero-head {
+/* ===== 首屏舞台：水瓶居中占满一屏，其余信息下滑可见 ===== */
+.water-page {
+  padding: 0 0 28rpx; /* 覆盖 .tt-page 的左右内边距，让首屏可以整屏铺开 */
+}
+
+.wt-stage {
+  box-sizing: border-box;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  padding: 26rpx var(--tt-gap) 18rpx;
+  background: radial-gradient(120% 62% at 50% 0%, #e9f4ff 0%, rgba(233, 244, 255, 0) 68%);
+}
+
+.wt-stage-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
-.water-hero-title {
+.wt-stage-title {
   display: flex;
   align-items: center;
   gap: 10rpx;
-  font-size: 29rpx;
+  font-size: 30rpx;
   font-weight: 600;
   color: var(--tt-text-1);
 }
 
-.water-hero-target {
-  padding: 6rpx 20rpx;
-  border-radius: 999rpx;
-  font-size: 22rpx;
-  color: var(--tt-brand);
-  background: var(--tt-brand-soft);
-}
-
-.water-hero-num {
+/* 杯子在剩余空间里水平垂直居中 */
+.wt-stage-center {
+  flex: 1;
   display: flex;
-  align-items: flex-end;
-  gap: 10rpx;
-  margin: 24rpx 0 24rpx;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
 }
 
-.water-hero-value {
-  font-size: 84rpx;
+.wt-cup-stat {
+  display: flex;
+  align-items: baseline;
+  gap: 8rpx;
+  margin-top: 34rpx;
+}
+
+.wt-cup-value {
+  font-size: 66rpx;
   font-weight: 700;
   line-height: 1;
-  letter-spacing: 2rpx;
+  letter-spacing: 1rpx;
   color: var(--tt-text-1);
 }
 
-.water-hero-unit {
-  padding-bottom: 10rpx;
-  font-size: 26rpx;
-  color: var(--tt-text-3);
-}
-
-/* 水杯进度槽 */
-.water-cup {
-  position: relative;
-  height: 34rpx;
-  border-radius: 999rpx;
-  background: var(--tt-line);
-  overflow: hidden;
-}
-
-.water-cup-fill {
-  height: 100%;
-  border-radius: 999rpx;
-  background: linear-gradient(90deg, #ffb273 0%, #ff9a3d 40%, var(--tt-brand) 100%);
-  box-shadow: 0 4rpx 14rpx rgba(255, 107, 0, 0.3);
-  transition: width 0.35s ease;
-}
-
-.water-hero-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 20rpx;
+.wt-cup-unit {
   font-size: 24rpx;
   color: var(--tt-text-3);
 }
 
-.water-hero-percent {
-  font-size: 30rpx;
-  font-weight: 700;
+.wt-cup-state {
+  margin-top: 12rpx;
+  font-size: 23rpx;
+  color: var(--tt-text-3);
+}
+
+.wt-cup-state.done {
+  font-weight: 600;
   color: var(--tt-brand);
 }
 
-.water-hero-state.done {
-  font-weight: 600;
-  color: var(--td-success-color-5);
+.wt-stage-foot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
+  font-size: 21rpx;
+  color: var(--tt-text-3);
 }
 
-/* 快捷记录 */
+.wt-sheet {
+  padding-top: 4rpx;
+}
+
+.wt-target-chip {
+  padding: 6rpx 20rpx;
+  border-radius: 999rpx;
+  font-size: 22rpx;
+  color: var(--wt-water-deep);
+  background: var(--tt-brand-soft);
+}
+
+/* ===== 玻璃杯 ===== */
+.wt-glass-wrap {
+  position: relative;
+  flex-shrink: 0;
+  padding-bottom: 10rpx;
+}
+
+/* 杯子整体放大一点，作为首屏主角 */
+.wt-glass {
+  position: relative;
+  width: 224rpx;
+  height: 336rpx;
+  box-sizing: border-box;
+  overflow: hidden;
+  border: 4rpx solid var(--wt-glass-border);
+  /* 杯口略收（上圆角小、下圆角大），杯底加厚 */
+  border-radius: 18rpx 18rpx 52rpx 52rpx;
+  background: var(--wt-glass-inner);
+  box-shadow: inset 0 -14rpx 26rpx var(--wt-glass-inner-shadow), 0 12rpx 28rpx var(--wt-glass-shadow);
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* 达标：杯子镶一圈品牌橙 */
+.wt-glass.done {
+  border-color: var(--wt-done-border);
+  box-shadow: inset 0 -14rpx 26rpx var(--wt-done-inner-shadow), 0 12rpx 30rpx var(--wt-done-shadow);
+}
+
+/* 水体：高度 = 完成度，水位变化带过渡 */
+.wt-water {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 0;
+  overflow: hidden;
+  background: var(--wt-water-grad);
+  transition: height 0.5s ease;
+}
+
+/* 水面 = 一个旋转的大圆，用「杯内底色」把水体上沿咬成弧线（纯 WXSS，无 canvas）
+   圆半径 350rpx、圆心在水面之上约 324rpx → 只吃掉水面附近约 26rpx，弧线随旋转起伏 */
+.wt-wave {
+  position: absolute;
+  left: 50%;
+  top: -674rpx;
+  width: 700rpx;
+  height: 700rpx;
+  margin-left: -350rpx;
+  border-radius: 44%;
+  background: var(--wt-glass-inner);
+  animation: wt-wave-spin 9s linear infinite;
+}
+
+/* 水面下方的亮弧（圆环）：画在挖形之前，只露出水面下一条高光，形成波光 */
+.wt-wave-glow {
+  position: absolute;
+  left: 50%;
+  top: -656rpx;
+  width: 700rpx;
+  height: 700rpx;
+  margin-left: -350rpx;
+  box-sizing: border-box;
+  border-radius: 46%;
+  border: 12rpx solid rgba(255, 255, 255, 0.3);
+  background: transparent;
+  animation: wt-wave-spin 13s linear infinite reverse;
+}
+
+@keyframes wt-wave-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 杯内刻度（25 / 50 / 75%） */
+.wt-scale {
+  position: absolute;
+  right: 0;
+  width: 26rpx;
+  height: 2rpx;
+  background: var(--wt-scale);
+}
+
+.wt-scale-1 {
+  bottom: 25%;
+}
+
+.wt-scale-2 {
+  bottom: 50%;
+}
+
+.wt-scale-3 {
+  bottom: 75%;
+}
+
+/* 杯身竖向反光 */
+.wt-gloss {
+  position: absolute;
+  left: 24rpx;
+  top: 26rpx;
+  width: 20rpx;
+  height: 60%;
+  border-radius: 999rpx;
+  background: linear-gradient(180deg, var(--wt-gloss), var(--wt-gloss-end));
+  pointer-events: none;
+}
+
+/* 杯沿（画在水之后，水位再高也不会盖住） */
+.wt-rim {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 12rpx;
+  background: linear-gradient(90deg, var(--wt-rim), var(--wt-water-light));
+  pointer-events: none;
+}
+
+/* 达标徽标 */
+.wt-glass-badge {
+  position: absolute;
+  right: -10rpx;
+  top: -14rpx;
+  padding: 4rpx 16rpx;
+  border-radius: 999rpx;
+  font-size: 20rpx;
+  font-weight: 600;
+  color: var(--wt-on-brand);
+  background: var(--wt-brand-grad);
+  box-shadow: 0 6rpx 16rpx var(--wt-shadow-brand-badge);
+}
+
+/* ===== 目标构成说明（次要信息，页尾） ===== */
+.water-formula {
+  padding: 18rpx 24rpx;
+}
+
+.water-formula-row {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  margin-bottom: 8rpx;
+}
+
+.water-formula-text {
+  flex: 1;
+  font-size: 23rpx;
+  color: var(--tt-text-2);
+}
+
+.water-formula-detail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20rpx;
+  font-size: 21rpx;
+  color: var(--tt-text-3);
+}
+
+/* ===== 快捷记录（紧凑） ===== */
+.wt-add {
+  padding: 18rpx 22rpx 20rpx;
+}
+
 .water-quick-row {
   display: flex;
-  gap: 18rpx;
+  gap: 14rpx;
 }
 
 .water-quick-item {
@@ -101,7 +300,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 26rpx 10rpx 22rpx;
+  padding: 16rpx 8rpx 14rpx;
   border-radius: var(--tt-radius-sm);
   background: var(--tt-brand-soft);
   transition: transform 0.15s ease;
@@ -112,38 +311,39 @@
 }
 
 .water-quick-icon {
-  width: 76rpx;
-  height: 76rpx;
+  width: 56rpx;
+  height: 56rpx;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #ff9a3d, var(--tt-brand));
-  box-shadow: 0 8rpx 18rpx rgba(255, 107, 0, 0.24);
+  background: var(--wt-brand-grad);
+  box-shadow: 0 6rpx 14rpx var(--wt-shadow-brand);
 }
 
 .water-quick-amount {
-  margin-top: 14rpx;
-  font-size: 32rpx;
+  margin-top: 8rpx;
+  font-size: 28rpx;
   font-weight: 700;
   color: var(--tt-brand-deep);
 }
 
 .water-quick-label {
-  margin-top: 4rpx;
-  font-size: 22rpx;
+  margin-top: 2rpx;
+  font-size: 20rpx;
   color: var(--tt-text-3);
 }
 
-/* 自定义输入 */
+/* ===== 自定义输入（紧凑一行） ===== */
 .water-custom {
   display: flex;
   align-items: center;
-  gap: 16rpx;
+  gap: 14rpx;
+  margin-top: 16rpx;
 }
 
 .water-custom-label {
-  font-size: 28rpx;
+  font-size: 24rpx;
   color: var(--tt-text-2);
 }
 
@@ -152,22 +352,22 @@
   display: flex;
   align-items: center;
   gap: 8rpx;
-  height: 80rpx;
-  padding: 0 22rpx;
+  height: 68rpx;
+  padding: 0 20rpx;
   border-radius: var(--tt-radius-sm);
   background: var(--td-bg-color-component);
 }
 
 .water-custom-input {
   flex: 1;
-  height: 80rpx;
-  font-size: 32rpx;
+  height: 68rpx;
+  font-size: 28rpx;
   font-weight: 600;
   color: var(--tt-text-1);
 }
 
 .water-custom-unit {
-  font-size: 24rpx;
+  font-size: 22rpx;
   color: var(--tt-text-3);
 }
 
@@ -176,129 +376,135 @@
   align-items: center;
   justify-content: center;
   gap: 6rpx;
-  height: 80rpx;
-  padding: 0 32rpx;
+  height: 68rpx;
+  padding: 0 28rpx;
   border-radius: 999rpx;
-  font-size: 28rpx;
+  font-size: 26rpx;
   font-weight: 600;
-  color: #fff;
-  background: linear-gradient(135deg, #ff9a3d, var(--tt-brand));
-  box-shadow: 0 10rpx 22rpx rgba(255, 107, 0, 0.26);
+  color: var(--wt-on-brand);
+  background: var(--wt-brand-grad);
+  box-shadow: 0 8rpx 18rpx var(--wt-shadow-brand-btn);
 }
 
 .water-custom-btn:active {
   opacity: 0.86;
 }
 
-/* 今日记录 */
-.water-log {
+/* ===== 今日记录：紧凑标签流（时间 + 毫升） ===== */
+.wt-logs {
+  padding: 18rpx 22rpx;
+}
+
+.wt-chips {
   display: flex;
-  align-items: center;
-  gap: 16rpx;
-  padding: 24rpx 0;
-  border-bottom: 2rpx solid var(--tt-line);
+  flex-wrap: wrap;
+  gap: 12rpx;
 }
 
-.water-log-type {
-  flex: 1;
-  font-size: 27rpx;
-  color: var(--tt-text-1);
-}
-
-.water-log-dot {
-  width: 14rpx;
-  height: 14rpx;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #ffb273, var(--tt-brand));
-}
-
-.water-log-time {
-  width: 110rpx;
-  font-size: 26rpx;
-  color: var(--tt-text-2);
-}
-
-.water-log-amount {
-  font-size: 28rpx;
-  font-weight: 600;
-  color: var(--tt-brand);
-}
-
-.water-log:last-child {
-  border-bottom: none;
-}
-
-/* 调整目标 */
-.water-target-btn {
-  margin: 0 var(--tt-gap);
-}
-
-/* ===== 目标构成说明 ===== */
-.water-formula {
-  padding: 22rpx 28rpx;
-}
-
-.water-formula-row {
+.wt-chip {
   display: flex;
-  align-items: center;
-  gap: 10rpx;
-  margin-bottom: 10rpx;
+  align-items: baseline;
+  gap: 8rpx;
+  padding: 8rpx 18rpx;
+  border-radius: 999rpx;
+  background: var(--td-bg-color-component);
 }
 
-.water-formula-text {
-  font-size: 24rpx;
-  color: var(--td-text-color-secondary);
-  flex: 1;
-}
-
-.water-formula-detail {
-  display: flex;
-  gap: 24rpx;
-  font-size: 22rpx;
+.wt-chip-time {
+  font-size: 21rpx;
   color: var(--tt-text-3);
 }
 
-/* ===== 历史记录 ===== */
-.water-his-row {
+.wt-chip-amount {
+  font-size: 23rpx;
+  font-weight: 600;
+  color: var(--wt-water-deep);
+}
+
+/* ===== 历史记录：与首页「本周」同款圆环（7 个一行，14 天两行） ===== */
+.wt-days {
+  display: flex;
+  flex-wrap: wrap;
+  padding: 22rpx 16rpx 6rpx;
+}
+
+.wt-day {
+  width: 14.28%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6rpx;
+  margin-bottom: 18rpx;
+  min-width: 0;
+}
+
+.wt-ring {
+  width: 66rpx;
+  height: 66rpx;
+  border-radius: 50%;
   display: flex;
   align-items: center;
-  gap: 16rpx;
-  padding: 16rpx 0;
-  border-bottom: 1rpx solid var(--tt-line, rgba(0, 0, 0, 0.06));
+  justify-content: center;
+  box-sizing: border-box;
+  background: var(--wt-track);
 }
 
-.water-his-row:last-child {
-  border-bottom: none;
+.wt-ring.achieved {
+  box-shadow: 0 4rpx 12rpx var(--wt-glass-shadow);
 }
 
-.water-his-date {
-  width: 110rpx;
-  font-size: 24rpx;
-  color: var(--td-text-color-secondary);
+/* 今天用 box-shadow 画外环（outline 在微信 WebView 里会被画成方框，别用） */
+.wt-ring.today {
+  box-shadow: 0 0 0 4rpx rgba(47, 124, 246, 0.26);
 }
 
-.water-his-bar-wrap {
-  flex: 1;
-  height: 14rpx;
-  border-radius: 999px;
-  background: var(--tt-line, rgba(0, 0, 0, 0.05));
+.wt-ring-inner {
+  width: 48rpx;
+  height: 48rpx;
+  border-radius: 50%;
+  background: var(--tt-card);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.wt-ring.achieved .wt-ring-inner {
+  background: var(--wt-brand-grad);
+}
+
+.wt-ring-num {
+  font-size: 20rpx;
+  font-weight: 600;
+  color: var(--wt-water-deep);
+}
+
+.wt-ring.achieved .wt-ring-num {
+  color: var(--wt-on-brand);
+}
+
+.wt-day-label {
+  font-size: 19rpx;
+  color: var(--tt-text-3);
+  max-width: 100%;
   overflow: hidden;
-}
-
-.water-his-bar {
-  height: 100%;
-  border-radius: 999px;
-  background: var(--tt-brand, #ff6b00);
-  opacity: 0.75;
-}
-
-.water-his-bar.ok {
-  background: #16a34a;
-  opacity: 1;
-}
-
-.water-his-num {
-  font-size: 22rpx;
-  color: var(--td-text-color-secondary);
   white-space: nowrap;
+  text-overflow: ellipsis;
 }
+
+.wt-day-label.today {
+  font-weight: 600;
+  color: var(--wt-water-deep);
+}
+
+.wt-day-value {
+  font-size: 18rpx;
+  color: var(--tt-text-2);
+}
+
+/* 空状态在换行容器里要占满整行 */
+.wt-days .tt-empty,
+.wt-logs .tt-empty {
+  width: 100%;
+}
+
+

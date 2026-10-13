@@ -1,107 +1,118 @@
 <view class="page tt-page tt-page-tab ranking-page">
-  <!-- ===== 榜单切换 ===== -->
+  <!-- ===== 榜单类型（步数/达标/饮水/成就） ===== -->
+  <view class="metric-grid">
+    <view
+      wx:for="{{metrics}}"
+      wx:key="key"
+      class="metric-chip {{metric === item.key ? 'active' : ''}}"
+      bind:tap="pickMetric"
+      data-key="{{item.key}}"
+    >
+      <t-icon name="{{item.icon}}" size="32rpx" />
+      <text>{{item.label}}</text>
+    </view>
+  </view>
+
+  <!-- ===== 时间范围（今日/本周/总榜） ===== -->
   <view class="seg-wrap">
     <view class="tt-segment">
       <view
-        class="tt-segment-item {{range === item.key ? 'active' : ''}}"
         wx:for="{{ranges}}"
         wx:key="key"
-        bind:tap="switchRange"
-        data-range="{{item.key}}"
+        class="tt-segment-item {{range === item.key ? 'active' : ''}}"
+        bind:tap="pickRange"
+        data-key="{{item.key}}"
       >
         {{item.label}}
       </view>
     </view>
   </view>
 
-  <!-- ===== 教师提示 ===== -->
-  <view class="exclude-tip" wx:if="{{excluded}}">
-    <t-icon name="info-circle" size="34rpx" color="var(--tt-brand)" />
-    <text>{{excludedReason}}，以下榜单仅供查看</text>
-  </view>
-
-  <!-- ===== 我的排名（学生） ===== -->
-  <view class="me-card" wx:if="{{!excluded}}">
-    <view class="me-inner">
-      <view class="me-left">
-        <image wx:if="{{me.avatarUrl}}" class="me-avatar" src="{{me.avatarUrl}}" mode="aspectFill" />
-        <view wx:else class="me-avatar me-avatar-ph">
-          <t-icon name="user-circle" size="48rpx" color="#ffffff" />
-        </view>
-        <view class="me-info">
-          <view class="me-name">{{me.nickname}}</view>
-          <view class="me-sub">{{rangeText}} · {{scopeText}} · {{participants}} 人参与</view>
-        </view>
-      </view>
-      <view class="me-right">
-        <view class="me-rank">{{me.rank ? '第 ' + me.rank + ' 名' : '未上榜'}}</view>
-        <view class="me-steps">
-          <text class="num-font">{{me.stepsText}}</text>
-          <text class="me-unit">步</text>
-        </view>
-      </view>
-    </view>
-  </view>
-
-  <!-- ===== 范围筛选 ===== -->
+  <!-- ===== 范围（班级/系部/院系/全校） ===== -->
   <view class="scope-row">
     <view
-      class="tt-chip {{scope === item.key ? 'active' : ''}} {{item.available ? '' : 'disabled'}}"
-      wx:for="{{scopes}}"
+      wx:for="{{rank.scopes}}"
       wx:key="key"
-      bind:tap="switchScope"
+      class="scope-chip {{scope === item.key ? 'active' : ''}} {{!item.available ? 'disabled' : ''}}"
+      bind:tap="pickScope"
       data-key="{{item.key}}"
-      data-available="{{item.available ? 1 : 0}}"
+      data-available="{{item.available}}"
     >
       {{item.label}}
     </view>
-  </view>
-
-  <!-- ===== 领奖台 ===== -->
-  <view class="podium" wx:if="{{top3.length}}">
-    <view
-      class="podium-item rank-{{item.rank}}"
-      wx:for="{{top3}}"
-      wx:key="userId"
-    >
-      <view class="crown" wx:if="{{item.rank === 1}}">
-        <t-icon name="star-filled" size="30rpx" color="#ffb020" />
-      </view>
-      <image wx:if="{{item.avatarUrl}}" class="podium-avatar" src="{{item.avatarUrl}}" mode="aspectFill" />
-      <view wx:else class="podium-avatar podium-avatar-ph">
-        <t-icon name="user-circle" size="56rpx" color="var(--tt-text-3)" />
-      </view>
-      <view class="podium-name">{{item.nickname}}</view>
-      <view class="podium-steps num-font">{{item.stepsText}}</view>
-      <view class="podium-base">
-        <text class="podium-no num-font">{{item.rank}}</text>
-      </view>
+    <view class="gp-privacy-entry" bind:tap="goPrivacy">
+      <t-icon name="setting" size="32rpx" color="var(--tt-text-2)" />
     </view>
   </view>
+
+  <!-- ===== 说明条 ===== -->
+  <view class="rank-note" wx:if="{{rank}}">
+    <text>{{rank.scopeText}} · {{rank.rangeText}}{{rank.metricText}}榜 · 共 {{rank.participants}} 人</text>
+    <text class="rank-note-link" bind:tap="goPrivacy">隐私设置</text>
+  </view>
+
+  <!-- 教师提示 -->
+  <view class="rank-excluded" wx:if="{{rank.excluded}}">{{rank.excludedReason}}</view>
 
   <!-- ===== 榜单列表 ===== -->
-  <view class="tt-card list-card" wx:if="{{rest.length}}">
-    <view class="rank-row {{item.isMe ? 'is-me' : ''}}" wx:for="{{rest}}" wx:key="userId">
-      <text class="rank-no num-font">{{item.rank}}</text>
-      <image wx:if="{{item.avatarUrl}}" class="rank-avatar" src="{{item.avatarUrl}}" mode="aspectFill" />
-      <view wx:else class="rank-avatar rank-avatar-ph">
-        <t-icon name="user-circle" size="40rpx" color="var(--tt-text-3)" />
+  <view class="tt-card rank-card" wx:if="{{rank && rank.list.length}}">
+    <view class="rank-head">
+      <text class="rh-rank">名次</text>
+      <text class="rh-user">同学</text>
+      <text class="rh-plan">目标计划</text>
+      <text class="rh-steps">步数</text>
+      <text class="rh-km">公里</text>
+    </view>
+    <view
+      class="rank-row {{item.isMe ? 'me' : ''}}"
+      wx:for="{{rank.list}}"
+      wx:key="openid"
+    >
+      <view class="rank-no {{item.rank <= 3 ? 'top' : ''}}">
+        <text wx:if="{{item.medal}}" class="medal">{{item.medal}}</text>
+        <text wx:else class="num-font">{{item.rank}}</text>
       </view>
-      <view class="rank-name">{{item.nickname}}<text class="rank-me-tag" wx:if="{{item.isMe}}">我</text></view>
-      <view class="rank-steps">
-        <text class="num-font">{{item.stepsText}}</text>
-        <text class="rank-unit">步</text>
+      <view class="rank-user">
+        <view class="rank-name">{{item.nameText}}</view>
+        <view class="rank-class text-secondary">{{item.className || '—'}}</view>
+      </view>
+      <view class="rank-plan">
+        <text wx:if="{{item.planName}}" class="plan-chip">{{item.planName}}</text>
+        <text wx:else class="plan-chip none">--</text>
+      </view>
+      <view class="rank-steps num-font">{{item.stepsText}}</view>
+      <view class="rank-km num-font">{{item.distanceKm}}</view>
+      <view class="rank-value">
+        <text class="rv-num num-font">{{item.valueText}}</text>
       </view>
     </view>
   </view>
 
-  <!-- ===== 空状态 ===== -->
-  <view class="empty-card" wx:if="{{!loading && empty}}">
-    <t-icon name="chart-bar" size="88rpx" color="var(--tt-brand-soft-2)" />
-    <view class="empty-title">{{rangeText}}暂无数据</view>
-    <view class="empty-sub">成为第一个上榜的人</view>
-    <view class="tt-pill-btn primary empty-btn" bind:tap="goRun">去跑步</view>
+  <view class="tt-card" wx:elif="{{rank && !rank.list.length && !loading}}">
+    <view class="tt-empty">{{range === 'today' ? '今日暂无数据' : '该范围暂无数据'}}</view>
   </view>
 
-  <view class="tt-footer" wx:if="{{!empty}}">榜单每日 00:00 更新 · 只展示前 50 名</view>
+  <!-- ===== 我的排名 ===== -->
+  <view class="tt-card me-card" wx:if="{{rank}}">
+    <view class="me-rank-box">
+      <text class="me-rank-label">我的排名</text>
+      <text class="num-font me-rank-num">{{rank.me.rank ? '#' + rank.me.rank : '未上榜'}}</text>
+    </view>
+    <view class="me-metrics">
+      <view class="me-metric">
+        <text class="num-font me-metric-value">{{rank.me.valueText}}</text>
+        <text class="me-metric-label">{{rank.metricText}}</text>
+      </view>
+      <view class="me-metric">
+        <text class="num-font me-metric-value">{{rank.me.stepsText}}</text>
+        <text class="me-metric-label">步数</text>
+      </view>
+      <view class="me-metric">
+        <text class="num-font me-metric-value">{{rank.me.distanceKm}}</text>
+        <view class="me-metric-label">公里</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="tt-footer">排名每小时刷新 · 可在隐私设置中退出排名</view>
 </view>

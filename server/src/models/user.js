@@ -40,6 +40,13 @@ const userSchema = new Schema(
     // 权限：permissionGroups 为权限组 key，permissions 为直接授予的独立权限
     permissionGroups: { type: [String], default: [] },
     permissions: { type: [String], default: [] },
+    // 排行榜隐私设置
+    privacy: {
+      hideClass: { type: Boolean, default: false },
+      hideName: { type: Boolean, default: false },
+      hidePlan: { type: Boolean, default: false },
+      exitRanking: { type: Boolean, default: false },
+    },
     status: { type: String, enum: ['active', 'banned'], default: 'active' },
     banReason: { type: String, default: '' },
     banType: { type: String, default: '' }, // sync 同步异常 / manual 人工

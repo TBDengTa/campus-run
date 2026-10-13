@@ -1,77 +1,102 @@
-<view class="page about-page">
-  <!-- ===== 应用标题 ===== -->
-  <view class="about-hero">
-    <view class="about-app-name">唐唐快跑</view>
-    <view class="about-version">Version {{version}}</view>
+<view class="tt-page about-page">
+  <!-- ===== 品牌头 ===== -->
+  <view class="tt-hero about-hero">
+    <view class="about-brand">
+      <view class="about-logo">
+        <text class="about-logo-glyph">唐</text>
+      </view>
+      <view class="about-brand-info">
+        <view class="about-app-name">唐唐快跑</view>
+        <view class="about-tagline">校园运动记录 · 微信运动同步 · 轨迹与目标管理</view>
+      </view>
+    </view>
+    <view class="about-meta">
+      <text class="about-version-chip num-font">Version {{version}}</text>
+      <text class="about-meta-note">面向校园师生的运动健康小程序</text>
+    </view>
   </view>
 
-  <!-- ===== 应用简介 ===== -->
-  <view class="about-card">
-    <view class="about-card-head">
-      <view class="about-bar"></view>
-      <text class="about-card-title">应用简介</text>
+  <!-- ===== 核心能力 ===== -->
+  <view class="tt-section">核心能力</view>
+  <view class="tt-card">
+    <view class="about-features">
+      <view class="about-feature" wx:for="{{features}}" wx:key="key">
+        <view class="about-feature-icon">
+          <t-icon name="{{item.icon}}" size="38rpx" color="var(--tt-brand)" />
+        </view>
+        <view class="about-feature-title">{{item.title}}</view>
+        <view class="about-feature-desc">{{item.desc}}</view>
+      </view>
     </view>
+  </view>
+
+  <!-- ===== 关于产品 ===== -->
+  <view class="tt-section">关于产品</view>
+  <view class="tt-card">
     <view class="about-intro">{{intro}}</view>
   </view>
 
   <!-- ===== 开发运营 ===== -->
-  <view class="about-card">
-    <view class="about-card-head">
-      <view class="about-bar"></view>
-      <text class="about-card-title">开发运营</text>
-    </view>
+  <view class="tt-section">开发运营</view>
+  <view class="tt-card">
     <view class="about-dev">
-      <view class="about-dev-avatar">
-        <t-icon name="user" size="44rpx" color="#7c5cff" />
+      <view class="about-dev-mark">
+        <t-icon name="user" size="38rpx" color="var(--tt-brand)" />
       </view>
       <view class="about-dev-info">
         <view class="about-dev-name">{{company}}</view>
-        <view class="about-dev-sub">开发运营团队</view>
+        <view class="about-dev-sub">产品设计与开发运营团队</view>
       </view>
     </view>
   </view>
 
   <!-- ===== 联系我们 ===== -->
-  <view class="about-card">
-    <view class="about-card-head">
-      <view class="about-bar"></view>
-      <text class="about-card-title">联系我们</text>
+  <view class="tt-section">联系我们</view>
+  <view class="tt-card">
+    <view class="tt-row" bind:tap="copyOfficialAccount">
+      <view class="about-row-icon">
+        <t-icon name="logo-wechat-stroke" size="36rpx" color="var(--tt-brand)" />
+      </view>
+      <view class="flex-1">
+        <view class="tt-row-title">微信公众号</view>
+        <view class="tt-row-sub">{{officialAccount}} · 点击复制名称</view>
+      </view>
+      <view class="about-row-pill">复制</view>
     </view>
 
-    <view class="about-contact-row">
-      <view class="about-contact-icon" style="background: #e8f7ef">
-        <t-icon name="service" size="38rpx" color="#16a34a" />
+    <view class="tt-row">
+      <view class="about-row-icon">
+        <t-icon name="service" size="36rpx" color="var(--tt-brand)" />
       </view>
-      <view class="about-contact-info">
-        <view class="about-contact-label">唐唐快跑高级客服经理</view>
-        <view class="about-contact-value">24小时在线</view>
+      <view class="flex-1">
+        <view class="tt-row-title">唐唐快跑高级客服经理</view>
+        <view class="tt-row-sub">24小时在线</view>
       </view>
-      <button class="about-contact-btn" open-type="contact">
-        咨询
-        <t-icon name="chevron-right" size="26rpx" color="var(--tt-text-3)" />
-      </button>
-    </view>
-
-    <view class="about-contact-divider"></view>
-
-    <view class="about-contact-row">
-      <view class="about-contact-icon" style="background: #e8f3ff">
-        <t-icon name="service" size="38rpx" color="#2f7cf6" />
-      </view>
-      <view class="about-contact-info">
-        <view class="about-contact-label">微信公众号</view>
-        <view class="about-contact-value">{{officialAccount}}</view>
-      </view>
-      <button class="about-contact-btn" bind:tap="copyOfficialAccount">
-        关注
-        <t-icon name="chevron-right" size="26rpx" color="var(--tt-text-3)" />
-      </button>
+      <button class="about-row-pill" open-type="contact">咨询</button>
     </view>
   </view>
 
-  <!-- ===== 页脚 ===== -->
+  <!-- ===== 更多 ===== -->
+  <view class="tt-section">更多</view>
+  <view class="tt-card">
+    <view class="tt-row" bind:tap="goChangelogs">
+      <view class="about-row-icon">
+        <t-icon name="history" size="36rpx" color="var(--tt-brand)" />
+      </view>
+      <view class="flex-1">
+        <view class="tt-row-title">版本日志</view>
+        <view class="tt-row-sub">查看历次更新内容</view>
+      </view>
+      <t-icon name="chevron-right" size="34rpx" color="var(--tt-text-3)" />
+    </view>
+  </view>
+
+  <!-- ===== 页脚声明 ===== -->
   <view class="about-footer">
-    <view>唐唐快跑 由 {{company}} 开发运营</view>
-    <view>Copyright 2026 Hebei TangBo Technology Co., Ltd. All rights reserved.</view>
+    <view class="about-footer-brand">唐唐快跑 v{{version}} · 由 {{company}} 开发运营</view>
+    <view class="about-footer-copy">Copyright © 2026 {{company}}</view>
+    <view class="about-footer-note">
+      本小程序仅用于校园运动记录与健康促进，运动数据以微信运动与设备定位为准，仅供参考；请根据自身身体状况合理运动。
+    </view>
   </view>
 </view>

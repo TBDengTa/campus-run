@@ -8,8 +8,7 @@ function decorate(r) {
     distanceText: fmt.formatDistance(r.distance),
     durationText: fmt.formatDuration(r.durationSeconds),
     stepsText: fmt.formatNumber(r.steps || 0),
-    sourceText: r.source === 'gps' ? 'GPS 实跑' : '微信运动',
-    sourceIcon: r.source === 'gps' ? 'location' : 'logo-wechat-stroke',
+    ...fmt.sourceOf(r.source),
   };
 }
 

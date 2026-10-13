@@ -19,12 +19,17 @@
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | /today | 今日记录 + 生效目标 + 分时段应达百分比 |
+| GET | /today | **当日聚合**（该日所有来源记录求和）+ 生效目标 + 分时段应达百分比；另返回 `record.syncCount / gpsRunCount / recordCount / sources` |
 | GET | /calendar?month=YYYY-MM | 月度记录 + 节假日 |
-| GET | /week | 近 7 天记录 |
-| POST | /sync-werun | `{encryptedData, iv}` → 解密微信运动并逐日 upsert（反作弊步数暴增检测） |
-| POST | /gps | 提交 GPS 实跑（反作弊配速检测） |
+| GET | /week | 近 7 天记录（明细，前端按 date 求和） |
+| POST | /sync-werun | `{encryptedData, iv}` → 解密微信运动，取最近 7 天逐日写入。**1 小时内的多次同步合并为一条记录，超过 1 小时新建当日下一条且只记增量**（反作弊按当日累计做步数暴增检测） |
+| POST | /gps | 提交 GPS 实跑（反作弊配速检测），每次一条记录 |
+| GET | /day/:date | 单日详情：当日汇总 + 记录明细（多条） |
+| GET | /days?page&limit | 按天聚合分页（`$sum` 各来源） |
 | GET | /detail/:id | 记录详情（含轨迹） |
+
+记录来源 `source`：`werun` 微信运动 / `gps` GPS 实跑 / `beidou` 北斗（激励视频奖励步数）。
+前端统一用 `utils/format.js::sourceOf(source)` 取展示文案与图标（勿各页各写三元表达式）。
 
 > **教师账号不参与运动记录**：`role=teacher` 调用 `/sync-werun`、`/gps` 一律返回 `403 + code 403003`；
 > `/api/reward-video/report` 返回 `200 + {success:false}`。服务层（`services/steps.js`）同步做了二次拦截。

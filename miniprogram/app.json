@@ -23,7 +23,8 @@
     "pages/banned/banned",
     "pages/records/day",
     "pages/records/week",
-    "pages/about/about"
+    "pages/about/about",
+    "pages/privacy/privacy"
   ],
   "subpackages": [
     {

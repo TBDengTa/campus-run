@@ -26,7 +26,7 @@ Page({
           ...record,
           distanceText: fmt.formatDistance(record.distance),
           durationText: fmt.formatDuration(record.durationSeconds),
-          sourceText: record.source === 'gps' ? 'GPS 实跑' : '微信运动',
+          ...fmt.sourceOf(record.source),
           stepsText: fmt.formatNumber(record.steps || 0),
           caloriesText: fmt.formatNumber(record.calories || 0),
           paceText: record.pace || '',

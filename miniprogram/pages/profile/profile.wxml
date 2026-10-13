@@ -152,6 +152,13 @@
       <view class="menu-icon">
         <t-icon name="info-circle" size="36rpx" color="var(--tt-brand)" />
       </view>
+    <view class="tt-row menu-row" bind:tap="goPrivacy">
+      <view class="menu-icon">
+        <t-icon name="setting" size="36rpx" color="var(--tt-brand)" />
+      </view>
+      <text class="menu-label">隐私设置</text>
+      <t-icon name="chevron-right" size="32rpx" color="var(--tt-text-3)" />
+    </view>
       <text class="menu-label">关于我们</text>
       <t-icon name="chevron-right" size="32rpx" color="var(--tt-text-3)" />
     </view>
