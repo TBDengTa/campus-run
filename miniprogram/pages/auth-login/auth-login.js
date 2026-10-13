@@ -29,7 +29,7 @@ Page({
     const { env } = auth;
     this.setData({ loggedOut: auth.isLoggedOut() });
     if (env.DEV_LOGIN) {
-      this.setData({ devRoles: ['dev-student', 'dev-teacher', 'dev-admin'] });
+      this.setData({ devRoles: ['dev-student', 'dev-teacher', 'dev-admin', 'dev-sadmin'] });
     }
   },
 

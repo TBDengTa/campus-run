@@ -73,6 +73,7 @@
       <view class="mini-btn primary" bind:tap="devLogin" data-role="dev-student">学生</view>
       <view class="mini-btn" bind:tap="devLogin" data-role="dev-teacher">教师</view>
       <view class="mini-btn" bind:tap="devLogin" data-role="dev-admin">管理员</view>
+      <view class="mini-btn" bind:tap="devLogin" data-role="dev-sadmin">学生管理员</view>
     </view>
   </view>
 </view>

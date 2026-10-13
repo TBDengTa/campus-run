@@ -36,7 +36,7 @@ router.post(
 
     let openid;
     let sessionKey = '';
-    if (config.devLogin && /^dev-(student|teacher|admin|new|new2|new3)$/.test(code)) {
+    if (config.devLogin && /^dev-(student|teacher|admin|sadmin|new|new2|new3)$/.test(code)) {
       // dev-new / dev-new2 / dev-new3：未绑定微信的测试号（用于走姓名密码绑定流程）
       if (/^dev-new\d?$/.test(code)) {
         openid = `dev_wechat_${code.replace('dev-', '')}`;
@@ -53,16 +53,32 @@ router.post(
       await WxSession.updateOne({ openid }, { $set: { sessionKey } }, { upsert: true });
     }
 
-    const user = await User.findOne({ openid });
+    // dev 测试账号：不存在则自动创建（角色/权限组按预设），已存在则强制重置为预设
+    const DEV_PRESETS = {
+      dev_student_1: { role: 'student', groups: [], nickname: '测试学生' },
+      dev_teacher_1: { role: 'teacher', groups: ['teacher'], nickname: '测试教师' },
+      dev_admin_1: { role: 'teacher', groups: ['superadmin'], nickname: '测试管理员' },
+      dev_sadmin_1: { role: 'student', groups: ['superadmin'], nickname: '测试学生管理员' },
+    };
+
+    let user = await User.findOne({ openid });
+    if (!user && config.devLogin && openid.startsWith('dev_') && DEV_PRESETS[openid]) {
+      const p = DEV_PRESETS[openid];
+      user = await User.create({
+        openid,
+        role: p.role,
+        permissionGroups: p.groups,
+        nickname: p.nickname,
+        account: p.nickname,
+        realName: p.nickname,
+      });
+    }
+
     if (user) {
       let changed = false;
       // dev 登录：强制重置为约定角色/权限组，保证切换测试视角可预期
       if (config.devLogin && openid.startsWith('dev_')) {
-        const preset = {
-          dev_admin_1: { role: 'teacher', groups: ['superadmin'] },
-          dev_teacher_1: { role: 'teacher', groups: ['teacher'] },
-          dev_student_1: { role: 'student', groups: [] },
-        }[openid];
+        const preset = DEV_PRESETS[openid];
         if (preset && (user.role !== preset.role || JSON.stringify(user.permissionGroups || []) !== JSON.stringify(preset.groups))) {
           user.role = preset.role;
           user.permissionGroups = preset.groups;
