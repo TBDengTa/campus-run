@@ -186,20 +186,10 @@
   </view>
 
   <!-- ===== 管理功能（仅有权限时显示） ===== -->
-  <block wx:if="{{isAdmin}}">
+  <block wx:if="{{canManagePerms}}">
     <view class="tt-section">管理功能</view>
     <view class="tt-card menu-card">
-      <view class="tt-row menu-row" bind:tap="goAdmin">
-        <view class="menu-icon">
-          <t-icon name="dashboard" size="36rpx" color="var(--tt-brand)" />
-        </view>
-        <view class="flex-1">
-          <view class="menu-label">管理端控制台</view>
-          <view class="menu-sub">用户 / 申诉 / 广告 / 配置</view>
-        </view>
-        <t-icon name="chevron-right" size="32rpx" color="var(--tt-text-3)" />
-      </view>
-      <view class="tt-row menu-row" wx:if="{{canManagePerms}}" bind:tap="goPerms">
+      <view class="tt-row menu-row" bind:tap="goPerms">
         <view class="menu-icon">
           <t-icon name="user-add" size="36rpx" color="var(--tt-brand)" />
         </view>

@@ -187,19 +187,20 @@ Page({
         return;
       }
       let banned = false;
-      if (user.status === 'banned' && user.bannedUntil && new Date(user.bannedUntil) > new Date()) {
+      // 永久限制（bannedUntil 为空）也算封禁态
+      if (user.status === 'banned' && (!user.bannedUntil || new Date(user.bannedUntil) > new Date())) {
         banned = true;
       }
       const isManager = !!user.isManager;
       const perms = user.effectivePermissions || [];
       // 按权限过滤的管理入口（WXML 无法调用方法，这里预计算）
       const allEntries = [
-        { key: 'users', perm: 'user.view', icon: 'user-add', label: '用户管理', url: '/packageAdmin/users/users', bg: 'var(--td-success-color-1)', color: 'var(--td-success-color-5)' },
-        { key: 'appeals', perm: 'appeal.view', icon: 'assignment', label: '申诉审核', url: '/packageAdmin/appeals/appeals', bg: 'var(--td-warning-color-1)', color: 'var(--td-warning-color-5)' },
-        { key: 'ads', perm: 'ad.view', icon: 'chart-bar', label: '广告管理', url: '/packageAdmin/ads/contents', bg: 'var(--td-error-color-1)', color: 'var(--td-error-color-6)' },
-        { key: 'content', perm: 'content.view', icon: 'book', label: '内容管理', url: '/packageAdmin/content/index', bg: 'var(--td-gray-color-2)', color: 'var(--td-gray-color-8)' },
-        { key: 'assessment', perm: 'assessment.view', icon: 'flag', label: '运动考核', url: '/packageAdmin/assessment/index', bg: 'var(--td-warning-color-1)', color: 'var(--td-warning-color-5)' },
-        { key: 'files', perm: 'file.view', icon: 'image-add', label: '文件管理', url: '/packageAdmin/files/files', bg: 'var(--td-success-color-1)', color: 'var(--td-success-color-5)' },
+        { key: 'users', perm: 'user.view', icon: 'usergroup', label: '用户管理', url: '/packageAdmin/users/users', bg: 'var(--td-success-color-1)', color: 'var(--td-success-color-5)' },
+        { key: 'appeals', perm: 'appeal.view', icon: 'assignment-checked', label: '申诉审核', url: '/packageAdmin/appeals/appeals', bg: 'var(--td-warning-color-1)', color: 'var(--td-warning-color-5)' },
+        { key: 'ads', perm: 'ad.view', icon: 'play-circle', label: '广告管理', url: '/packageAdmin/ads/contents', bg: 'var(--td-error-color-1)', color: 'var(--td-error-color-6)' },
+        { key: 'content', perm: 'content.view', icon: 'layers', label: '内容管理', url: '/packageAdmin/content/index', bg: 'var(--td-gray-color-2)', color: 'var(--td-gray-color-8)' },
+        { key: 'assessment', perm: 'assessment.view', icon: 'task-checked', label: '运动考核', url: '/packageAdmin/assessment/index', bg: 'var(--td-warning-color-1)', color: 'var(--td-warning-color-5)' },
+        { key: 'files', perm: 'file.view', icon: 'folder-open', label: '文件管理', url: '/packageAdmin/files/files', bg: 'var(--td-success-color-1)', color: 'var(--td-success-color-5)' },
         { key: 'config', perm: 'config.view', icon: 'setting', label: '系统配置', url: '/packageAdmin/config/config', bg: 'var(--td-brand-color-light)', color: 'var(--td-brand-color)' },
       ];
       const mgrEntries = allEntries.filter((e) => perms.includes('*') || perms.includes(e.perm));

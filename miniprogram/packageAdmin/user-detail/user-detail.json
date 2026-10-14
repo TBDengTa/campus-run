@@ -1,4 +1,6 @@
 {
   "navigationBarTitleText": "用户详情",
-  "usingComponents": {}
+  "usingComponents": {
+    "ban-sheet": "/components/ban-sheet/ban-sheet"
+  }
 }

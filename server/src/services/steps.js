@@ -46,7 +46,8 @@ async function syncWerunDay(user, dateKey, cumulativeSteps, { checkJump = true }
   if (checkJump) {
     // 反作弊按「当日累计」比对本次同步带来的新增量
     const result = await anticheat.checkStepJump(user, dateKey, recordedTotal, cumulativeSteps || 0);
-    if (result.violation) return { banned: true, reason: result.message };
+    // 违规时返回限制信息：scope=sync 限制微信同步 / scope=login 升级为限制登录
+    if (result.violation) return { restricted: result };
   }
 
   const now = Date.now();
@@ -79,7 +80,8 @@ async function saveGpsRun(user, { date, distance, durationSeconds, calories, sta
   if (blocked) return blocked;
 
   const result = await anticheat.checkPace(user, distance, durationSeconds);
-  if (result.violation) return { banned: true, reason: result.message };
+  // 违规时返回限制信息：scope=gps 限制 GPS / scope=login 升级为限制登录（见 routes/run.js 的错误码映射）
+  if (result.violation) return { restricted: result };
 
   const doc = await RunRecord.create({
     openid: user.openid,

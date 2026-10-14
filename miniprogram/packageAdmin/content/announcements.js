@@ -7,6 +7,8 @@ Page({
     list: [],
     loading: false,
     form: null,
+    formVisible: false,
+    saving: false,
   },
 
   onShow() {
@@ -29,16 +31,20 @@ Page({
   },
 
   openCreate() {
-    this.setData({ form: { ...EMPTY } });
+    this.setData({ form: { ...EMPTY }, formVisible: true });
   },
 
   openEdit(e) {
     const item = this.data.list.find((x) => x._id === e.currentTarget.dataset.id);
-    this.setData({ form: { ...item } });
+    this.setData({ form: { ...item }, formVisible: true });
+  },
+
+  onFormVisible(e) {
+    this.setData({ formVisible: !!(e.detail && e.detail.visible) });
   },
 
   closeForm() {
-    this.setData({ form: null });
+    this.setData({ formVisible: false });
   },
 
   onField(e) {
@@ -54,21 +60,25 @@ Page({
   },
 
   async save() {
+    if (this.data.saving) return;
     const { form } = this.data;
     if (!form.title) {
       wx.showToast({ title: '标题必填', icon: 'none' });
       return;
     }
+    this.setData({ saving: true });
     const payload = { ...form };
     ['_id', 'createdAt', 'updatedAt', '__v', 'dateText'].forEach((k) => delete payload[k]);
     try {
       if (form._id) await auth.put(`/api/admin/content/announcements/${form._id}`, payload);
       else await auth.post('/api/admin/content/announcements', payload);
       wx.showToast({ title: '已保存', icon: 'success' });
-      this.setData({ form: null });
+      this.setData({ formVisible: false });
       this.load();
     } catch (e) {
       wx.showToast({ title: e.message, icon: 'none' });
+    } finally {
+      this.setData({ saving: false });
     }
   },
 

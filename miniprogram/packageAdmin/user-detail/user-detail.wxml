@@ -125,15 +125,37 @@
     </block>
   </view>
 
+  <!-- ===== 当前限制（限制登录 / 限制微信同步 / 限制 GPS） ===== -->
+  <block wx:if="{{restrictions.length}}">
+    <view class="tt-section">
+      <text>当前限制</text>
+      <text class="tt-section-extra">{{restrictions.length}} 项生效中</text>
+    </view>
+    <view class="tt-card udetail-card">
+      <view class="udetail-field" wx:for="{{restrictions}}" wx:key="scope">
+        <text class="udetail-label">{{item.text}}</text>
+        <text class="udetail-value">至 {{item.untilText}}</text>
+      </view>
+      <view class="udetail-ban" wx:for="{{restrictions}}" wx:key="scope">
+        <view class="udetail-ban-row">
+          <text class="udetail-ban-label">{{item.text}}原因</text>
+          <text class="udetail-ban-text">{{item.reason || '-'}}</text>
+        </view>
+      </view>
+      <view class="udetail-note">用户可在小程序「申诉」页按类型申诉；审核通过只解除对应类型</view>
+    </view>
+  </block>
+
   <!-- ===== 账号操作 ===== -->
   <view class="tt-section">账号操作</view>
   <view class="tt-card udetail-card">
     <t-button wx:if="{{canManagePerms}}" theme="default" block bind:tap="goEdit" class="udetail-edit-btn">编辑账户资料</t-button>
     <block wx:if="{{user.role !== 'admin'}}">
-      <t-button wx:if="{{user.status !== 'banned'}}" theme="danger" block bind:tap="ban">封禁该用户</t-button>
-      <t-button wx:else theme="primary" block bind:tap="unban">解除封禁</t-button>
+      <t-button theme="danger" block bind:tap="openBanSheet" class="udetail-edit-btn">限制账号功能</t-button>
+      <t-button wx:if="{{restrictions.length}}" theme="primary" block bind:tap="unban">解除限制</t-button>
     </block>
     <view class="udetail-note" wx:else>管理员账号不可封禁</view>
+    <view class="udetail-note">「限制账号功能」可选 限制登录 / 限制微信同步 / 限制 GPS 实跑，并可设置时长</view>
     <view wx:if="{{canManagePerms}}" class="udetail-reset">
       <t-button theme="default" block bind:tap="resetPassword">重置登录密码</t-button>
       <view class="udetail-note">重置为初始密码（学号/身份证后8位），并要求该用户下次登录时修改</view>
@@ -202,9 +224,9 @@
     </view>
   </block>
 
-  <!-- ===== 封禁 / 解封流水 ===== -->
+  <!-- ===== 限制 / 解除流水 ===== -->
   <view class="tt-section">
-    <text>封禁 / 解封流水</text>
+    <text>限制 / 解除流水</text>
     <text class="tt-section-extra">{{bans.length}} 条</text>
   </view>
   <view class="tt-card udetail-card">
@@ -214,15 +236,24 @@
         <t-icon wx:else name="lock-off" size="32rpx" color="var(--td-success-color-5)" />
       </view>
       <view class="flex-1">
-        <view class="tt-row-title">{{item.reason || '-'}}</view>
-        <view class="tt-row-sub">{{item.timeText}} · {{item.operator === 'system' ? '系统自动' : '管理员'}}{{item.durationDays ? ' · ' + item.durationDays + '天' : ''}}</view>
+        <view class="tt-row-title">{{item.typeText}} · {{item.reason || '-'}}</view>
+        <view class="tt-row-sub">{{item.timeText}} · {{item.operator === 'system' ? '系统自动' : '管理员'}}{{item.durationDays ? ' · ' + item.durationDays + '天' : (item.action === 'ban' ? ' · 永久' : '')}}</view>
       </view>
       <t-tag theme="{{item.action === 'ban' ? 'danger' : 'success'}}" variant="light" size="small">
-        {{item.action === 'ban' ? '封禁' : '解封'}}
+        {{item.action === 'ban' ? '限制' : '解除'}}
       </t-tag>
     </view>
     <view class="tt-empty" wx:if="{{!bans.length}}">暂无流水</view>
   </view>
 </view>
+
+<!-- ===== 限制账号功能（类型 + 时长 + 原因） ===== -->
+<ban-sheet
+  visible="{{banSheet.visible}}"
+  user="{{banSheet.user}}"
+  busy="{{banSheet.busy}}"
+  bind:close="onBanSheetClose"
+  bind:submit="onBanSubmit"
+/>
 
 <t-loading wx:if="{{loading && !user}}" theme="circular" size="44rpx" text="加载用户…" class="udetail-loading" />

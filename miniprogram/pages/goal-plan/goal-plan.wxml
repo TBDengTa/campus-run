@@ -126,7 +126,7 @@
       <t-icon name="info-circle" size="44rpx" color="var(--tt-brand)" />
       <view class="gp-empty-title">{{plans.length ? '暂无完全匹配的计划' : '暂无候选计划'}}</view>
       <view class="gp-empty-sub">
-        {{plans.length ? '先完善下方身体数据（身高/体重/性别），系统会按 BMI + 强度重新匹配' : '请联系管理员在「系统配置」里添加计划'}}
+        {{plans.length ? '先完善下方身体数据（身高/体重/性别），系统会按 BMI + 强度重新匹配' : '请联系管理员在「运动考核」里添加计划'}}
       </view>
     </view>
   </view>

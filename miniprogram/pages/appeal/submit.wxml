@@ -1,16 +1,27 @@
 <view class="page tt-page">
-  <!-- ===== 封禁信息（被封禁时展示） ===== -->
-  <view class="appeal-ban-card" wx:if="{{user && user.status === 'banned'}}">
-    <view class="appeal-ban-head">
-      <t-icon name="error-circle" size="36rpx" color="var(--td-error-color-6)" />
-      <text class="appeal-ban-title">封禁信息</text>
+  <!-- ===== 生效中的限制（按类型申诉） ===== -->
+  <block wx:if="{{restrictions.length}}">
+    <view class="tt-section">
+      <text>你要申诉的限制</text>
+      <text class="tt-section-extra">{{restrictions.length}} 项生效中</text>
     </view>
-    <view class="appeal-ban-reason">{{user.banReason || '违反社区规范'}}</view>
-    <view class="appeal-ban-until" wx:if="{{user.bannedUntil}}">
-      <t-icon name="time" size="26rpx" color="var(--td-error-color-6)" />
-      <text>解封时间：{{user.bannedUntil}}</text>
+    <view class="tt-card appeal-ban-card">
+      <view
+        class="appeal-scope {{scope === item.scope ? 'active' : ''}}"
+        wx:for="{{restrictions}}"
+        wx:key="scope"
+        bind:tap="pickScope"
+        data-scope="{{item.scope}}"
+      >
+        <view class="appeal-scope-top">
+          <t-icon name="{{scope === item.scope ? 'check-circle-filled' : 'circle'}}" size="32rpx" color="{{scope === item.scope ? 'var(--tt-brand)' : 'var(--tt-text-3)'}}" />
+          <text class="appeal-scope-name">{{item.text}}</text>
+          <text class="appeal-scope-until">至 {{item.untilText}}</text>
+        </view>
+        <view class="appeal-scope-reason">{{item.reason || '违反社区规范'}}</view>
+      </view>
     </view>
-  </view>
+  </block>
 
   <!-- ===== 填写申诉 ===== -->
   <view class="tt-section">填写申诉说明</view>

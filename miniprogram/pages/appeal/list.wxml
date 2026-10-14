@@ -21,6 +21,7 @@
     <view class="tt-card appeal-card" wx:for="{{list}}" wx:key="_id">
       <view class="appeal-head">
         <t-tag theme="{{item.statusInfo.theme}}" variant="light" size="small">{{item.statusInfo.text}}</t-tag>
+        <t-tag theme="default" variant="light" size="small">{{item.banTypeText}}</t-tag>
         <text class="appeal-time">{{item.dateText}}</text>
       </view>
 

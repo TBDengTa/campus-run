@@ -1,31 +1,9 @@
-const path = require('path');
-const fs = require('fs');
 const express = require('express');
-const multer = require('multer');
-const config = require('../../config');
 const { wrap, ok, ApiError } = require('../../utils/response');
+const { makeUploader, publicUploadUrl } = require('../../utils/uploader');
+const FileObject = require('../../models/file-object');
 
-const uploadDir = path.join(__dirname, '../../../uploads');
-fs.mkdirSync(uploadDir, { recursive: true });
-
-const storage = multer.diskStorage({
-  destination(req, file, cb) {
-    cb(null, uploadDir);
-  },
-  filename(req, file, cb) {
-    const ext = (path.extname(file.originalname) || '.png').toLowerCase();
-    cb(null, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`);
-  },
-});
-
-const upload = multer({
-  storage,
-  limits: { fileSize: config.uploadMaxMb * 1024 * 1024 },
-  fileFilter(req, file, cb) {
-    if (/^image\//.test(file.mimetype)) return cb(null, true);
-    cb(new ApiError(400, 400, '仅支持图片文件'));
-  },
-});
+const upload = makeUploader();
 
 const router = express.Router();
 
@@ -34,8 +12,18 @@ router.post(
   upload.single('file'),
   wrap(async (req, res) => {
     if (!req.file) throw new ApiError(400, 400, '未收到文件');
-    const base = config.adPageBaseUrl || `${req.protocol}://${req.get('host')}`;
-    ok(res, { url: `${base}/uploads/${req.file.filename}` });
+    const category = FileObject.CATEGORIES.includes(req.body.category) ? req.body.category : 'other';
+    const url = publicUploadUrl(req, req.file.filename);
+    const doc = await FileObject.create({
+      filename: req.file.filename,
+      originalName: req.file.originalname || '',
+      url,
+      size: req.file.size || 0,
+      mime: req.file.mimetype || '',
+      category,
+      uploader: req.user && req.user._id,
+    });
+    ok(res, { id: doc._id, url, category });
   })
 );
 

@@ -81,6 +81,39 @@
   text-align: center;
 }
 
+/* ===== 分类 Tab（全部/学生/教师/管理员）：胶囊式，选中用与「创建账户」一致的橙渐变 ===== */
+.users-tabs {
+  display: flex;
+  gap: 12rpx;
+  margin: 0 var(--tt-gap) 16rpx;
+}
+
+.users-tab {
+  flex: 1;
+  min-width: 0;
+  height: 60rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999rpx;
+  font-size: 25rpx;
+  color: var(--tt-text-2);
+  background: var(--tt-card);
+  border: 2rpx solid var(--tt-line);
+}
+
+.users-tab:active {
+  opacity: 0.8;
+}
+
+.users-tab.active {
+  color: #fff;
+  font-weight: 500;
+  border-color: transparent;
+  background: linear-gradient(135deg, #ff9a3d, var(--tt-brand));
+  box-shadow: 0 6rpx 16rpx rgba(255, 107, 0, 0.2);
+}
+
 /* ===== 筛选面板 ===== */
 .users-panel {
   padding: 16rpx 18rpx 14rpx;
@@ -218,10 +251,11 @@
 }
 
 .users-avatar {
-  width: 60rpx;
-  height: 60rpx;
+  width: 72rpx;
+  height: 72rpx;
   flex-shrink: 0;
   border-radius: 18rpx;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -230,6 +264,23 @@
 
 .users-avatar.is-teacher {
   background: var(--td-gray-color-2, #eee);
+}
+
+/* 有微信头像用图片；没有则显示姓名首字 */
+.users-avatar-img {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.users-avatar-txt {
+  font-size: 28rpx;
+  font-weight: 500;
+  color: var(--tt-brand);
+}
+
+.users-avatar.is-teacher .users-avatar-txt {
+  color: var(--tt-text-2);
 }
 
 .user-row-main {
@@ -273,6 +324,7 @@
   font-size: 20rpx;
   color: var(--tt-brand);
   background: var(--tt-brand-soft);
+  white-space: nowrap;
 }
 
 .users-loading {

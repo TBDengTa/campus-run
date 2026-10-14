@@ -5,6 +5,7 @@ const { requirePermission } = require('../../middlewares/admin');
 const anticheat = require('../../services/anticheat');
 const pwd = require('../../services/password');
 const roster = require('../../services/roster');
+const { makeUploader } = require('../../utils/uploader');
 const dates = require('../../utils/dates');
 const BanRecord = require('../../models/ban-record');
 const User = require('../../models/user');
@@ -28,6 +29,65 @@ router.post(
     const rows = roster.parseRows(req.body?.rows || req.body?.payload);
     if (!rows.length) throw new ApiError(400, 400, mode === 'update' ? '未解析到数据（表头：学号,性别,出生日期）' : '未解析到数据（表头：学号,姓名,院校,系部,专业,班级,性别,出生日期）');
     const result = await roster.importRows(rows, mode);
+    ok(res, result);
+  })
+);
+
+// ===== 名单导入预览/确认：先解析预览（不入库），确认后才写库 =====
+const importUpload = makeUploader({ memory: true, accept: ['.xlsx', '.xls', '.csv'] });
+const PREVIEW_TTL = 15 * 60 * 1000;
+const previewCache = new Map(); // cacheId → { rows, expireAt }
+
+function cachePreview(rows) {
+  const now = Date.now();
+  for (const [k, v] of previewCache) {
+    if (v.expireAt <= now) previewCache.delete(k);
+  }
+  const cacheId = crypto.randomUUID();
+  previewCache.set(cacheId, { rows, expireAt: now + PREVIEW_TTL });
+  return cacheId;
+}
+
+// 解析预览：multipart 表格文件（xlsx/xls/csv）或 { payload } 文本，返回归一化预览与异常明细
+router.post(
+  '/import/preview',
+  requirePermission('user.import'),
+  importUpload.single('file'),
+  wrap(async (req, res) => {
+    const rows = req.file ? roster.parseSheet(req.file.buffer) : roster.parseRows(req.body?.payload);
+    if (!rows.length) throw new ApiError(400, 400, '未解析到数据（表格需包含列：姓名,学号）');
+    const normalized = [];
+    const failed = [];
+    rows.forEach((row, i) => {
+      const item = roster.normalizeRow(row, i);
+      if (item.error) failed.push({ row: i + 1, reason: item.error });
+      else normalized.push(item);
+    });
+    ok(res, {
+      cacheId: cachePreview(normalized),
+      total: rows.length,
+      valid: normalized.length,
+      failedCount: failed.length,
+      failed,
+      preview: normalized.slice(0, 20),
+    });
+  })
+);
+
+// 确认导入：按预览返回的 cacheId + mode 写库；confirm 后缓存即删，换模式需重新解析
+router.post(
+  '/import/confirm',
+  requirePermission('user.import'),
+  wrap(async (req, res) => {
+    const cacheId = String(req.body?.cacheId || '');
+    const cached = previewCache.get(cacheId);
+    previewCache.delete(cacheId);
+    if (!cached || cached.expireAt <= Date.now()) {
+      throw new ApiError(410, 410, '预览已过期，请重新选择文件解析');
+    }
+    if (!cached.rows.length) throw new ApiError(400, 400, '没有可导入的数据（所有行均异常）');
+    const mode = req.body?.mode === 'update' ? 'update' : 'create';
+    const result = await roster.importRows(cached.rows, mode);
     ok(res, result);
   })
 );
@@ -261,6 +321,20 @@ router.get(
   })
 );
 
+// 列表行附带运动目标（个人计划 > 全局默认）：按本页 openid 批量查一次 user_goals，供学生行展示计划名
+const attachGoals = async (list) => {
+  const openids = [...new Set(list.map((u) => u.openid).filter(Boolean))];
+  const goals = openids.length
+    ? await UserGoal.find({ openid: { $in: openids } }).select('openid planName').lean()
+    : [];
+  const byOpenid = new Map(goals.map((g) => [g.openid, g]));
+  for (const u of list) {
+    const g = byOpenid.get(u.openid);
+    u.goal = { planName: (g && g.planName) || '' };
+  }
+  return list;
+};
+
 // 用户列表/搜索 + 多维筛选（院校/系部/专业/年级/日周达标）
 router.get(
   '/',
@@ -275,6 +349,12 @@ router.get(
     }
     if (req.query.status) cond.status = req.query.status;
     if (req.query.role) cond.role = req.query.role;
+    // 管理员不是角色而是权限：直接权限或所在权限组非空即视为管理员（与登录态 isManager 同义）
+    if (req.query.manager === '1') {
+      and.push({
+        $or: [{ permissions: { $exists: true, $ne: [] } }, { permissionGroups: { $exists: true, $ne: [] } }],
+      });
+    }
     if (req.query.school) cond.schoolName = req.query.school;
     if (req.query.department) cond.departmentName = req.query.department;
     if (req.query.specialty) cond.specialty = req.query.specialty;
@@ -338,17 +418,19 @@ router.get(
         { $project: { g: 0, todayAgg: 0, weekAgg: 0, todaySteps: 0, weekSteps: 0, dailyTarget: 0, weeklyTarget: 0 } },
       ];
       const [list, countAgg] = await Promise.all([
-        User.aggregate([...basePipeline, { $sort: { createdAt: -1 } }, { $skip: skip }, { $limit: limit }]),
+        // 排序必须带唯一的 _id 兜底：createdAt 在名单批量导入时大量同值，
+        // 只按它排序的话 skip 翻页两次查询各排各的，第 2 页会重复第 1 页的人
+        User.aggregate([...basePipeline, { $sort: { createdAt: -1, _id: -1 } }, { $skip: skip }, { $limit: limit }]),
         User.aggregate([...basePipeline, { $count: 'n' }]),
       ]);
-      return ok(res, { list, total: countAgg[0]?.n || 0, page, limit });
+      return ok(res, { list: await attachGoals(list), total: countAgg[0]?.n || 0, page, limit });
     }
 
     const [list, total] = await Promise.all([
-      User.find(cond).sort({ createdAt: -1 }).skip(skip).limit(limit).select('-__v').lean(),
+      User.find(cond).sort({ createdAt: -1, _id: -1 }).skip(skip).limit(limit).select('-__v').lean(),
       User.countDocuments(cond),
     ]);
-    ok(res, { list, total, page, limit });
+    ok(res, { list: await attachGoals(list), total, page, limit });
   })
 );
 
@@ -381,39 +463,52 @@ router.get(
     const goalInfo = userGoal
       ? { planName: userGoal.planName || '', daily: userGoal.daily || null, weekly: userGoal.weekly || null, autoMatched: userGoal.autoMatched }
       : null;
-    ok(res, { user, bans, sport, goal: goalInfo, effectivePermissions: effective });
+    ok(res, {
+      user,
+      bans,
+      sport,
+      goal: goalInfo,
+      effectivePermissions: effective,
+      // 当前生效的限制（限制登录 / 限制微信同步 / 限制 GPS）
+      restrictions: anticheat.activeRestrictions(user),
+    });
   })
 );
 
-// 封禁（需 user.manage）
+// 限制/封禁（需 user.manage）
+// body: { scope: 'login' | 'sync' | 'gps', reason, days }（days<=0 视为永久）
 router.post(
   '/:id/ban',
   requirePermission('user.manage'),
   wrap(async (req, res) => {
-    const { reason, days } = req.body || {};
+    const { reason, days, scope } = req.body || {};
     const user = await User.findById(req.params.id);
     if (!user) throw new ApiError(404, 404, '用户不存在');
     if ((user.permissionGroups || []).includes('superadmin') || (user.permissions || []).includes('*')) {
       throw new ApiError(400, 400, '不能封禁超级管理员');
     }
-    await anticheat.manualBan(user, {
+    const finalScope = anticheat.SCOPES.includes(scope) ? scope : 'login';
+    const info = await anticheat.manualBan(user, {
+      scope: finalScope,
       reason,
       days: Number(days) || 0,
       operator: req.user.openid,
     });
-    ok(res, { success: true });
+    ok(res, { success: true, scope: info.scope, until: info.until, restrictions: anticheat.activeRestrictions(user) });
   })
 );
 
-// 解封（需 user.manage）
+// 解除限制（需 user.manage）
+// body: { scope: 'login' | 'sync' | 'gps' | 'all' }（默认全部解除）
 router.post(
   '/:id/unban',
   requirePermission('user.manage'),
   wrap(async (req, res) => {
     const user = await User.findById(req.params.id);
     if (!user) throw new ApiError(404, 404, '用户不存在');
-    await anticheat.manualUnban(user, req.user.openid);
-    ok(res, { success: true });
+    const scope = ['login', 'sync', 'gps'].includes(req.body?.scope) ? req.body.scope : 'all';
+    const { lifted } = await anticheat.manualUnban(user, req.user.openid, scope);
+    ok(res, { success: true, lifted, restrictions: anticheat.activeRestrictions(user) });
   })
 );
 

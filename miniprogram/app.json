@@ -30,7 +30,6 @@
     {
       "root": "packageAdmin",
       "pages": [
-        "dashboard/dashboard",
         "users/users",
         "users/account-edit/account-edit",
         "users/import",
@@ -42,12 +41,19 @@
         "ads/contents",
         "ads/pages",
         "ads/stats",
+        "content/index",
         "content/announcements",
         "content/changelogs",
         "content/holidays",
         "content/organizations",
         "content/badges",
-        "config/config"
+        "config/config",
+        "config/anticheat",
+        "config/reward-video",
+        "assessment/index",
+        "assessment/goals",
+        "assessment/plans",
+        "files/files"
       ]
     }
   ],

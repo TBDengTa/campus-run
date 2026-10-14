@@ -6,11 +6,12 @@ const AdPage = require('../models/ad-page');
 
 const router = express.Router();
 
-// 拉取广告位内容（需登录，用于 PV 归因）
+// 拉取广告位内容（需登录，用于 PV 归因）；教师账号不参与广告
 router.get(
   '/slot/:key',
   auth,
   wrap(async (req, res) => {
+    if (req.user.role === 'teacher') return ok(res, []);
     const ads = await adsSvc.pickAdsForSlot(req.params.key);
     ok(res, ads);
   })

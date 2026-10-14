@@ -30,4 +30,21 @@ async function anyManager(req, res, next) {
   }
 }
 
-module.exports = { requirePermission, anyManager };
+// 持有任一权限即放行（如上传：广告管理或文件管理）
+function requireAnyPermission(perms = []) {
+  return async (req, res, next) => {
+    try {
+      if (!req.user) throw new ApiError(401, 401, '未登录');
+      const effective = await req.user.getEffectivePermissions();
+      if (!effective.includes('*') && !perms.some((p) => effective.includes(p))) {
+        throw new ApiError(403, 403002, `无权限（需要 ${perms.join(' 或 ')}）`);
+      }
+      req.userPermissions = effective;
+      next();
+    } catch (e) {
+      next(e);
+    }
+  };
+}
+
+module.exports = { requirePermission, requireAnyPermission, anyManager };

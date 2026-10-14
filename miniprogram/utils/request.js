@@ -149,9 +149,17 @@ function rawRequest({ url, method = 'GET', data, header = {}, timeout = 15000, _
           return;
         }
         if (statusCode === 403 && body.code === 403001) {
-          const err = new Error(body.message || '账号已被封禁');
+          const err = new Error(body.message || '账号已被限制登录');
           err.code = 403001;
-          err.banned = body.banned;
+          err.banned = body.banned; // { reason, until, banType }
+          reject(err);
+          return;
+        }
+        // 单项能力受限（限制微信同步 / 限制 GPS）：不跳封禁页，由页面提示并引导申诉
+        if (statusCode === 403 && body.code === 403004) {
+          const err = new Error(body.message || '该功能已被限制');
+          err.code = 403004;
+          err.restriction = body.restriction; // { scope, text, reason, until }
           reject(err);
           return;
         }
@@ -273,13 +281,14 @@ const post = (url, data) => request({ url, method: 'POST', data });
 const put = (url, data) => request({ url, method: 'PUT', data });
 const del = (url, data) => request({ url, method: 'DELETE', data });
 
-// 上传文件（管理端广告图等）
-function uploadFile(filePath) {
+// 上传文件（默认管理端接口；头像等用户端接口通过 options.url 指定）
+function uploadFile(filePath, options = {}) {
   return new Promise((resolve, reject) => {
     wx.uploadFile({
-      url: `${env.BASE_URL}/api/admin/upload`,
+      url: `${env.BASE_URL}${options.url || '/api/admin/upload'}`,
       filePath,
       name: 'file',
+      formData: options.formData,
       header: { Authorization: getToken() ? `Bearer ${getToken()}` : '' },
       success: (res) => {
         try {

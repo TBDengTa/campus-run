@@ -53,7 +53,7 @@ Page({
     if (!res) return;
     wx.showLoading({ title: '上传中…' });
     try {
-      const { url } = await auth.uploadFile(res.tempFiles[0].tempFilePath);
+      const { url } = await auth.uploadFile(res.tempFiles[0].tempFilePath, { formData: { category: 'ad' } });
       this.setData({ 'form.logo': url });
     } catch (e) {
       wx.showToast({ title: e.message, icon: 'none' });

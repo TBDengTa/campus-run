@@ -15,7 +15,7 @@
   <view class="tt-card">
     <view class="import-tip">
       <view class="tip-line">· {{mode === 'create' ? '支持创建：表头 学号,姓名,院校,系部,专业(班级可选),性别,出生日期' : '仅更新模式：表头 学号,性别,出生日期；按学号匹配已有用户'}}</view>
-  <view class="tip-line">· 支持粘贴 CSV / JSON，或从聊天记录选择 .csv / .json 文件</view>
+      <view class="tip-line">· 支持粘贴 CSV / JSON，或从聊天记录选择 .xlsx / .xls / .csv 表格文件</view>
       <view class="tip-line">· CSV 表头：{{mode === 'create' ? '姓名,学号,身份证号,学校,院系,班级,专业,性别,出生日期' : '学号,性别,出生日期'}}</view>
       <view class="tip-line">· 初始密码 = 身份证后8位（无身份证用学号后8位），首次登录强制修改</view>
       <view class="tip-line">· 按「学号」去重：已存在的学生仅更新班级信息，不会改动密码和微信绑定</view>
@@ -33,10 +33,66 @@
       auto-height
       placeholder="在此粘贴 CSV 或 JSON 数据…"
     />
-    <t-button theme="primary" block loading="{{submitting}}" bind:tap="submit" class="mt-16">
-      开始导入
+    <t-button theme="primary" block loading="{{parsing}}" bind:tap="parseText" class="mt-16">
+      解析预览
     </t-button>
   </view>
+
+  <!-- ===== 解析预览（确认后才写入） ===== -->
+  <block wx:if="{{previewData}}">
+    <view class="tt-section">
+      <text>数据预览</text>
+      <text class="tt-section-extra">15 分钟内确认有效</text>
+    </view>
+    <view class="tt-card">
+      <view class="result-row">
+        <view class="result-stat">
+          <view class="num-font result-num">{{previewData.total}}</view>
+          <view class="result-label">共解析</view>
+        </view>
+        <view class="result-stat">
+          <view class="num-font result-num ok">{{previewData.valid}}</view>
+          <view class="result-label">可导入</view>
+        </view>
+        <view class="result-stat">
+          <view class="num-font result-num bad">{{previewData.failedCount}}</view>
+          <view class="result-label">异常</view>
+        </view>
+      </view>
+
+      <view class="imp-table" wx:if="{{previewData.preview.length}}">
+        <view class="imp-tr imp-th">
+          <text class="imp-td imp-td-name">姓名</text>
+          <text class="imp-td imp-td-sid">学号</text>
+          <text class="imp-td">班级</text>
+        </view>
+        <scroll-view scroll-y class="imp-table-body">
+          <view class="imp-tr" wx:for="{{previewData.preview}}" wx:key="index">
+            <text class="imp-td imp-td-name">{{item.name || '-'}}</text>
+            <text class="imp-td imp-td-sid">{{item.studentId}}</text>
+            <text class="imp-td">{{item.className || '-'}}</text>
+          </view>
+        </scroll-view>
+      </view>
+      <view class="imp-more" wx:if="{{previewData.total > 20}}">仅显示前 20 条，其余行确认后照常导入</view>
+
+      <view class="fail-list" wx:if="{{previewData.failedCount}}">
+        <view class="fail-item" wx:for="{{previewData.failed}}" wx:key="index">
+          <text class="fail-row">{{item.row}}</text>
+          <text class="fail-reason">{{item.reason}}</text>
+        </view>
+      </view>
+
+      <t-button
+        theme="primary"
+        block
+        loading="{{confirming}}"
+        disabled="{{!previewData.valid}}"
+        bind:tap="confirmImport"
+        class="mt-16"
+      >确认导入（{{mode === 'create' ? '创建/更新' : '仅更新'}}模式）</t-button>
+    </view>
+  </block>
 
   <block wx:if="{{result}}">
     <view class="tt-section">导入结果</view>

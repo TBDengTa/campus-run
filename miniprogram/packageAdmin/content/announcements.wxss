@@ -90,10 +90,44 @@
   box-sizing: border-box;
 }
 
-.ann-form-actions {
+/* ===== 底部弹层表单 ===== */
+.ann-sheet {
   display: flex;
-  gap: 16rpx;
-  margin-top: 24rpx;
+  flex-direction: column;
+  max-height: 82vh;
+  background: var(--tt-card);
+  border-radius: 28rpx 28rpx 0 0;
+}
+
+.ann-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 28rpx 32rpx 20rpx;
+  border-bottom: 2rpx solid var(--tt-line);
+}
+
+.ann-sheet-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.ann-sheet-done {
+  font-size: 28rpx;
+  color: var(--tt-brand);
+}
+
+.ann-sheet-body {
+  flex: 1;
+  max-height: 62vh;
+  padding: 8rpx 32rpx 24rpx;
+  box-sizing: border-box;
+}
+
+.ann-sheet-foot {
+  padding: 16rpx 32rpx calc(24rpx + env(safe-area-inset-bottom));
+  border-top: 2rpx solid var(--tt-line);
 }
 
 /* ===== 列表 ===== */

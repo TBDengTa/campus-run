@@ -112,6 +112,20 @@ Page({
         wx.navigateTo({ url: '/pages/banned/banned' });
         return;
       }
+      // 限制微信同步类（激励步数走同一条步数通道）时同样引导申诉
+      if (e.code === 403004) {
+        const r = e.restriction || {};
+        wx.showModal({
+          title: `${r.text || '该功能'}已被限制`,
+          content: `${r.reason || '数据异常'}\n解封时间：${r.until ? String(r.until).slice(0, 16).replace('T', ' ') : '永久'}`,
+          confirmText: '去申诉',
+          cancelText: '知道了',
+          success: (res) => {
+            if (res.confirm) wx.navigateTo({ url: `/pages/appeal/submit?scope=${r.scope || 'sync'}` });
+          },
+        });
+        return;
+      }
       wx.showToast({ title: e.message, icon: 'none' });
     }
   },

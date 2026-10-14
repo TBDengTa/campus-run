@@ -96,7 +96,6 @@ async function getEffectiveGoal(openid) {
       autoMatched: userGoal.autoMatched,
       daily,
       weekly,
-      graded: globalConfig.graded,
     };
   }
   return {
@@ -105,7 +104,6 @@ async function getEffectiveGoal(openid) {
     autoMatched: false,
     daily: globalConfig.daily,
     weekly: globalConfig.weekly,
-    graded: globalConfig.graded,
   };
 }
 

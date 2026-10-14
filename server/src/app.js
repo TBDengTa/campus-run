@@ -40,6 +40,7 @@ function createApp() {
   app.use('/api/ads', require('./routes/ad'));
   app.use('/api/org', require('./routes/org'));
   app.use('/api/content', require('./routes/content'));
+  app.use('/api/upload', require('./routes/upload'));
   app.use('/api/admin', require('./routes/admin'));
 
   app.use(notFound);

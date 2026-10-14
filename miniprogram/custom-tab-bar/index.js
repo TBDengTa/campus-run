@@ -12,7 +12,7 @@ const STUDENT_TABS = [
 // 教师（有管理权限）：管理端入口作为普通导航项
 const TEACHER_TABS_ADMIN = [
   { key: 'home', path: '/pages/home/home', text: '首页', icon: 'home', activeIcon: 'home-filled', tab: true },
-  { key: 'admin', path: '/packageAdmin/dashboard/dashboard', text: '管理', icon: 'dashboard', activeIcon: 'dashboard-filled', tab: false },
+  { key: 'admin', path: '/packageAdmin/users/users', text: '管理', icon: 'dashboard', activeIcon: 'dashboard-filled', tab: false },
   { key: 'profile', path: '/pages/profile/profile', text: '我的', icon: 'user-circle', activeIcon: 'user-circle-filled', tab: true },
 ];
 

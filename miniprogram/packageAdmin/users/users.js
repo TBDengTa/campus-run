@@ -25,6 +25,15 @@ const FILTER_LABELS = {
   weeklyAchieved: '周目标',
 };
 
+// 列表上方常驻分类 Tab：管理员不是角色而是权限，单独传 manager=1
+const ROLE_TABS = [
+  { key: 'all', label: '全部' },
+  { key: 'student', label: '学生' },
+  { key: 'teacher', label: '教师' },
+  { key: 'manager', label: '管理员' },
+];
+const ROLE_TAB_LABELS = { all: '全部', student: '学生', teacher: '教师', manager: '管理员' };
+
 // 日/周目标筛的是「当日 / 当周是否达标」，不是目标步数
 const ACHIEVE_OPTIONS = [
   { label: '已达标', value: '1' },
@@ -32,11 +41,31 @@ const ACHIEVE_OPTIONS = [
 ];
 const ACHIEVE_TEXT = { 1: '已达标', 0: '未达标' };
 
+// 生效中的限制类型：login 限制登录 / sync 限制微信同步 / gps 限制 GPS 实跑
+// （限制登录 = status=banned 且未到期；sync/gps = restrictions[s].until 未到期）
+const SCOPE_LABELS = { login: '限制登录', sync: '限制微信同步', gps: '限制 GPS' };
+function activeScopes(u) {
+  const now = Date.now();
+  const out = [];
+  if (u.status === 'banned' && (!u.bannedUntil || new Date(u.bannedUntil).getTime() > now)) out.push('login');
+  for (const s of ['sync', 'gps']) {
+    const r = (u.restrictions || {})[s];
+    if (r && r.until && new Date(r.until).getTime() > now) out.push(s);
+  }
+  return out;
+}
+function hasActiveRestriction(u) {
+  return activeScopes(u).length > 0;
+}
+
 Page({
   data: {
     keyword: '',
     status: '',
     role: '',
+    manager: '', // '1' = 管理员 Tab（按权限过滤）
+    roleTab: 'all',
+    tabs: ROLE_TABS,
     page: 1,
     limit: 20,
     total: 0,
@@ -58,6 +87,8 @@ Page({
     filterSummary: '', // 已生效条件文案
     showFilters: false, // 筛选面板默认收起，把首屏留给列表
     canManage: false,
+    // 「限制账号功能」抽屉（ban-sheet 组件）
+    banSheet: { visible: false, user: null, busy: false },
   },
 
   onShow() {
@@ -100,8 +131,7 @@ Page({
     }
     if (this.data.status === 'active') summary.push('状态 正常');
     if (this.data.status === 'banned') summary.push('状态 封禁');
-    if (this.data.role === 'student') summary.push('角色 学生');
-    if (this.data.role === 'teacher') summary.push('角色 教师');
+    if (this.data.roleTab !== 'all') summary.push(`分类 ${ROLE_TAB_LABELS[this.data.roleTab]}`);
     if (this.data.keyword) summary.push(`关键词「${this.data.keyword}」`);
     this.setData({
       hasActiveFilter: summary.length > 0,
@@ -121,6 +151,8 @@ Page({
       keyword: '',
       status: '',
       role: '',
+      manager: '',
+      roleTab: 'all',
       hasActiveFilter: false,
       filterCount: 0,
       filterSummary: '',
@@ -154,20 +186,25 @@ Page({
     this.reload();
   },
 
-  // 账户类型筛选：'' 全部 / student 学生 / teacher 教师
-  filterRole(e) {
-    const role = e.currentTarget.dataset.role;
-    this.setData({ role: this.data.role === role ? '' : role });
+  // 分类 Tab：'' 全部 / student 学生 / teacher 教师 / manager 管理员（按权限）
+  switchTab(e) {
+    const key = e.currentTarget.dataset.key;
+    if (key === this.data.roleTab) return;
+    const patch = { roleTab: key, role: '', manager: '' };
+    if (key === 'student' || key === 'teacher') patch.role = key;
+    if (key === 'manager') patch.manager = '1';
+    this.setData(patch);
     this.updateFilterState();
     this.reload();
   },
 
   buildQuery(extra = {}) {
-    const { keyword, status, role, filters } = this.data;
+    const { keyword, status, role, manager, filters } = this.data;
     const q = { ...extra };
     if (keyword) q.keyword = keyword;
     if (status) q.status = status;
     if (role) q.role = role;
+    if (manager) q.manager = manager;
     for (const k of ['school', 'department', 'specialty', 'grade', 'dailyAchieved', 'weeklyAchieved']) {
       if (filters[k]) q[k] = filters[k];
     }
@@ -192,10 +229,25 @@ Page({
         // 先算出 isSuper 再生成滑动按钮：buildSwipeButtons 依赖 isSuper，
         // 直接把原始 u 传进去会让超管的「封禁/删除」也出现（u.isSuper 为 undefined）
         const item = { ...u, isSuper: (u.permissionGroups || []).includes('superadmin') };
+        // 生效中的限制（限制登录 / 微信同步 / GPS）：Hover 标签与「解除」按钮都依赖它
+        item.activeScopes = activeScopes(item);
+        item.scopeLabels = item.activeScopes.map((s) => SCOPE_LABELS[s]);
+        // 展示字段：WXML 不做表达式拼接，这里预计算好
+        item.nameText = u.account || u.nickname || u.realName || '未命名';
+        item.initial = item.nameText.charAt(0);
+        item.isTeacher = u.role === 'teacher';
+        if (item.isTeacher) {
+          // 教师无学号/班级/目标，展示所属院系
+          item.deptText = [u.departmentName, u.schoolName].filter(Boolean).join(' · ');
+        } else {
+          // 运动目标显示计划名称；没有个人计划（走全局默认）的学生显示「默认目标」
+          item.goalText = (u.goal && u.goal.planName) || '默认目标';
+        }
         item.swipeRight = this.buildSwipeButtons(item);
         return item;
       });
-      this.setData({ list, total: res.total });
+      // 触底加载下一页：拼在已有列表后面（不能整体覆盖，否则翻页会冲掉前面的数据）
+      this.setData({ list: [...this.data.list, ...list], total: res.total });
     } catch (e) {
       wx.showToast({ title: e.message, icon: 'none' });
     } finally {
@@ -204,20 +256,81 @@ Page({
   },
 
   // 每行滑动按钮（对象里带 uid/type 供回调分发）
-  // 「详细」改为点击卡片进入，左滑只留 3 键，滑出区更短、更好按
+  // 「详细」改为点击卡片进入；封禁改为打开「限制账号功能」抽屉（可选类型 + 时长）
   buildSwipeButtons(u) {
     const id = u._id;
     const btns = [{ text: '编辑', type: 'edit', uid: id, style: BTN_STYLE.edit }];
-    if (u.status !== 'banned' && !u.isSuper) {
-      btns.push({ text: '封禁', type: 'ban', uid: id, nickname: u.nickname || u.realName, style: BTN_STYLE.ban });
+    if (!u.isSuper) {
+      btns.push({ text: '限制', type: 'ban', uid: id, nickname: u.nickname || u.realName, style: BTN_STYLE.ban });
     }
-    if (u.status === 'banned') {
-      btns.push({ text: '解封', type: 'unban', uid: id, style: BTN_STYLE.unban });
+    if (u.status === 'banned' || hasActiveRestriction(u)) {
+      btns.push({ text: '解除', type: 'unban', uid: id, style: BTN_STYLE.unban });
     }
     if (!u.isSuper) {
       btns.push({ text: '删除', type: 'del', uid: id, nickname: u.nickname || u.realName, style: BTN_STYLE.del });
     }
     return btns;
+  },
+
+  // 打开「限制账号功能」抽屉
+  openBanSheet(uid) {
+    const u = (this.data.list || []).find((x) => x._id === uid);
+    if (!u) return;
+    this.setData({
+      banSheet: {
+        visible: true,
+        user: { _id: u._id, account: u.account || u.nickname || u.realName || '' },
+        busy: false,
+      },
+    });
+  },
+
+  onBanSheetClose() {
+    this.setData({ 'banSheet.visible': false });
+  },
+
+  // 提交限制：类型（登录/微信同步/GPS）+ 时长（>0 天 / 0 = 永久）
+  async onBanSubmit(e) {
+    const id = this.data.banSheet.user && this.data.banSheet.user._id;
+    if (!id) return;
+    const { scope, days, reason } = e.detail || {};
+    this.setData({ 'banSheet.busy': true });
+    try {
+      await auth.post(`/api/admin/users/${id}/ban`, {
+        scope,
+        days,
+        reason: reason || '违反社区规范',
+      });
+      const text = { login: '限制登录', sync: '限制微信同步', gps: '限制 GPS' }[scope] || '已限制';
+      wx.showToast({ title: `${text}${days > 0 ? ' ' + days + ' 天' : '（永久）'}`, icon: 'none' });
+      this.setData({ 'banSheet.visible': false });
+      this.reload();
+    } catch (err) {
+      wx.showToast({ title: err.message, icon: 'none' });
+    } finally {
+      this.setData({ 'banSheet.busy': false });
+    }
+  },
+
+  // 解除限制：可选按类型解除或全部解除
+  onUnban(uid) {
+    const that = this;
+    wx.showActionSheet({
+      itemList: ['全部解除', '解除限制登录', '解除微信同步限制', '解除 GPS 限制'],
+      success: async (r) => {
+        const scope = ['all', 'login', 'sync', 'gps'][r.tapIndex];
+        try {
+          const res = await auth.post(`/api/admin/users/${uid}/unban`, { scope });
+          wx.showToast({
+            title: res && res.lifted && res.lifted.length ? '已解除' : '该类型当前无生效限制',
+            icon: 'none',
+          });
+          that.reload();
+        } catch (err) {
+          wx.showToast({ title: err.message, icon: 'none' });
+        }
+      },
+    });
   },
 
   // 点击整行 → 用户详情（手机端主操作路径，不必先左滑）
@@ -239,32 +352,11 @@ Page({
       return;
     }
     if (act.type === 'ban') {
-      const that = this;
-      wx.showModal({
-        title: '封禁用户',
-        editable: true,
-        placeholderText: '封禁原因',
-        success: async (res) => {
-          if (!res.confirm) return;
-          try {
-            await auth.post(`/api/admin/users/${act.uid}/ban`, { reason: res.content || '违反社区规范', days: 7 });
-            wx.showToast({ title: '已封禁 7 天', icon: 'success' });
-            that.reload();
-          } catch (err) {
-            wx.showToast({ title: err.message, icon: 'none' });
-          }
-        },
-      });
+      this.openBanSheet(act.uid);
       return;
     }
     if (act.type === 'unban') {
-      try {
-        await auth.post(`/api/admin/users/${act.uid}/unban`);
-        wx.showToast({ title: '已解封', icon: 'success' });
-        this.reload();
-      } catch (err) {
-        wx.showToast({ title: err.message, icon: 'none' });
-      }
+      this.onUnban(act.uid);
       return;
     }
     if (act.type === 'del') {

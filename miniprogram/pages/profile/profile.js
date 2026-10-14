@@ -69,7 +69,8 @@ Page({
       await getApp().ensureLogin();
       const user = await getApp().refreshUser();
       let banned = false;
-      if (user.status === 'banned' && user.bannedUntil && new Date(user.bannedUntil) > new Date()) {
+      // 永久限制（bannedUntil 为空）也算封禁态
+      if (user.status === 'banned' && (!user.bannedUntil || new Date(user.bannedUntil) > new Date())) {
         banned = true;
       }
       const perms = user.effectivePermissions || [];
@@ -102,8 +103,18 @@ Page({
   },
 
   async chooseAvatar(e) {
-    const { avatarUrl } = e.detail;
-    this.applyProfile({ avatarUrl });
+    const { avatarUrl: tempPath } = e.detail;
+    if (!tempPath) return;
+    // 先上传到服务器拿到正式 URL（微信临时路径其他设备不可见），再保存到资料
+    wx.showLoading({ title: '上传中…' });
+    try {
+      const { url } = await auth.uploadFile(tempPath, { url: '/api/upload/avatar' });
+      await this.applyProfile({ avatarUrl: url });
+    } catch (err) {
+      wx.showToast({ title: err.message || '头像上传失败', icon: 'none' });
+    } finally {
+      wx.hideLoading();
+    }
   },
 
   async nicknameInput(e) {
@@ -138,10 +149,6 @@ Page({
 
   go(e) {
     wx.navigateTo({ url: e.currentTarget.dataset.url });
-  },
-
-  goAdmin() {
-    wx.navigateTo({ url: '/packageAdmin/dashboard/dashboard' });
   },
 
   // 权限管理：进用户列表选人（持有 permission.manage 时显示）

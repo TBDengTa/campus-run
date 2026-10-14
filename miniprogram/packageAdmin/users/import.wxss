@@ -129,3 +129,61 @@
   color: var(--td-text-color-secondary);
   margin-top: 4rpx;
 }
+
+/* ===== 解析预览表格 ===== */
+.imp-table {
+  border: 1rpx solid var(--td-component-stroke);
+  border-radius: 12rpx;
+  overflow: hidden;
+}
+
+.imp-table-body {
+  max-height: 480rpx;
+}
+
+.imp-tr {
+  display: flex;
+  align-items: center;
+  padding: 0 16rpx;
+  border-bottom: 1rpx solid var(--td-component-stroke);
+}
+
+.imp-tr:last-child {
+  border-bottom: none;
+}
+
+.imp-th {
+  background: var(--td-gray-color-1, #f3f3f3);
+  font-weight: 600;
+}
+
+.imp-td {
+  flex: 1;
+  min-width: 0;
+  padding: 14rpx 8rpx;
+  font-size: 24rpx;
+  color: var(--td-text-color-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
+}
+
+.imp-th .imp-td {
+  padding: 12rpx 8rpx;
+}
+
+.imp-td-name {
+  flex: 0 0 160rpx;
+}
+
+.imp-td-sid {
+  flex: 0 0 190rpx;
+}
+
+.imp-more {
+  margin-top: 12rpx;
+  font-size: 22rpx;
+  color: var(--td-text-color-secondary);
+  text-align: center;
+}

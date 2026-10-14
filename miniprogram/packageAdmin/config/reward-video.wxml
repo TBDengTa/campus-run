@@ -1,0 +1,31 @@
+<view class="page tt-page cfg-page" wx:if="{{config}}">
+  <view class="tt-section">
+    <text>激励视频赚步数</text>
+    <text class="tt-section-extra">观看广告换取步数</text>
+  </view>
+
+  <view class="tt-card cfg-card">
+    <view class="cfg-fitem cfg-fitem-switch">
+      <view class="cfg-flabel-col">
+        <text class="cfg-switch-label">启用</text>
+        <text class="cfg-fdesc">关闭后用户端隐藏赚步数入口</text>
+      </view>
+      <t-switch value="{{config.rewardVideo.enabled}}" bind:change="onReward" data-field="enabled" />
+    </view>
+
+    <view class="cfg-fitem">
+      <text class="cfg-flabel">每日观看上限（次）</text>
+      <input class="cfg-input" type="number" value="{{config.rewardVideo.dailyLimit}}" bindinput="onReward" data-field="dailyLimit" />
+    </view>
+    <view class="cfg-fitem">
+      <text class="cfg-flabel">每次奖励步数</text>
+      <input class="cfg-input" type="number" value="{{config.rewardVideo.stepsPerWatch}}" bindinput="onReward" data-field="stepsPerWatch" />
+    </view>
+  </view>
+
+  <view class="cfg-save-bar">
+    <t-button theme="primary" block loading="{{saving}}" bind:tap="save">保存配置</t-button>
+  </view>
+
+  <view class="tt-footer">配置修改后立即对用户端生效</view>
+</view>

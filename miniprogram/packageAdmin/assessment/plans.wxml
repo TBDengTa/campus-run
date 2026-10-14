@@ -1,0 +1,106 @@
+<view class="page tt-page pl-page">
+  <!-- ===== 头部 ===== -->
+  <view class="pl-head">
+    <text class="pl-head-text">共 {{list.length}} 个计划</text>
+    <view class="pl-btn pl-btn-primary" bind:tap="openCreate">+ 新建计划</view>
+  </view>
+
+  <!-- ===== 列表 ===== -->
+  <view class="tt-card">
+    <view class="tt-row" wx:for="{{list}}" wx:key="_id">
+      <view class="flex-1">
+        <view class="pl-row-title">
+          <text class="pl-row-name">{{item.name}}</text>
+          <text class="pl-tag {{item.enabled ? 'pl-tag-on' : 'pl-tag-off'}}">{{item.enabled ? '启用' : '停用'}}</text>
+          <text class="pl-tag pl-tag-default" wx:if="{{item.isDefault}}">默认</text>
+        </view>
+        <view class="tt-row-sub">每日 {{item.dailyStepsText}} 步 · BMI {{item.bmiText}} · {{item.genderText}} · {{item.levelText}}{{item.refText ? ' · ' + item.refText : ''}}</view>
+      </view>
+      <view class="pl-row-actions">
+        <view class="pl-btn" bind:tap="openEdit" data-id="{{item._id}}">编辑</view>
+        <view class="pl-btn pl-btn-danger" bind:tap="remove" data-id="{{item._id}}" data-name="{{item.name}}">删除</view>
+      </view>
+    </view>
+  </view>
+  <view class="tt-empty" wx:if="{{!list.length && !loading}}">暂无计划，点击「新建计划」创建</view>
+
+  <view class="tt-footer">修改计划不影响已应用用户的当前目标（用户目标为快照）</view>
+
+  <!-- ===== 新增 / 编辑（底部弹层） ===== -->
+  <t-popup visible="{{formVisible}}" placement="bottom" bind:visible-change="onFormVisible">
+    <view class="pl-sheet">
+      <view class="pl-sheet-head">
+        <text class="pl-sheet-title">{{form._id ? '编辑计划' : '新建计划'}}</text>
+        <text class="pl-sheet-done" bind:tap="closeForm">关闭</text>
+      </view>
+      <scroll-view scroll-y class="pl-sheet-body" wx:if="{{form}}">
+        <view class="pl-fitem">
+          <text class="pl-flabel">名称<text class="pl-req">*</text></text>
+          <input class="pl-input" value="{{form.name}}" bindinput="onName" placeholder="如：BMI正常·适中版" />
+        </view>
+        <picker mode="selector" range="{{genders}}" range-key="label" value="{{genderIndex}}" bindchange="onGender">
+          <view class="pl-fitem">
+            <text class="pl-flabel">适用性别</text>
+            <view class="pl-picker">{{genders[genderIndex].label}}</view>
+            <t-icon name="chevron-down" size="30rpx" color="var(--tt-text-3)" />
+          </view>
+        </picker>
+        <picker mode="selector" range="{{levels}}" range-key="label" value="{{levelIndex}}" bindchange="onLevel">
+          <view class="pl-fitem">
+            <text class="pl-flabel">强度偏好</text>
+            <view class="pl-picker">{{levels[levelIndex].label}}</view>
+            <t-icon name="chevron-down" size="30rpx" color="var(--tt-text-3)" />
+          </view>
+        </picker>
+        <view class="pl-fitem">
+          <text class="pl-flabel">BMI 区间</text>
+          <input class="pl-input pl-input-sm" type="digit" value="{{form.bmiMin}}" bindinput="onNum" data-field="bmiMin" />
+          <text class="pl-unit">~</text>
+          <input class="pl-input pl-input-sm" type="digit" value="{{form.bmiMax}}" bindinput="onNum" data-field="bmiMax" />
+        </view>
+
+        <view class="pl-sublabel">每日目标</view>
+        <view class="pl-fitem">
+          <text class="pl-flabel">步数</text>
+          <input class="pl-input" type="number" value="{{form.daily.steps}}" bindinput="onNum" data-group="daily" data-field="steps" />
+        </view>
+        <view class="pl-fitem">
+          <text class="pl-flabel">距离（米）</text>
+          <input class="pl-input" type="number" value="{{form.daily.distance}}" bindinput="onNum" data-group="daily" data-field="distance" />
+        </view>
+        <view class="pl-fitem">
+          <text class="pl-flabel">千卡</text>
+          <input class="pl-input" type="number" value="{{form.daily.calories}}" bindinput="onNum" data-group="daily" data-field="calories" />
+        </view>
+
+        <view class="pl-sublabel">每周目标</view>
+        <view class="pl-fitem">
+          <text class="pl-flabel">步数</text>
+          <input class="pl-input" type="number" value="{{form.weekly.steps}}" bindinput="onNum" data-group="weekly" data-field="steps" />
+        </view>
+        <view class="pl-fitem">
+          <text class="pl-flabel">距离（米）</text>
+          <input class="pl-input" type="number" value="{{form.weekly.distance}}" bindinput="onNum" data-group="weekly" data-field="distance" />
+        </view>
+
+        <view class="pl-fitem pl-fitem-switch">
+          <view class="pl-flabel-col">
+            <text class="pl-switch-label">启用</text>
+            <text class="pl-fdesc">停用后不参与学生匹配，用户端不可见</text>
+          </view>
+          <t-switch value="{{form.enabled}}" bind:change="toggleEnabled" />
+        </view>
+        <view class="pl-fitem pl-fitem-switch">
+          <view class="pl-flabel-col">
+            <text class="pl-switch-label">设为默认计划</text>
+            <text class="pl-fdesc">无匹配命中时的兜底计划（全局唯一）</text>
+          </view>
+          <t-switch value="{{form.isDefault}}" bind:change="toggleDefault" />
+        </view>
+      </scroll-view>
+      <view class="pl-sheet-foot">
+        <t-button theme="primary" block loading="{{saving}}" bind:tap="save">{{form._id ? '保存修改' : '创建计划'}}</t-button>
+      </view>
+    </view>
+  </t-popup>
+</view>

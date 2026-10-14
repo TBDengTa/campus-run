@@ -4,20 +4,24 @@
     <view class="banned-hero-icon">
       <t-icon name="error-circle" size="64rpx" color="var(--td-error-color-6)" />
     </view>
-    <view class="banned-hero-title">账号已被封禁</view>
+    <view class="banned-hero-title">账号已被限制登录</view>
     <view class="banned-hero-sub">申诉提交后管理员会尽快核实处理</view>
   </view>
 
   <!-- ===== 封禁详情 ===== -->
   <view class="banned-info">
     <view class="banned-info-row">
-      <text class="banned-info-label">封禁原因</text>
+      <text class="banned-info-label">限制类型</text>
+      <text class="banned-info-value">限制登录（其它限制可在申诉页按类型申诉）</text>
+    </view>
+    <view class="banned-info-row">
+      <text class="banned-info-label">限制原因</text>
       <text class="banned-info-value">{{user.banReason || '违反社区规范'}}</text>
     </view>
     <view class="banned-info-row">
       <text class="banned-info-label">解封时间</text>
-      <text class="banned-info-value" wx:if="{{user.bannedUntil}}">{{user.bannedUntil}}</text>
-      <text class="banned-info-value banned-info-muted" wx:else>无固定期限，可提交申诉</text>
+      <text class="banned-info-value" wx:if="{{user.bannedUntil}}">{{untilText}}</text>
+      <text class="banned-info-value banned-info-muted" wx:else>无固定期限（永久），可提交申诉</text>
     </view>
   </view>
 

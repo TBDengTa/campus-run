@@ -16,9 +16,44 @@
   color: var(--tt-text-2);
 }
 
-/* ===== 表单 ===== */
-.clog-form-title {
-  margin: 0 0 20rpx;
+/* ===== 底部弹层表单 ===== */
+.clog-sheet {
+  display: flex;
+  flex-direction: column;
+  max-height: 82vh;
+  background: var(--tt-card);
+  border-radius: 28rpx 28rpx 0 0;
+}
+
+.clog-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 28rpx 32rpx 20rpx;
+  border-bottom: 2rpx solid var(--tt-line);
+}
+
+.clog-sheet-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.clog-sheet-done {
+  font-size: 28rpx;
+  color: var(--tt-brand);
+}
+
+.clog-sheet-body {
+  flex: 1;
+  max-height: 62vh;
+  padding: 8rpx 32rpx 24rpx;
+  box-sizing: border-box;
+}
+
+.clog-sheet-foot {
+  padding: 16rpx 32rpx calc(24rpx + env(safe-area-inset-bottom));
+  border-top: 2rpx solid var(--tt-line);
 }
 
 .clog-fitem {
@@ -76,12 +111,6 @@
   background: var(--td-bg-color-component);
   border-radius: 16rpx;
   box-sizing: border-box;
-}
-
-.clog-form-actions {
-  display: flex;
-  gap: 16rpx;
-  margin-top: 24rpx;
 }
 
 /* ===== 列表 ===== */

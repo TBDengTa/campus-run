@@ -17,14 +17,8 @@ router.put(
   requirePermission('config.manage'),
   wrap(async (req, res) => {
     const doc = await GoalConfig.getSingleton();
-    const { daily, weekly, graded, anticheat, rewardVideo } = req.body || {};
-    if (daily) Object.assign(doc.daily, pickNums(daily));
-    if (weekly) Object.assign(doc.weekly, pickNums(weekly));
-    if (Array.isArray(graded)) {
-      doc.graded = graded
-        .filter((g) => g && /^\d{2}:\d{2}$/.test(g.time || ''))
-        .map((g) => ({ time: g.time, percent: Number(g.percent) || 0 }));
-    }
+    // 默认目标（daily/weekly）已移交 /api/admin/assessment/defaults
+    const { anticheat, rewardVideo } = req.body || {};
     if (anticheat) {
       doc.anticheat.enabled = anticheat.enabled !== false;
       if (anticheat.maxStepJumpPerSync != null) doc.anticheat.maxStepJumpPerSync = Number(anticheat.maxStepJumpPerSync);
@@ -40,13 +34,5 @@ router.put(
     ok(res, doc);
   })
 );
-
-function pickNums(obj) {
-  const out = {};
-  for (const [k, v] of Object.entries(obj)) {
-    if (typeof v === 'number' && v >= 0) out[k] = v;
-  }
-  return out;
-}
 
 module.exports = router;

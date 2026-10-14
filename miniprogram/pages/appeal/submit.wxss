@@ -1,41 +1,55 @@
 /* ===== 提交申诉 · 白橙 ===== */
 
-/* 封禁信息（柔和红点缀） */
+/* 生效限制容器（内层是可点选的白卡） */
 .appeal-ban-card {
   margin: 0 var(--tt-gap) var(--tt-gap);
-  padding: var(--tt-pad);
+  padding: 20rpx;
   border-radius: var(--tt-radius);
-  background: var(--td-error-color-1);
+  background: var(--tt-card);
   box-shadow: var(--tt-card-shadow);
 }
 
-.appeal-ban-head {
+/* 生效中的限制：可点选（按类型申诉） */
+.appeal-scope {
+  padding: 18rpx 20rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-card);
+  border: 2rpx solid var(--tt-line);
+}
+
+.appeal-scope + .appeal-scope {
+  margin-top: 14rpx;
+}
+
+.appeal-scope.active {
+  border-color: var(--tt-brand);
+  background: var(--tt-brand-soft);
+}
+
+.appeal-scope-top {
   display: flex;
   align-items: center;
   gap: 10rpx;
 }
 
-.appeal-ban-title {
-  font-size: 29rpx;
+.appeal-scope-name {
+  font-size: 28rpx;
   font-weight: 600;
-  color: var(--td-error-color-6);
-}
-
-.appeal-ban-reason {
-  margin-top: 14rpx;
-  font-size: 27rpx;
-  line-height: 42rpx;
   color: var(--tt-text-1);
-  word-break: break-all;
 }
 
-.appeal-ban-until {
-  display: flex;
-  align-items: center;
-  gap: 8rpx;
-  margin-top: 12rpx;
+.appeal-scope-until {
+  margin-left: auto;
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+.appeal-scope-reason {
+  margin-top: 8rpx;
   font-size: 24rpx;
-  color: var(--td-error-color-6);
+  line-height: 36rpx;
+  color: var(--tt-text-2);
+  word-break: break-all;
 }
 
 /* 字数统计 */

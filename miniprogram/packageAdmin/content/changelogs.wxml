@@ -6,48 +6,6 @@
     </view>
   </view>
 
-  <!-- ===== 编辑表单 ===== -->
-  <view class="tt-card" wx:if="{{form}}">
-    <view class="tt-section clog-form-title">
-      <text>{{form._id ? '编辑版本' : '新增版本'}}</text>
-      <text class="tt-section-extra" bind:tap="closeForm">收起</text>
-    </view>
-
-    <view class="clog-fitem">
-      <text class="clog-flabel">版本号 <text class="clog-req">*</text></text>
-      <input class="clog-input" value="{{form.version}}" bindinput="onField" data-field="version" placeholder="2.0.1" />
-    </view>
-
-    <view class="clog-fitem">
-      <text class="clog-flabel">发布日期</text>
-      <picker mode="date" value="{{form.date}}" bindchange="onDate">
-        <view class="clog-input clog-picker">{{form.date || '选择日期'}}</view>
-      </picker>
-    </view>
-
-    <view class="clog-fitem">
-      <text class="clog-flabel">标题</text>
-      <input class="clog-input" value="{{form.title}}" bindinput="onField" data-field="title" placeholder="如 性能优化与体验改进" />
-    </view>
-
-    <view class="clog-fitem clog-fitem-top">
-      <text class="clog-flabel">更新内容</text>
-      <textarea
-        class="clog-textarea"
-        value="{{form.content}}"
-        bindinput="onContent"
-        maxlength="-1"
-        auto-height
-        placeholder="每行一条…"
-      />
-    </view>
-
-    <view class="clog-form-actions">
-      <t-button theme="primary" block bind:tap="save">保存</t-button>
-      <t-button theme="default" variant="outline" block bind:tap="closeForm">取消</t-button>
-    </view>
-  </view>
-
   <!-- ===== 版本列表 ===== -->
   <view class="tt-section">
     <text>版本列表</text>
@@ -78,4 +36,47 @@
   </view>
 
   <view class="tt-footer">版本日志同步展示在用户端「版本日志」页</view>
+
+  <!-- ===== 新增 / 编辑（底部弹层） ===== -->
+  <t-popup visible="{{formVisible}}" placement="bottom" bind:visible-change="onFormVisible">
+    <view class="clog-sheet">
+      <view class="clog-sheet-head">
+        <text class="clog-sheet-title">{{form._id ? '编辑版本' : '新增版本'}}</text>
+        <text class="clog-sheet-done" bind:tap="closeForm">关闭</text>
+      </view>
+      <scroll-view scroll-y class="clog-sheet-body" wx:if="{{form}}">
+        <view class="clog-fitem">
+          <text class="clog-flabel">版本号 <text class="clog-req">*</text></text>
+          <input class="clog-input" value="{{form.version}}" bindinput="onField" data-field="version" placeholder="2.0.1" />
+        </view>
+
+        <view class="clog-fitem">
+          <text class="clog-flabel">发布日期</text>
+          <picker mode="date" value="{{form.date}}" bindchange="onDate">
+            <view class="clog-input clog-picker">{{form.date || '选择日期'}}</view>
+          </picker>
+        </view>
+
+        <view class="clog-fitem">
+          <text class="clog-flabel">标题</text>
+          <input class="clog-input" value="{{form.title}}" bindinput="onField" data-field="title" placeholder="如 性能优化与体验改进" />
+        </view>
+
+        <view class="clog-fitem clog-fitem-top">
+          <text class="clog-flabel">更新内容</text>
+          <textarea
+            class="clog-textarea"
+            value="{{form.content}}"
+            bindinput="onContent"
+            maxlength="-1"
+            auto-height
+            placeholder="每行一条…"
+          />
+        </view>
+      </scroll-view>
+      <view class="clog-sheet-foot">
+        <t-button theme="primary" block loading="{{saving}}" bind:tap="save">{{form._id ? '保存修改' : '新增版本'}}</t-button>
+      </view>
+    </view>
+  </t-popup>
 </view>

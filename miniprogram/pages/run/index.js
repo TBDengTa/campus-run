@@ -281,6 +281,21 @@ Page({
         wx.navigateTo({ url: '/pages/banned/banned' });
         return;
       }
+      // 限制 GPS 实跑（反作弊/人工）：提示到期时间并引导按类型申诉
+      if (e.code === 403004) {
+        const r = e.restriction || {};
+        wx.showModal({
+          title: `${r.text || 'GPS 实跑'}已被限制`,
+          content: `${r.reason || '数据异常'}\n解封时间：${r.until ? String(r.until).slice(0, 16).replace('T', ' ') : '永久'}`,
+          confirmText: '去申诉',
+          cancelText: '知道了',
+          success: (res) => {
+            if (res.confirm) wx.navigateTo({ url: `/pages/appeal/submit?scope=${r.scope || 'gps'}` });
+          },
+        });
+        this.applyState('paused');
+        return;
+      }
       wx.showModal({ title: '保存失败', content: e.message, showCancel: false });
       this.applyState('paused');
     } finally {

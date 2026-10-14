@@ -144,7 +144,7 @@ box-shadow: 0 12rpx 32rpx rgba(255, 107, 0, 0.24);
 
 ## 8. 首页（学生端）版式与插画素材位
 
-首页自上而下：**插画头 → 公告跑马灯 → 广告位 → 今日目标 → 本周目标 → 管理面板（有权限时）→ 快捷入口 → 页脚**。
+首页自上而下：**插画头 → 公告跑马灯 → 广告位（教师不展示）→ 今日目标 → 本周目标 → 管理面板（数据概览+快捷按钮，有权限时）→ 快捷入口 → 页脚**。
 
 - **插画头**（`.sky`）：两种形态自动切换。
   - **有素材**（`assets/home/hero.png` 存在）：`<image mode="widthFix">` 按**图片本身比例**铺满宽度，容器高度自适应
@@ -174,10 +174,16 @@ box-shadow: 0 12rpx 32rpx rgba(255, 107, 0, 0.24);
   （可用宽 702rpx = 750 − 卡片左右各 24rpx，限幅 120~420rpx）。`wx.getImageInfo` 失败（如未配置下载域名）时
   保持兜底 `250rpx`，配合 aspectFit 仍能完整显示。
   **圆角与其它卡片一致**：卡片 / swiper / 图片三层都写 `border-radius: var(--tt-radius)`，避免圆角被裁切得不一致。
+  **教师账号无广告**：`GET /api/ads/slot/:key` 对教师角色直接返回空数组（服务端拦截为权威），首页 banner 不渲染、PV/点击不发生。
 - **紧凑比例**：整页按约 0.85 比例收紧（插画头 420→350rpx、卡片内边距 30→22rpx、7 天圆点 66→52rpx、
   指标条数字 36→28rpx、入口图标 104→84rpx），如需再缩放，改 `pages/home/home.wxss` 里对应数值即可。
-- **快捷入口**：饮水管理 / 目标计划 / 徽章成就 / 身体数据（教师端为 饮水管理 / 身体数据 / 公告 / 管理端）。
+- **快捷入口**：饮水管理 / 目标计划 / 徽章成就 / 身体数据（教师端为 饮水管理 / 身体数据 / 公告）。
   「目标计划」「身体数据」是同一页，用 `?focus=plan|body` 让 `body-data` 页自动滚动到对应区块。
+- **管理面板（教师/管理员）**：**数据概览 + 快捷按钮**两段——不展示账户类型与权限数；
+  概览 4 格（总用户/今日活跃/今日步数/广告PV），**广告PV 格按 `canViewAds`（ad.view）显隐**，
+  服务端 overview 同步按 ad.view 过滤广告字段；无 `dashboard.view` 者只显示快捷按钮（overview 静默失败，不无限转圈）。
+  **数据看板独立页已删除**（`packageAdmin/dashboard` 不存在）：教师底部 tab「管理」直达用户管理页，
+  首页/我的页内不再有「管理端控制台」按钮。
 
 ### 插画素材位（可选，放入即生效，无需改代码）
 首页在 `onLoad` 用 `wx.getFileSystemManager().accessSync` 探测以下代码包文件，存在则用图片、不存在则回退到 CSS 插画：
@@ -229,25 +235,59 @@ box-shadow: 0 12rpx 32rpx rgba(255, 107, 0, 0.24);
   投影写在 `t-swipe-cell` 宿主节点上（写在行上会被宿主 `overflow: hidden` 裁掉）。
   跳转账户编辑页必须写全两级路径 `packageAdmin/users/account-edit/account-edit`（少一级会静默跳转失败）。
 - **管理端 · 账户编辑 `packageAdmin/users/account-edit/account-edit`**：
-  院校 / 系部 / 专业是**级联选择器**，两条硬性要求：
-  ① `picker` 必须绑定 `value="{{xxxIndex < 0 ? 0 : xxxIndex}}"`，否则滚轮不落在当前项上（看起来「选了没反应」）；
-  ② 组织树（`/api/org/tree`）与用户数据（`/api/admin/users/:id`）是两个并发请求，**回显必须在两者都就绪后触发**
-  （`tryPrefillOrg()` 由两边分别调用），否则系部/专业列表是空的、选择器点了没内容。
-  `hasOrgTree === false`（组织架构未维护）时，三行自动降级为手填输入框，不能只剩空选择器。
-  **班级只读自动识别**：`班级 = 年级（学号前 4 位后两位）+ 专业`，如 `23级大数据技术`；页面只用 `.ae-static` 展示预览，
-  **不提交 `className`**，落库由服务端 `roster.classNameFromGradeSpecialty()` 推导（年级或专业缺失时保留原值，
-  已存在的更细班名如「23级机电1班」原样保留）——不要在页面里加班级输入框、候选下拉或 `/users/classes` 之类的候选接口。
-  **账户类型与权限可在本页直接改**：`role` 用顶部「账户类型」分段（编辑模式同样可改，但需 `permission.manage`：
-  保存走 `PUT /:id/permissions`，与详情页同一接口），下面追加「账户权限」卡片（权限组 + 独立权限 chips，
-  状态用 `draft.groupMap` / `draft.permMap` 映射）；点保存时先 `PUT /:id/profile` 再 `PUT /:id/permissions`，
-  新建账户则在 `POST /account` 成功后再补一次授权；`GET /api/admin/permissions` 403 时整块隐藏并提示无权限。
+  院校 / 系部 / 专业是**「组织树 ∪ 存量数据」选择器**（关键：两套命名常常对不上——组织树里叫「机电建工系」，
+  用户数据里叫「机电系」；只按组织树给选项会出现「专业整行消失、根本选不到」）：
+  选项 = 组织树节点（按已选上级收窄）∪ `/api/admin/users/filters` 返回的在用值，**末位固定一项「✎ 手动输入」**；
+  `t-picker` 必须绑定 `value="{{index < 0 ? 0 : index}}"`，否则滚轮不落在当前项上；已有值不在选项里时自动切到手填
+  （`.ae-switch` 可回到「选已有」）。
+  组织树（`/api/org/tree`）与用户数据（`/api/admin/users/:id`）是两个并发请求，**回显必须在两者都就绪后触发**
+  （`tryPrefillOrg()` 由两边分别调用），否则选项是空的、选择器点了没内容。
   **年级只读展示、不入表单**：`年级 = 学号前 4 位`（如 `20230101 → 2023级`），前端 `gradeFromStudentId()` 仅用于展示，
   落库由服务端 `roster.gradeFromStudentId()` 在创建/保存时统一推导（存量数据 `grade` 字段普遍为空，务必保留按学号推导的兜底）。
+  **班级只读自动识别**：`班级 = 年级（学号前 4 位后两位）+ 专业`，如 `23级大数据技术`；页面只用 `.ae-static` 展示预览，
+  **不提交 `className`**，落库由服务端 `roster.classNameFromGradeSpecialty()` 推导（年级或专业缺失时保留原值，
+  已存在的更细班名如「23级机电1班」原样保留）——不要在页面里加班级输入框或候选接口。
+  **账户类型与权限可在本页直接改**：`role` 用顶部「账户类型」分段（编辑模式同样可改，但需 `permission.manage`：
+  保存走 `PUT /:id/permissions`，与详情页同一接口）。
+  **权限用「多选抽屉」而不是铺满 chip**：卡片里只留两行摘要（权限组 / 独立权限，右侧 `chevron-right`），
+  点击打开 `t-popup`（bottom）+ `t-checkbox-group`（`options=[{label,value}]`、`value=[key]`）：
+  权限组一个列表，独立权限按模块分组逐段渲染；勾选逻辑走 `utils/permission-ui.js`
+  （`buildModules` / `mergeModuleKeys` / `refreshSelected` / `buildGroupOptions`），模块内勾选变化只合并该模块的 key。
+  点保存时先 `PUT /:id/profile` 再 `PUT /:id/permissions`；新建账户则在 `POST /account` 成功后补一次授权；
+  `GET /api/admin/permissions` 403 时整块隐藏并提示无权限。
+- **管理端 · 权限组管理 `packageAdmin/permissions/groups`**：列表（名称 + 内置标记 + 标识 + 权限数 + 使用账号数 + 权限清单）
+  → 「+ 新增权限组」/ 行内「编辑 / 删除」→ 底部抽屉表单（名称、标识、说明 + 按模块的权限多选）。
+  内置组显示「系统维护」、不可编辑删除；删除失败（仍被账号使用）时把服务端文案原样提示。
+  入口：账户编辑页「账户权限」标题右侧、用户详情页「权限管理」标题右侧。
+  接口：`GET/POST /api/admin/permission-groups`、`PUT/DELETE /api/admin/permission-groups/:id`（需 `permission.manage`）。
 - **管理端 · 用户详情 `packageAdmin/user-detail/user-detail`**：账号操作区依次为 编辑账户资料（`permission.manage`）、封禁/解封、
   重置登录密码、**删除账户**（`canManagePerms && !isSuper`，二次确认后 `DELETE /api/admin/users/:id` 并返回列表）。
+- **管理端 · 分类中枢页**：`config/config`、`content/index`、`assessment/index` 是同一套「分类中枢」语言——
+  `.tt-section` 标题（副文案写清生效范围）+ 单张 `.tt-card` 内多行 `tt-row` 分类项
+  （`.cfg-cat-icon`/`.ct-cat-icon`/`.am-cat-icon`：72rpx 品牌软底圆角块 + 品牌色图标 + 标题/摘要 + `chevron-right`），
+  每行跳独立子页；中枢页与子页都必须有 `checkAndLoad` 权限闸门。
+  配置子页（`config/anticheat|reward-video`）共用 `config/section.js` + `@import "config.wxss"`，
+  页面用 `sectionKeys` 声明本组键，**保存只回传本组**（服务端按白名单合并，未提供的键不动）。
+- **管理端 · 运动考核 `packageAdmin/assessment/*`**：独立模块（首页管理面板入口，权限 `assessment.view`/`assessment.manage`）。
+  中枢 2 卡：默认目标（`goals`，全局单例 每日/每周 编辑）与 计划目标（`plans`，BMI 预设计划库 CRUD，
+  「列表 + 内联表单 + 确认删除」公告模式；类型/枚举用原生 picker，字段白名单校验在服务端；
+  被用户应用中的计划删除会被 409 拦截，提示改停用）。
+  **分时段目标（graded）已废弃移除**——前后端均不得再引用。
+- **管理端 · 组织架构 `packageAdmin/content/organizations`**：**拍平递归树**——js 把 `/api/org/tree` 拍平成带 `depth` 的节点列表，
+  wxml 单层 `wx:for` + `padding-left: depth*36rpx` 内联缩进（**禁止再写死 l1/l2/l3 三层循环**）；
+  每节点操作 `+ 下级`（仅学校/院系）/ 编辑 / 删除；表单只有 上级(只读)/名称/排序，
+  **类型由服务端按父级推导、前端不选**；删除确认明示递归删除全部下级。
+  服务端 `/api/admin/content/organizations` 白名单只收 name/sort(/parentId)，`/api/org/tree` 按 parentId 通用建树。
+- **管理端 · 表单弹层**：计划目标 / 组织架构 / 公告管理 / 版本日志的「新增/编辑」统一用 **t-popup 底部弹层**
+  （`placement="bottom"` + `bind:visible-change` 同步状态，`.{xx}-sheet` = 头部标题/关闭 + `scroll-view` 表单（max-height 62vh）+
+  底部保存按钮（含 safe-area），样式先例 `permissions/groups` 的 `.pg-sheet`）。列表页内不再放内联表单卡。
+- **管理端 · 文件管理 `packageAdmin/files/files`**：统计卡（总数/占用 + 四分类计数）→ 分类 chips（`.tt-chip`，active 品牌态）
+  → 3 列缩略图网格（`aspectFill` + 名称/大小/日期，右上角悬浮删除钮 `catch:tap`），点图 `wx.previewImage`；
+  右下角品牌色 FAB 上传；分页 `onReachBottom`。权限 `file.view`（删除/上传需 `file.manage`）。
 - **记录三页 `pages/records/day`｜`records/week`｜`pages/run/detail`**：只有一套语言 —— 概要卡（无独立 hero）+ `.tt-section` 分区 + 30rpx 数值 / 20rpx 标签。
   week 的 7 天为**7 列柱状图**（替代 7 行横条）；detail 主视觉压成窄条（步数 56rpx）、核心数据 4 列（配速并入）、地图 340rpx。
 - **我的 `pages/profile`**：5 组 —— 用户卡（`.tt-hero`）→ 学籍信息（**只读，学生不可自改**）→ 累计数据（教师隐藏）→ 运动与健康 → 账号与帮助 → 管理功能（仅 `isAdmin`）→ 退出登录。
+  头像选择后**先上传服务器**（`POST /api/upload/avatar`，限 2MB，旧头像自动清理）再保存资料——微信临时路径其他设备不可见，禁止直接把 `e.detail.avatarUrl` 存进 `User.avatarUrl`。
   菜单行图标底色统一 `var(--tt-brand-soft)`、图形统一 `var(--tt-brand)`；字号固定 5 级（36/28/26/24/22rpx）；副文案只出现在需要解释的管理行。
   **顶部身份卡是「异形卡」**：本页用 `.tt-hero.id-card` 覆盖公共圆角，做成**盾形拱底**——
   `border-radius: 40rpx 40rpx 50% 50% / 40rpx 40rpx 64rpx 64rpx`（8 值语法：左右下角各展开半个卡宽形成平缓拱形），

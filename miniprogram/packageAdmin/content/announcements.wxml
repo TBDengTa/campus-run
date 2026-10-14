@@ -6,42 +6,6 @@
     </view>
   </view>
 
-  <!-- ===== 编辑表单 ===== -->
-  <view class="tt-card" wx:if="{{form}}">
-    <view class="tt-section ann-form-title">
-      <text>{{form._id ? '编辑公告' : '发布公告'}}</text>
-      <text class="tt-section-extra" bind:tap="closeForm">收起</text>
-    </view>
-
-    <view class="ann-fitem">
-      <text class="ann-flabel">标题 <text class="ann-req">*</text></text>
-      <input class="ann-input" value="{{form.title}}" bindinput="onField" data-field="title" placeholder="请输入公告标题" />
-    </view>
-
-    <view class="ann-fitem">
-      <text class="ann-flabel">内容</text>
-      <textarea class="ann-textarea" value="{{form.content}}" bindinput="onContent" maxlength="-1" auto-height placeholder="请输入公告内容" />
-    </view>
-
-    <view class="ann-fitem">
-      <text class="ann-flabel">排序权重</text>
-      <input class="ann-input" type="number" value="{{form.priority}}" bindinput="onField" data-field="priority" placeholder="数值大者靠前" />
-    </view>
-
-    <view class="ann-fitem ann-fitem-switch">
-      <view class="ann-flabel-col">
-        <text class="ann-flabel">启用</text>
-        <text class="ann-fdesc">关闭后用户端不展示该公告</text>
-      </view>
-      <t-switch value="{{form.enabled}}" bind:change="toggleEnabled" />
-    </view>
-
-    <view class="ann-form-actions">
-      <t-button theme="primary" block bind:tap="save">保存</t-button>
-      <t-button theme="default" variant="outline" block bind:tap="closeForm">取消</t-button>
-    </view>
-  </view>
-
   <!-- ===== 公告列表 ===== -->
   <view class="tt-section">
     <text>公告列表</text>
@@ -70,4 +34,41 @@
   </view>
 
   <view class="tt-footer">公告按权重降序展示给用户端</view>
+
+  <!-- ===== 发布 / 编辑（底部弹层） ===== -->
+  <t-popup visible="{{formVisible}}" placement="bottom" bind:visible-change="onFormVisible">
+    <view class="ann-sheet">
+      <view class="ann-sheet-head">
+        <text class="ann-sheet-title">{{form._id ? '编辑公告' : '发布公告'}}</text>
+        <text class="ann-sheet-done" bind:tap="closeForm">关闭</text>
+      </view>
+      <scroll-view scroll-y class="ann-sheet-body" wx:if="{{form}}">
+        <view class="ann-fitem">
+          <text class="ann-flabel">标题 <text class="ann-req">*</text></text>
+          <input class="ann-input" value="{{form.title}}" bindinput="onField" data-field="title" placeholder="请输入公告标题" />
+        </view>
+
+        <view class="ann-fitem">
+          <text class="ann-flabel">内容</text>
+          <textarea class="ann-textarea" value="{{form.content}}" bindinput="onContent" maxlength="-1" auto-height placeholder="请输入公告内容" />
+        </view>
+
+        <view class="ann-fitem">
+          <text class="ann-flabel">排序权重</text>
+          <input class="ann-input" type="number" value="{{form.priority}}" bindinput="onField" data-field="priority" placeholder="数值大者靠前" />
+        </view>
+
+        <view class="ann-fitem ann-fitem-switch">
+          <view class="ann-flabel-col">
+            <text class="ann-flabel">启用</text>
+            <text class="ann-fdesc">关闭后用户端不展示该公告</text>
+          </view>
+          <t-switch value="{{form.enabled}}" bind:change="toggleEnabled" />
+        </view>
+      </scroll-view>
+      <view class="ann-sheet-foot">
+        <t-button theme="primary" block loading="{{saving}}" bind:tap="save">{{form._id ? '保存修改' : '发布公告'}}</t-button>
+      </view>
+    </view>
+  </t-popup>
 </view>

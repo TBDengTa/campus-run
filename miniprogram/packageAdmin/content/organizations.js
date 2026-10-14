@@ -1,18 +1,18 @@
 const auth = require('../../utils/request');
 
+// 层级类型文案（类型由服务端按父级推导，前端不再手选）
+const TYPE_TEXT = { school: '学校', department: '院系', specialty: '专业' };
+const DEPTH_ICONS = ['layers', 'folder', 'bulletpoint'];
+
 Page({
   data: {
-    tree: [],
+    nodes: [], // 拍平后的树节点（只含已展开分支）
+    schoolCount: 0,
     loading: false,
-    // 新增/编辑表单
-    form: null,
-    parentName: '（作为学校）',
-    types: [
-      { value: 'school', label: '学校' },
-      { value: 'department', label: '院系' },
-      { value: 'specialty', label: '专业' },
-    ],
-    typeIndex: 0,
+    expanded: {}, // _id → 是否展开，默认全部收起
+    form: null, // { _id, name, parentId, parentName, sort }
+    formVisible: false,
+    saving: false,
   },
 
   onShow() {
@@ -24,7 +24,8 @@ Page({
     try {
       await getApp().ensureLogin();
       const tree = await auth.get('/api/org/tree');
-      this.setData({ tree });
+      this._tree = tree;
+      this.setData({ schoolCount: tree.length, nodes: this.flatten() });
     } catch (e) {
       wx.showToast({ title: e.message, icon: 'none' });
     } finally {
@@ -32,27 +33,65 @@ Page({
     }
   },
 
+  // 树 → 拍平列表；未展开的节点不深入子级
+  flatten() {
+    const { expanded } = this.data;
+    const nodes = [];
+    const walk = (list, depth, parentName) => {
+      for (const node of list || []) {
+        const children = node.children || [];
+        nodes.push({
+          _id: node._id,
+          name: node.name,
+          typeText: TYPE_TEXT[node.type] || '',
+          depth,
+          icon: DEPTH_ICONS[depth] || 'bulletpoint',
+          childCount: children.length,
+          expandable: children.length > 0,
+          expanded: !!expanded[node._id],
+          parentName: parentName || '',
+          sort: node.sort || 0,
+          canAddChild: node.type === 'school' || node.type === 'department',
+        });
+        if (expanded[node._id]) walk(children, depth + 1, node.name);
+      }
+    };
+    walk(this._tree, 0, '');
+    return nodes;
+  },
+
+  toggleExpand(e) {
+    const { id } = e.currentTarget.dataset;
+    this.setData({ [`expanded.${id}`]: !this.data.expanded[id] });
+    this.setData({ nodes: this.flatten() });
+  },
+
   openCreate(e) {
-    const { parentId, parentName, type } = e.currentTarget.dataset;
-    const typeIndex = type ? this.data.types.findIndex((t) => t.value === type) : 0;
+    const { parentId, parentName } = e.currentTarget.dataset;
     this.setData({
-      form: { _id: '', name: '', parentId: parentId || '', sort: 0 },
-      parentName: parentName || '（作为学校）',
-      typeIndex: typeIndex >= 0 ? typeIndex : 0,
+      form: { _id: '', name: '', parentId: parentId || '', parentName: parentName || '（顶层·学校）', sort: 0 },
+      formVisible: true,
     });
+  },
+
+  openCreateRoot() {
+    this.setData({ form: { _id: '', name: '', parentId: '', parentName: '（顶层·学校）', sort: 0 }, formVisible: true });
   },
 
   openEdit(e) {
-    const item = e.currentTarget.dataset;
+    const d = e.currentTarget.dataset;
     this.setData({
-      form: { _id: item.id, name: item.name, parentId: item.parentid || '', sort: Number(item.sort) || 0 },
-      parentName: item.parentname || '（作为学校）',
-      typeIndex: this.data.types.findIndex((t) => t.value === item.type),
+      form: { _id: d.id, name: d.name, parentId: '', parentName: d.parentName || '（顶层·学校）', sort: Number(d.sort) || 0 },
+      formVisible: true,
     });
   },
 
+  onFormVisible(e) {
+    this.setData({ formVisible: !!(e.detail && e.detail.visible) });
+  },
+
   closeForm() {
-    this.setData({ form: null });
+    this.setData({ formVisible: false });
   },
 
   onField(e) {
@@ -60,29 +99,42 @@ Page({
   },
 
   async save() {
-    const { form, types, typeIndex } = this.data;
-    if (!form.name) {
+    if (this.data.saving) return;
+    const { form } = this.data;
+    const name = (form.name || '').trim();
+    if (!name) {
       wx.showToast({ title: '名称必填', icon: 'none' });
       return;
     }
-    const payload = { name: form.name, type: types[typeIndex].value, parentId: form.parentId || null, sort: Number(form.sort) || 0 };
+    this.setData({ saving: true });
     try {
-      if (form._id) await auth.put(`/api/admin/content/organizations/${form._id}`, payload);
-      else await auth.post('/api/admin/content/organizations', payload);
+      if (form._id) {
+        // 编辑只能改名称/排序：类型与父级由服务端管理
+        await auth.put(`/api/admin/content/organizations/${form._id}`, { name, sort: Number(form.sort) || 0 });
+      } else {
+        await auth.post('/api/admin/content/organizations', {
+          name,
+          parentId: form.parentId || null,
+          sort: Number(form.sort) || 0,
+        });
+      }
       wx.showToast({ title: '已保存', icon: 'success' });
-      this.setData({ form: null });
+      this.setData({ formVisible: false });
       this.load();
     } catch (e) {
       wx.showToast({ title: e.message, icon: 'none' });
+    } finally {
+      this.setData({ saving: false });
     }
   },
 
   remove(e) {
-    const { id } = e.currentTarget.dataset;
+    const { id, name } = e.currentTarget.dataset;
     const that = this;
     wx.showModal({
       title: '删除组织节点',
-      content: '其下级节点将一并删除，确认删除？',
+      content: `「${name}」及其全部下级将一并删除，确认删除？`,
+      confirmColor: '#e34d59',
       success: async (res) => {
         if (!res.confirm) return;
         try {

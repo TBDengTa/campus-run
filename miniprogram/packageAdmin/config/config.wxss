@@ -1,6 +1,29 @@
-/* 系统配置（白橙设计系统） */
+/* 系统配置（白橙设计系统）—— 中枢页与各分类子页共用 */
 .cfg-page {
   padding-bottom: 32rpx;
+}
+
+/* ===== 中枢分类卡 ===== */
+.cfg-hub {
+  margin-bottom: 24rpx;
+}
+
+.cfg-cat-icon {
+  flex-shrink: 0;
+  width: 72rpx;
+  height: 72rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--tt-brand-soft);
+  border-radius: 20rpx;
+  margin-right: 20rpx;
+}
+
+.cfg-hub-loading {
+  display: flex;
+  justify-content: center;
+  padding: 24rpx;
 }
 
 /* ===== 表单行 ===== */
@@ -75,65 +98,6 @@
 }
 
 /* ===== 分时段目标 ===== */
-.cfg-graded-row {
-  display: flex;
-  align-items: center;
-  gap: 16rpx;
-  padding: 18rpx 0;
-  border-bottom: 2rpx solid var(--tt-line);
-}
-
-.cfg-graded-row:last-of-type {
-  border-bottom: none;
-}
-
-.cfg-time {
-  width: 150rpx;
-  height: 64rpx;
-  text-align: center;
-  font-size: 27rpx;
-  color: var(--tt-text-1);
-  background: var(--td-bg-color-component);
-  border-radius: 16rpx;
-}
-
-.cfg-percent {
-  flex: 1;
-  min-width: 0;
-  height: 64rpx;
-  padding: 0 20rpx;
-  text-align: right;
-  font-size: 27rpx;
-  color: var(--tt-text-1);
-  background: var(--td-bg-color-component);
-  border-radius: 16rpx;
-  box-sizing: border-box;
-}
-
-.cfg-unit {
-  font-size: 26rpx;
-  color: var(--tt-text-3);
-}
-
-.cfg-del {
-  flex-shrink: 0;
-  width: 56rpx;
-  height: 56rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: var(--td-error-color-1);
-}
-
-.cfg-del:active {
-  opacity: 0.7;
-}
-
-.cfg-graded-empty {
-  padding: 40rpx 0;
-}
-
 .cfg-add {
   display: flex;
   align-items: center;

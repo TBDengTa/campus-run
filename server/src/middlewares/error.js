@@ -13,6 +13,10 @@ function errorHandler(err, req, res, next) {
   if (err.name === 'ValidationError') {
     return res.status(400).json({ code: 400, message: Object.values(err.errors)[0]?.message || '参数错误' });
   }
+  if (err.name === 'MulterError') {
+    const msg = err.code === 'LIMIT_FILE_SIZE' ? '文件超出大小限制' : '文件上传失败';
+    return res.status(400).json({ code: 400, message: msg });
+  }
   if (err.code === 11000) {
     return res.status(400).json({ code: 400, message: '数据重复（唯一键冲突）' });
   }

@@ -1,0 +1,55 @@
+<view class="page tt-page files-page">
+  <!-- ===== 总览 ===== -->
+  <view class="tt-section">
+    <text>文件总览</text>
+    <text class="tt-section-extra" wx:if="{{total}}">{{total}} 个 · {{totalSizeText}}</text>
+  </view>
+  <view class="tt-card files-stat-card">
+    <view class="tt-stat-row" wx:if="{{cats.length}}">
+      <view class="tt-stat" wx:for="{{cats}}" wx:key="key">
+        <view class="tt-stat-value num-font tt-brand-text">{{item.count}}</view>
+        <view class="tt-stat-label">{{item.label}}</view>
+      </view>
+    </view>
+    <view class="tt-empty" wx:else>暂无文件数据</view>
+  </view>
+
+  <!-- ===== 分类筛选 ===== -->
+  <view class="files-cats">
+    <view
+      class="tt-chip {{activeCat === item.key ? 'active' : ''}}"
+      wx:for="{{cats}}"
+      wx:key="key"
+      bind:tap="onCat"
+      data-key="{{item.key}}"
+    >{{item.label}}</view>
+  </view>
+
+  <!-- ===== 文件网格 ===== -->
+  <view class="files-grid" wx:if="{{list.length}}">
+    <view class="files-cell" wx:for="{{list}}" wx:key="_id" bind:tap="preview" data-url="{{item.url}}">
+      <image class="files-thumb" src="{{item.url}}" mode="aspectFill" lazy-load />
+      <view class="files-meta">
+        <text class="files-name">{{item.name}}</text>
+        <text class="files-sub">{{item.sizeText}} · {{item.dateText}}</text>
+      </view>
+      <view class="files-del" wx:if="{{canManage}}" catch:tap="remove" data-id="{{item._id}}" data-name="{{item.name}}">
+        <t-icon name="delete" size="26rpx" color="#fff" />
+      </view>
+    </view>
+  </view>
+  <view class="tt-card files-empty-card" wx:elif="{{!loading}}">
+    <view class="tt-empty">暂无文件</view>
+  </view>
+
+  <view class="files-loading" wx:if="{{loading}}">
+    <t-loading theme="circular" size="40rpx" text="加载中…" />
+  </view>
+
+  <!-- ===== 上传 ===== -->
+  <view class="files-fab" wx:if="{{canManage}}" bind:tap="upload">
+    <t-icon name="add" size="44rpx" color="#ffffff" />
+  </view>
+
+  <view class="tt-footer">删除文件会同时清空广告素材 / 头像中的引用</view>
+</view>

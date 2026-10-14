@@ -1,0 +1,108 @@
+/* 文件管理（白橙设计系统） */
+.files-page {
+  padding-bottom: 160rpx;
+}
+
+/* ===== 总览 ===== */
+.files-stat-card {
+  padding: 28rpx 0;
+}
+
+/* ===== 分类筛选 ===== */
+.files-cats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+  margin: 0 var(--tt-gap) 24rpx;
+}
+
+/* ===== 网格 ===== */
+.files-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20rpx;
+  margin: 0 var(--tt-gap);
+}
+
+.files-cell {
+  position: relative;
+  width: calc((100% - 40rpx) / 3);
+  border-radius: 20rpx;
+  overflow: hidden;
+  background: var(--tt-card);
+  box-shadow: var(--tt-card-shadow);
+}
+
+.files-thumb {
+  display: block;
+  width: 100%;
+  height: 180rpx;
+  background: var(--td-bg-color-component);
+}
+
+.files-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2rpx;
+  padding: 12rpx 14rpx;
+}
+
+.files-name {
+  max-width: 100%;
+  font-size: 21rpx;
+  color: var(--tt-text-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.files-sub {
+  font-size: 19rpx;
+  color: var(--tt-text-3);
+}
+
+.files-del {
+  position: absolute;
+  top: 10rpx;
+  right: 10rpx;
+  width: 48rpx;
+  height: 48rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  border-radius: 50%;
+}
+
+.files-del:active {
+  opacity: 0.7;
+}
+
+.files-empty-card {
+  margin: 0 var(--tt-gap);
+}
+
+/* ===== 加载 / 上传 ===== */
+.files-loading {
+  display: flex;
+  justify-content: center;
+  padding: 24rpx;
+}
+
+.files-fab {
+  position: fixed;
+  right: 40rpx;
+  bottom: 72rpx;
+  width: 108rpx;
+  height: 108rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--tt-brand);
+  border-radius: 50%;
+  box-shadow: var(--tt-card-shadow);
+}
+
+.files-fab:active {
+  transform: scale(0.94);
+}

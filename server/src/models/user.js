@@ -2,6 +2,19 @@ const mongoose = require('mongoose');
 
 const { Schema } = mongoose;
 
+// 功能限制（反作弊/人工封禁）：只限制某一项能力，不动整个账号
+// scope = login（限制登录，走 user.status + bannedUntil）/ sync（限制微信同步）/ gps（限制 GPS 实跑）
+const restrictionSchema = new Schema(
+  {
+    until: { type: Date, default: null }, // null = 永久
+    reason: { type: String, default: '' },
+    at: { type: Date }, // 最近一次限制时间（用于「24h 内重犯升级」判断）
+    count: { type: Number, default: 0 }, // 累计次数
+    operator: { type: String, default: 'system' }, // system 自动 / 管理员 openid
+  },
+  { _id: false }
+);
+
 const userSchema = new Schema(
   {
     // 绑定的微信 openid（绑定后不可解绑/更换）；未绑定账号为空 → 唯一稀疏索引
@@ -49,9 +62,14 @@ const userSchema = new Schema(
     },
     status: { type: String, enum: ['active', 'banned'], default: 'active' },
     banReason: { type: String, default: '' },
-    banType: { type: String, default: '' }, // sync 同步异常 / manual 人工
+    banType: { type: String, default: '' }, // login 限制登录 / sync 限制微信同步 / gps 限制 GPS（历史 'manual' 视为 login）
     bannedUntil: { type: Date },
     bannedAt: { type: Date },
+    // 单项能力限制（限制登录走上面的 status/bannedUntil，这里只放 sync / gps）
+    restrictions: {
+      sync: { type: restrictionSchema, default: () => ({}) },
+      gps: { type: restrictionSchema, default: () => ({}) },
+    },
     // 汇总缓存（由跑步记录聚合刷新）
     totalSteps: { type: Number, default: 0 },
     totalDistance: { type: Number, default: 0 }, // 米

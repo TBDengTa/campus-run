@@ -22,8 +22,12 @@ permissionSchema.statics.DEFAULT_CATALOG = [
   { key: 'ad.manage', name: '管理广告（素材/广告位/落地页/上传）', module: '广告', sort: 31 },
   { key: 'content.view', name: '查看内容', module: '内容', sort: 40 },
   { key: 'content.manage', name: '管理内容（公告/版本/节假日/组织/徽章）', module: '内容', sort: 41 },
+  { key: 'file.view', name: '查看文件', module: '文件', sort: 45 },
+  { key: 'file.manage', name: '管理文件（上传/删除）', module: '文件', sort: 46 },
   { key: 'config.view', name: '查看系统配置', module: '配置', sort: 50 },
   { key: 'config.manage', name: '修改系统配置', module: '配置', sort: 51 },
+  { key: 'assessment.view', name: '查看运动考核', module: '考核', sort: 52 },
+  { key: 'assessment.manage', name: '管理运动考核（默认目标/计划库）', module: '考核', sort: 53 },
   { key: 'permission.manage', name: '管理用户权限', module: '权限', sort: 60 },
 ];
 

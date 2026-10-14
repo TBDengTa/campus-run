@@ -56,12 +56,13 @@
 索引：`(openid, date)`、`(date)`
 
 ### goal_config（单例）
-全局默认目标（daily/weekly 的 steps/distance/calories）、分时段目标
-`graded: [{time: "10:00", percent: 40}]`、反作弊阈值 `anticheat`、激励视频规则 `rewardVideo`。
+全局默认目标（daily/weekly 的 steps/distance/calories）、反作弊阈值 `anticheat`、激励视频规则 `rewardVideo`。
+（分时段目标 `graded` 已废弃移除；默认目标的管理入口在「运动考核」模块 `/api/admin/assessment/defaults`。）
 
 ### goal_plans / body_data / user_goals
-BMI 预设计划（bmiMin~bmiMax × 强度偏好匹配）；用户身体数据（height/weight/bmi/bmiLevel）；
-用户当前生效计划（autoMatched 标记）。
+BMI 预设计划（bmiMin~bmiMax × 强度偏好匹配，`isDefault` 全局唯一兜底，管理入口 `/api/admin/assessment/plans`；
+被 user_goals 引用中的计划禁止硬删，只能停用）；用户身体数据（height/weight/bmi/bmiLevel）；
+用户当前生效计划（autoMatched 标记，**快照式**：修改计划不回填已应用用户）。
 
 ## 排行榜
 

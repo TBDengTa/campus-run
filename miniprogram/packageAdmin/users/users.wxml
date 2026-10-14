@@ -22,6 +22,17 @@
     </view>
   </view>
 
+  <!-- ===== 分类 Tab：全部 / 学生 / 教师 / 管理员 ===== -->
+  <view class="users-tabs">
+    <view
+      wx:for="{{tabs}}"
+      wx:key="key"
+      class="users-tab {{roleTab === item.key ? 'active' : ''}}"
+      bind:tap="switchTab"
+      data-key="{{item.key}}"
+    >{{item.label}}</view>
+  </view>
+
   <!-- ===== 筛选面板（默认收起，点「筛选」展开） ===== -->
   <view class="tt-card users-panel" wx:if="{{showFilters}}">
     <view class="users-filter-row">
@@ -30,15 +41,6 @@
         <view class="tt-segment-item users-seg-item {{!status ? 'active' : ''}}" bind:tap="filterStatus" data-status="">全部</view>
         <view class="tt-segment-item users-seg-item {{status === 'active' ? 'active' : ''}}" bind:tap="filterStatus" data-status="active">正常</view>
         <view class="tt-segment-item users-seg-item {{status === 'banned' ? 'active' : ''}}" bind:tap="filterStatus" data-status="banned">封禁</view>
-      </view>
-    </view>
-
-    <view class="users-filter-row">
-      <text class="users-filter-label">角色</text>
-      <view class="tt-segment users-seg">
-        <view class="tt-segment-item users-seg-item {{!role ? 'active' : ''}}" bind:tap="filterRole" data-role="">全部</view>
-        <view class="tt-segment-item users-seg-item {{role === 'student' ? 'active' : ''}}" bind:tap="filterRole" data-role="student">学生</view>
-        <view class="tt-segment-item users-seg-item {{role === 'teacher' ? 'active' : ''}}" bind:tap="filterRole" data-role="teacher">教师</view>
       </view>
     </view>
 
@@ -90,20 +92,37 @@
       bind:click="onSwipeAction"
     >
       <view class="user-row {{item.status === 'banned' ? 'is-banned' : ''}}" bind:tap="onRowTap" data-id="{{item._id}}">
-        <view class="users-avatar {{item.role === 'teacher' ? 'is-teacher' : ''}}">
-          <t-icon wx:if="{{item.role === 'teacher'}}" name="assignment" size="30rpx" color="var(--tt-text-2)" />
-          <t-icon wx:else name="user" size="30rpx" color="var(--tt-brand)" />
+        <view class="users-avatar {{item.isTeacher ? 'is-teacher' : ''}}">
+          <image wx:if="{{item.avatarUrl}}" class="users-avatar-img" src="{{item.avatarUrl}}" mode="aspectFill" />
+          <text wx:else class="users-avatar-txt">{{item.initial}}</text>
         </view>
         <view class="user-row-main">
           <view class="users-name">
-            <text class="user-row-name">{{item.account || item.nickname || item.realName || '未命名'}}</text>
+            <text class="user-row-name">{{item.nameText}}</text>
             <t-tag wx:if="{{item.isSuper}}" theme="primary" variant="light" size="small">管理员</t-tag>
-            <t-tag wx:elif="{{item.role === 'teacher'}}" theme="default" variant="light" size="small">教师</t-tag>
-            <t-tag wx:if="{{item.status === 'banned'}}" theme="danger" variant="light" size="small">封禁</t-tag>
+            <t-tag wx:elif="{{item.isTeacher}}" theme="default" variant="light" size="small">教师</t-tag>
+            <!-- 生效中的限制：限制登录 / 限制微信同步 / 限制 GPS -->
+            <t-tag
+              wx:for="{{item.scopeLabels}}"
+              wx:for-item="scopeLabel"
+              wx:key="*this"
+              theme="{{item.activeScopes[index] === 'login' ? 'danger' : 'warning'}}"
+              variant="light"
+              size="small"
+            >
+              {{scopeLabel}}
+            </t-tag>
           </view>
-          <view class="user-row-sub">
+          <!-- 学生：学号 / 班级 / 运动目标；教师：无学号，只展示所属院系 -->
+          <view class="user-row-sub" wx:if="{{!item.isTeacher}}">
             <text>学号 {{item.studentId || '—'}}</text>
-            <text class="user-row-goal" wx:if="{{item.dailyGoal}}">{{item.dailyGoal}} 步/日</text>
+            <text>{{item.className || '未分班'}}</text>
+          </view>
+          <view class="user-row-sub" wx:if="{{!item.isTeacher && item.goalText}}">
+            <text class="user-row-goal">{{item.goalText}}</text>
+          </view>
+          <view class="user-row-sub" wx:if="{{item.isTeacher && item.deptText}}">
+            <text>{{item.deptText}}</text>
           </view>
         </view>
         <t-icon name="chevron-right" size="30rpx" color="var(--tt-text-3)" />
@@ -114,5 +133,14 @@
     <t-loading wx:if="{{loading || loadingMore}}" theme="circular" size="40rpx" class="users-loading" />
   </view>
 
-  <view class="tt-footer">点卡片看详情 · 左滑卡片可编辑 / 封禁 / 删除</view>
+  <view class="tt-footer">点卡片看详情 · 左滑可编辑 / 限制 / 解除 / 删除</view>
+
+  <!-- ===== 限制账号功能（类型 + 时长 + 原因） ===== -->
+  <ban-sheet
+    visible="{{banSheet.visible}}"
+    user="{{banSheet.user}}"
+    busy="{{banSheet.busy}}"
+    bind:close="onBanSheetClose"
+    bind:submit="onBanSubmit"
+  />
 </view>

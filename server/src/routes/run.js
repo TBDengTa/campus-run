@@ -6,6 +6,7 @@ const RunRecord = require('../models/run-record');
 const WxSession = require('../models/wx-session');
 const Holiday = require('../models/holiday');
 const stepsSvc = require('../services/steps');
+const anticheat = require('../services/anticheat');
 const goalsSvc = require('../services/goals');
 const wechat = require('../services/wechat');
 const { todayKey, monthRange, isValidDateKey, addDays } = require('../utils/dates');
@@ -22,14 +23,6 @@ router.get(
       RunRecord.find({ openid: req.user.openid, date }).select('-routePoints -__v').lean(),
       goalsSvc.getEffectiveGoal(req.user.openid),
     ]);
-    // 分时段应完成百分比
-    const now = new Date();
-    const nowMinutes = now.getHours() * 60 + now.getMinutes();
-    let expectedPercent = 0;
-    for (const seg of goal.graded || []) {
-      const [h, m] = (seg.time || '00:00').split(':').map(Number);
-      if (nowMinutes >= h * 60 + m) expectedPercent = seg.percent;
-    }
     const totals = records.reduce(
       (acc, r) => {
         acc.steps += r.steps || 0;
@@ -57,7 +50,6 @@ router.get(
       date,
       record,
       goal,
-      expectedPercent,
       gpsRunCount: gpsCount,
     });
   })
@@ -100,6 +92,9 @@ router.post(
   wrap(async (req, res) => {
     // 教师账号不参与运动记录
     if (stepsSvc.isTeacher(req.user)) throw new ApiError(403, 403003, stepsSvc.TEACHER_BLOCK_MESSAGE);
+    // 限制微信同步（反作弊/人工）：403004 交由小程序提示并引导申诉
+    const syncRestriction = anticheat.activeRestriction(req.user, 'sync');
+    if (syncRestriction) throw restrictedError(syncRestriction);
 
     const { encryptedData, iv } = req.body || {};
     if (!encryptedData || !iv) throw new ApiError(400, 400, '缺少 encryptedData/iv');
@@ -123,7 +118,7 @@ router.post(
 
     // 最近 30 天逐日同步，只取最近 7 天；服务层按「1 小时窗口」决定合并还是新建下一条记录
     const syncedDates = [];
-    let banned = null;
+    let hit = null; // 本次同步触发的限制（sync 限制微信同步 / login 升级为限制登录）
     for (const item of list) {
       const dateKey = tsToDateKey(item.timestamp);
       if (!dateKey) continue;
@@ -131,15 +126,13 @@ router.post(
       if (daysAgo > 7) continue;
       const result = await stepsSvc.syncWerunDay(req.user, dateKey, item.step, { checkJump: dateKey === todayKey() });
       if (result.blocked) throw new ApiError(403, 403003, result.reason);
-      if (result.banned) {
-        banned = result.reason;
+      if (result.restricted) {
+        hit = result.restricted;
         break;
       }
       if (!result.skipped) syncedDates.push(dateKey);
     }
-    if (banned) {
-      throw new ApiError(403, 403001, `检测到数据异常，账号已被封禁：${banned}`, { banned: true });
-    }
+    if (hit) throw restrictedError(hit);
     const { newBadges } = await stepsSvc.postSyncRefresh(req.user, syncedDates);
     ok(res, { synced: syncedDates.length, newBadges });
   })
@@ -155,12 +148,33 @@ function tsToDateKey(ts) {
   }
 }
 
+// 限制类错误统一出口：
+//   login → 403001（整账号限制登录，小程序跳 pages/banned）
+//   sync / gps → 403004（单项能力受限，小程序提示并可申诉）
+function restrictedError(info) {
+  const scope = (info && info.scope) || 'login';
+  const reason = (info && info.reason) || (info && info.message) || '数据异常';
+  const until = (info && info.until) || null;
+  if (scope === 'login') {
+    return new ApiError(403, 403001, `检测到数据异常，账号已被限制登录：${reason}`, {
+      banned: { reason, until, banType: 'login' },
+    });
+  }
+  const text = scope === 'sync' ? '微信同步' : 'GPS 实跑';
+  return new ApiError(403, 403004, `${text}已被限制：${reason}`, {
+    restriction: { scope, text, reason, until },
+  });
+}
+
 // 提交 GPS 实跑
 router.post(
   '/gps',
   wrap(async (req, res) => {
     // 教师账号不参与运动记录
     if (stepsSvc.isTeacher(req.user)) throw new ApiError(403, 403003, stepsSvc.TEACHER_BLOCK_MESSAGE);
+    // 限制 GPS 实跑（反作弊/人工）
+    const gpsRestriction = anticheat.activeRestriction(req.user, 'gps');
+    if (gpsRestriction) throw restrictedError(gpsRestriction);
 
     const { date, distance, durationSeconds, calories, startTime, endTime, routePoints, location } = req.body || {};
     if (!distance || distance < 10) throw new ApiError(400, 400, '距离过短');
@@ -177,8 +191,8 @@ router.post(
     if (result.blocked) {
       throw new ApiError(403, 403003, result.reason);
     }
-    if (result.banned) {
-      throw new ApiError(403, 403001, `检测到数据异常，账号已被封禁：${result.reason}`, { banned: true });
+    if (result.restricted) {
+      throw restrictedError(result.restricted);
     }
     const { newBadges } = await stepsSvc.postSyncRefresh(req.user, [result.record.date]);
     ok(res, { record: result.record, newBadges });

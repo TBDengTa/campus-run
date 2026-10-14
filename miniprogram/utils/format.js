@@ -21,6 +21,14 @@ function formatDuration(seconds) {
   return h > 0 ? `${pad(h)}:${pad(m)}:${pad(sec)}` : `${pad(m)}:${pad(sec)}`;
 }
 
+// 字节 → 展示（KB / MB）
+function formatSize(bytes) {
+  const b = Number(bytes) || 0;
+  if (b >= 1024 * 1024) return `${(b / 1024 / 1024).toFixed(2)} MB`;
+  if (b >= 1024) return `${(b / 1024).toFixed(1)} KB`;
+  return `${b} B`;
+}
+
 function todayKey(d = new Date()) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -47,4 +55,4 @@ function sourceOf(source) {
   return SOURCE_MAP[source] || { sourceText: '运动记录', sourceIcon: 'chart-bar' };
 }
 
-module.exports = { formatNumber, formatDistance, formatDuration, todayKey, parseDateKey, sourceOf, SOURCE_MAP };
+module.exports = { formatNumber, formatDistance, formatDuration, formatSize, todayKey, parseDateKey, sourceOf, SOURCE_MAP };

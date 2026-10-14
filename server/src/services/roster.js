@@ -1,41 +1,28 @@
 const User = require('../models/user');
 const pwd = require('./password');
+const XLSX = require('xlsx');
 
 const MAX_ROWS = 5000;
 
-// 解析 CSV 文本（首行为表头：姓名,学号,身份证号,学校,院系,班级,专业）
-function parseCsv(text) {
-  const lines = String(text || '')
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter(Boolean);
-  if (lines.length < 2) return [];
-  const header = lines[0].split(',').map((h) => h.trim());
-  const idx = (names) => header.findIndex((h) => names.includes(h));
-  const iName = idx(['姓名', 'name']);
-  const iSid = idx(['学号', 'studentId', 'studentid']);
-  const iIdc = idx(['身份证号', '身份证', 'idCard', 'idcard', 'idCardNo']);
-  const iSchool = idx(['学校', 'school']);
-  const iDept = idx(['院系', 'department']);
-  const iClass = idx(['班级', 'className']);
-  const iSpec = idx(['专业', 'specialty']);
-  const iGrade = idx(['年级', '级', 'grade']);
-  if (iName < 0 || iSid < 0) throw new Error('CSV 需包含表头：姓名,学号');
-  return lines.slice(1).map((line) => {
-    const cols = line.split(',').map((c) => c.trim());
-    const row = { name: cols[iName], studentId: cols[iSid] };
-    if (iIdc >= 0) row.idCardNo = cols[iIdc];
-    if (iSchool >= 0) row.school = cols[iSchool];
-    if (iDept >= 0) row.department = cols[iDept];
-    if (iClass >= 0) row.className = cols[iClass];
-    if (iSpec >= 0) row.specialty = cols[iSpec];
-    if (iGrade >= 0) row.grade = cols[iGrade];
-    return row;
-  });
+// 解析表格（SheetJS）：.xlsx/.xls 文件 Buffer 与 CSV 文本统一走此路径，
+// 支持引号/字段内逗号转义（替代旧的自制 split(',') 解析）；取第一个 sheet
+function parseSheet(input) {
+  const wb = XLSX.read(input, { type: Buffer.isBuffer(input) ? 'buffer' : 'string' });
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  if (!sheet) return [];
+  const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+  if (!rows.length) return [];
+  const keys = Object.keys(rows[0]).map((k) => String(k).trim());
+  const has = (names) => keys.some((k) => names.includes(k));
+  if (!has(['姓名', 'name', 'Name']) || !has(['学号', 'studentId', 'studentid', 'StudentId'])) {
+    throw new Error('表格需包含列：姓名,学号');
+  }
+  return rows;
 }
 
 function parseRows(payload) {
   if (Array.isArray(payload)) return payload;
+  if (Buffer.isBuffer(payload)) return parseSheet(payload);
   const text = String(payload || '').trim();
   if (!text) return [];
   if (text.startsWith('[')) {
@@ -43,7 +30,7 @@ function parseRows(payload) {
     if (!Array.isArray(arr)) throw new Error('JSON 需为数组');
     return arr;
   }
-  return parseCsv(text);
+  return parseSheet(text);
 }
 
 // 年级归一化：去掉结尾的「级」，只留年份文本（如 "2024级" → "2024"）
@@ -251,7 +238,8 @@ async function importRows(rows, mode = 'create') {
 module.exports = {
   importRows,
   parseRows,
-  parseCsv,
+  parseSheet,
+  normalizeRow,
   initialPasswords,
   normalizeGrade,
   gradeFromStudentId,

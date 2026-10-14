@@ -1,0 +1,26 @@
+/* 运动考核分类中枢（白橙设计系统） */
+.am-page {
+  padding-bottom: 32rpx;
+}
+
+.am-hub {
+  margin-bottom: 24rpx;
+}
+
+.am-cat-icon {
+  flex-shrink: 0;
+  width: 72rpx;
+  height: 72rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--tt-brand-soft);
+  border-radius: 20rpx;
+  margin-right: 20rpx;
+}
+
+.am-hub-loading {
+  display: flex;
+  justify-content: center;
+  padding: 24rpx;
+}

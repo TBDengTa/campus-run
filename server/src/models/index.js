@@ -21,6 +21,7 @@ const AdPage = require('./ad-page');
 const Holiday = require('./holiday');
 const Announcement = require('./announcement');
 const Changelog = require('./changelog');
+const FileObject = require('./file-object');
 const Permission = require('./permission');
 const PermissionGroup = require('./permission-group');
 
@@ -48,6 +49,7 @@ module.exports = {
   Holiday,
   Announcement,
   Changelog,
+  FileObject,
   Permission,
   PermissionGroup,
 };

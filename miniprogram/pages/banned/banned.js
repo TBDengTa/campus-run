@@ -1,9 +1,15 @@
 const auth = require('../../utils/request');
 
+// 解封时间展示：空 = 永久
+function fmtTime(v) {
+  return v ? String(v).slice(0, 16).replace('T', ' ') : '';
+}
+
 Page({
   data: {
     user: null,
     loading: true,
+    untilText: '',
   },
 
   onShow() {
@@ -14,14 +20,15 @@ Page({
     try {
       await getApp().ensureLogin();
       const user = await auth.get('/api/auth/me');
-      this.setData({ user, loading: false });
+      this.setData({ user, untilText: fmtTime(user.bannedUntil), loading: false });
     } catch (e) {
-      this.setData({ user: getApp().globalData.userInfo, loading: false });
+      const user = getApp().globalData.userInfo;
+      this.setData({ user, untilText: fmtTime(user && user.bannedUntil), loading: false });
     }
   },
 
   goSubmit() {
-    wx.navigateTo({ url: '/pages/appeal/submit' });
+    wx.navigateTo({ url: '/pages/appeal/submit?scope=login' });
   },
 
   goList() {

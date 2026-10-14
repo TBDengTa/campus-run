@@ -1,0 +1,35 @@
+<view class="page tt-page cfg-page" wx:if="{{config}}">
+  <view class="tt-section">
+    <text>反作弊</text>
+    <text class="tt-section-extra">异常数据自动拦截</text>
+  </view>
+
+  <view class="tt-card cfg-card">
+    <view class="cfg-fitem cfg-fitem-switch">
+      <view class="cfg-flabel-col">
+        <text class="cfg-switch-label">启用自动检测</text>
+        <text class="cfg-fdesc">关闭后不再自动判定异常步数与配速</text>
+      </view>
+      <t-switch value="{{config.anticheat.enabled}}" bind:change="onAnticheat" data-field="enabled" />
+    </view>
+
+    <view class="cfg-fitem">
+      <text class="cfg-flabel">单次同步步数暴增阈值（步）</text>
+      <input class="cfg-input" type="number" value="{{config.anticheat.maxStepJumpPerSync}}" bindinput="onAnticheat" data-field="maxStepJumpPerSync" />
+    </view>
+    <view class="cfg-fitem">
+      <text class="cfg-flabel">最低配速阈值（秒/公里）</text>
+      <input class="cfg-input" type="number" value="{{config.anticheat.minPaceSecondsPerKm}}" bindinput="onAnticheat" data-field="minPaceSecondsPerKm" />
+    </view>
+    <view class="cfg-fitem">
+      <text class="cfg-flabel">自动封禁天数</text>
+      <input class="cfg-input" type="number" value="{{config.anticheat.banDays}}" bindinput="onAnticheat" data-field="banDays" />
+    </view>
+  </view>
+
+  <view class="cfg-save-bar">
+    <t-button theme="primary" block loading="{{saving}}" bind:tap="save">保存配置</t-button>
+  </view>
+
+  <view class="tt-footer">配置修改后立即对用户端生效</view>
+</view>

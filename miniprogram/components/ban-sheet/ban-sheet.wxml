@@ -1,0 +1,54 @@
+<t-popup visible="{{visible}}" placement="bottom" bind:visible-change="onVisibleChange">
+  <view class="bs-sheet">
+    <view class="bs-head">
+      <text class="bs-title">限制账号功能</text>
+      <text class="bs-close" bind:tap="close">关闭</text>
+    </view>
+
+    <scroll-view scroll-y class="bs-body">
+      <view class="bs-target" wx:if="{{user}}">对象：{{user.account || user.nickname || '未命名'}}</view>
+
+      <view class="bs-label">限制类型</view>
+      <view class="bs-chips">
+        <view
+          class="tt-chip {{scope === item.value ? 'active' : ''}}"
+          wx:for="{{scopes}}"
+          wx:key="value"
+          bind:tap="pickScope"
+          data-value="{{item.value}}"
+        >
+          {{item.label}}
+        </view>
+      </view>
+      <view class="bs-tip">{{scopeTip}}</view>
+
+      <view class="bs-label">限制时长</view>
+      <view class="bs-chips">
+        <view
+          class="tt-chip {{days === item.value ? 'active' : ''}}"
+          wx:for="{{durations}}"
+          wx:key="value"
+          bind:tap="pickDays"
+          data-value="{{item.value}}"
+        >
+          {{item.label}}
+        </view>
+      </view>
+
+      <view class="bs-label">限制原因</view>
+      <input
+        class="bs-input"
+        value="{{reason}}"
+        placeholder="填写原因（用户申诉时会看到）"
+        placeholder-class="bs-ph"
+        bindinput="onReason"
+      />
+
+      <view class="bs-note">限制微信同步 / GPS 只影响对应能力；限制登录会让用户完全无法登录。用户可在申诉页按类型申诉。</view>
+    </scroll-view>
+
+    <view class="bs-foot">
+      <t-button theme="danger" block loading="{{busy}}" bind:tap="submit">确认限制</t-button>
+    </view>
+  </view>
+</t-popup>

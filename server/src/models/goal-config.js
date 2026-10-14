@@ -14,15 +14,6 @@ const goalConfigSchema = new mongoose.Schema(
       distance: { type: Number, default: 21000 },
       calories: { type: Number, default: 1750 },
     },
-    // 分时段目标：到某时刻应完成当日目标的百分比
-    graded: {
-      type: [{ time: String, percent: Number }],
-      default: [
-        { time: '10:00', percent: 40 },
-        { time: '16:00', percent: 70 },
-        { time: '22:00', percent: 100 },
-      ],
-    },
     anticheat: {
       maxStepJumpPerSync: { type: Number, default: 13000 }, // 单次同步步数暴增阈值
       minPaceSecondsPerKm: { type: Number, default: 120 }, // 配速低于该值(秒/公里)视为异常

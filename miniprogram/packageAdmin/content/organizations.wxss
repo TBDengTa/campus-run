@@ -3,9 +3,49 @@
   padding-bottom: 32rpx;
 }
 
-/* ===== 表单 ===== */
+/* ===== 表单（底部弹层内） ===== */
+.org-sheet {
+  display: flex;
+  flex-direction: column;
+  background: var(--tt-card);
+  border-radius: 28rpx 28rpx 0 0;
+}
+
+.org-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 28rpx 32rpx 20rpx;
+  border-bottom: 2rpx solid var(--tt-line);
+}
+
+.org-sheet-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.org-sheet-done {
+  font-size: 28rpx;
+  color: var(--tt-brand);
+}
+
+.org-sheet-body {
+  padding: 8rpx 32rpx 24rpx;
+  box-sizing: border-box;
+}
+
+.org-sheet-foot {
+  padding: 16rpx 32rpx calc(24rpx + env(safe-area-inset-bottom));
+  border-top: 2rpx solid var(--tt-line);
+}
+
 .org-form-title {
   margin: 0 0 20rpx;
+}
+
+.org-info {
+  min-width: 0;
 }
 
 .org-fitem {
@@ -69,7 +109,7 @@
   margin-top: 24rpx;
 }
 
-/* ===== 组织架构树 ===== */
+/* ===== 组织架构树（拍平渲染，缩进由节点 depth 内联控制）===== */
 .org-tree {
   padding: 24rpx 24rpx 8rpx;
 }
@@ -79,34 +119,13 @@
   margin-bottom: 12rpx;
 }
 
-.org-node-l1 {
-  padding-left: 0;
-}
-
-.org-node-l2 {
-  padding-left: 36rpx;
-}
-
-.org-node-l3 {
-  padding-left: 72rpx;
-}
-
-/* 层级连接线 */
+/* 层级连接线（left 随 depth 内联） */
 .org-line {
   position: absolute;
-  left: 13rpx;
   top: 0;
   bottom: 0;
   width: 0;
   border-left: 2rpx solid var(--tt-line);
-}
-
-.org-node-l2 .org-line {
-  left: 49rpx;
-}
-
-.org-node-l3 .org-line {
-  left: 85rpx;
 }
 
 .org-node-body {
@@ -119,19 +138,8 @@
   border-radius: var(--tt-radius-sm);
 }
 
-.org-node-l1 .org-node-body {
+.org-node-root .org-node-body {
   background: var(--tt-brand-soft);
-}
-
-.org-node-l3 .org-node-body {
-  padding: 14rpx 20rpx;
-  background: transparent;
-  border-bottom: 2rpx solid var(--tt-line);
-  border-radius: 0;
-}
-
-.org-node-l3:last-child .org-node-body {
-  border-bottom: none;
 }
 
 .org-cap {
@@ -144,13 +152,17 @@
   border-radius: 18rpx;
 }
 
+.org-node-root .org-cap {
+  background: var(--tt-card);
+}
+
 .org-name {
   font-size: 29rpx;
   font-weight: 600;
   color: var(--tt-text-1);
 }
 
-.org-name-3 {
+.org-name-sub {
   font-size: 27rpx;
   font-weight: 400;
   color: var(--tt-text-2);
@@ -176,10 +188,6 @@
   color: var(--tt-brand);
   background: var(--tt-card);
   border-radius: 999rpx;
-}
-
-.org-node-l1 .org-btn {
-  background: var(--tt-card);
 }
 
 .org-btn.danger {

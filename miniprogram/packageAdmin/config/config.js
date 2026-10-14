@@ -3,81 +3,68 @@ const auth = require('../../utils/request');
 Page({
   data: {
     config: null,
-    saving: false,
+    cats: [],
+    loading: true,
   },
 
   onShow() {
-    this.load();
+    this.checkAndLoad();
+  },
+
+  async checkAndLoad() {
+    try {
+      await getApp().ensureLogin();
+      const user = await getApp().refreshUser();
+      const perms = user.effectivePermissions || [];
+      if (!user.isManager || (!perms.includes('config.view') && !perms.includes('*'))) {
+        wx.showModal({
+          title: '无权限',
+          content: '该功能仅限持有配置权限的教师/管理员使用',
+          showCancel: false,
+          success: () => wx.switchTab({ url: '/pages/home/home' }),
+        });
+        return;
+      }
+      this.load();
+    } catch (e) {
+      wx.showToast({ title: e.message, icon: 'none' });
+    }
   },
 
   async load() {
     try {
-      await getApp().ensureLogin();
       const config = await auth.get('/api/admin/config');
-      this.setData({ config });
+      this.setData({ config, cats: this.catsOf(config), loading: false });
     } catch (e) {
+      this.setData({ loading: false });
+      if (e.code === 403002) {
+        wx.showModal({ title: '无权限', content: '该功能仅管理员可用', showCancel: false });
+        return;
+      }
       wx.showToast({ title: e.message, icon: 'none' });
     }
   },
 
-  onDaily(e) {
-    this.setData({ [`config.daily.${e.currentTarget.dataset.field}`]: Number(e.detail.value) || 0 });
+  catsOf(config) {
+    return [
+      {
+        key: 'anticheat',
+        icon: 'secured',
+        title: '反作弊',
+        desc: config.anticheat.enabled ? '已启用自动检测' : '已停用',
+        url: '/packageAdmin/config/anticheat',
+      },
+      {
+        key: 'rewardVideo',
+        icon: 'play-circle',
+        title: '激励视频赚步数',
+        desc: config.rewardVideo.enabled ? `每日上限 ${config.rewardVideo.dailyLimit} 次` : '已停用',
+        url: '/packageAdmin/config/reward-video',
+      },
+    ];
   },
 
-  onWeekly(e) {
-    this.setData({ [`config.weekly.${e.currentTarget.dataset.field}`]: Number(e.detail.value) || 0 });
-  },
-
-  onAnticheat(e) {
-    const { field } = e.currentTarget.dataset;
-    const value = e.detail.value;
-    this.setData({ [`config.anticheat.${field}`]: typeof value === 'boolean' ? value : Number(value) || 0 });
-  },
-
-  onReward(e) {
-    const { field } = e.currentTarget.dataset;
-    const value = e.detail.value;
-    this.setData({ [`config.rewardVideo.${field}`]: typeof value === 'boolean' ? value : Number(value) || 0 });
-  },
-
-  onGradedTime(e) {
-    const { index } = e.currentTarget.dataset;
-    this.setData({ [`config.graded[${index}].time`]: e.detail.value });
-  },
-
-  onGradedPercent(e) {
-    const { index } = e.currentTarget.dataset;
-    this.setData({ [`config.graded[${index}].percent`]: Number(e.detail.value) || 0 });
-  },
-
-  addGraded() {
-    const graded = this.data.config.graded.concat([{ time: '12:00', percent: 50 }]);
-    this.setData({ 'config.graded': graded });
-  },
-
-  removeGraded(e) {
-    const { index } = e.currentTarget.dataset;
-    const graded = this.data.config.graded.filter((_, i) => i !== Number(index));
-    this.setData({ 'config.graded': graded });
-  },
-
-  async save() {
-    if (this.data.saving) return;
-    this.setData({ saving: true });
-    const { config } = this.data;
-    try {
-      await auth.put('/api/admin/config', {
-        daily: config.daily,
-        weekly: config.weekly,
-        graded: config.graded,
-        anticheat: config.anticheat,
-        rewardVideo: config.rewardVideo,
-      });
-      wx.showToast({ title: '配置已保存', icon: 'success' });
-    } catch (e) {
-      wx.showToast({ title: e.message, icon: 'none' });
-    } finally {
-      this.setData({ saving: false });
-    }
+  go(e) {
+    wx.navigateTo({ url: e.currentTarget.dataset.url });
   },
 });

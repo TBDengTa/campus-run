@@ -1,6 +1,6 @@
 const express = require('express');
 const { auth } = require('../../middlewares/auth');
-const { requirePermission } = require('../../middlewares/admin');
+const { requirePermission, requireAnyPermission } = require('../../middlewares/admin');
 
 const router = express.Router();
 
@@ -13,7 +13,9 @@ router.use('/appeals', requirePermission('appeal.view'), require('./appeals'));
 router.use('/ads', requirePermission('ad.view'), require('./ads'));
 router.use('/content', requirePermission('content.view'), require('./content'));
 router.use('/config', requirePermission('config.view'), require('./config'));
-router.use('/upload', requirePermission('ad.manage'), require('./upload'));
+router.use('/assessment', requirePermission('assessment.view'), require('./assessment'));
+router.use('/files', requirePermission('file.view'), require('./files'));
+router.use('/upload', requireAnyPermission(['ad.manage', 'file.manage']), require('./upload'));
 
 // 权限组管理（增删改，需 permission.manage）
 router.use('/permission-groups', requirePermission('permission.manage'), require('./permission-groups'));

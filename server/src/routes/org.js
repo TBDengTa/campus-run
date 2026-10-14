@@ -7,29 +7,23 @@ const ClassMonitor = require('../models/class-monitor');
 const router = express.Router();
 router.use(auth);
 
-// 组织树（学校 → 院系 → 专业）
+// 组织树（学校 → 院系 → 专业）：按 parentId 通用组装，不写死层级
 router.get(
   '/tree',
   wrap(async (req, res) => {
-    const [schools, departments, specialties] = await Promise.all([
-      Organization.find({ type: 'school' }).sort({ sort: 1 }).lean(),
-      Organization.find({ type: 'department' }).sort({ sort: 1 }).lean(),
-      Organization.find({ type: 'specialty' }).sort({ sort: 1 }).lean(),
-    ]);
+    const all = await Organization.find().sort({ sort: 1, createdAt: 1 }).lean();
     const byParent = new Map();
-    for (const d of [...departments, ...specialties]) {
-      const key = String(d.parentId || '');
+    for (const node of all) {
+      const key = String(node.parentId || '');
       if (!byParent.has(key)) byParent.set(key, []);
-      byParent.get(key).push(d);
+      byParent.get(key).push(node);
     }
-    const tree = schools.map((s) => ({
-      ...s,
-      children: (byParent.get(String(s._id)) || []).map((d) => ({
-        ...d,
-        children: byParent.get(String(d._id)) || [],
-      })),
-    }));
-    ok(res, tree);
+    const build = (parentId) =>
+      (byParent.get(String(parentId || '')) || []).map((node) => ({
+        ...node,
+        children: build(node._id),
+      }));
+    ok(res, build(null));
   })
 );
 

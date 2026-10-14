@@ -29,11 +29,11 @@ permissionGroupSchema.statics.DEFAULT_GROUPS = [
       'user.view',
       'appeal.view',
       'appeal.review',
-      'ad.view',
       'content.view',
       'config.view',
+      'assessment.view',
     ],
-    description: '教师默认管理权限：查看看板/用户/申诉/广告/内容/配置，可审核申诉',
+    description: '教师默认管理权限：查看看板/用户/申诉/内容/配置/运动考核，可审核申诉（教师不接触广告）',
     builtIn: true,
   },
 ];
