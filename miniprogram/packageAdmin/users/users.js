@@ -1,9 +1,13 @@
 const auth = require('../../utils/request');
 
-// 左滑按钮：滑出区域由组件内部节点渲染，只能用内联样式；
-// 宽度 104rpx、字号 24rpx（适配手机端），并显式清掉 TDesign 自带的 `padding: 0 32rpx`
-// —— 否则每个按钮实际宽 168rpx，三个按钮要滑出 504rpx 才吸附展开，手机上一次很难滑到底
-const BTN_BASE = 'box-sizing:border-box;padding:0;color:#fff;font-size:24rpx;width:104rpx;height:100%;display:flex;align-items:center;justify-content:center';
+// 左滑按钮：滑出区域由组件内部节点渲染，只能用内联样式。
+// 三个必须遵守的点：
+//   ① `display` 只能是 `inline-flex`（TDesign 自带的 `.t-swipe-cell__content` 就是 inline-flex）——
+//      写成 `display:flex` 会让按钮变成块级、在滑出容器里**竖着堆叠**，被行高一裁就只剩第一个「编辑」；
+//   ② 显式写 `padding:0`，否则 TDesign 的 `padding:0 32rpx` 会把每个按钮从 104rpx 撑到 168rpx，
+//      三个按钮要滑出 504rpx 才吸附展开，手机上一次很难滑到底；
+//   ③ 宽度/字号按手机端收敛（104rpx / 24rpx），颜色取设计令牌。
+const BTN_BASE = 'box-sizing:border-box;padding:0;color:#fff;font-size:24rpx;width:104rpx;height:100%;display:inline-flex;align-items:center;justify-content:center';
 const BTN_STYLE = {
   edit: `background:#ff6b00;${BTN_BASE}`,
   ban: `background:#e5484d;${BTN_BASE}`,
