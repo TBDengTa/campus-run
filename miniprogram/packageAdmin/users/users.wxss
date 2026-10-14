@@ -1,159 +1,282 @@
-/* 管理端 · 用户列表（白橙设计系统） */
+/* 管理端 · 用户列表（白橙设计系统 · 手机端紧凑版）
+   节奏：工具栏 64rpx、行高 92rpx、头像 60rpx、正文 28/22rpx —— 一屏可比旧版多看 2~3 行 */
 .users-page {
+  padding-top: 16rpx;
   padding-bottom: calc(32rpx + env(safe-area-inset-bottom));
 }
 
-/* 搜索卡片：内边距收紧 */
+/* ===== 顶部：搜索 + 工具按钮 ===== */
+.users-head {
+  margin: 0 var(--tt-gap) 16rpx;
+}
+
+/* 搜索框：t-search 自带浅灰填充，需要一张白底托住才有对比（与旧版一致，只是内边距收紧） */
 .users-search-card {
-  padding: 16rpx 20rpx;
+  padding: 14rpx 16rpx;
+  border-radius: var(--tt-radius);
+  background: var(--tt-card);
+  box-shadow: 0 2rpx 8rpx rgba(28, 31, 35, 0.04);
 }
 
-.users-filter {
-  margin: 0 var(--tt-gap) var(--tt-gap);
+.users-search-card t-search {
+  display: block;
+  width: 100%;
 }
 
-/* 列表卡片：管理端信息密度更高 */
-.users-card {
-  padding: 8rpx 24rpx;
+.users-tools {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-top: 12rpx;
+}
+
+.users-tool {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 64rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6rpx;
+  border-radius: 16rpx;
+  font-size: 24rpx;
+  color: var(--tt-text-2);
+  background: var(--tt-card);
+  border: 2rpx solid var(--tt-line);
+}
+
+.users-tool:active {
+  opacity: 0.8;
+}
+
+/* 筛选面板展开 / 有条件生效 */
+.users-tool.is-on {
+  color: var(--tt-brand);
+  background: var(--tt-brand-soft);
+  border-color: var(--tt-brand-soft-2);
+}
+
+.users-tool.is-primary {
+  color: #fff;
+  font-weight: 500;
+  border-color: transparent;
+  background: linear-gradient(135deg, #ff9a3d, var(--tt-brand));
+  box-shadow: 0 8rpx 20rpx rgba(255, 107, 0, 0.22);
+}
+
+.users-tool-dot {
+  position: absolute;
+  top: -10rpx;
+  right: -6rpx;
+  min-width: 30rpx;
+  height: 30rpx;
+  padding: 0 8rpx;
+  box-sizing: border-box;
+  border-radius: 999rpx;
+  background: var(--tt-brand);
+  color: #fff;
+  font-size: 20rpx;
+  line-height: 30rpx;
+  text-align: center;
+}
+
+/* ===== 筛选面板 ===== */
+.users-panel {
+  padding: 16rpx 18rpx 14rpx;
+  margin-bottom: 16rpx;
+}
+
+.users-seg {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 状态 / 角色 分段行：左侧小标签 + 占满剩余宽度的分段 */
+.users-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-bottom: 12rpx;
+}
+
+.users-filter-label {
+  width: 52rpx;
+  flex-shrink: 0;
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+/* 公共分段控件在管理端压缩一档（用页面私有类做复合，不整体重定义 .tt-*） */
+.tt-segment-item.users-seg-item {
+  padding: 12rpx 0;
+  font-size: 25rpx;
+}
+
+/* 两行下拉：把 TDesign 下拉的 96rpx 行高压到 76rpx */
+.users-dd {
+  --td-dropdown-menu-height: 76rpx;
+  --td-dropdown-menu-font-size: 25rpx;
+  --td-dropdown-menu-icon-size: 28rpx;
+}
+
+.users-dd + .users-dd {
+  margin-top: 8rpx;
+}
+
+.users-dd t-dropdown-menu {
+  width: 100%;
+}
+
+.users-panel-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+  margin-top: 12rpx;
+  padding-top: 12rpx;
+  border-top: 2rpx solid var(--tt-line);
+}
+
+.users-panel-tip {
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+/* ===== 清除筛选 / 已生效条件 ===== */
+.users-clear-chip {
+  display: flex;
+  align-items: center;
+  gap: 4rpx;
+  flex-shrink: 0;
+  padding: 8rpx 18rpx;
+  border-radius: 999rpx;
+  font-size: 22rpx;
+  color: var(--tt-brand);
+  background: var(--tt-brand-soft);
+}
+
+.users-clear-chip.is-hidden {
+  visibility: hidden;
+}
+
+.users-active-bar {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin: 0 var(--tt-gap) 16rpx;
+  padding: 10rpx 16rpx;
+  border-radius: 16rpx;
+  background: var(--tt-brand-soft);
+  border: 2rpx solid var(--tt-brand-soft-2);
+}
+
+.users-active-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 22rpx;
+  color: var(--tt-brand-deep);
+}
+
+/* ===== 列表 ===== */
+.tt-section.users-sec {
+  margin: 4rpx 28rpx 12rpx;
+  font-size: 27rpx;
+}
+
+.users-list {
+  margin: 0 var(--tt-gap);
+}
+
+.users-list t-swipe-cell {
+  display: block;
+  margin-bottom: 12rpx;
+  border-radius: var(--tt-radius-sm);
+  overflow: hidden;
+  /* 投影放在组件宿主节点上：行卡片自身被宿主裁切，写在 .user-row 上会被裁掉 */
+  box-shadow: 0 2rpx 8rpx rgba(28, 31, 35, 0.05);
+}
+
+.users-list t-swipe-cell:last-child {
+  margin-bottom: 0;
+}
+
+/* 行卡片：不再叠加 .tt-card（否则会被列表外边距二次内缩，左右各多出 24rpx） */
+.user-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 16rpx 18rpx;
+  background: var(--tt-card);
+}
+
+.user-row:active {
+  background: var(--tt-brand-soft);
 }
 
 .users-avatar {
-  width: 72rpx;
-  height: 72rpx;
+  width: 60rpx;
+  height: 60rpx;
   flex-shrink: 0;
-  border-radius: 22rpx;
+  border-radius: 18rpx;
   display: flex;
   align-items: center;
   justify-content: center;
   background: var(--tt-brand-soft);
 }
 
+.users-avatar.is-teacher {
+  background: var(--td-gray-color-2, #eee);
+}
+
+.user-row-main {
+  flex: 1;
+  min-width: 0;
+}
+
 .users-name {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 10rpx;
+  gap: 8rpx;
 }
 
-.users-actions {
+.user-row-name {
+  max-width: 300rpx;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 28rpx;
+  font-weight: 500;
+  color: var(--tt-text-1);
+}
+
+.user-row.is-banned .user-row-name {
+  color: var(--tt-text-3);
+}
+
+.user-row-sub {
   display: flex;
   align-items: center;
   gap: 12rpx;
-  flex-shrink: 0;
+  margin-top: 4rpx;
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+.user-row-goal {
+  padding: 2rpx 12rpx;
+  border-radius: 999rpx;
+  font-size: 20rpx;
+  color: var(--tt-brand);
+  background: var(--tt-brand-soft);
 }
 
 .users-loading {
   display: flex;
   justify-content: center;
-  padding: 24rpx;
-}
-
-/* ===== 名单操作 ===== */
-.users-actions {
-  display: flex;
-  gap: 16rpx;
-  margin: 0 24rpx 16rpx;
-}
-
-.users-action-btn {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8rpx;
-  padding: 18rpx 0;
-  border-radius: 14rpx;
-  background: var(--td-bg-color-container, #fff);
-  border: 1rpx solid var(--td-component-border, #dcdcdc);
-  font-size: 26rpx;
-  color: var(--td-text-color-primary);
-}
-
-.users-action-btn.primary {
-  background: var(--tt-brand, #ff6b00);
-  border-color: var(--tt-brand, #ff6b00);
-  color: #fff;
-}
-
-/* ===== 滑动列表 ===== */
-.users-swipe-list {
-  margin: 0 24rpx;
-}
-
-.users-swipe-list t-swipe-cell {
-  display: block;
-  margin-bottom: 12rpx;
-  border-radius: 16rpx;
-  overflow: hidden;
-}
-
-.user-row {
-  display: flex;
-  align-items: center;
-  gap: 16rpx;
-  padding: 20rpx 24rpx;
-  background: var(--td-bg-color-container, #fff);
-}
-
-/* ===== 筛选下拉卡 ===== */
-.filter-card {
-  padding: 0;
-  overflow: hidden;
-  margin-bottom: 12rpx;
-}
-
-.filter-card t-dropdown-menu {
-  width: 100%;
-}
-
-/* ===== 清除筛选 ===== */
-.clear-filter-chip {
-  display: flex;
-  align-items: center;
-  gap: 6rpx;
-  font-size: 22rpx;
-  color: var(--tt-brand, #ff6b00);
-  background: var(--tt-brand-weak, rgba(255, 107, 0, 0.08));
-  border-radius: 999px;
-  padding: 10rpx 20rpx;
-  white-space: nowrap;
-}
-
-.clear-filter-chip.hide {
-  display: none;
-}
-
-/* ===== 用户行（滑动内容） ===== */
-.user-row {
-  display: flex;
-  align-items: center;
-  gap: 16rpx;
-  padding: 22rpx 24rpx;
-}
-
-.users-avatar.is-teacher {
-  background: var(--td-gray-color-3, #e0e0e0);
-}
-
-.user-row-main {
-  min-width: 0;
-}
-
-.user-row-goal {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  flex-shrink: 0;
-  margin-right: 4rpx;
-}
-
-.user-row-goal .num-font {
-  font-size: 28rpx;
-  font-weight: 600;
-  color: var(--tt-brand, #ff6b00);
-}
-
-.user-row-goal-unit {
-  font-size: 18rpx;
-  color: var(--td-text-color-secondary);
+  padding: 20rpx;
 }

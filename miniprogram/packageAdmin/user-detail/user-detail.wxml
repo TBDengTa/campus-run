@@ -138,6 +138,10 @@
       <t-button theme="default" block bind:tap="resetPassword">重置登录密码</t-button>
       <view class="udetail-note">重置为初始密码（学号/身份证后8位），并要求该用户下次登录时修改</view>
     </view>
+    <view wx:if="{{canManagePerms && !isSuper}}" class="udetail-reset">
+      <t-button theme="danger" variant="outline" block bind:tap="removeAccount">删除账户</t-button>
+      <view class="udetail-note">将删除该账号及其全部运动 / 饮水 / 徽章数据，不可恢复</view>
+    </view>
     <view class="udetail-note">微信绑定后不可解绑；其他微信登录该账号会被拒绝</view>
   </view>
 

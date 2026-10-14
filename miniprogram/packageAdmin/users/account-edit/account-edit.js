@@ -6,6 +6,18 @@ const GENDERS = [
   { value: 0, label: '保密' },
 ];
 
+// 班级选择器末尾的「手动输入」项
+const CLASS_MANUAL_OPTION = '手动输入其他班级';
+
+// 年级推导：学号前 4 位即入学年份（如 20230101 → "2023"）
+// 与 server/src/services/roster.js::gradeFromStudentId 保持一致，避免两边显示不一致
+function gradeFromStudentId(studentId) {
+  const m = String(studentId || '').trim().match(/^(\d{4})/);
+  if (!m) return '';
+  const year = Number(m[1]);
+  return year >= 1900 && year <= 2099 ? m[1] : '';
+}
+
 Page({
   data: {
     id: '', // 有值 = 编辑模式
@@ -16,6 +28,7 @@ Page({
     gender: 0,
     birthdate: '',
     studentId: '',
+    gradeText: '', // 按学号前 4 位自动识别的年级（只读展示）
     school: '',
     department: '',
     specialty: '',
@@ -33,6 +46,11 @@ Page({
     schoolIndex: -1,
     departmentIndex: -1,
     specialtyIndex: -1,
+    // ===== 班级选择（取自已有数据；无数据时退化为手填） =====
+    classNames: [],
+    classPickerRange: [],
+    classIndex: -1,
+    classManual: false,
   },
 
   onLoad(options) {
@@ -44,6 +62,7 @@ Page({
     });
     wx.setNavigationBarTitle({ title: options.id ? '编辑账户' : '创建账户' });
     this.loadOrgTree();
+    this.loadClasses();
     if (options.id) this.load();
   },
 
@@ -56,8 +75,9 @@ Page({
         orgTree: tree,
         schoolNames: tree.map((s) => s.name),
       });
+      this.tryPrefillOrg(); // 组织树可能晚于用户数据返回，加载完再尝试回显一次
     } catch (e) {
-      /* 组织树加载失败时降级为手填 */
+      /* 组织树加载失败时降级为手填（WXML 按 hasOrgTree 切换为输入框） */
     }
   },
 
@@ -66,46 +86,54 @@ Page({
     try {
       await getApp().ensureLogin();
       const { user } = await auth.get(`/api/admin/users/${this.data.id}`);
+      this.userDoc = user;
       this.setData({
         role: user.role || 'student',
         account: user.account || user.realName || '',
         gender: user.gender || 0,
         birthdate: user.birthdate ? String(user.birthdate).slice(0, 10) : '',
         studentId: user.studentId || '',
+        gradeText: gradeFromStudentId(user.studentId) || user.grade || '',
         school: user.schoolName || '',
         department: user.departmentName || '',
         specialty: user.specialty || '',
         className: user.className || '',
         loading: false,
       });
-      // 编辑模式：按已保存的名称回显级联选择索引
-      if (user.schoolName && this.data.orgTree.length) {
-        this.prefillOrg(user.schoolName, user.departmentName || '', user.specialty || '');
-      }
+      this.tryPrefillOrg();
+      this.loadClasses(); // 按该用户的系部/专业收窄班级选项
     } catch (e) {
       this.setData({ loading: false });
       wx.showToast({ title: e.message, icon: 'none' });
     }
   },
 
+  // 组织树与用户数据都就绪后再回显级联索引（两者异步，谁后到谁触发）
+  tryPrefillOrg() {
+    const u = this.userDoc;
+    if (!u || !this.data.orgTree.length) return;
+    this.prefillOrg(u.schoolName || '', u.departmentName || '', u.specialty || '');
+  },
+
   // 编辑模式回显：按名称定位 院校/系部/专业 索引
   prefillOrg(schoolName, departmentName, specialtyName) {
-    const si = this.data.orgTree.findIndex((s) => s.name === schoolName);
-    if (si < 0) return;
-    const school = this.data.orgTree[si];
-    const departments = (school.children || []).map((x) => x.name);
-    let di = departmentName ? departments.indexOf(departmentName) : -1;
-    let specialtyNames = [];
-    if (di >= 0) {
-      const dept = school.children[di];
-      specialtyNames = (dept.children || []).map((x) => x.name);
+    const tree = this.data.orgTree;
+    const si = tree.findIndex((s) => s.name === schoolName);
+    if (si < 0) {
+      this.setData({ schoolIndex: -1, departmentNames: [], departmentIndex: -1, specialtyNames: [], specialtyIndex: -1 });
+      return;
     }
+    const school = tree[si];
+    const departmentNames = (school.children || []).map((x) => x.name);
+    const di = departmentName ? departmentNames.indexOf(departmentName) : -1;
+    const specialtyNames = di >= 0 ? (school.children[di].children || []).map((x) => x.name) : [];
+    const spi = specialtyName ? specialtyNames.indexOf(specialtyName) : -1;
     this.setData({
       schoolIndex: si,
       departmentNames,
       departmentIndex: di,
       specialtyNames,
-      specialtyIndex: specialtyName ? specialtyNames.indexOf(specialtyName) : -1,
+      specialtyIndex: spi,
     });
   },
 
@@ -126,7 +154,7 @@ Page({
     });
   },
 
-  // 系部选择 → 联动专业
+  // 系部选择 → 联动专业 + 收窄班级选项
   onDepartmentPick(e) {
     const i = Number(e.detail.value);
     const school = this.data.orgTree[this.data.schoolIndex];
@@ -139,6 +167,7 @@ Page({
       specialty: '',
       specialtyIndex: -1,
     });
+    this.loadClasses();
   },
 
   // 专业选择
@@ -147,6 +176,50 @@ Page({
     const name = this.data.specialtyNames[i];
     if (!name) return;
     this.setData({ specialtyIndex: i, specialty: name });
+    this.loadClasses();
+  },
+
+  // ===== 班级：优先从已有班级里选，允许手动输入 =====
+  async loadClasses() {
+    const d = this.data;
+    try {
+      const res = await auth.get('/api/admin/users/classes', {
+        department: d.department || '',
+        specialty: d.specialty || '',
+      });
+      this.setData({ classNames: (res.classes || []).filter(Boolean) });
+      this.buildClassPicker();
+    } catch (e) {
+      // 无权限或接口异常：退化为手动输入
+      this.setData({ classNames: [], classPickerRange: [], classIndex: -1 });
+    }
+  },
+
+  buildClassPicker() {
+    const list = this.data.classNames;
+    this.setData({
+      classPickerRange: list.length ? [...list, CLASS_MANUAL_OPTION] : [],
+      classIndex: list.indexOf(this.data.className),
+    });
+  },
+
+  onClassPick(e) {
+    const i = Number(e.detail.value);
+    const list = this.data.classNames;
+    if (i >= list.length) {
+      this.setData({ classManual: true, className: '', classIndex: -1 });
+      return;
+    }
+    this.setData({ className: list[i] || '', classIndex: i, classManual: false });
+  },
+
+  useClassInput() {
+    this.setData({ classManual: true, className: '', classIndex: -1 });
+  },
+
+  useClassPicker() {
+    this.buildClassPicker();
+    this.setData({ classManual: false });
   },
 
   pickRole(e) {
@@ -173,8 +246,10 @@ Page({
     this.setData({ birthdate: e.detail.value });
   },
 
+  // 学号：同步推导年级（前 4 位）
   inputStudentId(e) {
-    this.setData({ studentId: e.detail.value });
+    const studentId = e.detail.value;
+    this.setData({ studentId, gradeText: gradeFromStudentId(studentId) });
   },
 
   input(e) {

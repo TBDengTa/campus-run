@@ -77,6 +77,29 @@
   flex: 1;
 }
 
+/* 只读展示值（如年级：按学号自动识别） */
+.ae-static {
+  flex: 1;
+  font-size: 28rpx;
+  text-align: right;
+  color: var(--tt-text-1);
+}
+
+/* 班级「选已有」切换 */
+.ae-switch {
+  flex-shrink: 0;
+  margin-left: 16rpx;
+  font-size: 24rpx;
+  color: var(--tt-brand, #ff6b00);
+}
+
+.ae-hint {
+  padding: 12rpx 0 4rpx;
+  text-align: right;
+  font-size: 22rpx;
+  color: var(--tt-brand, #ff6b00);
+}
+
 .ae-ph {
   color: var(--td-text-color-placeholder);
 }

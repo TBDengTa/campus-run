@@ -1,17 +1,30 @@
 const auth = require('../../utils/request');
 
+// 左滑按钮：滑出区域由组件内部节点渲染，只能用内联样式；
+// 宽度收到 104rpx、字号 24rpx 以适配手机端（颜色取设计令牌：橙 / 错误红 / 成功绿 / 中性灰）
+const BTN_BASE = 'color:#fff;font-size:24rpx;width:104rpx;height:100%;display:flex;align-items:center;justify-content:center';
 const BTN_STYLE = {
-  edit: 'background:#ff6b00;color:#fff;font-size:26rpx;width:120rpx;height:100%;display:flex;align-items:center;justify-content:center',
-  detail: 'background:#2f7cf6;color:#fff;font-size:26rpx;width:120rpx;height:100%;display:flex;align-items:center;justify-content:center',
-  ban: 'background:#d54941;color:#fff;font-size:26rpx;width:120rpx;height:100%;display:flex;align-items:center;justify-content:center',
-  unban: 'background:#16a34a;color:#fff;font-size:26rpx;width:120rpx;height:100%;display:flex;align-items:center;justify-content:center',
-  del: 'background:#383838;color:#fff;font-size:26rpx;width:120rpx;height:100%;display:flex;align-items:center;justify-content:center',
+  edit: `background:#ff6b00;${BTN_BASE}`,
+  ban: `background:#e5484d;${BTN_BASE}`,
+  unban: `background:#16a34a;${BTN_BASE}`,
+  del: `background:#6b7280;${BTN_BASE}`,
+};
+
+// 筛选条件的展示名（用于「已筛选」提示条）
+const FILTER_LABELS = {
+  school: '院校',
+  department: '系部',
+  specialty: '专业',
+  grade: '年级',
+  dailyGoal: '日目标',
+  weeklyGoal: '周目标',
 };
 
 Page({
   data: {
     keyword: '',
     status: '',
+    role: '',
     page: 1,
     limit: 20,
     total: 0,
@@ -29,6 +42,9 @@ Page({
     },
     filters: { school: '', department: '', specialty: '', grade: '', dailyGoal: '', weeklyGoal: '' },
     hasActiveFilter: false,
+    filterCount: 0, // 筛选面板按钮上的角标
+    filterSummary: '', // 已生效条件文案
+    showFilters: false, // 筛选面板默认收起，把首屏留给列表
     canManage: false,
   },
 
@@ -49,7 +65,8 @@ Page({
           schools: toOptions(opt.schools),
           departments: toOptions(opt.departments),
           specialties: toOptions(opt.specialties),
-          grades: toOptions(opt.grades),
+          // 年级展示为「2024级」，筛选值仍是年份
+          grades: (opt.grades || []).map((v) => ({ label: `${v}级`, value: String(v) })),
           dailyGoals: toOptions(opt.dailyGoals).map((o) => ({ label: `${o.label} 步`, value: o.value })),
           weeklyGoals: toOptions(opt.weeklyGoals).map((o) => ({ label: `${o.label} 步`, value: o.value })),
         },
@@ -61,8 +78,27 @@ Page({
 
   updateFilterState() {
     const f = this.data.filters;
-    const active = !!(f.school || f.department || f.specialty || f.grade || f.dailyGoal || f.weeklyGoal || this.data.keyword || this.data.status);
-    this.setData({ hasActiveFilter: active });
+    const summary = [];
+    for (const k of Object.keys(FILTER_LABELS)) {
+      if (!f[k]) continue;
+      const unit = k === 'dailyGoal' || k === 'weeklyGoal' ? ' 步' : '';
+      summary.push(`${FILTER_LABELS[k]} ${f[k]}${unit}`);
+    }
+    if (this.data.status === 'active') summary.push('状态 正常');
+    if (this.data.status === 'banned') summary.push('状态 封禁');
+    if (this.data.role === 'student') summary.push('角色 学生');
+    if (this.data.role === 'teacher') summary.push('角色 教师');
+    if (this.data.keyword) summary.push(`关键词「${this.data.keyword}」`);
+    this.setData({
+      hasActiveFilter: summary.length > 0,
+      filterCount: summary.length,
+      filterSummary: summary.join(' · '),
+    });
+  },
+
+  // 展开 / 收起筛选面板
+  toggleFilters() {
+    this.setData({ showFilters: !this.data.showFilters });
   },
 
   clearFilters() {
@@ -70,7 +106,10 @@ Page({
       filters: { school: '', department: '', specialty: '', grade: '', dailyGoal: '', weeklyGoal: '' },
       keyword: '',
       status: '',
+      role: '',
       hasActiveFilter: false,
+      filterCount: 0,
+      filterSummary: '',
     });
     this.reload();
   },
@@ -101,11 +140,20 @@ Page({
     this.reload();
   },
 
+  // 账户类型筛选：'' 全部 / student 学生 / teacher 教师
+  filterRole(e) {
+    const role = e.currentTarget.dataset.role;
+    this.setData({ role: this.data.role === role ? '' : role });
+    this.updateFilterState();
+    this.reload();
+  },
+
   buildQuery(extra = {}) {
-    const { keyword, status, filters } = this.data;
+    const { keyword, status, role, filters } = this.data;
     const q = { ...extra };
     if (keyword) q.keyword = keyword;
     if (status) q.status = status;
+    if (role) q.role = role;
     for (const k of ['school', 'department', 'specialty', 'grade', 'dailyGoal', 'weeklyGoal']) {
       if (filters[k]) q[k] = filters[k];
     }
@@ -140,12 +188,10 @@ Page({
   },
 
   // 每行滑动按钮（对象里带 uid/type 供回调分发）
+  // 「详细」改为点击卡片进入，左滑只留 3 键，滑出区更短、更好按
   buildSwipeButtons(u) {
     const id = u._id;
-    const btns = [
-      { text: '编辑', type: 'edit', uid: id, style: BTN_STYLE.edit },
-      { text: '详细', type: 'detail', uid: id, style: BTN_STYLE.detail },
-    ];
+    const btns = [{ text: '编辑', type: 'edit', uid: id, style: BTN_STYLE.edit }];
     if (u.status !== 'banned' && !u.isSuper) {
       btns.push({ text: '封禁', type: 'ban', uid: id, nickname: u.nickname || u.realName, style: BTN_STYLE.ban });
     }
@@ -158,11 +204,18 @@ Page({
     return btns;
   },
 
+  // 点击整行 → 用户详情（手机端主操作路径，不必先左滑）
+  onRowTap(e) {
+    const id = e.currentTarget.dataset.id;
+    if (!id) return;
+    wx.navigateTo({ url: `/packageAdmin/user-detail/user-detail?id=${id}` });
+  },
+
   // 滑动按钮点击分发
   async onSwipeAction(e) {
     const act = e.detail || {};
     if (act.type === 'edit') {
-      wx.navigateTo({ url: `/packageAdmin/users/account-edit?id=${act.uid}` });
+      wx.navigateTo({ url: `/packageAdmin/users/account-edit/account-edit?id=${act.uid}` });
       return;
     }
     if (act.type === 'detail') {
@@ -229,8 +282,8 @@ Page({
     wx.navigateTo({ url: '/packageAdmin/users/import' });
   },
 
-  // 创建账户：独立页面填写
+  // 创建账户：独立页面填写（注意是两级目录，路径必须写全）
   goCreateAccount() {
-    wx.navigateTo({ url: '/packageAdmin/users/account-edit' });
+    wx.navigateTo({ url: '/packageAdmin/users/account-edit/account-edit' });
   },
 });

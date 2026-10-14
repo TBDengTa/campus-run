@@ -51,6 +51,15 @@ function normalizeGrade(v) {
   return String(v || '').replace(/级$/, '').trim();
 }
 
+// 年级推导：学号前 4 位即入学年份（如 20230101 → "2023"）
+// 前 4 位不是合理年份（1900~2099）时返回空串，避免把随机数字当年级
+function gradeFromStudentId(studentId) {
+  const m = String(studentId || '').trim().match(/^(\d{4})/);
+  if (!m) return '';
+  const year = Number(m[1]);
+  return year >= 1900 && year <= 2099 ? m[1] : '';
+}
+
 // 规范化一行
 // 性别解析：支持 男/女/保密 与 1/2/0；无法识别返回 null
 function parseGender(v) {
@@ -169,7 +178,9 @@ async function importRows(rows, mode = 'create') {
         if (item.department) existing.departmentName = item.department;
         if (item.className) existing.className = item.className;
         if (item.specialty) existing.specialty = item.specialty;
-        if (item.grade) existing.grade = item.grade;
+        // 名单未给年级时按学号前 4 位（入学年份）推导
+        const grade = item.grade || gradeFromStudentId(item.studentId);
+        if (grade) existing.grade = grade;
         if (item.gender != null) existing.gender = item.gender;
         if (item.birthdate) existing.birthdate = new Date(item.birthdate);
         await existing.save();
@@ -207,7 +218,7 @@ async function importRows(rows, mode = 'create') {
         departmentName: item.department,
         className: item.className,
         specialty: item.specialty,
-        grade: item.grade,
+        grade: item.grade || gradeFromStudentId(item.studentId),
         gender: item.gender != null ? item.gender : 0,
         birthdate: item.birthdate ? new Date(item.birthdate) : undefined,
         role: 'student',
@@ -224,4 +235,4 @@ async function importRows(rows, mode = 'create') {
   return result;
 }
 
-module.exports = { importRows, parseRows, parseCsv, initialPasswords };
+module.exports = { importRows, parseRows, parseCsv, initialPasswords, normalizeGrade, gradeFromStudentId };

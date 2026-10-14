@@ -21,6 +21,15 @@
 - 详细规范见 `docs/ui-design.md`（新增页面必须遵守）。
 - 大数字用 `.num-font`，格式化统一走 `utils/format.js`。
 
+## 学籍字段约定
+- **年级 = 学号前 4 位（入学年份）**，如 `20230101 → "2023"`（展示为 `2023级`）。
+  统一走 `server/src/services/roster.js::gradeFromStudentId()`（前端展示副本在 `account-edit.js`）：
+  前 4 位不是 1900~2099 的合理年份就返回空串。存量数据 `grade` 字段普遍为空，
+  查询/筛选**必须保留按学号推导的兜底**（`/api/admin/users/filters` 与列表 `grade` 条件已如此处理）。
+- **班级（`className`）是名单里的自由文本**，不在 `organizations` 组织树里（树只有 学校→院系→专业）。
+  需要班级候选时用 `GET /api/admin/users/classes`（`className` 去重，可带 `department`/`specialty` 收窄），
+  不要给组织树硬塞第四层。
+
 ## 教师账号规则
 - 教师（`role === 'teacher'`）**不参与运动记录与排名**：步数同步 / GPS 实跑 / 激励视频加步数在
   `routes/run.js`、`routes/reward-video.js` 与 `services/steps.js` 三层拦截（`403 + code 403003`）；

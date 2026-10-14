@@ -208,6 +208,30 @@ box-shadow: 0 12rpx 32rpx rgba(255, 107, 0, 0.24);
   注意：计划库里有**同名但不同性别**的计划（如 2 条 `BMI正常·激进版`），去重必须按 `_id`，不能按 `name`。
 - **身体数据 `pages/body-data`**：橙色 `tt-hero` BMI 概览（无数据显示灰色「待完善」）→ 关键指标四列 → 编辑表单（性别/身高/体重/强度偏好，斤↔kg 可切换）→ **目标计划只留跳转入口**（数值不在此重复展示）。
   数据读取注意：`GET /api/goal/body-data` 返回的是 `{ bodyData, currentPlan, planName, autoMatched, effective }`，**字段在 `bodyData` 里**，不要按扁平对象读。
+- **管理端 · 用户管理 `packageAdmin/users/users`**：信息密度按手机端压缩，首屏留给列表。
+  顶部 = 搜索（`t-search shape="round"`，80rpx，需一张白底卡托住灰色输入框）＋ 三枚等高 64rpx 工具按钮
+  「筛选 / 导入名单 / 创建账户（橙色渐变主按钮）」，**筛选面板默认收起**（`showFilters`），点「筛选」才展开——
+  面板内是两行带小标签的分段 **状态（全部/正常/封禁）** 与 **角色（全部/学生/教师）**，
+  以及两行 6 个下拉筛选（下拉行高由 `--td-dropdown-menu-height: 76rpx` 压到 76rpx）；
+  条件生效时「筛选」按钮右上角显示条件数角标，下方另有 `.users-active-bar` 提示当前条件并提供一键清除。
+  列表行 = 头像 60rpx + 姓名 28rpx + 学号/日目标 22rpx + 右侧 `chevron-right`，行内边距 16rpx 18rpx。
+  **操作路径**：点整行 → 用户详情（`onRowTap`，手机端主路径）；左滑留 3 键「编辑 · 封禁/解封 · 删除」
+  （滑出区 3×104rpx，颜色为品牌橙 / `--td-error-color-6` / 中性灰，**不要再用蓝色 `#2f7cf6`**）。
+  行卡片不使用 `.tt-card`（会被列表外边距二次内缩），改用页面私有 `.user-row`；
+  投影写在 `t-swipe-cell` 宿主节点上（写在行上会被宿主 `overflow: hidden` 裁掉）。
+  跳转账户编辑页必须写全两级路径 `packageAdmin/users/account-edit/account-edit`（少一级会静默跳转失败）。
+- **管理端 · 账户编辑 `packageAdmin/users/account-edit/account-edit`**：
+  院校 / 系部 / 专业是**级联选择器**，两条硬性要求：
+  ① `picker` 必须绑定 `value="{{xxxIndex < 0 ? 0 : xxxIndex}}"`，否则滚轮不落在当前项上（看起来「选了没反应」）；
+  ② 组织树（`/api/org/tree`）与用户数据（`/api/admin/users/:id`）是两个并发请求，**回显必须在两者都就绪后触发**
+  （`tryPrefillOrg()` 由两边分别调用），否则系部/专业列表是空的、选择器点了没内容。
+  `hasOrgTree === false`（组织架构未维护）时，三行自动降级为手填输入框，不能只剩空选择器。
+  **班级改为选择器**：选项取自 `GET /api/admin/users/classes`（`className` 去重，可带 `department` / `specialty` 收窄），
+  末尾固定一项「手动输入其他班级」，选中后切成输入框并给出「选已有」回退；接口失败时直接用手填，不阻断开户。
+  **年级只读展示、不入表单**：`年级 = 学号前 4 位`（如 `20230101 → 2023级`），前端 `gradeFromStudentId()` 仅用于展示，
+  落库由服务端 `roster.gradeFromStudentId()` 在创建/保存时统一推导（存量数据 `grade` 字段普遍为空，务必保留按学号推导的兜底）。
+- **管理端 · 用户详情 `packageAdmin/user-detail/user-detail`**：账号操作区依次为 编辑账户资料（`permission.manage`）、封禁/解封、
+  重置登录密码、**删除账户**（`canManagePerms && !isSuper`，二次确认后 `DELETE /api/admin/users/:id` 并返回列表）。
 - **记录三页 `pages/records/day`｜`records/week`｜`pages/run/detail`**：只有一套语言 —— 概要卡（无独立 hero）+ `.tt-section` 分区 + 30rpx 数值 / 20rpx 标签。
   week 的 7 天为**7 列柱状图**（替代 7 行横条）；detail 主视觉压成窄条（步数 56rpx）、核心数据 4 列（配速并入）、地图 340rpx。
 - **我的 `pages/profile`**：5 组 —— 用户卡（`.tt-hero`）→ 学籍信息（**只读，学生不可自改**）→ 累计数据（教师隐藏）→ 运动与健康 → 账号与帮助 → 管理功能（仅 `isAdmin`）→ 退出登录。

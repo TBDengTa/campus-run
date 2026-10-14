@@ -1,83 +1,112 @@
 <view class="page tt-page users-page">
-  <!-- ===== 搜索 ===== -->
-  <view class="tt-card users-search-card">
-    <t-search placeholder="搜索姓名 / 学号 / openid" value="{{keyword}}" bind:change="onSearch" bind:clear="onClear" />
-  </view>
-
-  <!-- ===== 筛选第一行：院校 / 系部 / 专业 ===== -->
-  <view class="filter-card tt-card">
-    <t-dropdown-menu>
-      <t-dropdown-item label="院校" value="{{filters.school}}" options="{{filterOptions.schools}}" bind:change="onDropdownChange" data-key="school" />
-      <t-dropdown-item label="系部" value="{{filters.department}}" options="{{filterOptions.departments}}" bind:change="onDropdownChange" data-key="department" />
-      <t-dropdown-item label="专业" value="{{filters.specialty}}" options="{{filterOptions.specialties}}" bind:change="onDropdownChange" data-key="specialty" />
-    </t-dropdown-menu>
-  </view>
-
-  <!-- ===== 筛选第二行：年级 / 日目标 / 周目标 ===== -->
-  <view class="filter-card tt-card">
-    <t-dropdown-menu>
-      <t-dropdown-item label="年级" value="{{filters.grade}}" options="{{filterOptions.grades}}" bind:change="onDropdownChange" data-key="grade" />
-      <t-dropdown-item label="日目标" value="{{filters.dailyGoal}}" options="{{filterOptions.dailyGoals}}" bind:change="onDropdownChange" data-key="dailyGoal" />
-      <t-dropdown-item label="周目标" value="{{filters.weeklyGoal}}" options="{{filterOptions.weeklyGoals}}" bind:change="onDropdownChange" data-key="weeklyGoal" />
-    </t-dropdown-menu>
-  </view>
-
-  <!-- ===== 状态 + 清除筛选 ===== -->
-  <view class="users-filter">
-    <view class="tt-segment">
-      <view class="tt-segment-item {{!status ? 'active' : ''}}" bind:tap="filterStatus" data-status="">全部</view>
-      <view class="tt-segment-item {{status === 'active' ? 'active' : ''}}" bind:tap="filterStatus" data-status="active">正常</view>
-      <view class="tt-segment-item {{status === 'banned' ? 'active' : ''}}" bind:tap="filterStatus" data-status="banned">封禁</view>
+  <!-- ===== 顶部：搜索 + 三枚紧凑工具（筛选 / 导入名单 / 创建账户） ===== -->
+  <view class="users-head">
+    <view class="users-search-card">
+      <t-search shape="round" placeholder="搜索姓名 / 学号 / openid" value="{{keyword}}" bind:change="onSearch" bind:clear="onClear" />
     </view>
-    <view class="clear-filter-chip {{hasActiveFilter ? '' : 'hide'}}" bind:tap="clearFilters">
-      <t-icon name="close-circle-filled" size="26rpx" />
-      <text>清除筛选</text>
+
+    <view class="users-tools">
+      <view class="users-tool {{showFilters ? 'is-on' : ''}}" bind:tap="toggleFilters">
+        <t-icon name="filter" size="28rpx" />
+        <text>筛选</text>
+        <text class="users-tool-dot" wx:if="{{filterCount}}">{{filterCount}}</text>
+      </view>
+      <view class="users-tool" bind:tap="goImport">
+        <t-icon name="upload" size="28rpx" />
+        <text>导入名单</text>
+      </view>
+      <view class="users-tool is-primary" bind:tap="goCreateAccount">
+        <t-icon name="user-add" size="28rpx" />
+        <text>创建账户</text>
+      </view>
     </view>
   </view>
 
-  <!-- ===== 名单操作 ===== -->
-  <view class="users-actions">
-    <view class="users-action-btn primary" bind:tap="goImport">
-      <t-icon name="upload" size="30rpx" />
-      <text>导入名单</text>
+  <!-- ===== 筛选面板（默认收起，点「筛选」展开） ===== -->
+  <view class="tt-card users-panel" wx:if="{{showFilters}}">
+    <view class="users-filter-row">
+      <text class="users-filter-label">状态</text>
+      <view class="tt-segment users-seg">
+        <view class="tt-segment-item users-seg-item {{!status ? 'active' : ''}}" bind:tap="filterStatus" data-status="">全部</view>
+        <view class="tt-segment-item users-seg-item {{status === 'active' ? 'active' : ''}}" bind:tap="filterStatus" data-status="active">正常</view>
+        <view class="tt-segment-item users-seg-item {{status === 'banned' ? 'active' : ''}}" bind:tap="filterStatus" data-status="banned">封禁</view>
+      </view>
     </view>
-    <view class="users-action-btn" bind:tap="goCreateAccount">
-      <t-icon name="user-add" size="30rpx" />
-      <text>创建账户</text>
+
+    <view class="users-filter-row">
+      <text class="users-filter-label">角色</text>
+      <view class="tt-segment users-seg">
+        <view class="tt-segment-item users-seg-item {{!role ? 'active' : ''}}" bind:tap="filterRole" data-role="">全部</view>
+        <view class="tt-segment-item users-seg-item {{role === 'student' ? 'active' : ''}}" bind:tap="filterRole" data-role="student">学生</view>
+        <view class="tt-segment-item users-seg-item {{role === 'teacher' ? 'active' : ''}}" bind:tap="filterRole" data-role="teacher">教师</view>
+      </view>
+    </view>
+
+    <view class="users-dd">
+      <t-dropdown-menu>
+        <t-dropdown-item label="院校" value="{{filters.school}}" options="{{filterOptions.schools}}" bind:change="onDropdownChange" data-key="school" />
+        <t-dropdown-item label="系部" value="{{filters.department}}" options="{{filterOptions.departments}}" bind:change="onDropdownChange" data-key="department" />
+        <t-dropdown-item label="专业" value="{{filters.specialty}}" options="{{filterOptions.specialties}}" bind:change="onDropdownChange" data-key="specialty" />
+      </t-dropdown-menu>
+    </view>
+
+    <view class="users-dd">
+      <t-dropdown-menu>
+        <t-dropdown-item label="年级" value="{{filters.grade}}" options="{{filterOptions.grades}}" bind:change="onDropdownChange" data-key="grade" />
+        <t-dropdown-item label="日目标" value="{{filters.dailyGoal}}" options="{{filterOptions.dailyGoals}}" bind:change="onDropdownChange" data-key="dailyGoal" />
+        <t-dropdown-item label="周目标" value="{{filters.weeklyGoal}}" options="{{filterOptions.weeklyGoals}}" bind:change="onDropdownChange" data-key="weeklyGoal" />
+      </t-dropdown-menu>
+    </view>
+
+    <view class="users-panel-foot">
+      <text class="users-panel-tip">下拉筛选即时生效</text>
+      <view class="users-clear-chip {{hasActiveFilter ? '' : 'is-hidden'}}" bind:tap="clearFilters">
+        <t-icon name="close-circle-filled" size="24rpx" />
+        <text>清除筛选</text>
+      </view>
     </view>
   </view>
 
-  <view class="tt-section">
+  <!-- ===== 已生效条件（面板收起时也能看清当前筛选） ===== -->
+  <view class="users-active-bar" wx:if="{{hasActiveFilter}}">
+    <text class="users-active-text">{{filterSummary}}</text>
+    <view class="users-clear-chip" bind:tap="clearFilters">
+      <t-icon name="close-circle-filled" size="24rpx" />
+      <text>清除</text>
+    </view>
+  </view>
+
+  <view class="tt-section users-sec">
     <text>用户列表</text>
     <text class="tt-section-extra">共 {{total}} 人</text>
   </view>
 
-  <!-- ===== 列表（滑动操作） ===== -->
-  <view class="users-swipe-list">
+  <!-- ===== 列表（点卡片进详情 · 左滑操作） ===== -->
+  <view class="users-list">
     <t-swipe-cell
       wx:for="{{list}}"
       wx:key="_id"
       right="{{item.swipeRight}}"
       bind:click="onSwipeAction"
     >
-      <view class="tt-card user-row">
+      <view class="user-row {{item.status === 'banned' ? 'is-banned' : ''}}" bind:tap="onRowTap" data-id="{{item._id}}">
         <view class="users-avatar {{item.role === 'teacher' ? 'is-teacher' : ''}}">
-          <t-icon wx:if="{{item.role === 'teacher'}}" name="assignment" size="34rpx" color="var(--tt-text-2)" />
-          <t-icon wx:else name="user" size="34rpx" color="var(--tt-brand)" />
+          <t-icon wx:if="{{item.role === 'teacher'}}" name="assignment" size="30rpx" color="var(--tt-text-2)" />
+          <t-icon wx:else name="user" size="30rpx" color="var(--tt-brand)" />
         </view>
-        <view class="flex-1 user-row-main">
+        <view class="user-row-main">
           <view class="users-name">
-            <text class="tt-row-title">{{item.account || item.nickname || item.realName || '未命名'}}</text>
+            <text class="user-row-name">{{item.account || item.nickname || item.realName || '未命名'}}</text>
             <t-tag wx:if="{{item.isSuper}}" theme="primary" variant="light" size="small">管理员</t-tag>
             <t-tag wx:elif="{{item.role === 'teacher'}}" theme="default" variant="light" size="small">教师</t-tag>
             <t-tag wx:if="{{item.status === 'banned'}}" theme="danger" variant="light" size="small">封禁</t-tag>
           </view>
-          <view class="tt-row-sub">学号 {{item.studentId || '—'}}</view>
+          <view class="user-row-sub">
+            <text>学号 {{item.studentId || '—'}}</text>
+            <text class="user-row-goal" wx:if="{{item.dailyGoal}}">{{item.dailyGoal}} 步/日</text>
+          </view>
         </view>
-        <view class="user-row-goal" wx:if="{{item.dailyGoal}}">
-          <text class="num-font">{{item.dailyGoal}}</text>
-          <text class="user-row-goal-unit">步/日</text>
-        </view>
+        <t-icon name="chevron-right" size="30rpx" color="var(--tt-text-3)" />
       </view>
     </t-swipe-cell>
 
@@ -85,5 +114,5 @@
     <t-loading wx:if="{{loading || loadingMore}}" theme="circular" size="40rpx" class="users-loading" />
   </view>
 
-  <view class="tt-footer">左滑卡片：编辑 · 详细 · 封禁 · 删除</view>
+  <view class="tt-footer">点卡片看详情 · 左滑卡片可编辑 / 封禁 / 删除</view>
 </view>

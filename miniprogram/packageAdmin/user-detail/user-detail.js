@@ -12,6 +12,7 @@ Page({
     user: null,
     bans: [],
     loading: true,
+    isSuper: false,
     // ===== 权限管理（需 permission.manage）=====
     canManagePerms: false,
     permsCatalog: [],
@@ -42,6 +43,7 @@ Page({
       }));
       this.setData({
         loading: false,
+        isSuper: (user.permissionGroups || []).includes('superadmin'),
         user: {
           ...user,
           createdText: (user.createdAt || '').slice(0, 16).replace('T', ' '),
@@ -73,7 +75,7 @@ Page({
   },
 
   goEdit() {
-    wx.navigateTo({ url: `/packageAdmin/users/account-edit?id=${this.data.id}` });
+    wx.navigateTo({ url: `/packageAdmin/users/account-edit/account-edit?id=${this.data.id}` });
   },
 
   // 尝试加载权限编辑数据（无 permission.manage 权限时 403，静默降级）
@@ -195,6 +197,29 @@ Page({
           await auth.post(`/api/admin/users/${that.data.id}/unban`);
           wx.showToast({ title: '已解封', icon: 'success' });
           that.load();
+        } catch (err) {
+          wx.showToast({ title: err.message, icon: 'none' });
+        }
+      },
+    });
+  },
+
+  // 删除账户：与列表左滑「删除」同一接口，删完返回列表
+  removeAccount() {
+    const that = this;
+    const u = this.data.user || {};
+    const name = u.account || u.nickname || u.realName || '该用户';
+    wx.showModal({
+      title: '删除账户',
+      content: `将删除「${name}」及其全部运动 / 饮水 / 徽章等数据，不可恢复！确认删除？`,
+      confirmText: '删除',
+      confirmColor: '#e5484d',
+      success: async (res) => {
+        if (!res.confirm) return;
+        try {
+          await auth.del(`/api/admin/users/${that.data.id}`);
+          wx.showToast({ title: '已删除', icon: 'success' });
+          setTimeout(() => wx.navigateBack(), 600);
         } catch (err) {
           wx.showToast({ title: err.message, icon: 'none' });
         }

@@ -94,7 +94,7 @@ router.post(
     const {
       role, account, initialPassword, gender, birthdate,
       school, department, specialty, className,
-      studentId,
+      studentId, grade,
     } = req.body || {};
     const name = String(account || '').trim();
     if (!name) throw new ApiError(400, 400, '账号（姓名）必填');
@@ -114,6 +114,8 @@ router.post(
       departmentName: String(department || '').trim(),
       specialty: String(specialty || '').trim(),
       className: String(className || '').trim(),
+      // 年级：显式传入优先，否则按学号前 4 位（入学年份）推导
+      grade: String(grade || '').trim() || roster.gradeFromStudentId(studentId),
       passwordHash: pwd.hashPassword(password),
       initialHashes: [pwd.hashPassword(password)],
       resetHashes: [pwd.hashPassword(password)],
@@ -130,7 +132,7 @@ router.put(
   wrap(async (req, res) => {
     const user = await User.findById(req.params.id);
     if (!user) throw new ApiError(404, 404, '用户不存在');
-    const { account, gender, birthdate, school, department, specialty, className, studentId } = req.body || {};
+    const { account, gender, birthdate, school, department, specialty, className, studentId, grade } = req.body || {};
     if (account !== undefined) {
       const name = String(account).trim();
       if (!name) throw new ApiError(400, 400, '账号不能为空');
@@ -145,6 +147,7 @@ router.put(
     if (department !== undefined) user.departmentName = String(department).trim();
     if (specialty !== undefined) user.specialty = String(specialty).trim();
     if (className !== undefined) user.className = String(className).trim();
+    if (grade !== undefined) user.grade = String(grade).trim();
     if (studentId !== undefined) {
       const sid = String(studentId).trim();
       if (sid) {
@@ -152,6 +155,8 @@ router.put(
         if (dup) throw new ApiError(400, 400, '学号已被其他用户使用');
         user.studentId = sid;
       }
+      // 未显式给年级时，按学号前 4 位（入学年份）同步推导
+      if (grade === undefined) user.grade = roster.gradeFromStudentId(user.studentId);
     }
     await user.save();
     ok(res, user.toSafeJSON());
@@ -223,24 +228,44 @@ router.get(
   '/filters',
   requirePermission('user.view'),
   wrap(async (req, res) => {
-    const [schools, departments, specialties, classNames, dailyGoals, weeklyGoals] = await Promise.all([
+    const [schools, departments, specialties, studentIds, gradeValues, dailyGoals, weeklyGoals] = await Promise.all([
       User.distinct('schoolName', { schoolName: { $nin: [null, ''] } }),
       User.distinct('departmentName', { departmentName: { $nin: [null, ''] } }),
       User.distinct('specialty', { specialty: { $nin: [null, ''] } }),
-      User.distinct('className', { className: { $exists: true, $nin: [null, ''] } }),
+      User.distinct('studentId', { studentId: { $exists: true, $nin: [null, ''] } }),
+      User.distinct('grade', { grade: { $exists: true, $nin: [null, ''] } }),
       UserGoal.aggregate([{ $group: { _id: '$daily.steps' } }, { $sort: { _id: 1 } }]),
       UserGoal.aggregate([{ $group: { _id: '$weekly.steps' } }, { $sort: { _id: 1 } }]),
     ]);
+    // 年级：grade 字段优先，缺失的存量数据按学号前 4 位（入学年份）推导
+    const grades = [
+      ...new Set(
+        [
+          ...(gradeValues || []).map((g) => String(g).replace(/级$/, '').trim()),
+          ...(studentIds || []).map((sid) => roster.gradeFromStudentId(sid)),
+        ].filter(Boolean)
+      ),
+    ].sort().reverse();
     ok(res, {
       schools,
       departments,
       specialties,
-      grades: [...new Set((classNames || [])
-        .map((cn) => { const m = String(cn).match(/^(d{2,4})级/); return m ? m[1] : null; })
-        .filter(Boolean))].sort().reverse(),
+      grades,
       dailyGoals: dailyGoals.map((g) => g._id).filter((v) => v > 0),
       weeklyGoals: weeklyGoals.map((g) => g._id).filter((v) => v > 0),
     });
+  })
+);
+
+// 班级可选项（新建/编辑账户时选择班级用；传入系部/专业可收窄范围）
+router.get(
+  '/classes',
+  wrap(async (req, res) => {
+    const cond = { className: { $exists: true, $nin: [null, ''] } };
+    if (req.query.department) cond.departmentName = String(req.query.department);
+    if (req.query.specialty) cond.specialty = String(req.query.specialty);
+    const classes = await User.distinct('className', cond);
+    ok(res, { classes: classes.filter(Boolean).map(String).sort((a, b) => a.localeCompare(b, 'zh')) });
   })
 );
 
@@ -250,6 +275,7 @@ router.get(
   wrap(async (req, res) => {
     const { page, limit, skip } = parsePagination(req.query);
     const cond = {};
+    const and = []; // 与 keyword 的 $or 并存的条件（不能互相覆盖）
     if (req.query.keyword) {
       const kw = req.query.keyword.trim();
       const re = new RegExp(kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
@@ -261,9 +287,11 @@ router.get(
     if (req.query.department) cond.departmentName = req.query.department;
     if (req.query.specialty) cond.specialty = req.query.specialty;
     if (req.query.grade) {
-      const gradeRe = new RegExp('^' + String(req.query.grade).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '级');
-      cond.className = gradeRe;
+      // 年级 = 学号前 4 位（入学年份）；兼容 grade 字段与「2024级xx班」的班级命名
+      const g = String(req.query.grade).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      and.push({ $or: [{ grade: g }, { studentId: new RegExp('^' + g) }, { className: new RegExp('^' + g + '级') }] });
     }
+    if (and.length) cond.$and = and;
 
     // 日/周目标筛选需关联 user_goals
     if (req.query.dailyGoal || req.query.weeklyGoal) {

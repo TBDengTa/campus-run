@@ -42,6 +42,11 @@
       <text class="ae-label">学号</text>
       <input class="ae-input" value="{{studentId}}" placeholder="选填" placeholder-class="ae-ph" bindinput="inputStudentId" />
     </view>
+    <view class="ae-divider"></view>
+    <view class="ae-row">
+      <text class="ae-label">年级</text>
+      <text class="ae-static {{gradeText ? '' : 'ae-ph'}}">{{gradeText ? gradeText + '级' : '按学号前 4 位自动识别'}}</text>
+    </view>
   </view>
 
   <!-- ===== 学籍信息（学生） ===== -->
@@ -50,28 +55,44 @@
     <view class="tt-card ae-form">
       <view class="ae-row">
         <text class="ae-label">院校</text>
-        <picker mode="selector" range="{{schoolNames}}" bindchange="onSchoolPick">
+        <picker wx:if="{{hasOrgTree}}" mode="selector" range="{{schoolNames}}" value="{{schoolIndex < 0 ? 0 : schoolIndex}}" bindchange="onSchoolPick">
           <view class="ae-picker {{school ? '' : 'ae-ph'}}">{{school || '选择院校'}}</view>
         </picker>
+        <input wx:else class="ae-input" value="{{school}}" placeholder="手填院校" placeholder-class="ae-ph" bindinput="input" data-field="school" />
       </view>
       <view class="ae-divider"></view>
       <view class="ae-row">
         <text class="ae-label">系部</text>
-        <picker mode="selector" range="{{departmentNames}}" bindchange="onDepartmentPick">
+        <picker wx:if="{{hasOrgTree}}" mode="selector" range="{{departmentNames}}" value="{{departmentIndex < 0 ? 0 : departmentIndex}}" disabled="{{!departmentNames.length}}" bindchange="onDepartmentPick">
           <view class="ae-picker {{department ? '' : 'ae-ph'}}">{{department || (schoolIndex < 0 ? '先选院校' : '选择系部')}}</view>
         </picker>
+        <input wx:else class="ae-input" value="{{department}}" placeholder="手填系部" placeholder-class="ae-ph" bindinput="input" data-field="department" />
       </view>
       <view class="ae-divider"></view>
-      <view class="ae-row" wx:if="{{specialtyNames.length}}">
+      <view class="ae-row" wx:if="{{!hasOrgTree || specialtyNames.length}}">
         <text class="ae-label">专业</text>
-        <picker mode="selector" range="{{specialtyNames}}" bindchange="onSpecialtyPick">
+        <picker wx:if="{{hasOrgTree}}" mode="selector" range="{{specialtyNames}}" value="{{specialtyIndex < 0 ? 0 : specialtyIndex}}" bindchange="onSpecialtyPick">
           <view class="ae-picker {{specialty ? '' : 'ae-ph'}}">{{specialty || '选择专业（可选）'}}</view>
         </picker>
+        <input wx:else class="ae-input" value="{{specialty}}" placeholder="手填专业（可选）" placeholder-class="ae-ph" bindinput="input" data-field="specialty" />
       </view>
       <view class="ae-divider"></view>
       <view class="ae-row">
         <text class="ae-label">班级</text>
-        <input class="ae-input" value="{{className}}" placeholder="如 23级大数据1班（选填）" placeholder-class="ae-ph" bindinput="input" data-field="className" />
+        <picker
+          wx:if="{{classNames.length && !classManual}}"
+          mode="selector"
+          range="{{classPickerRange}}"
+          value="{{classIndex < 0 ? 0 : classIndex}}"
+          bindchange="onClassPick"
+        >
+          <view class="ae-picker {{className ? '' : 'ae-ph'}}">{{className || '选择班级'}}</view>
+        </picker>
+        <input wx:else class="ae-input" value="{{className}}" placeholder="如 23级大数据1班（选填）" placeholder-class="ae-ph" bindinput="input" data-field="className" />
+        <text wx:if="{{classManual && classNames.length}}" class="ae-switch" bind:tap="useClassPicker">选已有</text>
+      </view>
+      <view class="ae-hint" wx:if="{{classNames.length && !classManual}}">
+        <text bind:tap="useClassInput">没有我的班级？手动输入</text>
       </view>
     </view>
   </block>
