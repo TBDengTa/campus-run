@@ -1,6 +1,7 @@
 {
   "navigationBarTitleText": "用户详情",
   "usingComponents": {
-    "ban-sheet": "/components/ban-sheet/ban-sheet"
+    "ban-sheet": "/components/ban-sheet/ban-sheet",
+    "t-checkbox-group": "tdesign-miniprogram/checkbox-group/checkbox-group"
   }
 }

@@ -1,5 +1,5 @@
 <view class="page tt-page day-page">
-  <!-- ===== 概要卡：日期 + 标签 + 四项指标 + 目标进度（合并原标题区与汇总卡） ===== -->
+  <!-- ===== 概要卡：日期 + 标签 + 五项指标（含跑分）+ 目标进度（合并原标题区与汇总卡） ===== -->
   <view class="tt-card day-card" wx:if="{{totals}}">
     <view class="day-head">
       <view class="day-head-left">
@@ -25,6 +25,10 @@
       <view class="tt-stat">
         <view class="tt-stat-value day-stat-value num-font">{{totals.durationText}}</view>
         <view class="tt-stat-label day-stat-label">时长</view>
+      </view>
+      <view class="tt-stat">
+        <view class="tt-stat-value day-stat-value num-font day-points">{{points}}</view>
+        <view class="tt-stat-label day-stat-label">跑分</view>
       </view>
     </view>
 

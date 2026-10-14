@@ -54,6 +54,11 @@
   font-size: 20rpx;
 }
 
+/* 周跑分数值用品牌色突出（学校衡量标准） */
+.tt-stat-value.week-points {
+  color: var(--tt-brand);
+}
+
 /* ---- 目标进度 ---- */
 .week-goal {
   margin-top: 16rpx;

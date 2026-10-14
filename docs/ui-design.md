@@ -235,6 +235,18 @@ box-shadow: 0 12rpx 32rpx rgba(255, 107, 0, 0.24);
   注意：计划库里有**同名但不同性别**的计划（如 2 条 `BMI正常·激进版`），去重必须按 `_id`，不能按 `name`。
 - **身体数据 `pages/body-data`**：橙色 `tt-hero` BMI 概览（无数据显示灰色「待完善」）→ 关键指标四列 → 编辑表单（性别/身高/体重/强度偏好，斤↔kg 可切换）→ **目标计划只留跳转入口**（数值不在此重复展示）。
   数据读取注意：`GET /api/goal/body-data` 返回的是 `{ bodyData, currentPlan, planName, autoMatched, effective }`，**字段在 `bodyData` 里**，不要按扁平对象读。
+- **管理端 · 班级管理 `packageAdmin/class/class`**（班主任 / 班委）：
+  顶部身份卡（班级名 + `班主任`/`班委 · 仅查看` 胶囊 + 概况四格）→ 排名卡（班内榜 + 该班在全校班级榜的名次）→
+  名单（分页 + 搜索 + 「今日未达标」筛选 + 排序 chips）→ 底部操作。
+  **班主任**：可「督促未达标学生」（抽屉列出未达标名单，可复制到剪贴板）；
+  **班委**：`canNudge:false`，**不渲染任何操作按钮**，卡片上直接写明「仅查看模式：可查看概况、名单与榜单，不能做任何修改」。
+  两种身份同一页面，用 `role/readonly/canNudge` 控制，不要写两个页面。
+- **本班数据概况卡 `components/class-board`**（首页用）：概况四格 + 本班前三名 + 全校班级名次 + 管理入口；
+  **无班级身份时整块不渲染**（`show:false`，所以学生端首页可无条件放置）；属性 `title/className/showManage/refreshAt`，
+  事件 `ready/manage/student`，方法 `reload()`。组件内用 `app.wxss` 公共类必须声明 `"styleIsolation": "apply-shared"`。
+- **跑分：首页/我的/记录/排行统一口径**：数字用 `.num-font` + `--tt-brand`，文案为「今日/本周/累计跑分」；
+  首页在「今日目标」卡内用浅色三格（`.today-points`），我的页面用独立卡（`.points-card`）；
+  **教师账号不参与跑分**（相关块整体隐藏，不是显示 0）。
 - **管理端 · 用户管理 `packageAdmin/users/users`**：信息密度按手机端压缩，首屏留给列表。
   顶部 = 搜索（`t-search shape="round"`，80rpx，需一张白底卡托住灰色输入框）＋ 三枚等高 64rpx 工具按钮
   「筛选 / 导入名单 / 创建账户（橙色渐变主按钮）」，**筛选面板默认收起**（`showFilters`），点「筛选」才展开——

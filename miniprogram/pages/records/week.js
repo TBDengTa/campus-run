@@ -24,6 +24,8 @@ Page({
     goalPercent: 0,
     goalAchieved: false,
     activeDays: 0,
+    points: 0,
+    pointsText: '0',
     days: [], // 7 天逐日
     records: [],
     loading: true,
@@ -76,6 +78,9 @@ Page({
         goalPercent,
         goalAchieved: !!data.goalAchieved,
         activeDays: data.activeDays,
+        // 本周跑分（周目标基础分 + 超出加分，服务端算好，页面不重算公式）
+        points: data.points || 0,
+        pointsText: fmt.formatNumber(data.points || 0),
         days,
         records: data.records.map(decorateRecord),
       });

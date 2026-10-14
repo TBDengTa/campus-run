@@ -1,0 +1,322 @@
+/* 班级管理（班主任 / 班委）：紧凑管理端版式，配色只用 --tt-* 令牌 */
+.cls-page {
+  padding-bottom: calc(40rpx + env(safe-area-inset-bottom));
+}
+
+/* ===== 无身份空状态 ===== */
+.cls-blank {
+  margin-top: 120rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 56rpx 40rpx;
+}
+
+.cls-blank-title {
+  margin-top: 20rpx;
+  font-size: 32rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.cls-blank-tip {
+  margin-top: 12rpx;
+  font-size: 23rpx;
+  line-height: 36rpx;
+  color: var(--tt-text-3);
+}
+
+.cls-blank-btn {
+  width: 100%;
+  margin-top: 36rpx;
+}
+
+/* ===== 班级标题 ===== */
+.cls-head {
+  padding: 20rpx var(--tt-gap) 4rpx;
+}
+
+.cls-head-top {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+}
+
+.cls-class-name {
+  font-size: 38rpx;
+  font-weight: 700;
+  color: var(--tt-text-1);
+}
+
+.cls-role {
+  padding: 4rpx 16rpx;
+  border-radius: 999rpx;
+  font-size: 21rpx;
+}
+
+.cls-role.is-homeroom {
+  color: var(--tt-brand-deep);
+  background: var(--tt-brand-soft-2);
+}
+
+.cls-role.is-officer {
+  color: var(--tt-text-2);
+  background: var(--td-bg-color-component);
+}
+
+.cls-switch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin-top: 16rpx;
+}
+
+.cls-head-tip {
+  margin-top: 12rpx;
+  font-size: 22rpx;
+  line-height: 32rpx;
+  color: var(--tt-text-3);
+}
+
+/* ===== 概况卡 ===== */
+.cls-card {
+  padding: 8rpx 24rpx 18rpx;
+}
+
+.cls-goal {
+  padding-top: 16rpx;
+  border-top: 2rpx solid var(--tt-line);
+}
+
+.cls-goal-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 25rpx;
+  color: var(--tt-text-2);
+}
+
+.cls-goal-rate {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: var(--tt-brand);
+}
+
+.cls-bar {
+  height: 12rpx;
+  margin: 14rpx 0 12rpx;
+  border-radius: 999rpx;
+  background: var(--td-bg-color-component);
+  overflow: hidden;
+}
+
+.cls-bar-in {
+  height: 100%;
+  border-radius: 999rpx;
+  background: linear-gradient(135deg, #ff9a3d, var(--tt-brand));
+  transition: width 0.3s;
+}
+
+.cls-goal-sub {
+  font-size: 22rpx;
+  line-height: 34rpx;
+  color: var(--tt-text-3);
+}
+
+.cls-goal-rank {
+  color: var(--tt-text-2);
+}
+
+.cls-actions {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 18rpx;
+}
+
+.cls-action {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10rpx;
+  height: 76rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-brand-soft);
+  font-size: 26rpx;
+  color: var(--tt-brand-deep);
+}
+
+.cls-action:active {
+  opacity: 0.8;
+}
+
+.cls-note {
+  margin-top: 16rpx;
+  padding: 12rpx 16rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--td-bg-color-component);
+  font-size: 21rpx;
+  line-height: 32rpx;
+  color: var(--tt-text-3);
+}
+
+/* ===== 搜索 / 筛选 ===== */
+.cls-tools {
+  padding: 4rpx var(--tt-gap) 0;
+}
+
+.cls-search {
+  padding: 10rpx 12rpx;
+  border-radius: var(--tt-radius);
+  background: var(--tt-card);
+  box-shadow: var(--tt-card-shadow);
+}
+
+.cls-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin-top: 14rpx;
+}
+
+/* ===== 名单 ===== */
+.cls-list {
+  margin: 0 var(--tt-gap);
+  border-radius: var(--tt-radius);
+  background: var(--tt-card);
+  box-shadow: var(--tt-card-shadow);
+  overflow: hidden;
+}
+
+.cls-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 18rpx 20rpx;
+  border-bottom: 2rpx solid var(--tt-line);
+}
+
+.cls-row:last-child {
+  border-bottom: none;
+}
+
+.cls-row:active {
+  background: var(--tt-brand-soft);
+}
+
+.cls-avatar {
+  width: 64rpx;
+  height: 64rpx;
+  flex-shrink: 0;
+  border-radius: 20rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--tt-brand-soft);
+}
+
+.cls-main {
+  min-width: 0;
+}
+
+.cls-row-top {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+}
+
+.cls-row-name {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+  max-width: 240rpx;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cls-tag {
+  padding: 2rpx 12rpx;
+  border-radius: 999rpx;
+  font-size: 19rpx;
+}
+
+.cls-tag-officer {
+  color: var(--tt-brand-deep);
+  background: var(--tt-brand-soft-2);
+}
+
+.cls-tag-ok {
+  color: var(--td-success-color-5);
+  background: var(--td-success-color-1);
+}
+
+.cls-tag-warn {
+  color: var(--td-warning-color-6);
+  background: var(--td-warning-color-1);
+}
+
+.cls-row-sub {
+  margin-top: 4rpx;
+  font-size: 21rpx;
+  color: var(--tt-text-3);
+}
+
+.cls-strong {
+  color: var(--tt-brand);
+  font-weight: 600;
+}
+
+.cls-week {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 2rpx;
+  padding: 8rpx 16rpx;
+  border-radius: 999rpx;
+  background: var(--tt-brand-soft);
+  font-size: 23rpx;
+  color: var(--tt-brand-deep);
+}
+
+.cls-week:active {
+  opacity: 0.8;
+}
+
+.cls-more {
+  display: flex;
+  justify-content: center;
+  padding: 24rpx 0;
+}
+
+.cls-more-text {
+  padding: 20rpx 0;
+  text-align: center;
+  font-size: 21rpx;
+  color: var(--tt-text-3);
+}
+
+.cls-loading {
+  display: flex;
+  justify-content: center;
+  padding: 140rpx 0;
+}
+
+/* ===== 督促抽屉 ===== */
+.cls-nudge-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 16rpx 0;
+  border-bottom: 2rpx solid var(--tt-line);
+}
+
+.cls-nudge-no {
+  width: 44rpx;
+  flex-shrink: 0;
+  text-align: center;
+  font-size: 24rpx;
+  font-weight: 600;
+  color: var(--tt-brand);
+}

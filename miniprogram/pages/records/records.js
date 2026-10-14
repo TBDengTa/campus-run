@@ -69,6 +69,8 @@ function decorateDay(d) {
     distanceText: fmt.formatDistance(d.distance),
     durationText: fmt.formatDuration(d.durationSeconds),
     stepsText: fmt.formatNumber(d.steps),
+    points: d.points || 0,
+    pointsText: fmt.formatNumber(d.points || 0),
     isToday: d.date === fmt.todayKey(),
   };
 }
@@ -82,6 +84,8 @@ function decorateWeek(w) {
     rangeText: `${s.m}月${s.d}日 - ${e.m}月${e.d}日`,
     distanceText: fmt.formatDistance(w.distance),
     stepsText: fmt.formatNumber(w.steps),
+    points: w.points || 0,
+    pointsText: fmt.formatNumber(w.points || 0),
     isThisWeek: w.weekStart === weekStartOf(fmt.todayKey()),
   };
 }
@@ -155,6 +159,8 @@ Page({
           steps: fmt.formatNumber(weekSteps),
           distance: fmt.formatDistance(weekDistance),
           activeDays: `${activeDays}/${daysGone}`,
+          // 本周跑分：由服务端 /api/run/week 算好（周目标基础分 + 超出加分）
+          pointsText: fmt.formatNumber(week.points || 0),
         },
         bars: buildBars(week.records),
       });

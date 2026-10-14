@@ -1,0 +1,184 @@
+<view class="page tt-page cls-page">
+  <!-- ===== 无班级身份：给出明确说明（而不是空白页） ===== -->
+  <block wx:if="{{!loading && !role}}">
+    <view class="tt-card cls-blank">
+      <t-icon name="usergroup" size="72rpx" color="var(--tt-text-3)" />
+      <view class="cls-blank-title">你还不是班主任或班委</view>
+      <view class="cls-blank-tip">班级身份由管理员在「用户管理 → 用户详情 → 班级身份」中分配：教师可分配多个班级做班主任，学生可设为班委（仅查看本班）。</view>
+      <view class="cls-blank-btn">
+        <t-button theme="default" block bind:tap="goBack">返回</t-button>
+      </view>
+    </view>
+  </block>
+
+  <block wx:if="{{role}}">
+    <!-- ===== 班级标题 + 身份 + 多班切换 ===== -->
+    <view class="cls-head">
+      <view class="cls-head-top">
+        <text class="cls-class-name">{{className}}</text>
+        <text class="cls-role {{canNudge ? 'is-homeroom' : 'is-officer'}}">{{canNudge ? '班主任' : '班委 · 仅查看'}}</text>
+      </view>
+      <view class="cls-switch" wx:if="{{classes.length > 1}}">
+        <view
+          class="tt-chip {{item === className ? 'active' : ''}}"
+          wx:for="{{classes}}"
+          wx:key="*this"
+          bind:tap="switchClass"
+          data-class="{{item}}"
+        >{{item}}</view>
+      </view>
+      <view class="cls-head-tip" wx:if="{{!canNudge}}">班委仅可查看本班数据，没有操作权限；如发现异常请联系班主任或管理员。</view>
+    </view>
+
+    <!-- ===== 班级概况 ===== -->
+    <view class="tt-card cls-card">
+      <view class="tt-stat-row">
+        <view class="tt-stat">
+          <view class="tt-stat-value num-font">{{overview.studentCount}}</view>
+          <view class="tt-stat-label">班级人数</view>
+        </view>
+        <view class="tt-stat">
+          <view class="tt-stat-value num-font">{{overview.activeToday}}</view>
+          <view class="tt-stat-label">今日活跃</view>
+        </view>
+        <view class="tt-stat">
+          <view class="tt-stat-value num-font">{{overview.stepsTodayText}}</view>
+          <view class="tt-stat-label">今日步数</view>
+        </view>
+      </view>
+
+      <view class="cls-goal">
+        <view class="cls-goal-top">
+          <text>今日达标 {{overview.achievedToday}} / {{overview.studentCount}} 人</text>
+          <text class="num-font cls-goal-rate">{{overview.dailyRate}}%</text>
+        </view>
+        <view class="cls-bar">
+          <view class="cls-bar-in" style="width:{{overview.dailyRate}}%"></view>
+        </view>
+        <view class="cls-goal-sub">
+          本周达标率 {{overview.weeklyRate}}%（{{overview.achievedWeek}} 人）· 今日记录 {{overview.recordsToday}} 条
+        </view>
+        <view class="cls-goal-sub">
+          累计 {{overview.totalStepsText}} 步 · 累计打卡 {{overview.totalDays}} 天<text wx:if="{{overview.pointsEnabled}}"> · 本班跑分 {{overview.pointsWeek}}</text>
+        </view>
+        <view class="cls-goal-sub cls-goal-rank">全校班级排名：{{overview.rankText}}</view>
+      </view>
+
+      <view class="cls-actions" wx:if="{{canNudge}}">
+        <view class="cls-action" bind:tap="openNudge">
+          <t-icon name="usergroup" size="30rpx" color="var(--tt-brand)" />
+          <text>督促未达标学生</text>
+        </view>
+      </view>
+      <view class="cls-note" wx:else>仅查看模式：可查看概况、名单与榜单，不能做任何修改</view>
+    </view>
+
+    <!-- ===== 筛选 + 搜索 ===== -->
+    <view class="cls-tools">
+      <view class="cls-search">
+        <t-search shape="round" placeholder="搜索姓名 / 学号" value="{{keyword}}" bind:change="onSearch" bind:clear="onClearSearch" />
+      </view>
+      <view class="cls-chips">
+        <view
+          class="tt-chip {{achieved === item.key ? 'active' : ''}}"
+          wx:for="{{filters}}"
+          wx:key="label"
+          bind:tap="pickFilter"
+          data-key="{{item.key}}"
+        >{{item.label}}</view>
+      </view>
+      <view class="cls-chips">
+        <view
+          class="tt-chip {{sort === item.key ? 'active' : ''}}"
+          wx:for="{{sorts}}"
+          wx:key="key"
+          bind:tap="pickSort"
+          data-key="{{item.key}}"
+        >{{item.label}}</view>
+      </view>
+    </view>
+
+    <!-- ===== 学生名单 ===== -->
+    <view class="tt-section">
+      <text>学生名单</text>
+      <text class="tt-section-extra">共 {{total}} 人 · 今日 {{today}}</text>
+    </view>
+
+    <view class="cls-list">
+      <view class="cls-row" wx:for="{{students}}" wx:key="userId" bind:tap="openPeriod" data-id="{{item.userId}}" data-type="day" data-date="{{today}}">
+        <view class="cls-avatar">
+          <t-icon name="user" size="32rpx" color="var(--tt-brand)" />
+        </view>
+        <view class="flex-1 cls-main">
+          <view class="cls-row-top">
+            <text class="cls-row-name">{{item.name}}</text>
+            <text class="cls-tag cls-tag-officer" wx:if="{{item.isClassOfficer}}">班委</text>
+            <text class="cls-tag cls-tag-ok" wx:if="{{item.achievedToday}}">今日达标</text>
+            <text class="cls-tag cls-tag-warn" wx:else>未达标</text>
+          </view>
+          <view class="cls-row-sub">
+            今日 <text class="num-font cls-strong">{{item.todayStepsText}}</text> / {{item.targetText}} 步 · 本周 {{item.weekStepsText}} 步
+          </view>
+          <view class="cls-row-sub">活跃 {{item.activeDays}} 天 · 同步 {{item.syncText}}</view>
+        </view>
+        <view class="cls-week" catch:tap="openPeriod" data-id="{{item.userId}}" data-type="week" data-date="{{weekStart}}">
+          <text>本周</text>
+          <t-icon name="chevron-right" size="26rpx" color="var(--tt-brand)" />
+        </view>
+      </view>
+
+      <view class="tt-empty" wx:if="{{!students.length && !loading}}">{{keyword || achieved ? '没有符合条件的学生' : '该班还没有学生'}}</view>
+      <view class="cls-more" wx:if="{{loadingMore}}">
+        <t-loading theme="circular" size="36rpx" text="加载中…" />
+      </view>
+      <view class="cls-more-text" wx:if="{{!loadingMore && students.length && !hasMore}}">已经到底了 · 共 {{total}} 人</view>
+    </view>
+
+    <view class="tt-footer">点学生行看「今日」明细，点右侧「本周」看周明细；达标 = 当日步数 ≥ 该生生效目标（个人计划优先）</view>
+  </block>
+
+  <t-loading wx:if="{{loading}}" theme="circular" size="44rpx" text="加载班级数据…" class="cls-loading" />
+
+  <!-- ===== 督促抽屉：今日未达标名单（仅班主任可见）===== -->
+  <t-popup visible="{{nudgeVisible}}" placement="bottom" bind:visible-change="onNudgeVisible">
+    <view class="tt-sheet">
+      <view class="tt-sheet-grab"></view>
+      <view class="tt-sheet-head">
+        <view class="tt-sheet-icon">
+          <t-icon name="usergroup" size="36rpx" color="var(--tt-brand)" />
+        </view>
+        <view class="tt-sheet-title">
+          今日未达标名单
+          <view class="tt-sheet-sub">{{className}} · {{today}} · {{nudgeList.length}} 人</view>
+        </view>
+        <view class="tt-sheet-close" bind:tap="closeNudge">
+          <t-icon name="close" size="32rpx" color="var(--tt-text-2)" />
+        </view>
+      </view>
+
+      <scroll-view scroll-y class="tt-sheet-body">
+        <block wx:if="{{nudgeList.length}}">
+          <view class="cls-nudge-row" wx:for="{{nudgeList}}" wx:key="userId">
+            <text class="cls-nudge-no">{{item.no}}</text>
+            <view class="flex-1">
+              <view class="cls-row-top">
+                <text class="cls-row-name">{{item.name}}</text>
+                <text class="cls-tag cls-tag-officer" wx:if="{{item.isClassOfficer}}">班委</text>
+              </view>
+              <view class="cls-row-sub">今日 {{item.todayStepsText}} / {{item.targetText}} 步 · 同步 {{item.syncText}}</view>
+            </view>
+          </view>
+        </block>
+        <view class="tt-empty" wx:elif="{{!nudgeLoading}}">今日全员达标，不用督促啦</view>
+        <view class="cls-more" wx:if="{{nudgeLoading}}">
+          <t-loading theme="circular" size="36rpx" text="统计中…" />
+        </view>
+        <view class="tt-sheet-note">把名单复制到剪贴板，可直接发到班级群督促（不含任何隐私字段，只有姓名与步数）</view>
+      </scroll-view>
+
+      <view class="tt-sheet-foot">
+        <t-button theme="primary" block bind:tap="copyNudge">复制名单</t-button>
+      </view>
+    </view>
+  </t-popup>
+</view>

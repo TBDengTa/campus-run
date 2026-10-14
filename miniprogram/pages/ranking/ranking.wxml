@@ -5,11 +5,27 @@
       <text class="flt-label">榜单</text>
       <view class="flt-opts">
         <view
+          wx:for="{{kinds}}"
+          wx:key="key"
+          class="flt-chip {{kind === item.key ? 'active' : ''}}"
+          bind:tap="pickKind"
+          data-key="{{item.key}}"
+        >
+          <text>{{item.label}}</text>
+        </view>
+      </view>
+    </view>
+
+    <view class="flt-row">
+      <text class="flt-label">维度</text>
+      <view class="flt-opts">
+        <view
           wx:for="{{metrics}}"
           wx:key="key"
-          class="flt-chip {{metric === item.key ? 'active' : ''}}"
+          class="flt-chip {{metric === item.key ? 'active' : ''}} {{!item.available ? 'disabled' : ''}}"
           bind:tap="pickMetric"
           data-key="{{item.key}}"
+          data-available="{{item.available}}"
         >
           <!-- 步数用走步小人图片（图标字体里没有走步图形），其余用图标 -->
           <image
@@ -62,7 +78,7 @@
 
     <!-- 说明 + 隐私入口（一行，不占额外高度） -->
     <view class="flt-foot" wx:if="{{rank}}">
-      <text class="flt-foot-text">{{rank.scopeText}} · {{rank.rangeText}}{{rank.metricText}}榜 · 共 {{rank.participants}} 人</text>
+      <text class="flt-foot-text">{{rank.scopeText}} · {{rank.rangeText}}{{rank.metricText}}榜 · 共 {{rank.participants}} {{kind === 'class' ? '个班' : '人'}}</text>
       <view class="flt-privacy" bind:tap="goPrivacy">
         <t-icon name="secured" size="26rpx" color="var(--tt-brand)" />
         <text>隐私</text>
@@ -76,6 +92,25 @@
     <view class="me-skel me-skel-cell"></view>
     <view class="me-skel me-skel-cell"></view>
     <view class="me-skel me-skel-cell"></view>
+  </view>
+  <!-- 班级榜的「我的」= 我的班级 -->
+  <view class="tt-card me-card" wx:elif="{{rank && kind === 'class'}}">
+    <view class="me-rank">
+      <text class="me-rank-label">我的班级</text>
+      <text class="num-font me-rank-num">{{rank.me.rank ? '#' + rank.me.rank : '未上榜'}}</text>
+    </view>
+    <view class="me-cell">
+      <text class="num-font me-cell-v">{{rank.me.valueText}}</text>
+      <text class="me-cell-l">{{rank.metricText}}</text>
+    </view>
+    <view class="me-cell">
+      <text class="num-font me-cell-v">{{rank.me.stepsText || rank.me.steps}}</text>
+      <text class="me-cell-l">班级步数</text>
+    </view>
+    <view class="me-cell">
+      <text class="num-font me-cell-v">{{rank.me.members}}</text>
+      <text class="me-cell-l">参与人数</text>
+    </view>
   </view>
   <view class="tt-card me-card" wx:elif="{{rank}}">
     <view class="me-rank">
@@ -96,8 +131,8 @@
     </view>
   </view>
 
-  <!-- 教师提示 -->
-  <view class="rank-excluded" wx:if="{{rank.excluded}}">{{rank.excludedReason}}</view>
+  <!-- 教师提示（班级榜是聚合值，不适用个人排除说明） -->
+  <view class="rank-excluded" wx:if="{{rank.excluded && kind === 'person'}}">{{rank.excludedReason}}</view>
 
   <!-- ===== 加载中：骨架屏（微光扫过就是加载动画，不再放文案） ===== -->
   <view class="tt-card rank-card" wx:if="{{loading}}">
@@ -111,7 +146,35 @@
     </view>
   </view>
 
-  <view class="tt-card rank-card" wx:elif="{{rank && rank.list.length}}">
+  <!-- ===== 班级榜：一行一个班（名次 / 班级名 + 人数 / 班级分数） ===== -->
+  <view class="tt-card rank-card" wx:elif="{{kind === 'class' && rank && rank.list.length}}">
+    <view class="rank-row {{item.isMine ? 'me' : ''}}" wx:for="{{rank.list}}" wx:key="className">
+      <view class="rank-no {{item.rank <= 3 ? 'top' : ''}}">
+        <text wx:if="{{item.medal}}" class="medal">{{item.medal}}</text>
+        <text wx:else class="num-font">{{item.rank}}</text>
+      </view>
+
+      <view class="rank-main">
+        <view class="rank-name">
+          <text class="rank-name-text">{{item.nameText}}</text>
+        </view>
+        <view class="rank-sub">
+          <text class="rank-sub-text">{{item.membersText}}</text>
+          <block wx:if="{{metric !== 'steps'}}">
+            <text class="rank-dot">·</text>
+            <text class="rank-sub-text num-font">{{item.stepsText}} 步</text>
+          </block>
+        </view>
+      </view>
+
+      <view class="rank-value">
+        <text class="rv-num num-font">{{item.valueText}}</text>
+        <text class="rv-label">班级{{rank.metricText}}</text>
+      </view>
+    </view>
+  </view>
+
+  <view class="tt-card rank-card" wx:elif="{{kind === 'person' && rank && rank.list.length}}">
     <!-- 榜单：一行一人，只保留「名次 / 姓名+班级 / 当前榜单数值」；
          步数·公里只在当前榜单不是步数榜时作为上下文出现，避免 6 个值挤一行 -->
     <view class="rank-row {{item.isMe ? 'me' : ''}}" wx:for="{{rank.list}}" wx:key="openid">

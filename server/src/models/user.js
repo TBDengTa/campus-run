@@ -42,7 +42,8 @@ const userSchema = new Schema(
     schoolName: { type: String, default: '' },
     departmentId: { type: Schema.Types.ObjectId, ref: 'Organization' },
     departmentName: { type: String, default: '' },
-    className: { type: String, default: '' },
+    // 班级名（如「23级大数据技术」）：班级域接口（/api/class/*）全部按它过滤，加索引
+    className: { type: String, default: '', index: true },
     specialty: { type: String, default: '' },
     // 年级（如 "2024"，展示为 2024级）；名单未提供时前端按学号前 4 位推导
     grade: { type: String, default: '' },
@@ -50,6 +51,11 @@ const userSchema = new Schema(
     birthdate: { type: Date },
     // 用户角色：学生 / 教师（"管理员"由权限组授予，不是角色）
     role: { type: String, enum: ['student', 'teacher'], default: 'student' },
+    // 班主任：教师可被分配多个班级（值为 users.className 的班级名，如「23级大数据技术」）
+    // 多键索引：班级域接口按 homeroomClasses.includes(className) 判权，也用于按班级反查班主任
+    homeroomClasses: { type: [String], default: [], index: true },
+    // 班委（班长等）：学生只能管自己所在班级，且仅查看；可多个学生同时为 true
+    isClassOfficer: { type: Boolean, default: false, index: true },
     // 权限：permissionGroups 为权限组 key，permissions 为直接授予的独立权限
     permissionGroups: { type: [String], default: [] },
     permissions: { type: [String], default: [] },
@@ -81,7 +87,12 @@ const userSchema = new Schema(
 
 userSchema.methods.toSafeJSON = function () {
   const obj = this.toJSON();
+  // 剔除内部字段与**凭据类哈希**：toSafeJSON 的下发场景包含 /api/auth/me 与 login/bind 的 userInfo，
+  // 这些哈希一旦下发会被小程序写入本地 storage（真实账号有 passwordHash，dev_* 账号没有，本地测试发现不了）。
   delete obj.__v;
+  delete obj.passwordHash;
+  delete obj.initialHashes;
+  delete obj.resetHashes;
   return obj;
 };
 

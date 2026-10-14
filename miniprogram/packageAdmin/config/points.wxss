@@ -1,0 +1,11 @@
+@import "config.wxss";
+
+/* 跑分设置页：只补一个「效果预览」的数值样式（其余复用 config.wxss 公共类） */
+.cfg-preview-value {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--tt-brand);
+}

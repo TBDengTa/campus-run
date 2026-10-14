@@ -19,6 +19,10 @@
         <view class="tt-stat-value num-font">{{weekStats.activeDays}}</view>
         <view class="tt-stat-label">活跃天数</view>
       </view>
+      <view class="tt-stat">
+        <view class="tt-stat-value num-font week-points">{{weekStats.pointsText}}</view>
+        <view class="tt-stat-label">本周跑分</view>
+      </view>
     </view>
 
     <view class="bars" wx:if="{{bars.length}}">
@@ -88,6 +92,10 @@
             </view>
             <view class="tt-row-sub">{{item.durationText}} · {{item.distanceText}} · {{item.recordCount}} 条记录</view>
           </view>
+          <view class="row-points">
+            <text class="num-font rp-num">{{item.pointsText}}</text>
+            <text class="rp-label">跑分</text>
+          </view>
           <view class="row-value">
             <text class="num-font">{{item.stepsText}}</text>
             <text class="row-unit">步</text>
@@ -118,6 +126,10 @@
               <text class="day-today" wx:if="{{item.isThisWeek}}">本周</text>
             </view>
             <view class="tt-row-sub">{{item.stepsText}} 步 · {{item.distanceText}} · 活跃 {{item.activeDays}} 天</view>
+          </view>
+          <view class="row-points">
+            <text class="num-font rp-num">{{item.pointsText}}</text>
+            <text class="rp-label">周跑分</text>
           </view>
           <view class="week-flag {{item.goalAchieved ? 'ok' : ''}}">
             {{item.goalAchieved ? '周目标达成' : '未达周目标'}}

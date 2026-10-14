@@ -61,6 +61,13 @@ Page({
         desc: config.rewardVideo.enabled ? `每日上限 ${config.rewardVideo.dailyLimit} 次` : '已停用',
         url: '/packageAdmin/config/reward-video',
       },
+      {
+        key: 'points',
+        icon: 'chart-bubble',
+        title: '跑分设置',
+        desc: config.points && config.points.enabled ? `日目标 +${config.points.dailyGoal} 分 / 周目标 +${config.points.weeklyGoal} 分` : '已停用',
+        url: '/packageAdmin/config/points',
+      },
     ];
   },
 

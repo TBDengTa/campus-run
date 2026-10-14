@@ -5,6 +5,7 @@ const { requirePermission } = require('../../middlewares/admin');
 const anticheat = require('../../services/anticheat');
 const pwd = require('../../services/password');
 const roster = require('../../services/roster');
+const pointsSvc = require('../../services/points');
 const { makeUploader } = require('../../utils/uploader');
 const dates = require('../../utils/dates');
 const BanRecord = require('../../models/ban-record');
@@ -29,7 +30,7 @@ router.post(
   '/import',
   requirePermission('user.import'),
   wrap(async (req, res) => {
-    const mode = req.body?.mode === 'update' ? 'update' : 'create';
+    const mode = ['smart', 'update', 'create'].includes(req.body?.mode) ? req.body.mode : 'create';
     const rows = roster.parseRows(req.body?.rows || req.body?.payload);
     if (!rows.length) throw new ApiError(400, 400, mode === 'update' ? '未解析到数据（表头：学号,性别,出生日期）' : '未解析到数据（表头：学号,姓名,院校,系部,专业,班级,性别,出生日期）');
     const result = await roster.importRows(rows, mode);
@@ -53,13 +54,17 @@ function cachePreview(rows) {
 }
 
 // 解析预览：multipart 表格文件（xlsx/xls/csv）或 { payload } 文本，返回归一化预览与异常明细
+// mode='smart'（智能）：列名识别 + 字段推导后预览（预览即推导结果），并标记每行是新增还是更新
 router.post(
   '/import/preview',
   requirePermission('user.import'),
   importUpload.single('file'),
   wrap(async (req, res) => {
-    const rows = req.file ? roster.parseSheet(req.file.buffer) : roster.parseRows(req.body?.payload);
-    if (!rows.length) throw new ApiError(400, 400, '未解析到数据（表格需包含列：姓名,学号）');
+    const mode = ['smart', 'update', 'create'].includes(req.body?.mode) ? req.body.mode : '';
+    let rows = req.file ? roster.parseSheet(req.file.buffer) : roster.parseRows(req.body?.payload);
+    if (!rows.length) throw new ApiError(400, 400, '未解析到数据（智能模式只需保证「学号」列）');
+    if (mode === 'smart') rows = await roster.smartFillRows(rows);
+
     const normalized = [];
     const failed = [];
     rows.forEach((row, i) => {
@@ -67,32 +72,68 @@ router.post(
       if (item.error) failed.push({ row: i + 1, reason: item.error });
       else normalized.push(item);
     });
+
+    // 智能模式：批量标记库中已有学号（= 将更新）
+    let existingIds = new Set();
+    if (mode === 'smart' && normalized.length) {
+      const docs = await User.find({ studentId: { $in: normalized.map((r) => r.studentId) } })
+        .select('studentId')
+        .lean();
+      existingIds = new Set(docs.map((d) => d.studentId));
+    }
+
     ok(res, {
       cacheId: cachePreview(normalized),
+      mode,
       total: rows.length,
       valid: normalized.length,
       failedCount: failed.length,
       failed,
-      preview: normalized.slice(0, 20),
+      preview: normalized.slice(0, 20).map((r) =>
+        mode === 'smart' ? { ...r, exists: existingIds.has(r.studentId) } : r
+      ),
     });
   })
 );
 
-// 确认导入：按预览返回的 cacheId + mode 写库；confirm 后缓存即删，换模式需重新解析
+// 确认导入：按预览返回的 cacheId + mode 写库
+// 支持分片：传 offset/limit 时每次只导入一片并保留缓存（前端驱动进度条、可断点续传）；
+// 不传则一次性导入全部并清缓存（兼容）。最后一片完成后缓存即删。
 router.post(
   '/import/confirm',
   requirePermission('user.import'),
   wrap(async (req, res) => {
     const cacheId = String(req.body?.cacheId || '');
     const cached = previewCache.get(cacheId);
-    previewCache.delete(cacheId);
     if (!cached || cached.expireAt <= Date.now()) {
+      previewCache.delete(cacheId);
       throw new ApiError(410, 410, '预览已过期，请重新选择文件解析');
     }
-    if (!cached.rows.length) throw new ApiError(400, 400, '没有可导入的数据（所有行均异常）');
-    const mode = req.body?.mode === 'update' ? 'update' : 'create';
-    const result = await roster.importRows(cached.rows, mode);
-    ok(res, result);
+    const total = cached.rows.length;
+    const chunked = req.body?.offset != null;
+    const offset = chunked ? Math.max(0, Math.min(total, Number(req.body.offset) || 0)) : 0;
+    const limit = chunked ? Math.max(1, Math.min(1000, Number(req.body.limit) || 200)) : total;
+
+    if (!total) {
+      previewCache.delete(cacheId);
+      throw new ApiError(400, 400, '没有可导入的数据（所有行均异常）');
+    }
+    const mode = ['smart', 'update', 'create'].includes(req.body?.mode) ? req.body.mode : 'create';
+    const result = await roster.importRows(cached.rows.slice(offset, offset + limit), mode);
+    // 分片内的行号换算回文件全局行号
+    const failed = result.failed.map((f) => (typeof f.row === 'number' ? { ...f, row: f.row + offset } : f));
+    const done = !chunked || offset + limit >= total;
+    if (done) previewCache.delete(cacheId);
+    ok(res, {
+      mode: result.mode,
+      offset,
+      limit: result.total,
+      total,
+      created: result.created,
+      updated: result.updated,
+      failed,
+      done,
+    });
   })
 );
 
@@ -300,18 +341,61 @@ router.put(
   })
 );
 
-// 筛选可选项（院校/系部/专业/年级）
+// 班主任班级 / 班委（需 user.manage）
+// body: { homeroomClasses?: string[]（教师，多选）, isClassOfficer?: boolean（学生开关） }
+// 只改这两个班级身份字段，不动角色/权限；班级域接口（/api/class/*）按这些字段做成员资格校验
+router.put(
+  '/:id/class-roles',
+  requirePermission('user.manage'),
+  wrap(async (req, res) => {
+    const user = await User.findById(req.params.id);
+    if (!user) throw new ApiError(404, 404, '用户不存在');
+    const { homeroomClasses, isClassOfficer } = req.body || {};
+
+    if (homeroomClasses !== undefined) {
+      if (user.role !== 'teacher') throw new ApiError(400, 400, '只有教师账号可以设置为班主任');
+      if (!Array.isArray(homeroomClasses)) throw new ApiError(400, 400, 'homeroomClasses 需为数组');
+      const classes = [...new Set(homeroomClasses.map((c) => String(c || '').trim()).filter(Boolean))];
+      if (classes.length > 20) throw new ApiError(400, 400, '一个班主任最多分配 20 个班级');
+      const tooLong = classes.find((c) => c.length > 40);
+      if (tooLong) throw new ApiError(400, 400, `班级名过长：${tooLong.slice(0, 20)}…`);
+      user.homeroomClasses = classes;
+    }
+
+    if (isClassOfficer !== undefined) {
+      if (user.role !== 'student') throw new ApiError(400, 400, '只有学生账号可以设为班委');
+      if (isClassOfficer && !user.className) {
+        throw new ApiError(400, 400, '该学生尚未识别出班级（年级 + 专业），无法设为班委');
+      }
+      user.isClassOfficer = !!isClassOfficer;
+    }
+
+    await user.save();
+    ok(res, {
+      success: true,
+      _id: user._id,
+      role: user.role,
+      className: user.className || '',
+      homeroomClasses: user.homeroomClasses || [],
+      isClassOfficer: !!user.isClassOfficer,
+    });
+  })
+);
+
+// 筛选可选项（院校/系部/专业/年级/班级）
 // 日/周目标不再返回目标步数：它们是「当日/当周是否达标」，选项由前端固定（已达标/未达标）
+// classes：班主任分配班级时的候选（在用的班级名，按「年级+专业」推导后的值），不新增班级列表接口
 router.get(
   '/filters',
   requirePermission('user.view'),
   wrap(async (req, res) => {
-    const [schools, departments, specialties, studentIds, gradeValues] = await Promise.all([
+    const [schools, departments, specialties, studentIds, gradeValues, classes] = await Promise.all([
       User.distinct('schoolName', { schoolName: { $nin: [null, ''] } }),
       User.distinct('departmentName', { departmentName: { $nin: [null, ''] } }),
       User.distinct('specialty', { specialty: { $nin: [null, ''] } }),
       User.distinct('studentId', { studentId: { $exists: true, $nin: [null, ''] } }),
       User.distinct('grade', { grade: { $exists: true, $nin: [null, ''] } }),
+      User.distinct('className', { className: { $nin: [null, ''] }, role: { $ne: 'teacher' } }),
     ]);
     // 年级：grade 字段优先，缺失的存量数据按学号前 4 位（入学年份）推导
     const grades = [
@@ -322,7 +406,7 @@ router.get(
         ].filter(Boolean)
       ),
     ].sort().reverse();
-    ok(res, { schools, departments, specialties, grades });
+    ok(res, { schools, departments, specialties, grades, classes: [...(classes || [])].sort() });
   })
 );
 
@@ -506,13 +590,22 @@ router.get(
     const user = await User.findById(req.params.id).select('openid').lean();
     if (!user) throw new ApiError(404, 404, '用户不存在');
     const openid = user.openid || '';
-    const empty = { rates: null, earnedCount: 0, goal: null };
+    const pointsConfig = await pointsSvc.loadEffective();
+    const empty = { rates: null, earnedCount: 0, goal: null, points: { total: 0, today: 0, week: 0, config: pointsSvc.publicConfig(pointsConfig) } };
     if (!openid) return ok(res, empty);
 
     const goalsSvc = require('../../services/goals');
     const goal = await goalsSvc.getEffectiveGoal(openid);
     const dailyGoal = (goal && goal.daily && goal.daily.steps) || 0;
     const weeklyGoal = (goal && goal.weekly && goal.weekly.steps) || 0;
+
+    // 跑分窗口：今日 / 本周（周一起）/ 全历史（公式与口径见 services/points.js 文件头注释）
+    const { today, weekStart } = pointsSvc.currentWindows();
+    const [pointsToday, pointsWeek, pointsTotal] = await Promise.all([
+      pointsSvc.sumPointsByDay(openid, { from: today, to: today, config: pointsConfig }),
+      pointsSvc.sumPointsByDay(openid, { from: weekStart, to: today, config: pointsConfig }),
+      pointsSvc.sumPointsTotal(openid, { config: pointsConfig }),
+    ]);
 
     // 全历史按日聚合（一次查询同时供达标率计算与展示窗口切分）
     const dayAgg = await RunRecord.aggregate([
@@ -579,6 +672,17 @@ router.get(
       rates,
       earnedCount,
       goal: { planName: (goal && goal.planName) || '', daily: goal && goal.daily, weekly: goal && goal.weekly },
+      // 跑分汇总（学校衡量标准）：total 全历史 / today 今日 / week 本周（周一起）
+      points: {
+        total: pointsTotal.total || 0,
+        today: pointsToday.total || 0,
+        week: pointsWeek.total || 0,
+        todaySteps: pointsToday.steps || 0,
+        weekSteps: pointsWeek.steps || 0,
+        date: today,
+        weekStart,
+        config: pointsSvc.publicConfig(pointsConfig),
+      },
     });
   })
 );
@@ -599,6 +703,8 @@ router.get(
     const goal = await goalsSvc.getEffectiveGoal(openid);
     const dailyGoal = (goal && goal.daily && goal.daily.steps) || 0;
     const weeklyGoal = (goal && goal.weekly && goal.weekly.steps) || 0;
+    // 跑分配置（日/周记录每条都要附跑分，公式见 services/points.js 文件头注释）
+    const pointsConfig = await pointsSvc.loadEffective();
 
     // ===== 最近运动：单条记录直接分页 =====
     if (type === 'runs') {
@@ -625,16 +731,29 @@ router.get(
           werunAchieved: { $max: { $cond: [{ $eq: ['$source', 'werun'] }, '$goalAchieved', false] } },
         },
       };
-      const [rows, countAgg] = await Promise.all([
-        RunRecord.aggregate([{ $match: { openid } }, groupStage, { $sort: { _id: -1 } }, { $skip: skip }, { $limit: limit }]),
-        RunRecord.aggregate([{ $match: { openid } }, groupStage, { $count: 'n' }]),
+      const rows = await RunRecord.aggregate([
+        { $match: { openid } },
+        groupStage,
+        { $sort: { _id: -1 } },
+        { $skip: skip },
+        { $limit: limit },
       ]);
+      const from = rows.length ? rows[rows.length - 1]._id : '';
+      const to = rows.length ? rows[0]._id : '';
+      const [countAgg, pointsByDay] = await Promise.all([
+        RunRecord.aggregate([{ $match: { openid } }, groupStage, { $count: 'n' }]),
+        // 跑分只算当前页的日期区间（不拉全历史）
+        from ? pointsSvc.sumPointsByDay(openid, { from, to, config: pointsConfig }) : Promise.resolve({ byDay: [] }),
+      ]);
+      const pointsMap = new Map((pointsByDay.byDay || []).map((p) => [p.date, p.points]));
       const list = rows.map((d) => ({
         date: d._id,
         steps: d.steps,
         distanceKm: ((d.distance || 0) / 1000).toFixed(2),
         recordCount: d.recordCount,
         achieved: !!d.werunAchieved || (dailyGoal > 0 && d.steps >= dailyGoal),
+        goalSteps: dailyGoal,
+        points: pointsMap.get(d._id) || 0,
       }));
       const total = countAgg[0]?.n || 0;
       return ok(res, { type, list, total, page, limit, hasMore: skip + list.length < total });
@@ -653,16 +772,24 @@ router.get(
           activeDays: { $sum: 1 },
         },
       };
-      const [rows, countAgg] = await Promise.all([
-        RunRecord.aggregate([
-          { $match: { openid } },
-          weekStage,
-          { $sort: { '_id.y': -1, '_id.w': -1 } },
-          { $skip: skip },
-          { $limit: limit },
-        ]),
-        RunRecord.aggregate([{ $match: { openid } }, weekStage, { $count: 'n' }]),
+      const rows = await RunRecord.aggregate([
+        { $match: { openid } },
+        weekStage,
+        { $sort: { '_id.y': -1, '_id.w': -1 } },
+        { $skip: skip },
+        { $limit: limit },
       ]);
+      // 该页覆盖的日期区间（首尾周的起止），跑分只算这个区间
+      const firstRange = rows.length ? isoWeekRange(rows[0]._id.y, rows[0]._id.w) : null;
+      const lastRange = rows.length ? isoWeekRange(rows[rows.length - 1]._id.y, rows[rows.length - 1]._id.w) : null;
+      const [countAgg, weekPoints] = await Promise.all([
+        RunRecord.aggregate([{ $match: { openid } }, weekStage, { $count: 'n' }]),
+        // 每 ISO 周的跑分（周目标基础分 + 超出加分，不叠加该周日跑分）
+        firstRange
+          ? pointsSvc.sumPointsByWeek(openid, { from: lastRange.start, to: firstRange.end, config: pointsConfig })
+          : Promise.resolve([]),
+      ]);
+      const pointsMap = new Map(weekPoints.map((w) => [w.weekStart, w.points]));
       const list = rows.map((r) => {
         const range = isoWeekRange(r._id.y, r._id.w);
         return {
@@ -672,6 +799,8 @@ router.get(
           distance: r.distance,
           activeDays: r.activeDays,
           achieved: weeklyGoal > 0 && r.steps >= weeklyGoal,
+          goalSteps: weeklyGoal,
+          points: pointsMap.get(range.start) || 0,
         };
       });
       const total = countAgg[0]?.n || 0;
@@ -799,9 +928,15 @@ router.get(
       dayMap.set(r.date, d);
     }
     const dayGoal = (goal && goal.daily && goal.daily.steps) || 0;
+    // 跑分：该时段跑分（周取周跑分，日取当日跑分）+ 按天拆分的日跑分
+    const [dayPointsRes, weekPointsRes] = await Promise.all([
+      pointsSvc.sumPointsByDay(openid, { from, to }),
+      type === 'week' ? pointsSvc.sumPointsByWeek(openid, { from, to }) : Promise.resolve([]),
+    ]);
+    const dayPointsMap = new Map((dayPointsRes.byDay || []).map((p) => [p.date, p.points]));
     const days = [...dayMap.values()]
       .sort((a, b) => (a.date < b.date ? 1 : -1))
-      .map((d) => ({ ...d, achieved: dayGoal > 0 && d.steps >= dayGoal }));
+      .map((d) => ({ ...d, achieved: dayGoal > 0 && d.steps >= dayGoal, points: dayPointsMap.get(d.date) || 0 }));
 
     ok(res, {
       type,
@@ -813,6 +948,9 @@ router.get(
       summary,
       days,
       records,
+      // 该时段跑分：周 = 周目标基础分 + 超出加分（不叠加日跑分）；日 = 当日跑分
+      points: type === 'week' ? (weekPointsRes[0] && weekPointsRes[0].points) || 0 : dayPointsRes.total || 0,
+      dayPointsTotal: dayPointsRes.total || 0,
     });
   })
 );

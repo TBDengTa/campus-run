@@ -1,0 +1,78 @@
+<!-- 本班数据概况卡：有班级身份才渲染（班主任 / 班委） -->
+<view class="cb-wrap" wx:if="{{show}}">
+  <view class="tt-section">
+    <text>{{title}}</text>
+    <text class="tt-section-extra" wx:if="{{showManage}}" bind:tap="goManage">班级管理 ›</text>
+  </view>
+
+  <view class="tt-card cb-card">
+    <!-- 班级名 + 身份 -->
+    <view class="cb-head">
+      <view class="cb-head-main">
+        <text class="cb-class">{{className}}</text>
+        <text class="cb-role {{canNudge ? 'is-homeroom' : 'is-officer'}}">{{canNudge ? '班主任' : '班委 · 仅查看'}}</text>
+      </view>
+      <text class="cb-rank" wx:if="{{rankText}}">{{rankText}}</text>
+    </view>
+    <view class="cb-rank-sub" wx:if="{{classRank}}">全校班级榜 · 班级日均 {{classRank.avgSteps}} 步（{{classRank.members}} 人）</view>
+
+    <!-- 概况三项 -->
+    <view class="tt-stat-row cb-stats">
+      <view class="tt-stat">
+        <view class="tt-stat-value num-font">{{overview.studentCount}}</view>
+        <view class="tt-stat-label">本班人数</view>
+      </view>
+      <view class="tt-stat">
+        <view class="tt-stat-value num-font">{{overview.activeToday}}</view>
+        <view class="tt-stat-label">今日活跃</view>
+      </view>
+      <view class="tt-stat">
+        <view class="tt-stat-value num-font">{{overview.stepsTodayText}}</view>
+        <view class="tt-stat-label">今日步数</view>
+      </view>
+    </view>
+
+    <!-- 今日达标进度 -->
+    <view class="cb-goal">
+      <view class="cb-goal-top">
+        <text>今日达标 {{overview.rateText}} 人</text>
+        <text class="num-font cb-goal-rate">{{overview.dailyRate}}%</text>
+      </view>
+      <view class="cb-bar">
+        <view class="cb-bar-in" style="width:{{overview.dailyRate}}%"></view>
+      </view>
+      <view class="cb-goal-sub">
+        本周达标率 {{overview.weeklyRate}}%<text wx:if="{{overview.pointsEnabled}}"> · 本班跑分 {{overview.pointsWeek}}</text>
+      </view>
+    </view>
+
+    <!-- 本班前三名（本周步数） -->
+    <view class="cb-top3">
+      <view class="cb-top3-head">
+        <text class="cb-top3-title">本班前三名</text>
+        <text class="cb-top3-tip">本周步数</text>
+      </view>
+      <view
+        class="cb-top3-row"
+        wx:for="{{top}}"
+        wx:key="userId"
+        bind:tap="openStudent"
+        data-id="{{item.userId}}"
+        data-name="{{item.name}}"
+      >
+        <text class="cb-top3-no">{{item.rank}}</text>
+        <text class="cb-top3-name">{{item.name}}</text>
+        <text class="cb-tag-officer" wx:if="{{item.isClassOfficer}}">班委</text>
+        <text class="num-font cb-top3-steps">{{item.stepsText}}</text>
+      </view>
+      <view class="tt-empty" wx:if="{{!top.length && !loading}}">本周还没有运动记录</view>
+    </view>
+
+    <view class="cb-manage" wx:if="{{showManage}}" bind:tap="goManage">
+      <text>进入班级管理</text>
+      <text class="cb-manage-hint">{{canNudge ? '查看名单 · 督促未达标' : '仅查看名单与榜单'}}</text>
+      <t-icon name="chevron-right" size="28rpx" color="var(--tt-brand)" />
+    </view>
+    <view class="cb-note" wx:else>班委仅查看：本班数据与排名，无操作权限</view>
+  </view>
+</view>

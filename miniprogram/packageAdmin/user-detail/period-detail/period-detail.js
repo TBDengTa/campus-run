@@ -26,6 +26,11 @@ Page({
     type: 'day', // day 日明细 | week 周明细
     date: '', // 日：当天；周：周起始（周一）
     userName: '',
+    // 取数范围：admin = 管理端 /api/admin/users/:id/period（默认，行为不变）
+    //           class = 班级域 /api/class/student/:id/period（班主任/班委只读，字段与 admin 完全一致）
+    scope: 'admin',
+    className: '',
+    readonlyScope: false, // true = 班级视角（仅查看汇总，不跳单条运动详情）
     loading: true,
     summary: null,
     records: [],
@@ -42,13 +47,19 @@ Page({
 
   onLoad(options) {
     const type = options.type === 'week' ? 'week' : 'day';
+    const scope = options.scope === 'class' ? 'class' : 'admin';
     this.setData({
       id: options.id || '',
       date: options.date || '',
       type,
       userName: decodeURIComponent(options.name || ''),
+      scope,
+      className: decodeURIComponent(options.className || ''),
+      readonlyScope: scope === 'class',
     });
-    wx.setNavigationBarTitle({ title: type === 'week' ? '周运动明细' : '日运动明细' });
+    wx.setNavigationBarTitle({
+      title: `${scope === 'class' ? '班级 · ' : ''}${type === 'week' ? '周运动明细' : '日运动明细'}`,
+    });
     this.load();
   },
 
@@ -56,7 +67,10 @@ Page({
     try {
       await getApp().ensureLogin();
       const query = this.data.type === 'week' ? { type: 'week', weekStart: this.data.date } : { type: 'day', date: this.data.date };
-      const res = await auth.get(`/api/admin/users/${this.data.id}/period`, query);
+      // 班级视角走成员资格校验的只读接口（班主任 / 班委），返回字段与管理端一致
+      const base =
+        this.data.scope === 'class' ? `/api/class/student/${this.data.id}/period` : `/api/admin/users/${this.data.id}/period`;
+      const res = await auth.get(base, query);
       const records = (res.records || []).map((r) => this.fmtRun(r));
       const days = (res.days || []).map((d) => ({
         ...d,
@@ -116,6 +130,11 @@ Page({
 
   openRun(e) {
     const id = e.currentTarget.dataset.id;
+    // 班级视角（班主任/班委）只读汇总：单条详情走的是管理端接口（需 user.view），无权限会 403
+    if (this.data.scope === 'class') {
+      wx.showToast({ title: '班级视角仅查看汇总明细', icon: 'none' });
+      return;
+    }
     // 管理端看的是别人的记录：带 admin=1&uid，走管理端取数接口
     if (id) wx.navigateTo({ url: `/pages/run/detail?id=${id}&admin=1&uid=${this.data.id}` });
   },

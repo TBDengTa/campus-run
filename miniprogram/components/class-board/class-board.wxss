@@ -1,0 +1,227 @@
+/* 本班数据概况卡（组件私有类，白橙令牌；公共 .tt-* 由 app.wxss 提供，需 styleIsolation: apply-shared） */
+.cb-wrap {
+  margin-bottom: var(--tt-gap);
+}
+
+.cb-card {
+  padding: 20rpx 24rpx 18rpx;
+}
+
+/* ===== 头部：班级 + 身份 + 名次 ===== */
+.cb-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+}
+
+.cb-head-main {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  min-width: 0;
+}
+
+.cb-class {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: var(--tt-text-1);
+  max-width: 340rpx;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cb-role {
+  flex-shrink: 0;
+  padding: 2rpx 14rpx;
+  border-radius: 999rpx;
+  font-size: 19rpx;
+}
+
+.cb-role.is-homeroom {
+  color: var(--tt-brand-deep);
+  background: var(--tt-brand-soft-2);
+}
+
+.cb-role.is-officer {
+  color: var(--tt-text-2);
+  background: var(--td-bg-color-component);
+}
+
+.cb-rank {
+  flex-shrink: 0;
+  font-size: 24rpx;
+  font-weight: 600;
+  color: var(--tt-brand);
+}
+
+.cb-rank-sub {
+  margin-top: 6rpx;
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+}
+
+/* ===== 三项概况 ===== */
+.cb-stats {
+  margin-top: 14rpx;
+  padding: 10rpx 0 6rpx;
+  border-top: 2rpx solid var(--tt-line);
+}
+
+/* ===== 达标进度 ===== */
+.cb-goal {
+  margin-top: 8rpx;
+}
+
+.cb-goal-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 23rpx;
+  color: var(--tt-text-2);
+}
+
+.cb-goal-rate {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: var(--tt-brand);
+}
+
+.cb-bar {
+  height: 10rpx;
+  margin: 10rpx 0 8rpx;
+  border-radius: 999rpx;
+  background: var(--td-bg-color-component);
+  overflow: hidden;
+}
+
+.cb-bar-in {
+  height: 100%;
+  border-radius: 999rpx;
+  background: linear-gradient(135deg, #ff9a3d, var(--tt-brand));
+}
+
+.cb-goal-sub {
+  font-size: 21rpx;
+  color: var(--tt-text-3);
+}
+
+/* ===== 本班前三名 ===== */
+.cb-top3 {
+  margin-top: 16rpx;
+  padding-top: 12rpx;
+  border-top: 2rpx solid var(--tt-line);
+}
+
+.cb-top3-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 21rpx;
+  color: var(--tt-text-3);
+}
+
+.cb-top3-title {
+  font-weight: 600;
+  color: var(--tt-text-2);
+}
+
+.cb-top3-tip {
+  font-size: 19rpx;
+  color: var(--tt-text-3);
+}
+
+.cb-top3-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  padding: 12rpx 0;
+  border-bottom: 2rpx solid var(--tt-line);
+}
+
+.cb-top3-row:last-child {
+  border-bottom: none;
+}
+
+.cb-top3-row:active {
+  opacity: 0.75;
+}
+
+.cb-top3-no {
+  width: 36rpx;
+  height: 36rpx;
+  flex-shrink: 0;
+  border-radius: 12rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 21rpx;
+  font-weight: 700;
+  color: var(--tt-text-2);
+  background: var(--td-bg-color-component);
+}
+
+.cb-top3-row:first-child .cb-top3-no {
+  color: #fff;
+  background: linear-gradient(135deg, #ff9a3d, var(--tt-brand));
+}
+
+.cb-top3-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 26rpx;
+  color: var(--tt-text-1);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cb-tag-officer {
+  flex-shrink: 0;
+  padding: 0 12rpx;
+  border-radius: 999rpx;
+  font-size: 18rpx;
+  color: var(--tt-brand-deep);
+  background: var(--tt-brand-soft-2);
+}
+
+.cb-top3-steps {
+  flex-shrink: 0;
+  font-size: 26rpx;
+  font-weight: 600;
+  color: var(--tt-brand);
+}
+
+/* ===== 入口 ===== */
+.cb-manage {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  margin-top: 16rpx;
+  padding: 18rpx 20rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-brand-soft);
+  font-size: 26rpx;
+  color: var(--tt-brand-deep);
+}
+
+.cb-manage:active {
+  opacity: 0.85;
+}
+
+.cb-manage-hint {
+  flex: 1;
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+}
+
+.cb-note {
+  margin-top: 14rpx;
+  padding: 12rpx 16rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--td-bg-color-component);
+  font-size: 21rpx;
+  line-height: 32rpx;
+  color: var(--tt-text-3);
+}

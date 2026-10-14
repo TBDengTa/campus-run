@@ -23,6 +23,7 @@ Page({
     goalPercent: 0,
     goalAchieved: false,
     goalStepsText: '',
+    points: 0,
     records: [],
     loading: true,
   },
@@ -58,6 +59,8 @@ Page({
         goalStepsText: fmt.formatNumber(goalSteps),
         goalPercent: percent,
         goalAchieved: !!data.goalAchieved,
+        // 当日跑分（达标基础分 + 超出加分，服务端算好，页面不重算公式）
+        points: data.points || 0,
         records: data.records.map(decorate),
       });
       wx.setNavigationBarTitle({ title: `${p.m}月${p.d}日记录` });

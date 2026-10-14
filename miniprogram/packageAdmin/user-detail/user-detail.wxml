@@ -125,9 +125,44 @@
     </view>
   </view>
 
+  <!-- ===== 4.5 班级身份：教师（班主任班级多选）/ 学生（班委开关） ===== -->
+  <view class="tt-section">
+    <text>班级身份</text>
+    <text class="tt-section-extra">{{user.role === 'teacher' ? '班主任' : '班委（班长等）'}}</text>
+  </view>
+  <view class="tt-card ud-card">
+    <block wx:if="{{user.role === 'teacher'}}">
+      <view class="ud-pick-row" bind:tap="openClassSheet">
+        <text class="ud-pick-label">班主任班级</text>
+        <view class="ud-pick-value">
+          <text class="{{homeroomClasses.length ? '' : 'ud-ph'}}">{{homeroomClasses.length ? '已分配 ' + homeroomClasses.length + ' 个班' : '未分配'}}</text>
+          <t-icon name="chevron-right" size="30rpx" color="var(--tt-text-3)" />
+        </view>
+      </view>
+      <view class="ud-chips" wx:if="{{homeroomClasses.length}}">
+        <text class="ud-chip" wx:for="{{homeroomClasses}}" wx:key="*this">{{item}}</text>
+      </view>
+      <view class="ud-note">班主任不需要任何管理权限，即可查看所分配班级的概况 / 名单 / 排名与学生日周明细（只读），并可复制未达标名单督促；教师不参与运动记录与排名。</view>
+    </block>
+    <block wx:else>
+      <view class="ud-switch-row">
+        <view class="flex-1">
+          <view class="ud-switch-title">班委（班长等）</view>
+          <view class="ud-note">开启后该学生可查看本班概况、名单与排名——仅查看，没有任何操作权限</view>
+        </view>
+        <t-switch value="{{isClassOfficer}}" disabled="{{!canManageClass || !user.className}}" loading="{{officerSaving}}" bind:change="onOfficerChange" />
+      </view>
+      <view class="ud-note" wx:if="{{!canManageClass}}">分配班级身份需要「封禁/解封用户」权限（user.manage）</view>
+      <view class="ud-note" wx:if="{{!user.className}}">该学生还没有识别出班级（年级 + 专业），无法设为班委</view>
+    </block>
+  </view>
+
   <!-- ===== 5. 考核与目标 ===== -->
   <block wx:if="{{rates}}">
-    <view class="tt-section">考核与目标</view>
+    <view class="tt-section">
+      <text>考核与目标</text>
+      <text class="tt-section-extra" wx:if="{{points}}">跑分：学校统一衡量标准</text>
+    </view>
     <view class="tt-card ud-card">
       <view class="ud-rate-row">
         <view class="ud-rate">
@@ -145,6 +180,22 @@
         <text>当前目标</text>
         <text class="ud-kv-v">{{goal.planName}} · 日 {{goal.dailyStepsText}} · 周 {{goal.weeklyStepsText}}</text>
       </view>
+      <!-- 跑分：总 / 今日 / 本周（周一起） -->
+      <view class="ud-points-row" wx:if="{{points}}">
+        <view class="ud-points">
+          <text class="num-font ud-points-v">{{points.totalText}}</text>
+          <text class="ud-points-l">总跑分</text>
+        </view>
+        <view class="ud-points">
+          <text class="num-font ud-points-v">{{points.todayText}}</text>
+          <text class="ud-points-l">今日</text>
+        </view>
+        <view class="ud-points">
+          <text class="num-font ud-points-v">{{points.weekText}}</text>
+          <text class="ud-points-l">本周</text>
+        </view>
+      </view>
+      <view class="ud-note" wx:if="{{points}}">{{points.enabled ? '计分规则：' + points.configText : '跑分体系已停用（系统配置 → 跑分设置）'}}</view>
     </view>
   </block>
 
@@ -188,6 +239,10 @@
           <view class="tt-row-title">{{item.dateText}}</view>
           <view class="tt-row-sub">{{item.recordCount}} 条 · {{item.distanceKm}} km</view>
         </view>
+        <view class="ud-log-points">
+          <text class="num-font ud-lp-num">{{item.pointsText}}</text>
+          <text class="ud-lp-label">跑分</text>
+        </view>
         <text class="num-font ud-row-value">{{item.stepsText}} 步</text>
         <t-icon wx:if="{{item.achieved}}" name="check-circle" size="30rpx" color="var(--td-success-color-5)" />
         <t-icon name="chevron-right" size="28rpx" color="var(--tt-text-3)" />
@@ -204,6 +259,10 @@
         <view class="flex-1">
           <view class="tt-row-title">{{item.rangeText}}</view>
           <view class="tt-row-sub">活跃 {{item.activeDays}} 天</view>
+        </view>
+        <view class="ud-log-points">
+          <text class="num-font ud-lp-num">{{item.pointsText}}</text>
+          <text class="ud-lp-label">周跑分</text>
         </view>
         <text class="num-font ud-row-value">{{item.stepsText}} 步</text>
         <t-icon wx:if="{{item.achieved}}" name="check-circle" size="30rpx" color="var(--td-success-color-5)" />
@@ -330,5 +389,33 @@
   bind:close="onBanSheetClose"
   bind:submit="onBanSubmit"
 />
+
+<!-- ===== 班主任班级多选（教师，需 user.manage） ===== -->
+<t-popup visible="{{classSheetVisible}}" placement="bottom" bind:visible-change="onClassSheetVisible">
+  <view class="tt-sheet">
+    <view class="tt-sheet-grab"></view>
+    <view class="tt-sheet-head">
+      <view class="tt-sheet-icon">
+        <t-icon name="usergroup" size="36rpx" color="var(--tt-brand)" />
+      </view>
+      <view class="tt-sheet-title">
+        班主任班级
+        <view class="tt-sheet-sub">已选 {{classDraft.length}} 个班 · 可多选，清空即取消班主任</view>
+      </view>
+      <view class="tt-sheet-close" bind:tap="closeClassSheet">
+        <t-icon name="close" size="32rpx" color="var(--tt-text-2)" />
+      </view>
+    </view>
+    <scroll-view scroll-y class="tt-sheet-body">
+      <view class="tt-sheet-label">选择班级（在用的班级名，来自用户名单）</view>
+      <t-checkbox-group value="{{classDraft}}" options="{{classOptions}}" bind:change="onClassDraftChange" />
+      <view class="tt-empty" wx:if="{{!classOptions.length}}">没有可选班级（请先导入学生名单）</view>
+      <view class="tt-sheet-note">分配后该教师无需管理权限即可查看这些班级的学生数据（只读）；教师不参与运动记录与排名。</view>
+    </scroll-view>
+    <view class="tt-sheet-foot">
+      <t-button theme="primary" block loading="{{classSaving}}" bind:tap="saveHomeroomClasses">保存（已选 {{classDraft.length}} 个班）</t-button>
+    </view>
+  </view>
+</t-popup>
 
 <t-loading wx:if="{{loading && !user}}" theme="circular" size="44rpx" text="加载用户…" class="udetail-loading" />

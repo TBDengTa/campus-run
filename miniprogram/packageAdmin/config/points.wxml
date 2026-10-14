@@ -1,0 +1,54 @@
+<view class="page tt-page cfg-page" wx:if="{{config}}">
+  <view class="tt-section">
+    <text>跑分设置</text>
+    <text class="tt-section-extra">学校统一衡量标准</text>
+  </view>
+
+  <view class="tt-card cfg-card">
+    <view class="cfg-fitem cfg-fitem-switch">
+      <view class="cfg-flabel-col">
+        <text class="cfg-switch-label">启用跑分</text>
+        <text class="cfg-fdesc">关闭后全部跑分记 0，排行榜不再展示跑分</text>
+      </view>
+      <t-switch value="{{config.points.enabled}}" bind:change="onPoints" data-field="enabled" />
+    </view>
+
+    <view class="cfg-fitem">
+      <text class="cfg-flabel">完成日目标得分</text>
+      <input class="cfg-input" type="number" value="{{config.points.dailyGoal}}" bindinput="onPoints" data-field="dailyGoal" />
+    </view>
+    <view class="cfg-fitem">
+      <text class="cfg-flabel">完成周目标得分</text>
+      <input class="cfg-input" type="number" value="{{config.points.weeklyGoal}}" bindinput="onPoints" data-field="weeklyGoal" />
+    </view>
+    <view class="cfg-fitem">
+      <text class="cfg-flabel">超出部分每多少步</text>
+      <input class="cfg-input" type="number" value="{{config.points.perStep}}" bindinput="onPoints" data-field="perStep" />
+    </view>
+    <view class="cfg-fitem">
+      <text class="cfg-flabel">每档加多少分</text>
+      <input class="cfg-input" type="number" value="{{config.points.perStepScore}}" bindinput="onPoints" data-field="perStepScore" />
+    </view>
+    <view class="cfg-fitem">
+      <text class="cfg-flabel">单日超出加分上限</text>
+      <input class="cfg-input" type="number" value="{{config.points.dailyExtraCap}}" bindinput="onPoints" data-field="dailyExtraCap" />
+    </view>
+  </view>
+
+  <view class="tt-section">
+    <text>效果预览</text>
+    <text class="tt-section-extra">按「日目标 5000 步」估算</text>
+  </view>
+  <view class="tt-card cfg-card">
+    <view class="cfg-fitem" wx:for="{{preview}}" wx:key="key">
+      <text class="cfg-flabel">{{item.label}}</text>
+      <text class="cfg-preview-value num-font">{{item.value}} 分</text>
+    </view>
+  </view>
+
+  <view class="cfg-save-bar">
+    <t-button theme="primary" block loading="{{saving}}" bind:tap="save">保存配置</t-button>
+  </view>
+
+  <view class="tt-footer">达标口径与用户端目标一致（个人计划优先）· 保存后立即生效</view>
+</view>

@@ -32,6 +32,7 @@ function createApp() {
   app.use('/api/roster', require('./routes/roster'));
   app.use('/api/run', require('./routes/run'));
   app.use('/api/ranking', require('./routes/ranking'));
+  app.use('/api/points', require('./routes/points'));
   app.use('/api/goal', require('./routes/goal'));
   app.use('/api/reward-video', require('./routes/reward-video'));
   app.use('/api/water', require('./routes/water'));
@@ -39,6 +40,8 @@ function createApp() {
   app.use('/api/appeals', require('./routes/appeal'));
   app.use('/api/ads', require('./routes/ad'));
   app.use('/api/org', require('./routes/org'));
+  // 班级域：班主任 / 班委的只读数据面（成员资格校验，不用 requirePermission）
+  app.use('/api/class', require('./routes/class'));
   app.use('/api/content', require('./routes/content'));
   app.use('/api/upload', require('./routes/upload'));
   app.use('/api/admin', require('./routes/admin'));

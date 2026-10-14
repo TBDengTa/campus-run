@@ -51,6 +51,7 @@
         "content/organizations",
         "content/badges",
         "config/config",
+        "config/points",
         "config/anticheat",
         "config/reward-video",
         "assessment/index",

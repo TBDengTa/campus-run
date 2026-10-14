@@ -23,6 +23,10 @@
         <view class="tt-stat-value week-stat-value num-font">{{activeDays}}/7</view>
         <view class="tt-stat-label week-stat-label">活跃天</view>
       </view>
+      <view class="tt-stat">
+        <view class="tt-stat-value week-stat-value num-font week-points">{{pointsText}}</view>
+        <view class="tt-stat-label week-stat-label">周跑分</view>
+      </view>
     </view>
 
     <view class="week-goal" wx:if="{{goal}}">

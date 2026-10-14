@@ -275,6 +275,37 @@
   word-break: break-all;
 }
 
+/* ===== 5.1 跑分三格（总 / 今日 / 本周）===== */
+.ud-points-row {
+  display: flex;
+  align-items: center;
+  margin-top: 16rpx;
+  padding: 16rpx 0;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-brand-soft);
+}
+
+.ud-points {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4rpx;
+  min-width: 0;
+}
+
+.ud-points-v {
+  font-size: 34rpx;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--tt-brand);
+}
+
+.ud-points-l {
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+}
+
 /* ===== 6. 运动明细：Tab + 列表 ===== */
 .ud-tabs {
   display: flex;
@@ -307,6 +338,30 @@
   color: var(--tt-brand);
 }
 
+/* 明细行里的跑分列（日记录/周记录）：品牌浅底小胶囊，与橙色步数区分开 */
+.ud-log-points {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2rpx;
+  padding: 4rpx 14rpx;
+  border-radius: 14rpx;
+  background: var(--tt-brand-soft);
+}
+
+.ud-lp-num {
+  font-size: 26rpx;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--tt-brand-deep);
+}
+
+.ud-lp-label {
+  font-size: 18rpx;
+  color: var(--tt-text-3);
+}
+
 .ud-log {
   display: flex;
   align-items: center;
@@ -322,8 +377,7 @@
 .ud-log-icon {
   width: 56rpx;
   height: 56rpx;
-  flex-shrink: 0;
-  border-radius: 18rpx;
+  flex-shrink: 0;  border-radius: 18rpx;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -419,6 +473,60 @@
   font-size: 21rpx;
   line-height: 32rpx;
   color: var(--tt-text-3);
+}
+
+/* ===== 4.5 班级身份（班主任班级 / 班委） ===== */
+.ud-pick-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  padding: 20rpx 0;
+}
+
+.ud-pick-label {
+  font-size: 26rpx;
+  color: var(--tt-text-2);
+}
+
+.ud-pick-value {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  font-size: 26rpx;
+  color: var(--tt-text-1);
+}
+
+.ud-ph {
+  color: var(--tt-text-3);
+}
+
+.ud-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10rpx;
+  padding-bottom: 12rpx;
+}
+
+.ud-chip {
+  padding: 4rpx 16rpx;
+  border-radius: 999rpx;
+  font-size: 21rpx;
+  color: var(--tt-brand-deep);
+  background: var(--tt-brand-soft);
+}
+
+.ud-switch-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 18rpx 0;
+}
+
+.ud-switch-title {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
 }
 
 .udetail-loading {

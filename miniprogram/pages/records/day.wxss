@@ -52,7 +52,7 @@
   background: var(--td-success-color-1);
 }
 
-/* ---- 四项指标 ---- */
+/* ---- 五项指标（含跑分） ---- */
 .day-stat-row {
   padding: 18rpx 0 6rpx;
 }
@@ -65,6 +65,11 @@
 .tt-stat-label.day-stat-label {
   margin-top: 4rpx;
   font-size: 20rpx;
+}
+
+/* 跑分数值用品牌色突出（学校衡量标准） */
+.tt-stat-value.day-points {
+  color: var(--tt-brand);
 }
 
 /* ---- 目标进度 ---- */

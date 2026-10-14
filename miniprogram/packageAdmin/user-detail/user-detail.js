@@ -49,6 +49,8 @@ Page({
     // ===== 考核与运动全景 =====
     rates: null,
     goal: null,
+    // 跑分汇总（{ totalText, todayText, weekText, enabled, configText }）
+    points: null,
     recordTab: 'daily', // 最近运动 runs | 日记录 daily | 周记录 weekly | 饮水 water | 徽章 badges
     // 运动明细：按 Tab 分页缓存（每页 PAGE_SIZE 条，按钮翻页，不是触底追加）
     records: { runs: [], daily: [], weekly: [], water: [], badges: [] },
@@ -61,6 +63,15 @@ Page({
     recordLoading: false,
     loginInfo: null,
     unbinding: false,
+    // ===== 班级身份（班主任班级 / 班委，需 user.manage）=====
+    canManageClass: false,
+    homeroomClasses: [], // 教师：已分配的班主任班级（多选）
+    isClassOfficer: false, // 学生：是否班委
+    classSheetVisible: false,
+    classOptions: [], // 班级候选（/api/admin/users/filters 的 classes → [{label,value}]）
+    classDraft: [],
+    classSaving: false,
+    officerSaving: false,
   },
 
   onLoad(options) {
@@ -75,6 +86,8 @@ Page({
       this.setData({
         canManagePerms: me.includes('*') || me.includes('permission.manage'),
         canManageUser: me.includes('*') || me.includes('user.manage'),
+        // 班级身份（班主任班级 / 班委）在本页分配，需 user.manage
+        canManageClass: me.includes('*') || me.includes('user.manage'),
       });
       const [detail, sportDetail] = await Promise.all([
         auth.get(`/api/admin/users/${this.data.id}`),
@@ -94,9 +107,13 @@ Page({
 
       const rates = sportDetail && sportDetail.rates;
       const goal = (sportDetail && sportDetail.goal) || goalArg || null;
+      // 跑分汇总（学校衡量标准）：total 全历史 / today 今日 / week 本周（周一起）
+      const pts = (sportDetail && sportDetail.points) || null;
       this.setData({
         loading: false,
         isSuper: (user.permissionGroups || []).includes('superadmin'),
+        homeroomClasses: user.homeroomClasses || [],
+        isClassOfficer: !!user.isClassOfficer,
         user: {
           ...user,
           createdText: fmtTime(user.createdAt),
@@ -133,6 +150,17 @@ Page({
               planName: goal.planName || '默认目标',
               dailyStepsText: fmt.formatNumber(goal.daily && goal.daily.steps),
               weeklyStepsText: fmt.formatNumber(goal.weekly && goal.weekly.steps),
+            }
+          : null,
+        points: pts
+          ? {
+              totalText: fmt.formatNumber(pts.total || 0),
+              todayText: fmt.formatNumber(pts.today || 0),
+              weekText: fmt.formatNumber(pts.week || 0),
+              enabled: !pts.config || pts.config.enabled !== false,
+              configText: pts.config
+                ? `日目标 +${pts.config.dailyGoal} · 周目标 +${pts.config.weeklyGoal} · 每 ${pts.config.perStep} 步 +${pts.config.perStepScore}（日上限 +${pts.config.dailyExtraCap}）`
+                : '',
             }
           : null,
         // 明细列表改由 /:id/records 分页加载（见 loadRecords），这里不再接收全量
@@ -223,12 +251,15 @@ Page({
         sourceText: it.source === 'gps' ? 'GPS 实跑' : '微信运动',
       };
     }
-    if (type === 'daily') return { ...it, dateText: dateText(it.date), stepsText: fmt.formatNumber(it.steps) };
+    if (type === 'daily') {
+      return { ...it, dateText: dateText(it.date), stepsText: fmt.formatNumber(it.steps), pointsText: fmt.formatNumber(it.points || 0) };
+    }
     if (type === 'weekly') {
       return {
         ...it,
         rangeText: `${String(it.weekStart).slice(5).replace('-', '.')} - ${String(it.weekEnd).slice(5).replace('-', '.')}`,
         stepsText: fmt.formatNumber(it.steps),
+        pointsText: fmt.formatNumber(it.points || 0),
       };
     }
     if (type === 'water') return { ...it, dateText: dateText(it.date) };
@@ -371,6 +402,71 @@ Page({
         }
       },
     });
+  },
+
+  // ===== 班级身份：班主任班级（教师多选抽屉）/ 班委（学生开关）=====
+  // 接口 PUT /api/admin/users/:id/class-roles（需 user.manage）
+  async openClassSheet() {
+    if (!this.data.canManageClass) {
+      wx.showToast({ title: '需要「封禁/解封用户」权限', icon: 'none' });
+      return;
+    }
+    this.setData({ classSheetVisible: true, classDraft: [...(this.data.homeroomClasses || [])] });
+    if (!this.data.classOptions.length) {
+      try {
+        // 班级候选复用管理端筛选接口的 classes（在用的班级名，不新增班级列表接口）
+        const f = await auth.get('/api/admin/users/filters');
+        this.setData({ classOptions: (f.classes || []).map((c) => ({ label: c, value: c })) });
+      } catch (e) {
+        wx.showToast({ title: e.message || '班级列表加载失败', icon: 'none' });
+      }
+    }
+  },
+
+  onClassSheetVisible(e) {
+    this.setData({ classSheetVisible: !!(e.detail && e.detail.visible) });
+  },
+
+  closeClassSheet() {
+    this.setData({ classSheetVisible: false });
+  },
+
+  onClassDraftChange(e) {
+    const value = Array.isArray(e.detail) ? e.detail : (e.detail && e.detail.value) || [];
+    this.setData({ classDraft: value });
+  },
+
+  // 保存班主任班级（多选；清空 = 取消班主任）
+  async saveHomeroomClasses() {
+    if (this.data.classSaving) return;
+    this.setData({ classSaving: true });
+    try {
+      const r = await auth.put(`/api/admin/users/${this.data.id}/class-roles`, { homeroomClasses: this.data.classDraft });
+      const list = r.homeroomClasses || [];
+      this.setData({ homeroomClasses: list, classSheetVisible: false });
+      wx.showToast({ title: list.length ? `已分配 ${list.length} 个班` : '已取消班主任', icon: 'none' });
+    } catch (err) {
+      wx.showToast({ title: err.message || '保存失败', icon: 'none' });
+    } finally {
+      this.setData({ classSaving: false });
+    }
+  },
+
+  // 班委开关（学生）：即时保存，失败回滚
+  async onOfficerChange(e) {
+    const value = !!(e.detail && e.detail.value);
+    if (this.data.officerSaving) return;
+    const prev = this.data.isClassOfficer;
+    this.setData({ isClassOfficer: value, officerSaving: true });
+    try {
+      await auth.put(`/api/admin/users/${this.data.id}/class-roles`, { isClassOfficer: value });
+      wx.showToast({ title: value ? '已设为班委（仅查看本班）' : '已取消班委', icon: 'none' });
+    } catch (err) {
+      this.setData({ isClassOfficer: prev });
+      wx.showToast({ title: err.message || '设置失败', icon: 'none' });
+    } finally {
+      this.setData({ officerSaving: false });
+    }
   },
 
   // 重置登录密码：恢复为初始密码（学号/身份证后8），需 permission.manage

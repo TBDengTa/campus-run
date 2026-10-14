@@ -8,6 +8,7 @@ const Holiday = require('../models/holiday');
 const stepsSvc = require('../services/steps');
 const anticheat = require('../services/anticheat');
 const goalsSvc = require('../services/goals');
+const pointsSvc = require('../services/points');
 const wechat = require('../services/wechat');
 const { todayKey, monthRange, isValidDateKey, addDays } = require('../utils/dates');
 
@@ -79,10 +80,15 @@ router.get(
     const today = todayKey();
     const start = mondayKey(today);
     const end = addDays(start, 6);
-    const records = await RunRecord.find({ openid: req.user.openid, date: { $gte: start, $lte: end } })
-      .select('date steps distance calories durationSeconds source goalAchieved')
-      .lean();
-    ok(res, { start, end: today, weekStart: start, weekEnd: end, records });
+    const openid = req.user.openid;
+    const [records, weekPoints] = await Promise.all([
+      RunRecord.find({ openid, date: { $gte: start, $lte: end } })
+        .select('date steps distance calories durationSeconds source goalAchieved')
+        .lean(),
+      // 本周跑分（周目标基础分 + 超出加分，公式见 services/points.js）
+      pointsSvc.sumPointsByWeekTotal(openid, { from: start, to: end }),
+    ]);
+    ok(res, { start, end: today, weekStart: start, weekEnd: end, records, points: weekPoints.total || 0 });
   })
 );
 
@@ -259,6 +265,11 @@ router.get(
       RunRecord.aggregate([{ $match: { openid } }, { $group: { _id: '$date' } }, { $count: 'n' }]),
     ]);
     const goal = await goalsSvc.getEffectiveGoal(openid);
+    // 跑分只算当前页的日期区间（不拉全历史）
+    const from = agg.length ? agg[agg.length - 1]._id : '';
+    const to = agg.length ? agg[0]._id : '';
+    const pointsByDay = from ? await pointsSvc.sumPointsByDay(openid, { from, to }) : { byDay: [] };
+    const pointsMap = new Map((pointsByDay.byDay || []).map((p) => [p.date, p.points]));
     const list = agg.map((d) => ({
       date: d._id,
       steps: d.steps,
@@ -268,6 +279,7 @@ router.get(
       recordCount: d.recordCount,
       goalAchieved: d.werunAchieved === 1 || d.steps >= (goal.daily.steps || Infinity),
       goalSteps: goal.daily.steps,
+      points: pointsMap.get(d._id) || 0,
     }));
     ok(res, { list, total: countAgg[0]?.n || 0, page, limit });
   })
@@ -305,6 +317,7 @@ router.get(
       },
       { steps: 0, distance: 0, calories: 0, durationSeconds: 0 }
     );
+    const dayPoints = await pointsSvc.sumPointsByDay(openid, { from: date, to: date });
     ok(res, {
       date,
       records,
@@ -312,6 +325,8 @@ router.get(
       goal,
       // 达成按当日总量判定（微信同步可能拆成多条记录）
       goalAchieved: totals.steps >= (goal.daily.steps || Infinity),
+      // 当日跑分（达标基础分 + 超出加分，封顶单日上限）
+      points: dayPoints.total || 0,
       holiday: holiday || null,
     });
   })
@@ -361,6 +376,14 @@ router.get(
         w.activeDays += 1;
       }
     }
+    // 跑分：逐日跑分（图表/明细行）+ 逐周跑分（周行），只算这个区间
+    const [dayPoints, weekPoints] = await Promise.all([
+      pointsSvc.sumPointsByDay(openid, { from: start, to: todayKey() }),
+      pointsSvc.sumPointsByWeek(openid, { from: start, to: addDays(thisMonday, 6) }),
+    ]);
+    const dayPointsMap = new Map((dayPoints.byDay || []).map((p) => [p.date, p.points]));
+    const weekPointsMap = new Map(weekPoints.map((w) => [w.weekStart, w.points]));
+
     const list = [...weekMap.values()].map((w) => ({
       weekStart: w.weekStart,
       weekEnd: w.weekEnd,
@@ -372,6 +395,10 @@ router.get(
       recordCount: w.recordCount,
       weeklyGoalSteps: goal.weekly.steps,
       goalAchieved: w.steps >= (goal.weekly.steps || Infinity),
+      // 周跑分（周目标基础分 + 超出加分，不叠加该周日跑分）
+      points: weekPointsMap.get(w.weekStart) || 0,
+      // 本周内各天的日跑分（供 7 天柱状图/明细展示）
+      dayPoints: [...w.days.keys()].map((d) => ({ date: d, points: dayPointsMap.get(d) || 0 })),
     }));
     ok(res, { list, weeklyGoal: goal.weekly });
   })
@@ -413,9 +440,17 @@ router.get(
       totals.calories += r.calories || 0;
       totals.durationSeconds += r.durationSeconds || 0;
     }
+    // 跑分：逐日 + 该周周跑分（口径与记录页一致）
+    const [dayPoints, weekPoints] = await Promise.all([
+      pointsSvc.sumPointsByDay(openid, { from: start, to: end }),
+      pointsSvc.sumPointsByWeek(openid, { from: start, to: end }),
+    ]);
+    const dayPointsMap = new Map((dayPoints.byDay || []).map((p) => [p.date, p.points]));
     const days = [...dayMap.values()].map((d) => ({
       ...d,
       goalAchieved: d.werunAchieved || d.steps >= (goal.daily.steps || Infinity),
+      // 该天跑分（达标基础分 + 超出加分，封顶单日上限）
+      points: dayPointsMap.get(d.date) || 0,
     }));
     ok(res, {
       weekStart: start,
@@ -426,6 +461,9 @@ router.get(
       goal,
       goalAchieved: totals.steps >= (goal.weekly.steps || Infinity),
       activeDays: days.filter((d) => d.recordCount > 0).length,
+      // 周跑分（周目标基础分 + 超出加分，不叠加该周日跑分）
+      points: (weekPoints[0] && weekPoints[0].points) || 0,
+      dayPointsTotal: dayPoints.total || 0,
     });
   })
 );

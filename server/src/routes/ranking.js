@@ -4,6 +4,7 @@ const { auth } = require('../middlewares/auth');
 const RunRecord = require('../models/run-record');
 const WaterRecord = require('../models/water-record');
 const UserBadge = require('../models/user-badge');
+const pointsSvc = require('../services/points');
 const { todayKey, weekRange } = require('../utils/dates');
 
 const router = express.Router();
@@ -25,13 +26,17 @@ const SCOPES = {
   all: { label: '全校' },
 };
 
-// 榜单类型：步数 / 达标天数 / 饮水 / 成就
+// 榜单类型：步数（默认，保持向后兼容） / 达标天数 / 饮水 / 成就 / 跑分
 const METRICS = {
   steps: { label: '步数', unit: '步' },
   goal: { label: '达标', unit: '天' },
   water: { label: '饮水', unit: 'ml' },
   badge: { label: '成就', unit: '枚' },
+  points: { label: '跑分', unit: '分' },
 };
+
+// 榜单形态：个人榜（默认）/ 班级榜（按班级汇总）
+const KINDS = ['person', 'class'];
 
 const TOP_LIMIT = 50;
 const SCAN_LIMIT = 2000;
@@ -43,9 +48,20 @@ function rangeWindow(range) {
   if (range === 'total') return { startKey: null, endKey: null };
   if (range === 'week') {
     const r = weekRange(todayKey());
-    return { startKey: r.startKey, endKey: r.endKey };
+    // 周窗口取「周一 → 周日」（历史数据到今天就没了，多算几天不影响）；
+    // 跑分的周聚合按 ISO 周分组，与 admin /records 的周口径一致
+    return { startKey: r.startKey, endKey: weekEndKey(r.startKey) };
   }
   return { startKey: todayKey(), endKey: todayKey() };
+}
+
+function weekEndKey(startKey) {
+  const d = new Date(`${startKey}T00:00:00`);
+  d.setDate(d.getDate() + 6);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 // 组织范围过滤（users 集合字段）
@@ -147,6 +163,62 @@ function lookupStage(userFilter) {
   ];
 }
 
+// 全局默认目标必须以 $literal 注入：$globalDailyGoal 不会自己出现在文档里，
+// 缺了这一步 «每用户目标» 会解析成 missing → 0，跑分恒为 0（务必保持在第 2 阶段之后）。
+function globalGoalStage(config) {
+  return {
+    $addFields: {
+      globalDailyGoal: { $literal: (config && config.__globalDaily) || 0 },
+      globalWeeklyGoal: { $literal: (config && config.__globalWeekly) || 0 },
+    },
+  };
+}
+
+// ===== 跑分榜的专用管道 =====
+// 跑分不是存储字段，必须「先按日聚合步数 → 并上每用户生效目标 → 用与 services/points.js
+// 完全一致的公式算出每日跑分 → 汇总」。步数/距离在同一趟里累加
+// （不再回查一次 run_records：range=total 会在 10 万+ 记录上多扫一遍，接口被拖到 10s 以上）。
+// 公式本身复用 pointsSvc.dailyPointsExpr（禁止在本文件另写一套，避免口径漂移）。
+function pointsStages(startKey, endKey, config) {
+  const inRange = startKey ? { date: { $gte: startKey, $lte: endKey } } : {};
+  return [
+    { $match: { steps: { $gt: 0 }, ...inRange } },
+    globalGoalStage(config),
+    {
+      $group: {
+        _id: { openid: '$openid', date: '$date' },
+        steps: { $sum: '$steps' },
+        distance: { $sum: { $ifNull: ['$distance', 0] } },
+      },
+    },
+    {
+      $lookup: {
+        from: 'user_goals',
+        localField: '_id.openid',
+        foreignField: 'openid',
+        as: 'g',
+        pipeline: [{ $project: { _id: 0, dailySteps: '$daily.steps' } }],
+      },
+    },
+    {
+      $addFields: {
+        _goalDaily: {
+          $ifNull: [{ $arrayElemAt: ['$g.dailySteps', 0] }, { $ifNull: ['$globalDailyGoal', 0] }],
+        },
+      },
+    },
+    {
+      $group: {
+        _id: '$_id.openid',
+        value: { $sum: pointsSvc.dailyPointsExpr('$steps', '$_goalDaily', config) },
+        steps: { $sum: '$steps' },
+        distance: { $sum: '$distance' },
+      },
+    },
+    { $match: { value: { $gt: 0 } } },
+  ];
+}
+
 // 各指标聚合管道前半段（match + group 出 value/steps/distance）
 function metricStages(metric, startKey, endKey) {
   const inRange = startKey ? { date: { $gte: startKey, $lte: endKey } } : {};
@@ -200,8 +272,13 @@ function metricCollection(metric) {
 }
 
 async function rankRows({ metric, startKey, endKey, userFilter, myOpenid }) {
-  const Col = metricCollection(metric);
-  const stages = [...metricStages(metric, startKey, endKey), { $sort: { value: -1, _id: 1 } }, { $limit: SCAN_LIMIT }, ...lookupStage(userFilter)];
+  const config = metric === 'points' ? await pointsSvc.loadEffective() : null;
+  const stages = [
+    ...(metric === 'points' ? pointsStages(startKey, endKey, config) : metricStages(metric, startKey, endKey)),
+    { $sort: { value: -1, _id: 1 } },
+    { $limit: SCAN_LIMIT },
+    ...lookupStage(userFilter),
+  ];
   // isMe 标记：在投影后按 openid === 我的openid 计算
   const pipeline = JSON.parse(JSON.stringify(stages)).map((stage, idx) => {
     const last = idx === stages.length - 1;
@@ -215,6 +292,7 @@ async function rankRows({ metric, startKey, endKey, userFilter, myOpenid }) {
     }
     return stage;
   });
+  const Col = metricCollection(metric);
   const rows = await Col.aggregate(pipeline).allowDiskUse(true);
   rows.sort((a, b) => b.value - a.value);
   return rows;
@@ -229,7 +307,126 @@ async function cachedRankRows(key, producer) {
   return rows;
 }
 
-// GET /api/ranking?metric=steps|goal|water|badge&range=today|week|total&scope=class|department|school|all
+// ===== 班级榜（按班级汇总，班级跑分 = 班内学生跑分之和）=====
+// 口径与个人榜完全一致：排除教师、封禁、退出排名（privacy.exitRanking）的账号；
+// 班级名取 users.className（自动识别「年级+专业」，见 AGENTS.md 学籍字段约定）。
+function classStages(metric, startKey, endKey) {
+  const inRange = startKey ? { date: { $gte: startKey, $lte: endKey } } : {};
+  const base = metric === 'water' ? { ...inRange } : { steps: { $gt: 0 }, ...inRange };
+  const inner = [
+    { $match: base },
+    {
+      $group: {
+        _id: '$openid',
+        value:
+          metric === 'water'
+            ? { $sum: '$total' }
+            : metric === 'goal'
+              ? { $sum: { $cond: [{ $eq: ['$goalAchieved', true] }, 1, 0] } }
+              : metric === 'badge'
+                ? { $sum: 1 }
+                : { $sum: '$steps' },
+        steps: { $sum: { $ifNull: ['$steps', 0] } },
+      },
+    },
+    { $match: { value: { $gt: 0 } } },
+  ];
+  return [
+    {
+      $lookup: {
+        from: metric === 'water' ? 'water_records' : metric === 'badge' ? 'user_badges' : 'run_records',
+        localField: 'openid',
+        foreignField: 'openid',
+        pipeline: inner,
+        as: 'rows',
+      },
+    },
+    {
+      $project: {
+        _id: 0,
+        className: { $ifNull: ['$className', ''] },
+        value: { $sum: '$rows.value' },
+        steps: { $sum: '$rows.steps' },
+        members: { $size: '$rows' },
+      },
+    },
+  ];
+}
+
+// 跑分班级榜：候选账号 → 按日步数 → 日跑分（公式同 services/points.js）→ 每班汇总
+// 起始 $match 由 rankClassRows 统一加（users 集合字段），保证 $lookup 紧跟其后能用上 openid 索引
+function classPointsStages(startKey, endKey, config) {
+  const inRange = startKey ? { date: { $gte: startKey, $lte: endKey } } : {};
+  return [
+    globalGoalStage(config),
+    {
+      $lookup: {
+        from: 'run_records',
+        localField: 'openid',
+        foreignField: 'openid',
+        pipeline: [
+          { $match: { steps: { $gt: 0 }, ...inRange } },
+          { $group: { _id: '$date', steps: { $sum: '$steps' } } },
+        ],
+        as: 'dayRows',
+      },
+    },
+    {
+      $lookup: {
+        from: 'user_goals',
+        localField: 'openid',
+        foreignField: 'openid',
+        as: 'g',
+        pipeline: [{ $project: { _id: 0, dailySteps: '$daily.steps' } }],
+      },
+    },
+    {
+      $addFields: {
+        _goalDaily: {
+          $ifNull: [{ $arrayElemAt: ['$g.dailySteps', 0] }, { $ifNull: ['$globalDailyGoal', 0] }],
+        },
+      },
+    },
+    {
+      $project: {
+        _id: 0,
+        className: { $ifNull: ['$className', ''] },
+        steps: { $sum: '$dayRows.steps' },
+        value: {
+          $sum: {
+            $map: { input: '$dayRows', as: 'd', in: pointsSvc.dailyPointsExpr('$$d.steps', '$_goalDaily', config) },
+          },
+        },
+      },
+    },
+  ];
+}
+
+// 班级榜聚合：候选账号（学生 / 正常 / 未退出排名）→ 每班汇总
+// scope 过滤条件放在最前面（$lookup 紧跟其后，此时 openid 索引仍可用）
+async function rankClassRows({ metric, startKey, endKey, scopeFilter: scopedMatch, config }) {
+  const User = require('../models/user');
+  const stages = metric === 'points' ? classPointsStages(startKey, endKey, config) : classStages(metric, startKey, endKey);
+  const rows = await User.aggregate([
+    { $match: { openid: { $nin: [null, ''] }, status: { $ne: 'banned' }, role: { $ne: 'teacher' }, 'privacy.exitRanking': { $ne: true }, ...scopedMatch } },
+    ...stages,
+    {
+      $group: {
+        _id: '$className',
+        value: { $sum: '$value' },
+        steps: { $sum: '$steps' },
+        members: { $sum: 1 },
+      },
+    },
+    { $match: { value: { $gt: 0 }, _id: { $nin: [null, ''] } } },
+    { $sort: { value: -1, steps: -1, _id: 1 } },
+    { $limit: 200 },
+  ]).allowDiskUse(true);
+  return rows;
+}
+
+// GET /api/ranking?metric=steps|goal|water|badge|points&range=today|week|total&scope=class|department|school|all
+// GET /api/ranking?kind=class&metric=steps|points...  → 班级榜
 router.get(
   '/',
   wrap(async (req, res) => {
@@ -237,17 +434,63 @@ router.get(
     const metric = METRICS[req.query.metric] ? req.query.metric : 'steps';
     const range = RANGES[req.query.range] ? req.query.range : 'today';
     const scope = SCOPES[req.query.scope] ? req.query.scope : 'all';
+    const kind = KINDS.includes(req.query.kind) ? req.query.kind : 'person';
 
     const userFilter = scopeFilter(me, scope);
     const { startKey, endKey } = rangeWindow(range);
-    const cacheKey = [metric, range, scope, me.schoolId || '', me.departmentId || '', me.className || ''].join('|');
+    const metricDef = METRICS[metric];
+    const config = metric === 'points' ? await pointsSvc.loadEffective() : null;
 
+    // ===== 班级榜：一行一个班，班级跑分 / 班级步数 = 班内学生之和 =====
+    if (kind === 'class') {
+      // scope=class 时「班级榜」只剩自己班一行，仍返回（前端会自动收窄范围选择）
+      const scopedMatch = scope === 'class' ? (me.className ? { className: me.className } : {}) : userFilter;
+      const key = ['class', metric, range, scope, scopedMatch.className || '', scopedMatch.schoolId || '', scopedMatch.departmentId || ''].join('|');
+      const rows = await cachedRankRows(key, () => rankClassRows({ metric, startKey, endKey, scopeFilter: scopedMatch, config }));
+
+      const list = rows.slice(0, TOP_LIMIT).map((r, i) => ({
+        rank: i + 1,
+        className: r._id,
+        value: r.value || 0,
+        steps: r.steps || 0,
+        members: r.members || 0,
+        valueText: `${fmtInt(r.value)} ${metricDef.unit}`,
+        stepsText: fmtInt(r.steps || 0),
+        membersText: `${r.members || 0} 人`,
+        isMine: !!me.className && r._id === me.className,
+      }));
+
+      const mine = list.find((r) => r.isMine) || null;
+      return ok(res, {
+        kind: 'class',
+        metric,
+        range,
+        scope,
+        metricText: metricDef.label,
+        rangeText: RANGES[range].label,
+        scopeText: SCOPES[scope].label,
+        unit: metricDef.unit,
+        date: todayKey(),
+        participants: rows.length,
+        list,
+        me: {
+          rank: mine ? mine.rank : null,
+          className: me.className || '',
+          value: mine ? mine.value : 0,
+          valueText: mine ? mine.valueText : `0 ${metricDef.unit}`,
+          steps: mine ? mine.steps : 0,
+          members: mine ? mine.members : 0,
+        },
+        scopes: availableScopes(me),
+      });
+    }
+
+    // ===== 个人榜 =====
+    const cacheKey = [kind, metric, range, scope, me.schoolId || '', me.departmentId || '', me.className || ''].join('|');
     const rows = await cachedRankRows(cacheKey, () =>
       rankRows({ metric, startKey, endKey, userFilter, myOpenid: me.openid })
     );
 
-    const metricDef = METRICS[metric];
-    const myIndex = rows.findIndex((r) => r.openid === me.openid);
     const list = rows.slice(0, TOP_LIMIT).map((r, i) => ({
       rank: i + 1,
       openid: r.openid,
@@ -262,30 +505,43 @@ router.get(
     }));
 
     // 我的成绩（不在榜时也给出自己的值）
-    let myValue = myIndex >= 0 ? rows[myIndex].value : 0;
-    let mySteps = myIndex >= 0 ? rows[myIndex].steps : 0;
-    let myDistance = myIndex >= 0 ? rows[myIndex].distance : 0;
-    if (myIndex < 0) {
-      const Col = metricCollection(metric);
-      const inRange = startKey ? { date: { $gte: startKey, $lte: endKey } } : {};
-      const mine = await Col.aggregate([
-        { $match: { openid: me.openid, ...inRange } },
-        ...(metric === 'goal'
-          ? [{ $match: { goalAchieved: true } }, { $group: { _id: null, value: { $sum: 1 } } }]
-          : [{ $group: { _id: null, value: metric === 'water' ? { $sum: '$total' } : { $sum: 1 } } }]),
-      ]);
-      myValue = mine[0]?.value || 0;
-      if (metric === 'steps') {
-        const sr = await RunRecord.aggregate([
+    const myRow = rows.find((r) => r.openid === me.openid) || null;
+    const myRank = myRow ? rows.indexOf(myRow) + 1 : null;
+    let myValue = myRow ? myRow.value || 0 : null;
+    let mySteps = myRow ? myRow.steps || 0 : 0;
+    let myDistance = myRow ? myRow.distance || 0 : 0;
+    if (myValue == null) {
+      myValue = 0;
+      mySteps = 0;
+      myDistance = 0;
+      if (metric === 'points') {
+        // 跑分不在榜（0 分）时：用服务现算，保证「我的跑分」与 /api/points/me 一致
+        const sums = await pointsSvc.sumPointsByDay(me.openid, { from: startKey || undefined, to: endKey || undefined, config });
+        myValue = sums.total || 0;
+        mySteps = sums.steps || 0;
+      } else {
+        const Col = metricCollection(metric);
+        const inRange = startKey ? { date: { $gte: startKey, $lte: endKey } } : {};
+        const mine = await Col.aggregate([
           { $match: { openid: me.openid, ...inRange } },
-          { $group: { _id: null, steps: { $sum: '$steps' }, distance: { $sum: '$distance' } } },
+          ...(metric === 'goal'
+            ? [{ $match: { goalAchieved: true } }, { $group: { _id: null, value: { $sum: 1 } } }]
+            : [{ $group: { _id: null, value: metric === 'water' ? { $sum: '$total' } : { $sum: 1 } } }]),
         ]);
-        mySteps = sr[0]?.steps || 0;
-        myDistance = sr[0]?.distance || 0;
+        myValue = mine[0]?.value || 0;
+        if (metric === 'steps') {
+          const sr = await RunRecord.aggregate([
+            { $match: { openid: me.openid, ...inRange } },
+            { $group: { _id: null, steps: { $sum: '$steps' }, distance: { $sum: '$distance' } } },
+          ]);
+          mySteps = sr[0]?.steps || 0;
+          myDistance = sr[0]?.distance || 0;
+        }
       }
     }
 
     ok(res, {
+      kind: 'person',
       metric,
       range,
       scope,
@@ -300,7 +556,7 @@ router.get(
       participants: rows.length,
       list,
       me: {
-        rank: myIndex >= 0 ? myIndex + 1 : null,
+        rank: myRank,
         value: myValue,
         valueText: `${fmtInt(myValue)} ${metricDef.unit}`,
         steps: mySteps,

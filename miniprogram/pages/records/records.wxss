@@ -233,6 +233,33 @@
   color: var(--tt-text-3);
 }
 
+/* 跑分列（日记录 / 周记录行）：品牌色小数字，避免与步数大数字抢视线 */
+.row-points {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2rpx;
+  flex-shrink: 0;
+  margin-right: 12rpx;
+}
+
+.rp-num {
+  font-size: 28rpx;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--tt-brand);
+}
+
+.rp-label {
+  font-size: 18rpx;
+  color: var(--tt-text-3);
+}
+
+/* 本周概览的跑分数值 */
+.tt-stat-value.week-points {
+  color: var(--tt-brand);
+}
+
 /* ===== 分段切换 ===== */
 .records-segment {
   margin: 0 24rpx 8rpx;

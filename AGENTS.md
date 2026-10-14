@@ -5,6 +5,9 @@
   后端配置只在 `server/.env`，前端配置只在 `miniprogram/config/env.js`（两者均已被 .gitignore）。
 - 示例文件只允许占位符：`server/.env.example`、`miniprogram/config/env.example.js`。
 - 文档（README/docs）中不得出现真实域名与凭据。
+- **凭据类字段绝不下发客户端**：`models/user.js::toSafeJSON()` 是 `/api/auth/me`、login/bind 的 userInfo 出口，
+  必须剔除 `passwordHash` / `initialHashes` / `resetHashes`（真实账号有这些字段，dev_* 测试账号没有，
+  本地联调发现不了）。新增任何「用户文档 → 客户端」的出口都要走 `toSafeJSON()` 或显式白名单。
 
 ## 技术约定
 - 后端：Node.js + Express + Mongoose，模型必须显式指定集合名（`mongoose.model('X', schema, 'collection')`）。
