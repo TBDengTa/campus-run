@@ -7,6 +7,8 @@
       <view class="ae-type-item {{role === 'teacher' ? 'active' : ''}}" bind:tap="pickRole" data-value="teacher">教师账户</view>
     </view>
     <view class="ae-type-hint">{{role === 'student' ? '学生参与运动记录与排名，需填写学籍信息' : '教师不参与运动记录与排名'}}</view>
+    <view class="ae-type-hint ae-type-warn" wx:if="{{mode === 'edit' && !canManagePerms}}">调整账户类型需要「管理用户权限」权限</view>
+    <view class="ae-type-hint ae-type-warn" wx:if="{{mode === 'edit' && isSuper}}">该账号是超级管理员，改账户类型不会移除其超级管理员权限组</view>
   </view>
 
   <!-- ===== 基本信息 ===== -->
@@ -79,21 +81,53 @@
       <view class="ae-divider"></view>
       <view class="ae-row">
         <text class="ae-label">班级</text>
-        <picker
-          wx:if="{{classNames.length && !classManual}}"
-          mode="selector"
-          range="{{classPickerRange}}"
-          value="{{classIndex < 0 ? 0 : classIndex}}"
-          bindchange="onClassPick"
-        >
-          <view class="ae-picker {{className ? '' : 'ae-ph'}}">{{className || '选择班级'}}</view>
-        </picker>
-        <input wx:else class="ae-input" value="{{className}}" placeholder="如 23级大数据1班（选填）" placeholder-class="ae-ph" bindinput="input" data-field="className" />
-        <text wx:if="{{classManual && classNames.length}}" class="ae-switch" bind:tap="useClassPicker">选已有</text>
+        <text class="ae-static {{className ? '' : 'ae-ph'}}">{{className || '按学号 + 专业自动生成'}}</text>
       </view>
-      <view class="ae-hint" wx:if="{{classNames.length && !classManual}}">
-        <text bind:tap="useClassInput">没有我的班级？手动输入</text>
+      <view class="ae-note">班级由「学号前 4 位（年级）+ 专业」自动识别，无需填写</view>
+    </view>
+  </block>
+
+  <!-- ===== 账户权限（需「管理用户权限」，接口 403 时整块不显示） ===== -->
+  <block wx:if="{{canManagePerms}}">
+    <view class="tt-section">
+      <text>账户权限</text>
+      <text class="tt-section-extra">已选 {{draft.groups.length}} 组 / {{draft.perms.length}} 项</text>
+    </view>
+    <view class="tt-card ae-form">
+      <view class="ae-perm-group">
+        <text class="ae-perm-label">权限组</text>
+        <view class="ae-perm-chips">
+          <view
+            wx:for="{{permGroups}}"
+            wx:key="key"
+            class="tt-chip {{draft.groupMap[item.key] ? 'active' : ''}}"
+            bind:tap="toggleGroup"
+            data-key="{{item.key}}"
+          >
+            {{item.name}}{{item.permissions[0] === '*' ? '（全部）' : '（' + item.permissions.length + '项）'}}
+          </view>
+        </view>
       </view>
+
+      <block wx:for="{{permModules}}" wx:key="name" wx:for-item="mod">
+        <view class="ae-divider"></view>
+        <view class="ae-perm-group">
+          <text class="ae-perm-label">独立权限 · {{mod.name}}</text>
+          <view class="ae-perm-chips">
+            <view
+              wx:for="{{mod.list}}"
+              wx:key="key"
+              class="tt-chip {{draft.permMap[item.key] ? 'active' : ''}}"
+              bind:tap="togglePerm"
+              data-key="{{item.key}}"
+            >
+              {{item.name}}
+            </view>
+          </view>
+        </view>
+      </block>
+
+      <view class="ae-note">有效权限 = 独立权限 ∪ 权限组展开；点「{{mode === 'create' ? '创建账户' : '保存修改'}}」一并提交</view>
     </view>
   </block>
 

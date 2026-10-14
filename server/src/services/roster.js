@@ -60,6 +60,19 @@ function gradeFromStudentId(studentId) {
   return year >= 1900 && year <= 2099 ? m[1] : '';
 }
 
+// 班级自动识别 = 年级后两位 + 专业（如 2023 + 大数据技术 →「23级大数据技术」）
+// - 年级或专业缺失 → 保留原值（不覆盖，避免把名单里的班级抹掉）
+// - 原班级已是同一「年级+专业」的更细班（如「23级机电1班」）→ 原样保留，不丢班序号
+function classNameFromGradeSpecialty(grade, specialty, current = '') {
+  const g = String(grade || '').trim();
+  const s = String(specialty || '').trim();
+  const cur = String(current || '').trim();
+  if (!g || !s) return cur;
+  const prefix = `${g.slice(-2)}级${s}`;
+  if (cur.indexOf(prefix) === 0 && cur.length > prefix.length) return cur;
+  return prefix;
+}
+
 // 规范化一行
 // 性别解析：支持 男/女/保密 与 1/2/0；无法识别返回 null
 function parseGender(v) {
@@ -235,4 +248,12 @@ async function importRows(rows, mode = 'create') {
   return result;
 }
 
-module.exports = { importRows, parseRows, parseCsv, initialPasswords, normalizeGrade, gradeFromStudentId };
+module.exports = {
+  importRows,
+  parseRows,
+  parseCsv,
+  initialPasswords,
+  normalizeGrade,
+  gradeFromStudentId,
+  classNameFromGradeSpecialty,
+};

@@ -234,8 +234,13 @@ box-shadow: 0 12rpx 32rpx rgba(255, 107, 0, 0.24);
   ② 组织树（`/api/org/tree`）与用户数据（`/api/admin/users/:id`）是两个并发请求，**回显必须在两者都就绪后触发**
   （`tryPrefillOrg()` 由两边分别调用），否则系部/专业列表是空的、选择器点了没内容。
   `hasOrgTree === false`（组织架构未维护）时，三行自动降级为手填输入框，不能只剩空选择器。
-  **班级改为选择器**：选项取自 `GET /api/admin/users/classes`（`className` 去重，可带 `department` / `specialty` 收窄），
-  末尾固定一项「手动输入其他班级」，选中后切成输入框并给出「选已有」回退；接口失败时直接用手填，不阻断开户。
+  **班级只读自动识别**：`班级 = 年级（学号前 4 位后两位）+ 专业`，如 `23级大数据技术`；页面只用 `.ae-static` 展示预览，
+  **不提交 `className`**，落库由服务端 `roster.classNameFromGradeSpecialty()` 推导（年级或专业缺失时保留原值，
+  已存在的更细班名如「23级机电1班」原样保留）——不要在页面里加班级输入框、候选下拉或 `/users/classes` 之类的候选接口。
+  **账户类型与权限可在本页直接改**：`role` 用顶部「账户类型」分段（编辑模式同样可改，但需 `permission.manage`：
+  保存走 `PUT /:id/permissions`，与详情页同一接口），下面追加「账户权限」卡片（权限组 + 独立权限 chips，
+  状态用 `draft.groupMap` / `draft.permMap` 映射）；点保存时先 `PUT /:id/profile` 再 `PUT /:id/permissions`，
+  新建账户则在 `POST /account` 成功后再补一次授权；`GET /api/admin/permissions` 403 时整块隐藏并提示无权限。
   **年级只读展示、不入表单**：`年级 = 学号前 4 位`（如 `20230101 → 2023级`），前端 `gradeFromStudentId()` 仅用于展示，
   落库由服务端 `roster.gradeFromStudentId()` 在创建/保存时统一推导（存量数据 `grade` 字段普遍为空，务必保留按学号推导的兜底）。
 - **管理端 · 用户详情 `packageAdmin/user-detail/user-detail`**：账号操作区依次为 编辑账户资料（`permission.manage`）、封禁/解封、

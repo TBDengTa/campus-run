@@ -37,6 +37,36 @@
   text-align: center;
 }
 
+.ae-type-warn {
+  margin-top: 8rpx;
+  color: var(--tt-brand, #ff6b00);
+}
+
+/* 只读说明文字（班级自动识别等） */
+.ae-note {
+  padding: 4rpx 0 8rpx;
+  font-size: 22rpx;
+  line-height: 34rpx;
+  color: var(--tt-text-3, rgba(0, 0, 0, 0.42));
+}
+
+/* ===== 权限组 / 独立权限 ===== */
+.ae-perm-group {
+  padding: 8rpx 0;
+}
+
+.ae-perm-label {
+  font-size: 26rpx;
+  color: var(--tt-text-2);
+}
+
+.ae-perm-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin-top: 16rpx;
+}
+
 /* ===== 表单行（统一规格） ===== */
 .ae-form {
   padding: 8rpx 28rpx;
@@ -83,21 +113,6 @@
   font-size: 28rpx;
   text-align: right;
   color: var(--tt-text-1);
-}
-
-/* 班级「选已有」切换 */
-.ae-switch {
-  flex-shrink: 0;
-  margin-left: 16rpx;
-  font-size: 24rpx;
-  color: var(--tt-brand, #ff6b00);
-}
-
-.ae-hint {
-  padding: 12rpx 0 4rpx;
-  text-align: right;
-  font-size: 22rpx;
-  color: var(--tt-brand, #ff6b00);
 }
 
 .ae-ph {

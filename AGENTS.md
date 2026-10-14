@@ -26,9 +26,11 @@
   统一走 `server/src/services/roster.js::gradeFromStudentId()`（前端展示副本在 `account-edit.js`）：
   前 4 位不是 1900~2099 的合理年份就返回空串。存量数据 `grade` 字段普遍为空，
   查询/筛选**必须保留按学号推导的兜底**（`/api/admin/users/filters` 与列表 `grade` 条件已如此处理）。
-- **班级（`className`）是名单里的自由文本**，不在 `organizations` 组织树里（树只有 学校→院系→专业）。
-  需要班级候选时用 `GET /api/admin/users/classes`（`className` 去重，可带 `department`/`specialty` 收窄），
-  不要给组织树硬塞第四层。
+- **班级（`className`）自动识别 = 年级后两位 + 专业**（如 `2023` + `大数据技术` →「23级大数据技术」），
+  统一走 `server/src/services/roster.js::classNameFromGradeSpecialty()`（前端只做只读预览，副本在 `account-edit.js`）：
+  年级或专业缺失时保留原值；原班名已是同一「年级+专业」的更细班（如「23级机电1班」）时原样保留，不丢班序号。
+  管理端账户编辑页**不提交 `className`**（班级只读），由服务端在创建/编辑时推导；
+  不要给组织树硬塞「班级」第四层，也不要再做班级候选列表接口。
 
 ## 教师账号规则
 - 教师（`role === 'teacher'`）**不参与运动记录与排名**：步数同步 / GPS 实跑 / 激励视频加步数在

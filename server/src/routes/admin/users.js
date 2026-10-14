@@ -104,6 +104,8 @@ router.post(
     if (await User.findOne({ account: name, role })) throw new ApiError(400, 400, '已存在同名同类型账户');
 
     const password = String(initialPassword || '').trim() || crypto.randomBytes(4).toString('hex');
+    // 年级：显式传入优先，否则按学号前 4 位（入学年份）推导
+    const effectiveGrade = String(grade || '').trim() || roster.gradeFromStudentId(studentId);
     const doc = await User.create({
       account: name,
       realName: name,
@@ -115,9 +117,9 @@ router.post(
       schoolName: String(school || '').trim(),
       departmentName: String(department || '').trim(),
       specialty: String(specialty || '').trim(),
-      className: String(className || '').trim(),
-      // 年级：显式传入优先，否则按学号前 4 位（入学年份）推导
-      grade: String(grade || '').trim() || roster.gradeFromStudentId(studentId),
+      // 班级自动识别：年级（学号前 4 位）+ 专业；显式传入时以传入值为原值做保留判断
+      className: roster.classNameFromGradeSpecialty(effectiveGrade, specialty, className),
+      grade: effectiveGrade,
       passwordHash: pwd.hashPassword(password),
       initialHashes: [pwd.hashPassword(password)],
       resetHashes: [pwd.hashPassword(password)],
@@ -157,8 +159,16 @@ router.put(
         if (dup) throw new ApiError(400, 400, '学号已被其他用户使用');
         user.studentId = sid;
       }
-      // 未显式给年级时，按学号前 4 位（入学年份）同步推导
-      if (grade === undefined) user.grade = roster.gradeFromStudentId(user.studentId);
+    }
+    // 未显式给年级时，用学号前 4 位（入学年份）对齐：推得出来才覆盖，推不出来（老学号形态）保留原年级
+    // —— 存量数据 grade 普遍为空，这里对齐后班级推导才有年级可用
+    if (grade === undefined) {
+      const derived = roster.gradeFromStudentId(user.studentId);
+      if (derived) user.grade = derived;
+    }
+    // 未显式传班级时按「年级 + 专业」推导（管理端账户编辑页就是这样：班级只读、不提交）
+    if (className === undefined) {
+      user.className = roster.classNameFromGradeSpecialty(user.grade, user.specialty, user.className);
     }
     await user.save();
     ok(res, user.toSafeJSON());
@@ -251,19 +261,7 @@ router.get(
   })
 );
 
-// 班级可选项（新建/编辑账户时选择班级用；传入系部/专业可收窄范围）
-router.get(
-  '/classes',
-  wrap(async (req, res) => {
-    const cond = { className: { $exists: true, $nin: [null, ''] } };
-    if (req.query.department) cond.departmentName = String(req.query.department);
-    if (req.query.specialty) cond.specialty = String(req.query.specialty);
-    const classes = await User.distinct('className', cond);
-    ok(res, { classes: classes.filter(Boolean).map(String).sort((a, b) => a.localeCompare(b, 'zh')) });
-  })
-);
-
-// 用户列表/搜索 + 多维筛选（院校/系部/专业/年级/日目标/周目标）
+// 用户列表/搜索 + 多维筛选（院校/系部/专业/年级/日周达标）
 router.get(
   '/',
   wrap(async (req, res) => {

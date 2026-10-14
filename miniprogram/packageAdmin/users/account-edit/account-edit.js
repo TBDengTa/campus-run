@@ -6,9 +6,6 @@ const GENDERS = [
   { value: 0, label: '保密' },
 ];
 
-// 班级选择器末尾的「手动输入」项
-const CLASS_MANUAL_OPTION = '手动输入其他班级';
-
 // 年级推导：学号前 4 位即入学年份（如 20230101 → "2023"）
 // 与 server/src/services/roster.js::gradeFromStudentId 保持一致，避免两边显示不一致
 function gradeFromStudentId(studentId) {
@@ -18,11 +15,31 @@ function gradeFromStudentId(studentId) {
   return year >= 1900 && year <= 2099 ? m[1] : '';
 }
 
+// 班级 = 年级后两位 + 专业（如 2023 + 大数据技术 →「23级大数据技术」）
+// 已有更细分的班名（如「23级机电1班」）原样保留，避免丢掉班序号；年级或专业缺失时保留原值
+// 与 server/src/services/roster.js::classNameFromGradeSpecialty 保持一致（落库以服务端为准）
+function composeClassName(grade, specialty, current = '') {
+  const g = String(grade || '').trim();
+  const s = String(specialty || '').trim();
+  const cur = String(current || '').trim();
+  if (!g || !s) return cur;
+  const prefix = `${g.slice(-2)}级${s}`;
+  if (cur.indexOf(prefix) === 0 && cur.length > prefix.length) return cur;
+  return prefix;
+}
+
+// WXML 无法调用方法，选中态用映射表
+function toMap(arr) {
+  const m = {};
+  for (const k of arr || []) m[k] = true;
+  return m;
+}
+
 Page({
   data: {
     id: '', // 有值 = 编辑模式
     mode: 'create',
-    role: 'student', // student | teacher
+    role: 'student', // student | teacher（编辑模式下需 permission.manage 才能改）
     account: '',
     initialPassword: '', // 仅创建，留空系统生成
     gender: 0,
@@ -32,7 +49,7 @@ Page({
     school: '',
     department: '',
     specialty: '',
-    className: '',
+    className: '', // 按「年级 + 专业」自动生成（只读展示，落库由服务端推导）
     submitting: false,
     loading: false,
     genders: GENDERS,
@@ -46,11 +63,12 @@ Page({
     schoolIndex: -1,
     departmentIndex: -1,
     specialtyIndex: -1,
-    // ===== 班级选择（取自已有数据；无数据时退化为手填） =====
-    classNames: [],
-    classPickerRange: [],
-    classIndex: -1,
-    classManual: false,
+    // ===== 权限（需 permission.manage，接口 403 时静默隐藏） =====
+    canManagePerms: false,
+    isSuper: false,
+    permGroups: [],
+    permModules: [], // 按模块分组的权限目录
+    draft: { groups: [], perms: [], groupMap: {}, permMap: {} },
   },
 
   onLoad(options) {
@@ -62,8 +80,8 @@ Page({
     });
     wx.setNavigationBarTitle({ title: options.id ? '编辑账户' : '创建账户' });
     this.loadOrgTree();
-    this.loadClasses();
     if (options.id) this.load();
+    else this.loadPermEditor(null);
   },
 
   async loadOrgTree() {
@@ -86,6 +104,8 @@ Page({
     try {
       await getApp().ensureLogin();
       const { user } = await auth.get(`/api/admin/users/${this.data.id}`);
+      const grade = gradeFromStudentId(user.studentId) || user.grade || '';
+      this.originalClassName = user.className || '';
       this.userDoc = user;
       this.setData({
         role: user.role || 'student',
@@ -93,18 +113,41 @@ Page({
         gender: user.gender || 0,
         birthdate: user.birthdate ? String(user.birthdate).slice(0, 10) : '',
         studentId: user.studentId || '',
-        gradeText: gradeFromStudentId(user.studentId) || user.grade || '',
+        gradeText: grade,
         school: user.schoolName || '',
         department: user.departmentName || '',
         specialty: user.specialty || '',
-        className: user.className || '',
+        className: composeClassName(grade, user.specialty, this.originalClassName),
         loading: false,
       });
       this.tryPrefillOrg();
-      this.loadClasses(); // 按该用户的系部/专业收窄班级选项
+      this.loadPermEditor(user);
     } catch (e) {
       this.setData({ loading: false });
       wx.showToast({ title: e.message, icon: 'none' });
+    }
+  },
+
+  // 权限编辑数据（无 permission.manage 时 403，静默降级）
+  async loadPermEditor(user) {
+    try {
+      const { catalog, groups } = await auth.get('/api/admin/permissions');
+      const moduleMap = new Map();
+      for (const p of catalog) {
+        if (!moduleMap.has(p.module)) moduleMap.set(p.module, []);
+        moduleMap.get(p.module).push(p);
+      }
+      const g = (user && user.permissionGroups) || [];
+      const p = (user && user.permissions) || [];
+      this.setData({
+        canManagePerms: true,
+        isSuper: g.includes('superadmin'),
+        permGroups: groups,
+        permModules: [...moduleMap.entries()].map(([name, list]) => ({ name, list })),
+        draft: { groups: [...g], perms: [...p], groupMap: toMap(g), permMap: toMap(p) },
+      });
+    } catch (e) {
+      this.setData({ canManagePerms: false });
     }
   },
 
@@ -137,6 +180,12 @@ Page({
     });
   },
 
+  // 班级只读展示：年级（学号）+ 专业 一变就重算
+  refreshClassName() {
+    const d = this.data;
+    this.setData({ className: composeClassName(d.gradeText, d.specialty, this.originalClassName || '') });
+  },
+
   // 院校选择 → 联动系部
   onSchoolPick(e) {
     const i = Number(e.detail.value);
@@ -152,9 +201,10 @@ Page({
       specialty: '',
       specialtyIndex: -1,
     });
+    this.refreshClassName();
   },
 
-  // 系部选择 → 联动专业 + 收窄班级选项
+  // 系部选择 → 联动专业
   onDepartmentPick(e) {
     const i = Number(e.detail.value);
     const school = this.data.orgTree[this.data.schoolIndex];
@@ -167,67 +217,57 @@ Page({
       specialty: '',
       specialtyIndex: -1,
     });
-    this.loadClasses();
+    this.refreshClassName();
   },
 
-  // 专业选择
+  // 专业选择 → 重算班级
   onSpecialtyPick(e) {
     const i = Number(e.detail.value);
     const name = this.data.specialtyNames[i];
     if (!name) return;
     this.setData({ specialtyIndex: i, specialty: name });
-    this.loadClasses();
+    this.refreshClassName();
   },
 
-  // ===== 班级：优先从已有班级里选，允许手动输入 =====
-  async loadClasses() {
-    const d = this.data;
-    try {
-      const res = await auth.get('/api/admin/users/classes', {
-        department: d.department || '',
-        specialty: d.specialty || '',
-      });
-      this.setData({ classNames: (res.classes || []).filter(Boolean) });
-      this.buildClassPicker();
-    } catch (e) {
-      // 无权限或接口异常：退化为手动输入
-      this.setData({ classNames: [], classPickerRange: [], classIndex: -1 });
+  // ===== 权限组 / 独立权限 =====
+  toggleGroup(e) {
+    const key = e.currentTarget.dataset.key;
+    const groups = [...this.data.draft.groups];
+    const groupMap = { ...this.data.draft.groupMap };
+    const i = groups.indexOf(key);
+    if (i >= 0) {
+      groups.splice(i, 1);
+      delete groupMap[key];
+    } else {
+      groups.push(key);
+      groupMap[key] = true;
     }
+    this.setData({ 'draft.groups': groups, 'draft.groupMap': groupMap });
   },
 
-  buildClassPicker() {
-    const list = this.data.classNames;
-    this.setData({
-      classPickerRange: list.length ? [...list, CLASS_MANUAL_OPTION] : [],
-      classIndex: list.indexOf(this.data.className),
-    });
-  },
-
-  onClassPick(e) {
-    const i = Number(e.detail.value);
-    const list = this.data.classNames;
-    if (i >= list.length) {
-      this.setData({ classManual: true, className: '', classIndex: -1 });
-      return;
+  togglePerm(e) {
+    const key = e.currentTarget.dataset.key;
+    const perms = [...this.data.draft.perms];
+    const permMap = { ...this.data.draft.permMap };
+    const i = perms.indexOf(key);
+    if (i >= 0) {
+      perms.splice(i, 1);
+      delete permMap[key];
+    } else {
+      perms.push(key);
+      permMap[key] = true;
     }
-    this.setData({ className: list[i] || '', classIndex: i, classManual: false });
+    this.setData({ 'draft.perms': perms, 'draft.permMap': permMap });
   },
 
-  useClassInput() {
-    this.setData({ classManual: true, className: '', classIndex: -1 });
-  },
-
-  useClassPicker() {
-    this.buildClassPicker();
-    this.setData({ classManual: false });
-  },
-
+  // 账户类型：新建时自由选；编辑时需要「管理用户权限」权限（与保存权限同一接口）
   pickRole(e) {
-    if (this.data.mode === 'edit') {
-      wx.showToast({ title: '角色请在详情页「权限管理」中调整', icon: 'none' });
+    const value = e.currentTarget.dataset.value;
+    if (this.data.mode === 'edit' && !this.data.canManagePerms) {
+      wx.showToast({ title: '需要「管理用户权限」权限', icon: 'none' });
       return;
     }
-    this.setData({ role: e.currentTarget.dataset.value });
+    this.setData({ role: value });
   },
 
   inputAccount(e) {
@@ -246,14 +286,30 @@ Page({
     this.setData({ birthdate: e.detail.value });
   },
 
-  // 学号：同步推导年级（前 4 位）
+  // 学号：同步推导年级与班级（前 4 位）
   inputStudentId(e) {
     const studentId = e.detail.value;
-    this.setData({ studentId, gradeText: gradeFromStudentId(studentId) });
+    const gradeText = gradeFromStudentId(studentId);
+    this.setData({
+      studentId,
+      gradeText,
+      className: composeClassName(gradeText, this.data.specialty, this.originalClassName || ''),
+    });
   },
 
   input(e) {
     this.setData({ [e.currentTarget.dataset.field]: e.detail.value });
+  },
+
+  // 权限保存（账户类型 + 权限组 + 独立权限，与账户资料分开提交）
+  async savePerms(id, role) {
+    if (!this.data.canManagePerms) return;
+    const { draft } = this.data;
+    await auth.put(`/api/admin/users/${id}/permissions`, {
+      role,
+      permissionGroups: draft.groups,
+      permissions: draft.perms,
+    });
   },
 
   async submit() {
@@ -274,6 +330,7 @@ Page({
     this.setData({ submitting: true });
     try {
       await getApp().ensureLogin();
+      // 班级不提交：由服务端按「年级(学号前4位) + 专业」统一推导
       const base = {
         account: d.account.trim(),
         gender: d.gender,
@@ -281,17 +338,18 @@ Page({
         school: d.school.trim(),
         department: d.department.trim(),
         specialty: d.specialty.trim(),
-        className: d.className.trim(),
         studentId: d.studentId.trim(),
       };
-      let savedId = d.id;
       if (d.mode === 'create') {
         const created = await auth.post('/api/admin/users/account', {
           ...base,
           role: d.role,
           initialPassword: d.initialPassword,
         });
-        savedId = created._id;
+        // 选了权限组/独立权限时再补一次授权
+        if (d.draft.groups.length || d.draft.perms.length) {
+          await this.savePerms(created._id, d.role);
+        }
         wx.showModal({
           title: '账户已创建',
           content: `账号：${created.account}\n初始密码：${created.initialPassword}\n\n请立即告知该用户，密码仅显示这一次。`,
@@ -299,7 +357,8 @@ Page({
           success: () => wx.navigateBack(),
         });
       } else {
-        await auth.put(`/api/admin/users/${savedId}/profile`, base);
+        await auth.put(`/api/admin/users/${d.id}/profile`, base);
+        await this.savePerms(d.id, d.role);
         wx.showToast({ title: '已保存', icon: 'success' });
         setTimeout(() => wx.navigateBack(), 800);
       }
