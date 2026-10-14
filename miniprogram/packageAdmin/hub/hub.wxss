@@ -1,0 +1,66 @@
+/* 管理中枢：分类列出管理入口 */
+.hub-page {
+  padding-bottom: calc(32rpx + env(safe-area-inset-bottom));
+}
+
+.hub-hero {
+  padding: 28rpx 28rpx 24rpx;
+  border-radius: 32rpx;
+}
+
+.hub-hero-top {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.hub-hero-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 34rpx;
+  font-weight: 700;
+  color: #fff;
+}
+
+.hub-hero-tag {
+  flex-shrink: 0;
+  padding: 6rpx 18rpx;
+  border-radius: 999rpx;
+  font-size: 22rpx;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.hub-hero-sub {
+  margin-top: 10rpx;
+  font-size: 23rpx;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.hub-card {
+  padding: 22rpx 16rpx 6rpx;
+}
+
+.hub-loading {
+  display: flex;
+  justify-content: center;
+  padding: 80rpx 0;
+}
+
+.hub-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12rpx;
+  padding: 60rpx 32rpx;
+}
+
+.hub-empty-text {
+  font-size: 28rpx;
+  color: var(--tt-text-2);
+}
+
+.hub-empty-sub {
+  font-size: 23rpx;
+  color: var(--tt-text-3);
+}

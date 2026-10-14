@@ -1,0 +1,42 @@
+<view class="page tt-page hub-page">
+  <!-- ===== 顶部：身份 + 权限说明 ===== -->
+  <view class="tt-hero hub-hero">
+    <view class="tt-hero-body">
+      <view class="hub-hero-top">
+        <view class="hub-hero-name">管理中枢</view>
+        <view class="hub-hero-tag">{{roleText}}</view>
+      </view>
+      <view class="hub-hero-sub">
+        {{name}}{{classText ? ' · ' + classText : ''}} · 按你的权限列出可用操作
+      </view>
+    </view>
+  </view>
+
+  <t-loading wx:if="{{loading}}" theme="circular" size="40rpx" text="加载中…" class="hub-loading" />
+
+  <!-- ===== 分类列出全部管理入口 ===== -->
+  <block wx:for="{{groups}}" wx:key="key" wx:for-item="group">
+    <view class="tt-section">
+      <text>{{group.title}}</text>
+      <text class="tt-section-extra" wx:if="{{group.desc}}">{{group.desc}}</text>
+    </view>
+    <view class="tt-card hub-card">
+      <view class="tt-grid">
+        <view class="tt-grid-item" wx:for="{{group.items}}" wx:key="key" bind:tap="go" data-url="{{item.url}}">
+          <view class="tt-chip-icon" style="background: {{item.bg || 'var(--tt-brand-soft)'}}">
+            <t-icon name="{{item.icon}}" size="40rpx" color="{{item.color || 'var(--tt-brand)'}}" />
+          </view>
+          <text class="tt-grid-text">{{item.label}}</text>
+        </view>
+      </view>
+    </view>
+  </block>
+
+  <view class="tt-card hub-empty" wx:if="{{!loading && !hasAny}}">
+    <t-icon name="lock-on" size="72rpx" color="var(--tt-text-3)" />
+    <view class="hub-empty-text">你当前没有可用的管理权限</view>
+    <view class="hub-empty-sub">如需使用，请联系超级管理员为你分配权限组</view>
+  </view>
+
+  <view class="tt-footer">管理操作均以服务端权限校验为准</view>
+</view>

@@ -9,10 +9,17 @@ const STUDENT_TABS = [
   { key: 'profile', path: '/pages/profile/profile', text: '我的', icon: 'user-circle', activeIcon: 'user-circle-filled', tab: true },
 ];
 
-// 教师（有管理权限）：管理端入口作为普通导航项
+// 教师（有管理权限）：管理端入口指向「管理中枢」（分类列出全部管理操作），不再直接跳用户管理
 const TEACHER_TABS_ADMIN = [
   { key: 'home', path: '/pages/home/home', text: '首页', icon: 'home', activeIcon: 'home-filled', tab: true },
-  { key: 'admin', path: '/packageAdmin/users/users', text: '管理', icon: 'dashboard', activeIcon: 'dashboard-filled', tab: false },
+  { key: 'hub', path: '/packageAdmin/hub/hub', text: '管理', icon: 'dashboard', activeIcon: 'dashboard-filled', tab: false },
+  { key: 'profile', path: '/pages/profile/profile', text: '我的', icon: 'user-circle', activeIcon: 'user-circle-filled', tab: true },
+];
+
+// 教师（无管理权限但被设为班主任）：导航中间项直接进「班级管理」
+const TEACHER_TABS_CLASS = [
+  { key: 'home', path: '/pages/home/home', text: '首页', icon: 'home', activeIcon: 'home-filled', tab: true },
+  { key: 'class', path: '/packageAdmin/class/class', text: '班级', icon: 'usergroup', activeIcon: 'usergroup-filled', tab: false },
   { key: 'profile', path: '/pages/profile/profile', text: '我的', icon: 'user-circle', activeIcon: 'user-circle-filled', tab: true },
 ];
 
@@ -52,7 +59,10 @@ Component({
       if (!user || user.role !== 'teacher') return STUDENT_TABS;
       const perms = user.effectivePermissions || [];
       const canManage = !!user.isManager || perms.length > 0;
-      return canManage ? TEACHER_TABS_ADMIN : TEACHER_TABS_BASIC;
+      if (canManage) return TEACHER_TABS_ADMIN;
+      // 无管理权限但被设为班主任：中间项进班级管理（教师端无「管理」入口，避免误入无权限页面）
+      if ((user.homeroomClasses || []).length) return TEACHER_TABS_CLASS;
+      return TEACHER_TABS_BASIC;
     },
 
     refresh(path) {

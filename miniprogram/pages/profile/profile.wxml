@@ -98,7 +98,8 @@
     </view>
   </block>
 
-  <!-- ===== 运动与健康 ===== -->
+  <!-- ===== 运动与健康（教师不参与运动记录，整块隐藏） ===== -->
+  <block wx:if="{{!isTeacher}}">
   <view class="tt-section">运动与健康</view>
   <view class="tt-card menu-card">
     <view class="tt-row menu-row" bind:tap="go" data-url="/pages/body-data/body-data">
@@ -130,6 +131,7 @@
       <t-icon name="chevron-right" size="32rpx" color="var(--tt-text-3)" />
     </view>
   </view>
+  </block>
 
   <!-- ===== 账号与帮助：列（行）形式，与「运动与健康」同款结构 ===== -->
   <view class="tt-section">账号与帮助</view>
@@ -166,7 +168,7 @@
       <view class="menu-icon">
         <t-icon name="notification" size="36rpx" color="var(--tt-brand)" />
       </view>
-      <text class="menu-label">公告</text>
+      <text class="menu-label">公告中心</text>
       <t-icon name="chevron-right" size="32rpx" color="var(--tt-text-3)" />
     </view>
     <view class="tt-row menu-row" bind:tap="goAbout">
@@ -185,8 +187,8 @@
     </view>
   </view>
 
-  <!-- ===== 管理功能（仅有权限时显示） ===== -->
-  <block wx:if="{{canManagePerms}}">
+  <!-- ===== 管理功能（仅有权限时显示；教师端统一走首页/导航「管理中枢」） ===== -->
+  <block wx:if="{{canManagePerms && !isTeacher}}">
     <view class="tt-section">管理功能</view>
     <view class="tt-card menu-card">
       <view class="tt-row menu-row" bind:tap="goPerms">

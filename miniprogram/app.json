@@ -30,6 +30,7 @@
     {
       "root": "packageAdmin",
       "pages": [
+        "hub/hub",
         "users/users",
         "users/account-edit/account-edit",
         "users/import",
