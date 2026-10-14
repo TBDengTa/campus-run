@@ -11,6 +11,27 @@ function dateText(dateKey) {
   return `${Number(dateKey.slice(5, 7))}月${Number(dateKey.slice(8, 10))}日`;
 }
 
+// 运动明细每页条数（按钮翻页）
+const PAGE_SIZE = 10;
+
+// 页码条：页数少时全列，多时首尾 + 当前页附近，间隔用省略号
+function buildPageItems(current, total) {
+  const out = [];
+  const push = (page, label) => out.push({ k: `${page}-${out.length}`, page, label: label || String(page) });
+  if (total <= 7) {
+    for (let i = 1; i <= total; i += 1) push(i);
+    return out;
+  }
+  push(1);
+  const start = Math.max(2, current - 1);
+  const end = Math.min(total - 1, current + 1);
+  if (start > 2) push(0, '…');
+  for (let i = start; i <= end; i += 1) push(i);
+  if (end < total - 1) push(0, '…');
+  push(total);
+  return out;
+}
+
 Page({
   data: {
     id: '',
@@ -29,12 +50,14 @@ Page({
     rates: null,
     goal: null,
     recordTab: 'daily', // 最近运动 runs | 日记录 daily | 周记录 weekly | 饮水 water | 徽章 badges
-    // 运动明细：按 Tab 分页缓存（不再一次拉全量）
+    // 运动明细：按 Tab 分页缓存（每页 PAGE_SIZE 条，按钮翻页，不是触底追加）
     records: { runs: [], daily: [], weekly: [], water: [], badges: [] },
+    recordPages: { runs: 1, daily: 1, weekly: 1, water: 1, badges: 1 }, // 各 Tab 记忆自己的页码
+    recordTotals: { runs: 0, daily: 0, weekly: 0, water: 0, badges: 0 },
     recordPage: 1,
-    recordShown: 0,
+    recordPagesTotal: 1,
     recordTotal: 0,
-    recordHasMore: false,
+    pageItems: [], // 页码条：[{ k, label, page }]
     recordLoading: false,
     loginInfo: null,
     unbinding: false,
@@ -129,10 +152,12 @@ Page({
           : null,
         // 换用户时清空明细分页缓存，随后按当前 Tab 拉第一页
         records: { runs: [], daily: [], weekly: [], water: [], badges: [] },
+        recordPages: { runs: 1, daily: 1, weekly: 1, water: 1, badges: 1 },
+        recordTotals: { runs: 0, daily: 0, weekly: 0, water: 0, badges: 0 },
         recordPage: 1,
-        recordShown: 0,
+        recordPagesTotal: 1,
         recordTotal: 0,
-        recordHasMore: false,
+        pageItems: [],
       });
       this.loadRecords(this.data.recordTab, 1);
     } catch (e) {
@@ -141,30 +166,44 @@ Page({
     }
   },
 
-  // 明细 Tab 切换：首次进入该 Tab 才拉第一页
+  // 明细 Tab 切换：首次进入该 Tab 才拉数据；已加载过则恢复它自己的页码
   switchRecordTab(e) {
     const tab = e.currentTarget.dataset.tab;
     if (!tab || tab === this.data.recordTab) return;
-    this.setData({ recordTab: tab });
-    if (!((this.data.records || {})[tab] || []).length) this.loadRecords(tab, 1);
+    const cached = ((this.data.records || {})[tab] || []).length > 0;
+    const pages = this.data.recordPages || {};
+    const totals = this.data.recordTotals || {};
+    const page = cached ? pages[tab] || 1 : 1;
+    const total = cached ? totals[tab] || 0 : 0;
+    this.setData({
+      recordTab: tab,
+      recordPage: page,
+      recordTotal: total,
+      recordPagesTotal: Math.max(1, Math.ceil(total / PAGE_SIZE)),
+      pageItems: buildPageItems(page, Math.max(1, Math.ceil(total / PAGE_SIZE))),
+    });
+    if (!cached) this.loadRecords(tab, 1);
   },
 
-  // 运动明细分页加载（type: runs|daily|weekly|water|badges）
+  // 运动明细分页加载：每次只取一页（type: runs|daily|weekly|water|badges）
   async loadRecords(tab, page) {
     const type = tab || this.data.recordTab;
     if (this.data.recordLoading) return;
     const p = Math.max(1, page || 1);
     this.setData({ recordLoading: true });
     try {
-      const res = await auth.get(`/api/admin/users/${this.data.id}/records`, { type, page: p, limit: 20 });
+      const res = await auth.get(`/api/admin/users/${this.data.id}/records`, { type, page: p, limit: PAGE_SIZE });
       const list = ((res && res.list) || []).map((it) => this.fmtRecord(type, it));
-      const merged = p > 1 ? ((this.data.records || {})[type] || []).concat(list) : list;
+      const total = (res && res.total) || 0;
+      const pagesTotal = Math.max(1, Math.ceil(total / PAGE_SIZE));
       this.setData({
-        records: { ...this.data.records, [type]: merged },
+        records: { ...this.data.records, [type]: list },
+        recordPages: { ...this.data.recordPages, [type]: p },
+        recordTotals: { ...this.data.recordTotals, [type]: total },
         recordPage: p,
-        recordShown: merged.length,
-        recordTotal: (res && res.total) || merged.length,
-        recordHasMore: !!(res && res.hasMore),
+        recordTotal: total,
+        recordPagesTotal: pagesTotal,
+        pageItems: buildPageItems(p, pagesTotal),
       });
     } catch (e) {
       wx.showToast({ title: e.message || '明细加载失败', icon: 'none' });
@@ -196,14 +235,22 @@ Page({
     return { ...it, earnedText: fmtTime(it.earnedAt) };
   },
 
-  loadMoreRecords() {
-    if (!this.data.recordHasMore || this.data.recordLoading) return;
-    this.loadRecords(this.data.recordTab, (this.data.recordPage || 1) + 1);
+  // 按钮翻页：上一页 / 指定页 / 下一页
+  goRecordPage(e) {
+    const p = Number(e.currentTarget.dataset.page) || 0;
+    if (!p || p === this.data.recordPage) return;
+    if (p < 1 || p > this.data.recordPagesTotal) return;
+    this.loadRecords(this.data.recordTab, p);
   },
 
-  // 触底自动加载下一页
-  onReachBottom() {
-    this.loadMoreRecords();
+  prevRecordPage() {
+    if (this.data.recordPage > 1) this.loadRecords(this.data.recordTab, this.data.recordPage - 1);
+  },
+
+  nextRecordPage() {
+    if (this.data.recordPage < this.data.recordPagesTotal) {
+      this.loadRecords(this.data.recordTab, this.data.recordPage + 1);
+    }
   },
 
   // 解绑微信：二次确认后清除绑定（可被新微信重新绑定）

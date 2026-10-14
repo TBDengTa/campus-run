@@ -230,12 +230,27 @@
       <view class="tt-empty" wx:if="{{!records.badges.length && !recordLoading}}">暂未获得徽章</view>
     </block>
 
-    <!-- 分页：触底自动加载 / 也可点「加载更多」 -->
-    <view class="ud-more">
+    <!-- 分页：页码按钮翻页（每页 10 条） -->
+    <view class="ud-pager">
       <t-loading wx:if="{{recordLoading}}" theme="circular" size="36rpx" />
-      <view wx:elif="{{recordHasMore}}" class="ud-more-btn" bind:tap="loadMoreRecords">加载更多（{{recordShown}}/{{recordTotal}}）</view>
-      <text wx:elif="{{recordTotal}}" class="ud-more-done">已显示全部 {{recordTotal}} 条</text>
+      <block wx:else>
+        <view class="ud-page-btn {{recordPage <= 1 ? 'is-disabled' : ''}}" bind:tap="prevRecordPage">上一页</view>
+        <view
+          class="ud-page-num {{item.page === recordPage ? 'active' : ''}} {{item.page === 0 ? 'is-gap' : ''}}"
+          wx:for="{{pageItems}}"
+          wx:key="k"
+          bind:tap="goRecordPage"
+          data-page="{{item.page}}"
+        >
+          {{item.label}}
+        </view>
+        <view class="ud-page-btn {{recordPage >= recordPagesTotal ? 'is-disabled' : ''}}" bind:tap="nextRecordPage">下一页</view>
+      </block>
     </view>
+    <view class="ud-page-info" wx:if="{{!recordLoading && recordTotal}}">
+      第 {{recordPage}} / {{recordPagesTotal}} 页 · 共 {{recordTotal}} 条
+    </view>
+    <view class="ud-page-info" wx:if="{{!recordLoading && !recordTotal}}">暂无数据</view>
 
     <view class="ud-note" wx:if="{{recordTab === 'daily' || recordTab === 'weekly'}}">✓ 表示达标（步数 ≥ 生效目标）</view>
   </view>

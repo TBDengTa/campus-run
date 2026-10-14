@@ -338,25 +338,60 @@
   background: var(--td-success-color-1);
 }
 
-/* 明细分页脚 */
-.ud-more {
+/* 明细分页：页码按钮翻页 */
+.ud-pager {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 72rpx;
-  padding: 12rpx 0 4rpx;
+  flex-wrap: wrap;
+  gap: 10rpx;
+  min-height: 76rpx;
+  padding: 16rpx 0 6rpx;
+  border-top: 2rpx solid var(--tt-line);
+  margin-top: 8rpx;
 }
 
-.ud-more-btn {
-  padding: 14rpx 40rpx;
+.ud-page-btn {
+  padding: 10rpx 24rpx;
   border-radius: 999rpx;
   background: var(--tt-brand-soft);
   font-size: 24rpx;
   color: var(--tt-brand);
 }
 
-.ud-more-done {
-  font-size: 22rpx;
+.ud-page-btn.is-disabled {
+  background: var(--td-bg-color-component);
+  color: var(--tt-text-3);
+}
+
+.ud-page-num {
+  min-width: 56rpx;
+  height: 56rpx;
+  padding: 0 12rpx;
+  border-radius: 16rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--td-bg-color-component);
+  font-size: 24rpx;
+  color: var(--tt-text-2);
+}
+
+.ud-page-num.active {
+  color: #fff;
+  font-weight: 600;
+  background: linear-gradient(135deg, #ff9a3d, var(--tt-brand));
+}
+
+.ud-page-num.is-gap {
+  background: transparent;
+  color: var(--tt-text-3);
+}
+
+.ud-page-info {
+  padding: 4rpx 0 8rpx;
+  text-align: center;
+  font-size: 21rpx;
   color: var(--tt-text-3);
 }
 
