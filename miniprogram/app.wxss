@@ -745,3 +745,215 @@ page {
   color: var(--tt-text-3);
   padding: 24rpx 0 40rpx;
 }
+
+/* ============ 底部抽屉（公共） ============
+   统一「限制账号 / 权限多选 / 表单」等底部弹层的骨架：
+   <view class="tt-sheet">
+     <view class="tt-sheet-grab" />
+     <view class="tt-sheet-head">
+       <view class="tt-sheet-icon">图标</view>
+       <view class="tt-sheet-title">标题<view class="tt-sheet-sub">副标题</view></view>
+       <view class="tt-sheet-close">关闭图标</view>
+     </view>
+     <scroll-view class="tt-sheet-body">…tt-sheet-label / tt-sheet-item / tt-sheet-pills…</scroll-view>
+     <view class="tt-sheet-foot">主按钮</view>
+   </view> */
+.tt-sheet {
+  display: flex;
+  flex-direction: column;
+  max-height: 80vh;
+  background: var(--tt-card);
+  border-radius: 36rpx 36rpx 0 0;
+  overflow: hidden;
+}
+
+/* 顶部小握把：一眼看出「可下拉关闭」 */
+.tt-sheet-grab {
+  width: 72rpx;
+  height: 8rpx;
+  margin: 16rpx auto 0;
+  border-radius: 999rpx;
+  background: var(--tt-line);
+  flex-shrink: 0;
+}
+
+.tt-sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 18rpx 32rpx 18rpx;
+}
+
+.tt-sheet-icon {
+  width: 68rpx;
+  height: 68rpx;
+  flex-shrink: 0;
+  border-radius: 22rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--tt-brand-soft);
+}
+
+.tt-sheet-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 32rpx;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--tt-text-1);
+}
+
+.tt-sheet-sub {
+  margin-top: 4rpx;
+  font-size: 22rpx;
+  font-weight: 400;
+  color: var(--tt-text-3);
+}
+
+.tt-sheet-close {
+  width: 56rpx;
+  height: 56rpx;
+  flex-shrink: 0;
+  border-radius: 999rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--td-bg-color-component);
+}
+
+.tt-sheet-body {
+  flex: 1;
+  padding: 0 32rpx 20rpx;
+  box-sizing: border-box;
+}
+
+/* 分组小标题：左侧橙色短竖条 */
+.tt-sheet-label {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  padding: 22rpx 0 12rpx;
+  font-size: 26rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.tt-sheet-label::before {
+  content: '';
+  width: 8rpx;
+  height: 24rpx;
+  border-radius: 8rpx;
+  background: linear-gradient(180deg, #ff8a3d, var(--tt-brand));
+}
+
+/* 可选项卡片（单/多选）：图标 + 标题 + 说明 + 选中态 */
+.tt-sheet-item {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 18rpx 20rpx;
+  border-radius: var(--tt-radius-sm);
+  border: 2rpx solid var(--tt-line);
+  background: var(--tt-card);
+  transition: all 0.15s ease;
+}
+
+.tt-sheet-item + .tt-sheet-item {
+  margin-top: 12rpx;
+}
+
+.tt-sheet-item.active {
+  border-color: var(--tt-brand);
+  background: var(--tt-brand-soft);
+}
+
+.tt-sheet-item-icon {
+  width: 64rpx;
+  height: 64rpx;
+  flex-shrink: 0;
+  border-radius: 20rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--td-bg-color-component);
+}
+
+.tt-sheet-item.active .tt-sheet-item-icon {
+  background: var(--tt-card);
+}
+
+.tt-sheet-item-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.tt-sheet-item-title {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.tt-sheet-item-desc {
+  margin-top: 4rpx;
+  font-size: 22rpx;
+  line-height: 32rpx;
+  color: var(--tt-text-3);
+}
+
+/* 药丸选项（时长等短选项） */
+.tt-sheet-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14rpx;
+}
+
+.tt-sheet-pill {
+  padding: 14rpx 32rpx;
+  border-radius: 999rpx;
+  background: var(--td-bg-color-component);
+  font-size: 26rpx;
+  color: var(--tt-text-2);
+  transition: all 0.15s ease;
+}
+
+.tt-sheet-pill.active {
+  color: #fff;
+  font-weight: 600;
+  background: linear-gradient(135deg, #ff9a3d, var(--tt-brand));
+  box-shadow: 0 8rpx 18rpx rgba(255, 107, 0, 0.22);
+}
+
+/* 输入行 */
+.tt-sheet-field {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  height: 88rpx;
+  padding: 0 24rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--td-bg-color-component);
+}
+
+.tt-sheet-input {
+  flex: 1;
+  font-size: 27rpx;
+  color: var(--tt-text-1);
+}
+
+.tt-sheet-ph {
+  color: var(--td-text-color-placeholder, rgba(0, 0, 0, 0.3));
+}
+
+.tt-sheet-note {
+  margin-top: 18rpx;
+  font-size: 22rpx;
+  line-height: 34rpx;
+  color: var(--tt-text-3);
+}
+
+/* 底部操作区：用柔性投影代替硬分割线 */
+.tt-sheet-foot {
+  padding: 16rpx 32rpx calc(24rpx + env(safe-area-inset-bottom));
+  box-shadow: 0 -8rpx 24rpx rgba(28, 31, 35, 0.05);
+}

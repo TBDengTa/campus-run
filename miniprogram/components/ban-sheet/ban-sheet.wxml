@@ -1,31 +1,47 @@
 <t-popup visible="{{visible}}" placement="bottom" bind:visible-change="onVisibleChange">
-  <view class="bs-sheet">
-    <view class="bs-head">
-      <text class="bs-title">限制账号功能</text>
-      <text class="bs-close" bind:tap="close">关闭</text>
+  <view class="tt-sheet">
+    <view class="tt-sheet-grab"></view>
+
+    <view class="tt-sheet-head">
+      <view class="tt-sheet-icon">
+        <t-icon name="user-blocked" size="36rpx" color="var(--tt-brand)" />
+      </view>
+      <view class="tt-sheet-title">
+        限制账号功能
+        <view class="tt-sheet-sub">{{user.account || user.nickname || '未命名'}}</view>
+      </view>
+      <view class="tt-sheet-close" bind:tap="close">
+        <t-icon name="close" size="32rpx" color="var(--tt-text-2)" />
+      </view>
     </view>
 
-    <scroll-view scroll-y class="bs-body">
-      <view class="bs-target" wx:if="{{user}}">对象：{{user.account || user.nickname || '未命名'}}</view>
-
-      <view class="bs-label">限制类型</view>
-      <view class="bs-chips">
-        <view
-          class="tt-chip {{scope === item.value ? 'active' : ''}}"
-          wx:for="{{scopes}}"
-          wx:key="value"
-          bind:tap="pickScope"
-          data-value="{{item.value}}"
-        >
-          {{item.label}}
+    <scroll-view scroll-y class="tt-sheet-body">
+      <view class="tt-sheet-label">限制类型</view>
+      <view
+        class="tt-sheet-item {{scope === item.value ? 'active' : ''}}"
+        wx:for="{{scopes}}"
+        wx:key="value"
+        bind:tap="pickScope"
+        data-value="{{item.value}}"
+      >
+        <view class="tt-sheet-item-icon">
+          <t-icon name="{{item.icon}}" size="34rpx" color="{{scope === item.value ? 'var(--tt-brand)' : 'var(--tt-text-2)'}}" />
         </view>
+        <view class="tt-sheet-item-main">
+          <view class="tt-sheet-item-title">{{item.label}}</view>
+          <view class="tt-sheet-item-desc">{{item.tip}}</view>
+        </view>
+        <t-icon
+          name="{{scope === item.value ? 'check-circle-filled' : 'circle'}}"
+          size="36rpx"
+          color="{{scope === item.value ? 'var(--tt-brand)' : 'var(--tt-text-3)'}}"
+        />
       </view>
-      <view class="bs-tip">{{scopeTip}}</view>
 
-      <view class="bs-label">限制时长</view>
-      <view class="bs-chips">
+      <view class="tt-sheet-label">限制时长</view>
+      <view class="tt-sheet-pills">
         <view
-          class="tt-chip {{days === item.value ? 'active' : ''}}"
+          class="tt-sheet-pill {{days === item.value ? 'active' : ''}}"
           wx:for="{{durations}}"
           wx:key="value"
           bind:tap="pickDays"
@@ -35,19 +51,24 @@
         </view>
       </view>
 
-      <view class="bs-label">限制原因</view>
-      <input
-        class="bs-input"
-        value="{{reason}}"
-        placeholder="填写原因（用户申诉时会看到）"
-        placeholder-class="bs-ph"
-        bindinput="onReason"
-      />
+      <view class="tt-sheet-label">限制原因</view>
+      <view class="tt-sheet-field">
+        <t-icon name="edit-1" size="32rpx" color="var(--tt-text-3)" />
+        <input
+          class="tt-sheet-input"
+          value="{{reason}}"
+          placeholder="填写原因（用户申诉时会看到）"
+          placeholder-class="tt-sheet-ph"
+          bindinput="onReason"
+        />
+      </view>
 
-      <view class="bs-note">限制微信同步 / GPS 只影响对应能力；限制登录会让用户完全无法登录。用户可在申诉页按类型申诉。</view>
+      <view class="tt-sheet-note">
+        限制微信同步 / GPS 只影响对应能力；限制登录会让用户完全无法登录。用户可在申诉页按类型申诉，审核通过只解除对应类型。
+      </view>
     </scroll-view>
 
-    <view class="bs-foot">
+    <view class="tt-sheet-foot">
       <t-button theme="danger" block loading="{{busy}}" bind:tap="submit">确认限制</t-button>
     </view>
   </view>

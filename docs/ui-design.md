@@ -65,7 +65,16 @@ box-shadow: 0 12rpx 32rpx rgba(255, 107, 0, 0.24);
 | `.tt-muted` / `.tt-brand-text` / `.tt-num-brand` | 文字色辅助 |
 | `.num-font` | 数字字体（TCloudNumber），所有大数字必须使用 |
 | `.tt-footer` | 页脚说明文字 |
+| `.tt-sheet` / `.tt-sheet-grab` / `.tt-sheet-head` / `.tt-sheet-icon` / `.tt-sheet-title` / `.tt-sheet-sub` / `.tt-sheet-close` / `.tt-sheet-body` / `.tt-sheet-foot` | **底部抽屉骨架**：顶部握把 + 品牌色图标胶囊 + 标题/副标题 + 圆形关闭按钮 + 滚动区 + 底部主按钮（用柔性投影代替硬分割线） |
+| `.tt-sheet-label` | 抽屉内分组小标题（左侧橙色短竖条，与 `.tt-section` 同语言） |
+| `.tt-sheet-item` + `-icon/-main/-title/-desc` + `.active` | 抽屉内**可选项卡片**（图标 + 标题 + 说明 + 右侧圆形勾选），选中态 = 品牌描边 + 品牌浅底 |
+| `.tt-sheet-pills` / `.tt-sheet-pill` + `.active` | 抽屉内药丸选项（时长等短选项），选中态为品牌渐变 |
+| `.tt-sheet-field` / `.tt-sheet-input` / `.tt-sheet-ph` / `.tt-sheet-note` | 抽屉内输入行 / 占位符 / 说明文字 |
 | `.tt-btn-right` | **行内靠右按钮容器**：包住 `t-button` 用（`<view class="tt-btn-right"><t-button size="small"/></view>`）。TDesign 按钮宿主节点在 flex 行里不会收缩，直接放进 `space-between` 行会让按钮停在中途、右侧留出空缺，包一层这个类才能收缩到内容宽度并贴右 |
+
+> **抽屉统一用 `.tt-sheet*`**（不要再在页面里各写一套 `.xx-sheet`）：限制账号功能、权限多选、权限组表单都已改用它。
+> 自定义组件里要用这些公共类，必须在组件 json 声明 `"styleIsolation": "apply-shared"`——app.wxss 的 class 默认不进组件内部
+> （TDesign 组件也是这么声明的）；参考 `components/ban-sheet`。
 
 ## 4. 底部导航（自定义 tabBar）
 

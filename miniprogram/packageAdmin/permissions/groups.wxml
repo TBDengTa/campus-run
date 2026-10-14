@@ -33,43 +33,52 @@
 
   <!-- ===== 新增 / 编辑（底部抽屉 + 权限多选） ===== -->
   <t-popup visible="{{formVisible}}" placement="bottom" bind:visible-change="onFormVisible">
-    <view class="pg-sheet">
-      <view class="pg-sheet-head">
-        <text class="pg-sheet-title">{{form._id ? '编辑权限组' : '新增权限组'}}</text>
-        <text class="pg-sheet-done" bind:tap="closeForm">关闭</text>
-      </view>
-      <scroll-view scroll-y class="pg-sheet-body">
-        <view class="pg-field">
-          <text class="pg-label">名称</text>
-          <input class="pg-input" value="{{form.name}}" placeholder="如 内容管理员" placeholder-class="pg-ph" bindinput="onField" data-field="name" />
+    <view class="tt-sheet">
+      <view class="tt-sheet-grab"></view>
+      <view class="tt-sheet-head">
+        <view class="tt-sheet-icon">
+          <t-icon name="usergroup" size="36rpx" color="var(--tt-brand)" />
         </view>
-        <view class="pg-field">
-          <text class="pg-label">标识</text>
+        <view class="tt-sheet-title">
+          {{form._id ? '编辑权限组' : '新增权限组'}}
+          <view class="tt-sheet-sub">已选 {{selectedCount}} 项权限</view>
+        </view>
+        <view class="tt-sheet-close" bind:tap="closeForm">
+          <t-icon name="close" size="32rpx" color="var(--tt-text-2)" />
+        </view>
+      </view>
+
+      <scroll-view scroll-y class="tt-sheet-body">
+        <view class="tt-sheet-label">基本信息</view>
+        <view class="tt-sheet-field pg-field-gap">
+          <text class="pg-inline-label">名称</text>
+          <input class="tt-sheet-input" value="{{form.name}}" placeholder="如 内容管理员" placeholder-class="tt-sheet-ph" bindinput="onField" data-field="name" />
+        </view>
+        <view class="tt-sheet-field pg-field-gap">
+          <text class="pg-inline-label">标识</text>
           <input
-            class="pg-input"
+            class="tt-sheet-input"
             value="{{form.key}}"
             placeholder="小写字母开头，如 content_mgr"
-            placeholder-class="pg-ph"
+            placeholder-class="tt-sheet-ph"
             disabled="{{!!form._id}}"
             bindinput="onField"
             data-field="key"
           />
         </view>
-        <view class="pg-field">
-          <text class="pg-label">说明</text>
-          <input class="pg-input" value="{{form.description}}" placeholder="选填" placeholder-class="pg-ph" bindinput="onField" data-field="description" />
+        <view class="tt-sheet-field pg-field-gap">
+          <text class="pg-inline-label">说明</text>
+          <input class="tt-sheet-input" value="{{form.description}}" placeholder="选填" placeholder-class="tt-sheet-ph" bindinput="onField" data-field="description" />
         </view>
 
-        <view class="pg-perm-head">
-          <text class="pg-label">权限</text>
-          <text class="pg-perm-count">已选 {{selectedCount}} 项</text>
-        </view>
-        <view class="pg-perm-mod" wx:for="{{modules}}" wx:key="name" wx:for-item="mod">
+        <view class="tt-sheet-label">权限</view>
+        <view wx:for="{{modules}}" wx:key="name" wx:for-item="mod">
           <view class="pg-perm-mod-title">{{mod.name}}</view>
           <t-checkbox-group value="{{mod.selected}}" options="{{mod.options}}" data-module="{{mod.name}}" bind:change="onModulePermsChange" />
         </view>
       </scroll-view>
-      <view class="pg-sheet-foot">
+
+      <view class="tt-sheet-foot">
         <t-button theme="primary" block loading="{{saving}}" bind:tap="save">{{form._id ? '保存修改' : '创建权限组'}}</t-button>
       </view>
     </view>

@@ -136,30 +136,54 @@
 
     <!-- 权限组多选 -->
     <t-popup visible="{{groupPickerVisible}}" placement="bottom" bind:visible-change="onGroupPickerVisible">
-      <view class="ae-sheet">
-        <view class="ae-sheet-head">
-          <text class="ae-sheet-title">选择权限组</text>
-          <text class="ae-sheet-done" bind:tap="closePickers">完成</text>
+      <view class="tt-sheet">
+        <view class="tt-sheet-grab"></view>
+        <view class="tt-sheet-head">
+          <view class="tt-sheet-icon">
+            <t-icon name="usergroup" size="36rpx" color="var(--tt-brand)" />
+          </view>
+          <view class="tt-sheet-title">
+            选择权限组
+            <view class="tt-sheet-sub">已选 {{draft.groups.length}} 组</view>
+          </view>
+          <view class="tt-sheet-close" bind:tap="closePickers">
+            <t-icon name="close" size="32rpx" color="var(--tt-text-2)" />
+          </view>
         </view>
-        <scroll-view scroll-y class="ae-sheet-body">
+        <scroll-view scroll-y class="tt-sheet-body">
           <t-checkbox-group value="{{draft.groups}}" options="{{groupOptions}}" bind:change="onGroupsChange" />
         </scroll-view>
+        <view class="tt-sheet-foot">
+          <t-button theme="primary" block bind:tap="closePickers">完成</t-button>
+        </view>
       </view>
     </t-popup>
 
     <!-- 独立权限多选（按模块分组） -->
     <t-popup visible="{{permPickerVisible}}" placement="bottom" bind:visible-change="onPermPickerVisible">
-      <view class="ae-sheet">
-        <view class="ae-sheet-head">
-          <text class="ae-sheet-title">选择独立权限（已选 {{draft.perms.length}} 项）</text>
-          <text class="ae-sheet-done" bind:tap="closePickers">完成</text>
+      <view class="tt-sheet">
+        <view class="tt-sheet-grab"></view>
+        <view class="tt-sheet-head">
+          <view class="tt-sheet-icon">
+            <t-icon name="setting" size="36rpx" color="var(--tt-brand)" />
+          </view>
+          <view class="tt-sheet-title">
+            选择独立权限
+            <view class="tt-sheet-sub">已选 {{draft.perms.length}} 项 · 有效权限 = 独立权限 ∪ 权限组</view>
+          </view>
+          <view class="tt-sheet-close" bind:tap="closePickers">
+            <t-icon name="close" size="32rpx" color="var(--tt-text-2)" />
+          </view>
         </view>
-        <scroll-view scroll-y class="ae-sheet-body">
-          <view class="ae-perm-mod" wx:for="{{permModules}}" wx:key="name" wx:for-item="mod">
-            <view class="ae-perm-mod-title">{{mod.name}}</view>
+        <scroll-view scroll-y class="tt-sheet-body">
+          <view wx:for="{{permModules}}" wx:key="name" wx:for-item="mod">
+            <view class="tt-sheet-label">{{mod.name}}</view>
             <t-checkbox-group value="{{mod.selected}}" options="{{mod.options}}" data-module="{{mod.name}}" bind:change="onModulePermsChange" />
           </view>
         </scroll-view>
+        <view class="tt-sheet-foot">
+          <t-button theme="primary" block bind:tap="closePickers">完成（已选 {{draft.perms.length}} 项）</t-button>
+        </view>
       </view>
     </t-popup>
   </block>

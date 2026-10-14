@@ -58,7 +58,7 @@
   color: var(--tt-brand, #ff6b00);
 }
 
-/* ===== 权限：点击行 + 多选抽屉 ===== */
+/* ===== 权限：点击行 + 多选抽屉（抽屉骨架走 app.wxss 的 .tt-sheet*） ===== */
 .ae-pick-row {
   display: flex;
   align-items: center;
@@ -74,50 +74,6 @@
   gap: 8rpx;
   font-size: 28rpx;
   color: var(--tt-text-1);
-}
-
-.ae-sheet {
-  display: flex;
-  flex-direction: column;
-  max-height: 70vh;
-  background: var(--tt-card);
-  border-radius: 28rpx 28rpx 0 0;
-}
-
-.ae-sheet-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 28rpx 32rpx 20rpx;
-  border-bottom: 2rpx solid var(--tt-line);
-}
-
-.ae-sheet-title {
-  font-size: 30rpx;
-  font-weight: 600;
-  color: var(--tt-text-1);
-}
-
-.ae-sheet-done {
-  font-size: 28rpx;
-  color: var(--tt-brand, #ff6b00);
-}
-
-.ae-sheet-body {
-  flex: 1;
-  max-height: 56vh;
-  padding: 8rpx 32rpx 32rpx;
-  box-sizing: border-box;
-}
-
-.ae-perm-mod {
-  padding: 16rpx 0 4rpx;
-}
-
-.ae-perm-mod-title {
-  margin-bottom: 8rpx;
-  font-size: 24rpx;
-  color: var(--tt-text-3);
 }
 
 /* ===== 表单行（统一规格） ===== */

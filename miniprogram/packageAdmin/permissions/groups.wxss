@@ -95,88 +95,20 @@
   margin: 8rpx 24rpx 0;
 }
 
-/* ===== 抽屉表单 ===== */
-.pg-sheet {
-  display: flex;
-  flex-direction: column;
-  max-height: 78vh;
-  background: var(--tt-card);
-  border-radius: 28rpx 28rpx 0 0;
+/* ===== 抽屉表单（骨架走 app.wxss 的 .tt-sheet*） ===== */
+.pg-field-gap + .pg-field-gap {
+  margin-top: 12rpx;
 }
 
-.pg-sheet-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 28rpx 32rpx 20rpx;
-  border-bottom: 2rpx solid var(--tt-line);
-}
-
-.pg-sheet-title {
-  font-size: 30rpx;
-  font-weight: 600;
-  color: var(--tt-text-1);
-}
-
-.pg-sheet-done {
-  font-size: 28rpx;
-  color: var(--tt-brand);
-}
-
-.pg-sheet-body {
-  flex: 1;
-  max-height: 58vh;
-  padding: 8rpx 32rpx 24rpx;
-  box-sizing: border-box;
-}
-
-.pg-sheet-foot {
-  padding: 16rpx 32rpx calc(24rpx + env(safe-area-inset-bottom));
-  border-top: 2rpx solid var(--tt-line);
-}
-
-.pg-field {
-  display: flex;
-  align-items: center;
-  min-height: 88rpx;
-  border-bottom: 2rpx solid var(--tt-line);
-}
-
-.pg-label {
-  width: 140rpx;
+.pg-inline-label {
+  width: 96rpx;
   flex-shrink: 0;
   font-size: 26rpx;
   color: var(--tt-text-2);
 }
 
-.pg-input {
-  flex: 1;
-  font-size: 28rpx;
-  text-align: right;
-}
-
-.pg-ph {
-  color: var(--td-text-color-placeholder, rgba(0, 0, 0, 0.3));
-}
-
-.pg-perm-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 24rpx 0 8rpx;
-}
-
-.pg-perm-count {
-  font-size: 22rpx;
-  color: var(--tt-brand);
-}
-
-.pg-perm-mod {
-  padding: 12rpx 0 4rpx;
-}
-
 .pg-perm-mod-title {
-  margin-bottom: 8rpx;
+  margin: 16rpx 0 8rpx;
   font-size: 24rpx;
   color: var(--tt-text-3);
 }
