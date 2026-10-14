@@ -4,109 +4,116 @@ const User = require('../../models/user');
 const RunRecord = require('../../models/run-record');
 const AdStat = require('../../models/ad-stat');
 const Appeal = require('../../models/appeal');
-const { todayKey, addDays } = require('../../utils/dates');
+const { todayKey, weekRange } = require('../../utils/dates');
 
 const router = express.Router();
 
-// 总览
+// 总览：广告类字段是独立权限（ad.view），无权限时不下发
 router.get(
   '/overview',
   wrap(async (req, res) => {
     const today = todayKey();
     const dayStart = new Date();
     dayStart.setHours(0, 0, 0, 0);
-    const [totalUsers, newUsersToday, activeToday, stepsToday, adPvToday, adClickToday, pendingAppeals, bannedUsers] =
+    const canViewAds = req.userPermissions.includes('*') || req.userPermissions.includes('ad.view');
+    const [totalUsers, newUsersToday, activeToday, stepsToday, recordsToday, adPvToday, adClickToday, pendingAppeals, bannedUsers] =
       await Promise.all([
         User.countDocuments(),
         User.countDocuments({ createdAt: { $gte: dayStart } }),
         RunRecord.distinct('openid', { date: today }),
         RunRecord.aggregate([{ $match: { date: today } }, { $group: { _id: null, sum: { $sum: '$steps' } } }]),
+        RunRecord.countDocuments({ date: today }),
         AdStat.countDocuments({ date: today, type: 'pv' }),
         AdStat.countDocuments({ date: today, type: 'click' }),
         Appeal.countDocuments({ status: 'pending' }),
         User.countDocuments({ status: 'banned' }),
       ]);
-    ok(res, {
+    const data = {
       totalUsers,
       newUsersToday,
       activeToday: activeToday.length,
       stepsToday: stepsToday[0]?.sum || 0,
-      adPvToday,
-      adClickToday,
+      recordsToday,
       pendingAppeals,
       bannedUsers,
-    });
+    };
+    if (canViewAds) {
+      data.adPvToday = adPvToday;
+      data.adClickToday = adClickToday;
+    }
+    ok(res, data);
   })
 );
 
-// 近 N 天趋势
+// 平均步数前三（本周，周一起）：个人 = 本周总步数 ÷ 有记录天数；班级 = 各班成员日均之和 ÷ 班级学生数
+// 教师不参与排名（与排行榜一致）；除法结果在 Node 侧取整，避免依赖 $round（老版本 MongoDB 没有）
 router.get(
-  '/trend',
+  '/top3',
   wrap(async (req, res) => {
-    const days = Math.min(90, Math.max(7, Number(req.query.days) || 30));
     const today = todayKey();
-    const start = addDays(today, -(days - 1));
+    const { startKey } = weekRange(today);
+    const inWeek = { $gte: startKey, $lte: today };
+    const notTeacher = { $ne: ['$u.role', 'teacher'] };
 
-    const [runAgg, adAgg, userAgg] = await Promise.all([
+    const [individuals, classes] = await Promise.all([
       RunRecord.aggregate([
-        { $match: { date: { $gte: start, $lte: today } } },
+        { $match: { date: inWeek, steps: { $gt: 0 } } },
+        { $group: { _id: '$openid', steps: { $sum: '$steps' }, days: { $sum: 1 } } },
+        { $addFields: { avgSteps: { $divide: ['$steps', '$days'] } } },
+        { $sort: { avgSteps: -1, steps: -1, _id: 1 } },
+        { $limit: 50 },
+        { $lookup: { from: 'users', localField: '_id', foreignField: 'openid', as: 'u' } },
+        { $addFields: { u: { $arrayElemAt: ['$u', 0] } } },
+        { $match: { u: { $ne: null }, $expr: notTeacher } },
+        { $limit: 3 },
         {
-          $group: {
-            _id: '$date',
-            activeUsers: { $addToSet: '$openid' },
-            steps: { $sum: '$steps' },
-            distance: { $sum: '$distance' },
+          $project: {
+            _id: 0,
+            name: { $ifNull: ['$u.realName', { $ifNull: ['$u.nickname', '未命名'] }] },
+            className: { $ifNull: ['$u.className', ''] },
+            avgSteps: 1,
+            days: 1,
+            steps: 1,
           },
         },
-        { $project: { date: '$_id', activeUsers: { $size: '$activeUsers' }, steps: 1, distance: 1 } },
       ]),
-      AdStat.aggregate([
-        { $match: { date: { $gte: start, $lte: today } } },
+      RunRecord.aggregate([
+        { $match: { date: inWeek, steps: { $gt: 0 } } },
+        { $group: { _id: '$openid', steps: { $sum: '$steps' }, days: { $sum: 1 } } },
+        { $addFields: { avgSteps: { $divide: ['$steps', '$days'] } } },
+        { $lookup: { from: 'users', localField: '_id', foreignField: 'openid', as: 'u' } },
+        { $addFields: { u: { $arrayElemAt: ['$u', 0] } } },
+        { $match: { u: { $ne: null }, 'u.className': { $nin: [null, ''] }, $expr: notTeacher } },
+        // 班级维度：成员日均之和 ÷ 该班学生总数（不含教师）
         {
           $group: {
-            _id: { date: '$date', type: '$type' },
-            count: { $sum: 1 },
+            _id: '$u.className',
+            activeMembers: { $sum: 1 },
+            avgSum: { $sum: '$avgSteps' },
           },
         },
         {
-          $group: {
-            _id: '$_id.date',
-            pv: { $sum: { $cond: [{ $eq: ['$_id.type', 'pv'] }, '$count', 0] } },
-            click: { $sum: { $cond: [{ $eq: ['$_id.type', 'click'] }, '$count', 0] } },
+          $lookup: {
+            from: 'users',
+            let: { cn: '$_id' },
+            pipeline: [
+              { $match: { $expr: { $and: [{ $eq: ['$className', '$$cn'] }, { $ne: ['$role', 'teacher'] }] } } },
+              { $count: 'n' },
+            ],
+            as: 'sz',
           },
         },
-        { $project: { date: '$_id', pv: 1, click: 1 } },
-      ]),
-      User.aggregate([
-        { $match: { createdAt: { $gte: new Date(`${start}T00:00:00`) } } },
-        {
-          $group: {
-            _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
-            count: { $sum: 1 },
-          },
-        },
-        { $project: { date: '$_id', count: 1 } },
+        { $addFields: { total: { $ifNull: [{ $arrayElemAt: ['$sz.n', 0] }, 0] } } },
+        { $addFields: { denom: { $cond: [{ $gt: ['$total', 0] }, '$total', '$activeMembers'] } } },
+        { $addFields: { avgSteps: { $divide: ['$avgSum', '$denom'] } } },
+        { $sort: { avgSteps: -1, activeMembers: -1, _id: 1 } },
+        { $limit: 3 },
+        { $project: { _id: 0, className: '$_id', members: '$denom', avgSteps: 1 } },
       ]),
     ]);
 
-    const map = new Map();
-    for (let i = 0; i < days; i++) {
-      const d = addDays(today, -i);
-      map.set(d, { date: d, activeUsers: 0, steps: 0, distance: 0, adPv: 0, adClick: 0, newUsers: 0 });
-    }
-    for (const r of runAgg) {
-      const row = map.get(r.date);
-      if (row) Object.assign(row, { activeUsers: r.activeUsers, steps: r.steps, distance: r.distance });
-    }
-    for (const r of adAgg) {
-      const row = map.get(r.date);
-      if (row) Object.assign(row, { adPv: r.pv, adClick: r.click });
-    }
-    for (const r of userAgg) {
-      const row = map.get(r.date);
-      if (row) row.newUsers = r.count;
-    }
-    ok(res, Array.from(map.values()).sort((a, b) => (a.date < b.date ? -1 : 1)));
+    const round = (rows) => rows.map((r) => ({ ...r, avgSteps: Math.round(r.avgSteps || 0) }));
+    ok(res, { rangeText: `${startKey} ~ ${today}`, individuals: round(individuals), classes: round(classes) });
   })
 );
 

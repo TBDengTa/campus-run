@@ -102,13 +102,13 @@ Page({
     goalStepsText: '5,000',
     remainSteps: '5,000',
     percent: 0,
-    expectedPercent: 0,
     distance: '0 m',
     calories: 0,
     durationText: '00:00',
     goalAchieved: false,
     goalName: '',
     hasRecord: false,
+    loadingOverview: false,
     // 本周
     weekDays: [],
     weekly: null,
@@ -130,6 +130,8 @@ Page({
     perms: [],
     mgrEntries: [],
     overview: null,
+    top3: null, // 平均步数前三（本周日均）：个人 / 班级
+    greetName: '', // 教师问候称呼（如「王老师」）
   },
 
   onLoad() {
@@ -192,23 +194,30 @@ Page({
       const perms = user.effectivePermissions || [];
       // 按权限过滤的管理入口（WXML 无法调用方法，这里预计算）
       const allEntries = [
-        { key: 'dashboard', perm: 'dashboard.view', icon: 'dashboard', label: '数据看板', url: '/packageAdmin/dashboard/dashboard', bg: 'var(--td-brand-color-1)', color: 'var(--td-brand-color)' },
         { key: 'users', perm: 'user.view', icon: 'user-add', label: '用户管理', url: '/packageAdmin/users/users', bg: 'var(--td-success-color-1)', color: 'var(--td-success-color-5)' },
         { key: 'appeals', perm: 'appeal.view', icon: 'assignment', label: '申诉审核', url: '/packageAdmin/appeals/appeals', bg: 'var(--td-warning-color-1)', color: 'var(--td-warning-color-5)' },
         { key: 'ads', perm: 'ad.view', icon: 'chart-bar', label: '广告管理', url: '/packageAdmin/ads/contents', bg: 'var(--td-error-color-1)', color: 'var(--td-error-color-6)' },
-        { key: 'content', perm: 'content.view', icon: 'book', label: '内容管理', url: '/packageAdmin/content/announcements', bg: 'var(--td-gray-color-2)', color: 'var(--td-gray-color-8)' },
+        { key: 'content', perm: 'content.view', icon: 'book', label: '内容管理', url: '/packageAdmin/content/index', bg: 'var(--td-gray-color-2)', color: 'var(--td-gray-color-8)' },
+        { key: 'assessment', perm: 'assessment.view', icon: 'flag', label: '运动考核', url: '/packageAdmin/assessment/index', bg: 'var(--td-warning-color-1)', color: 'var(--td-warning-color-5)' },
+        { key: 'files', perm: 'file.view', icon: 'image-add', label: '文件管理', url: '/packageAdmin/files/files', bg: 'var(--td-success-color-1)', color: 'var(--td-success-color-5)' },
         { key: 'config', perm: 'config.view', icon: 'setting', label: '系统配置', url: '/packageAdmin/config/config', bg: 'var(--td-brand-color-light)', color: 'var(--td-brand-color)' },
       ];
       const mgrEntries = allEntries.filter((e) => perms.includes('*') || perms.includes(e.perm));
       const isTeacher = user.role === 'teacher';
+      // 教师问候称呼：名字里已含「老师」就不再重复拼接
+      const rawName = user.realName || user.nickname || user.account || '';
+      const greetName = !rawName ? '老师' : /老师/.test(rawName) ? rawName : `${rawName}老师`;
       this.setData({
         isManager,
         perms,
         mgrEntries,
+        canViewAds: perms.includes('*') || perms.includes('ad.view'),
         role: user.role || 'student',
         roleText: isTeacher ? '教师' : '学生',
         isTeacher,
         isAdmin: isManager,
+        greetName,
+        greetText: greetByHour(),
       });
       // 登录信息到手后刷新自定义 tabBar（教师端导航项不同）
       this.syncTabBar();
@@ -236,6 +245,7 @@ Page({
       // 管理视角：拉取看板概览（无 dashboard.view 权限时静默忽略）
       if (isManager) {
         this.loadOverview();
+        this.loadTop3();
       }
     } catch (e) {
       if (e.code === 403001) {
@@ -276,13 +286,35 @@ Page({
   },
 
   async loadOverview() {
+    this.setData({ loadingOverview: true });
     try {
       const overview = await auth.get('/api/admin/dashboard/overview');
       this.setData({
         overview: { ...overview, stepsTodayText: fmt.formatNumber(overview.stepsToday) },
       });
     } catch (e) {
-      // 无 dashboard.view 权限，忽略
+      // 无 dashboard.view 权限，忽略：面板只显示快捷按钮
+    } finally {
+      this.setData({ loadingOverview: false });
+    }
+  },
+
+  // 平均步数前三（本周日均）：个人 / 班级
+  async loadTop3() {
+    try {
+      const top3 = await auth.get('/api/admin/dashboard/top3');
+      const withText = (rows) =>
+        (rows || []).map((r) => ({ ...r, avgStepsText: fmt.formatNumber(r.avgSteps) }));
+      this.setData({
+        top3: {
+          rangeText: top3.rangeText,
+          individuals: withText(top3.individuals),
+          classes: withText(top3.classes),
+        },
+      });
+    } catch (e) {
+      // 无 dashboard.view 权限或接口异常：不显示排行块
+      this.setData({ top3: null });
     }
   },
 
@@ -302,7 +334,6 @@ Page({
       goalStepsText: fmt.formatNumber(goalSteps),
       remainSteps: fmt.formatNumber(remain),
       percent: Math.min(100, Math.round((steps / (goalSteps || 1)) * 100)),
-      expectedPercent: data.expectedPercent,
       distance: fmt.formatDistance(record?.distance || 0),
       calories: record?.calories || 0,
       durationText: fmt.formatDuration(record?.durationSeconds || 0),
@@ -494,10 +525,6 @@ Page({
 
   goBanned() {
     wx.navigateTo({ url: '/pages/banned/banned' });
-  },
-
-  goAdmin() {
-    wx.navigateTo({ url: '/packageAdmin/dashboard/dashboard' });
   },
 
   // 管理面板入口跳转（url 由权限过滤后的列表带出）
