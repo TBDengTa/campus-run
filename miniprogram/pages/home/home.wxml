@@ -61,6 +61,9 @@
     <view class="ad-flag">广告</view>
   </view>
 
+  <!-- ===== 我的班级（班主任 / 班委才渲染；组件自己判身份，无身份时整块不出现） ===== -->
+  <class-board title="我的班级" refresh-at="{{classRefreshAt}}" />
+
   <!-- ===== 今日目标（学生） ===== -->
   <view class="tt-card today-card" wx:if="{{!isTeacher}}">
     <view class="today-head">

@@ -1,5 +1,8 @@
 {
   "navigationBarTitleText": "唐唐快跑",
   "enablePullDownRefresh": true,
-  "backgroundTextStyle": "dark"
+  "backgroundTextStyle": "dark",
+  "usingComponents": {
+    "class-board": "/components/class-board/class-board"
+  }
 }

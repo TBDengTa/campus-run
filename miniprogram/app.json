@@ -37,6 +37,7 @@
         "permissions/groups",
         "user-detail/user-detail",
         "user-detail/period-detail/period-detail",
+        "class/class",
         "appeals/appeals",
         "ads/sponsors",
         "ads/slots",

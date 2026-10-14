@@ -121,6 +121,8 @@ Page({
     noticeDuration: 12,
     // 跑分（学生端展示；教师/接口不可用时为空）
     points: null,
+    // 「我的班级」卡的刷新触发器（onShow 时更新，组件 observer 收到即重新拉取）
+    classRefreshAt: 0,
     pointsToday: '',
     pointsWeek: '',
     pointsTotal: '',
@@ -158,6 +160,8 @@ Page({
     // 未登录 / 已退出 / 游客：统一跳登录页，不执行任何业务逻辑
     if (!getApp().requireLogin()) return;
     this.syncTabBar();
+    // 让「我的班级」卡（班主任/班委）跟着首页一起刷新
+    this.setData({ classRefreshAt: Date.now() });
     this.refresh();
   },
 
