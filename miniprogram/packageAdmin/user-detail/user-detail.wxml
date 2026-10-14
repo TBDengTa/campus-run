@@ -54,6 +54,10 @@
       <view class="ud-quick-icon"><t-icon name="refresh" size="38rpx" color="var(--tt-brand)" /></view>
       <text>重置密码</text>
     </view>
+    <view class="ud-quick-item" wx:if="{{loginInfo && loginInfo.wechatBound && canManageUser}}" bind:tap="unbindWechat">
+      <view class="ud-quick-icon is-warn"><t-icon name="logo-wechat-stroke" size="38rpx" color="var(--td-warning-color-6)" /></view>
+      <text>解绑微信</text>
+    </view>
     <view class="ud-quick-item" wx:if="{{!isSuper}}" bind:tap="openBanSheet">
       <view class="ud-quick-icon is-warn"><t-icon name="user-blocked" size="38rpx" color="var(--td-error-color-6)" /></view>
       <text>限制功能</text>
@@ -233,9 +237,7 @@
   <block wx:if="{{loginInfo}}">
     <view class="tt-section">
       <text>登录与绑定</text>
-      <text class="tt-section-extra" wx:if="{{loginInfo.wechatBound && canManageUser}}" catch:tap="unbindWechat">
-        {{unbinding ? '解绑中…' : '解绑微信'}}
-      </text>
+      <text class="tt-section-extra" wx:if="{{loginInfo.wechatBound}}">{{loginInfo.wechatOpenidMasked}}</text>
     </view>
     <view class="tt-card ud-card">
       <view class="ud-kv"><text>微信</text><text class="ud-kv-v">{{loginInfo.wechatBound ? loginInfo.wechatOpenidMasked : '未绑定'}}</text></view>
@@ -254,7 +256,12 @@
           </view>
         </view>
       </block>
-      <view class="ud-note">解绑后该微信退出登录，可由任意微信重新绑定；运动数据保留</view>
+
+      <!-- 解绑入口在顶部快捷操作里；这里只说明影响 -->
+      <view class="ud-note" wx:if="{{loginInfo.wechatBound}}">
+        解绑后该微信退出登录，可由任意微信重新绑定；运动等数据保留{{canManageUser ? '' : '（解绑需要「封禁/解封用户」权限）'}}
+      </view>
+      <view class="ud-note" wx:else>该账号尚未绑定微信（首次登录时会自动绑定）</view>
     </view>
   </block>
 
