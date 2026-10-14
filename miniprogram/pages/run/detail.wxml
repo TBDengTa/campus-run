@@ -126,13 +126,13 @@
     </view>
   </block>
 
-  <!-- ===== 再次开跑 ===== -->
-  <view class="rd-action">
+  <!-- ===== 再次开跑（仅本人视角；管理端查看他人记录时不显示） ===== -->
+  <view class="rd-action" wx:if="{{!isAdminView}}">
     <view class="tt-pill-btn primary rd-action-btn" bind:tap="goRun">
       <t-icon name="play-circle" size="30rpx" color="#ffffff" />
       <text>再跑一次</text>
     </view>
   </view>
 
-  <view class="tt-footer rd-footer">坚持运动，每一次记录都算数</view>
+  <view class="tt-footer rd-footer">{{isAdminView ? '管理端查看记录，仅用于核对数据' : '坚持运动，每一次记录都算数'}}</view>
 </view>

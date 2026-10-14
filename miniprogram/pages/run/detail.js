@@ -7,6 +7,7 @@ Page({
     hasRoute: false,
     polyline: [],
     markers: [],
+    isAdminView: false, // 管理端查看他人记录：隐藏「再跑一次」等本人操作
   },
 
   onLoad(options) {
@@ -14,6 +15,7 @@ Page({
     if (!getApp().requireLogin()) return;
     // 管理端查看某个用户的记录：走管理端接口（用户端接口只允许看自己，会 404「记录不存在」）
     this.adminUid = options.admin === '1' ? options.uid || '' : '';
+    if (this.adminUid) this.setData({ isAdminView: true });
     this.load(options.id);
   },
 
@@ -80,6 +82,11 @@ Page({
   },
 
   goRun() {
+    // 管理端查看他人记录时不允许从这里开跑（教师/管理员本就不产生运动数据）
+    if (this.data.isAdminView) {
+      wx.showToast({ title: '管理端不参与运动记录', icon: 'none' });
+      return;
+    }
     wx.switchTab({ url: '/pages/run/index' });
   },
 });
