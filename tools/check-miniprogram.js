@@ -226,6 +226,16 @@ for (const p of GUARD_PAGES) {
   if (!fs.existsSync(f)) continue;
   if (!fs.readFileSync(f, 'utf8').includes('requireLogin()')) problems.push(`${p}: 缺少登录闸门（getApp().requireLogin()）`);
 }
+// 相对 require 必须能解析：少写一层 ../ 会让整页 JS 加载失败，页面全白（无任何报错提示）
+for (const f of jss) {
+  for (const m of fs.readFileSync(f, 'utf8').matchAll(/require\(\s*['"](\.[^'"]+)['"]\s*\)/g)) {
+    const target = path.resolve(path.dirname(f), m[1]);
+    const hit = [target, `${target}.js`, path.join(target, 'index.js')].some(
+      (t) => fs.existsSync(t) && fs.statSync(t).isFile()
+    );
+    if (!hit) problems.push(`${rel(f)}: require 路径无法解析 -> ${m[1]}`);
+  }
+}
 
 const totalBytes = files.reduce((s, f) => s + fs.statSync(f).size, 0);
 const npmBytes = (() => {

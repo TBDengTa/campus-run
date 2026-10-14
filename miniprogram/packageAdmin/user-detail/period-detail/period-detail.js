@@ -1,5 +1,7 @@
-const auth = require('../../utils/request');
-const fmt = require('../../utils/format');
+// 注意：本页在 packageAdmin/user-detail/period-detail/ 下，比 users/account-edit 深一级，
+// 回到 miniprogram 根需要 ../../..（写成 ../.. 会让整页 JS 加载失败 → 页面全白）
+const auth = require('../../../utils/request');
+const fmt = require('../../../utils/format');
 
 // 日期 YYYY-MM-DD → M月D日（周内展示用）
 function md(dateKey) {
