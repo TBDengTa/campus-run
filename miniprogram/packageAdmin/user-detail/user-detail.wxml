@@ -1,243 +1,279 @@
-<view class="page tt-page udetail-page" wx:if="{{user}}">
-  <!-- ===== 用户主视觉 ===== -->
-  <view class="tt-hero">
+<view class="page tt-page ud-page" wx:if="{{user}}">
+  <!-- ===== 1. 身份卡：姓名/标签/状态 + 累计四项（原「运动数据」的重复累计行并入这里） ===== -->
+  <view class="tt-hero ud-hero">
     <view class="tt-hero-body">
-      <view class="udetail-hero-top">
-        <view class="udetail-avatar">
-          <t-icon name="user" size="44rpx" color="#ffffff" />
+      <view class="ud-hero-top">
+        <view class="ud-avatar">
+          <t-icon name="user" size="40rpx" color="#ffffff" />
         </view>
-        <view class="flex-1">
-          <view class="udetail-name">{{user.nickname || user.realName || '未命名'}}</view>
-          <view class="udetail-openid">{{user.openid}}</view>
+        <view class="flex-1 ud-hero-main">
+          <view class="ud-name">
+            <text class="ud-name-text">{{user.realName || user.nickname || '未命名'}}</text>
+            <t-tag wx:if="{{isSuper}}" theme="primary" variant="light" size="small">管理员</t-tag>
+            <t-tag wx:elif="{{user.role === 'teacher'}}" theme="default" variant="light" size="small">教师</t-tag>
+          </view>
+          <view class="ud-hero-meta">
+            <text>{{user.role === 'teacher' ? '教师' : '学生'}}</text>
+            <text wx:if="{{user.className}}"> · {{user.className}}</text>
+            <text wx:if="{{user.studentId}}"> · {{user.studentId}}</text>
+          </view>
         </view>
-        <view class="udetail-status {{user.status === 'banned' ? 'is-banned' : ''}}">
-          {{user.status === 'banned' ? '封禁中' : '正常'}}
+        <view class="ud-status {{restrictions.length ? 'is-warn' : ''}}">
+          {{restrictions.length ? '限制中 ' + restrictions.length : '正常'}}
         </view>
       </view>
-      <view class="udetail-hero-foot">
-        <text>{{user.role === 'teacher' ? '教师' : '学生'}}</text>
-        <text wx:if="{{user.schoolName}}"> · {{user.schoolName}}</text>
-        <text wx:if="{{user.studentId}}"> · {{user.studentId}}</text>
+
+      <view class="ud-hero-stats" wx:if="{{sport}}">
+        <view class="ud-hero-stat">
+          <text class="num-font ud-hero-stat-v">{{sport.totalStepsText}}</text>
+          <text class="ud-hero-stat-l">累计步数</text>
+        </view>
+        <view class="ud-hero-stat">
+          <text class="num-font ud-hero-stat-v">{{sport.totalDistanceText}}</text>
+          <text class="ud-hero-stat-l">累计距离</text>
+        </view>
+        <view class="ud-hero-stat">
+          <text class="num-font ud-hero-stat-v">{{sport.totalDays}}</text>
+          <text class="ud-hero-stat-l">打卡天数</text>
+        </view>
+        <view class="ud-hero-stat">
+          <text class="num-font ud-hero-stat-v">{{sport.badgeCount}}</text>
+          <text class="ud-hero-stat-l">徽章</text>
+        </view>
       </view>
     </view>
   </view>
 
-  <!-- ===== 基本信息 ===== -->
-  <view class="tt-section">基本信息</view>
-  <view class="tt-card udetail-card">
-    <view class="udetail-field">
-      <text class="udetail-label">角色</text>
-      <text class="udetail-value">{{user.role === 'teacher' ? '教师' : '学生'}}</text>
+  <!-- ===== 2. 快捷操作：原来 5 个全宽按钮 + 5 段说明 → 一行图标 ===== -->
+  <view class="ud-quick">
+    <view class="ud-quick-item" wx:if="{{canManagePerms}}" bind:tap="goEdit">
+      <view class="ud-quick-icon"><t-icon name="edit-1" size="38rpx" color="var(--tt-brand)" /></view>
+      <text>编辑资料</text>
     </view>
-    <view class="udetail-field">
-      <text class="udetail-label">姓名</text>
-      <text class="udetail-value">{{user.realName || '-'}}</text>
+    <view class="ud-quick-item" wx:if="{{canManagePerms}}" bind:tap="resetPassword">
+      <view class="ud-quick-icon"><t-icon name="refresh" size="38rpx" color="var(--tt-brand)" /></view>
+      <text>重置密码</text>
     </view>
-    <view class="udetail-field">
-      <text class="udetail-label">学号</text>
-      <text class="udetail-value">{{user.studentId || '-'}}</text>
+    <view class="ud-quick-item" wx:if="{{!isSuper}}" bind:tap="openBanSheet">
+      <view class="ud-quick-icon is-warn"><t-icon name="user-blocked" size="38rpx" color="var(--td-error-color-6)" /></view>
+      <text>限制功能</text>
     </view>
-    <view class="udetail-field">
-      <text class="udetail-label">学校</text>
-      <text class="udetail-value">{{user.schoolName || '-'}}</text>
-    </view>
-    <view class="udetail-field">
-      <text class="udetail-label">院系</text>
-      <text class="udetail-value">{{user.departmentName || '-'}}</text>
-    </view>
-    <view class="udetail-field">
-      <text class="udetail-label">班级</text>
-      <text class="udetail-value">{{user.className || '-'}}</text>
-    </view>
-    <view class="udetail-field">
-      <text class="udetail-label">注册时间</text>
-      <text class="udetail-value">{{user.createdText || '-'}}</text>
-    </view>
-    <view class="udetail-field">
-      <text class="udetail-label">累计步数</text>
-      <text class="udetail-value num-font">{{user.totalSteps || 0}}</text>
-    </view>
-    <view class="udetail-field">
-      <text class="udetail-label">打卡天数</text>
-      <text class="udetail-value num-font">{{user.totalDays || 0}}</text>
-    </view>
-
-    <view class="udetail-ban" wx:if="{{user.status === 'banned'}}">
-      <view class="udetail-ban-row">
-        <text class="udetail-ban-label">封禁原因</text>
-        <text class="udetail-ban-text">{{user.banReason || '-'}}</text>
-      </view>
-      <view class="udetail-ban-row" wx:if="{{user.bannedUntilText}}">
-        <text class="udetail-ban-label">解封时间</text>
-        <text class="udetail-ban-text">{{user.bannedUntilText}}</text>
-      </view>
+    <view class="ud-quick-item" wx:if="{{canManagePerms && !isSuper}}" bind:tap="removeAccount">
+      <view class="ud-quick-icon is-danger"><t-icon name="delete" size="38rpx" color="var(--td-error-color-6)" /></view>
+      <text>删除账户</text>
     </view>
   </view>
 
-  <!-- ===== 运动数据 ===== -->
-  <view class="tt-section">运动数据</view>
-  <view class="tt-card udetail-card" wx:if="{{sport}}">
-    <view class="tt-stat-row udetail-sport-row">
-      <view class="tt-stat">
-        <view class="tt-stat-value num-font">{{sport.totalStepsText}}</view>
-        <view class="tt-stat-label">累计步数</view>
-      </view>
-      <view class="tt-stat">
-        <view class="tt-stat-value num-font">{{sport.totalDistanceText}}</view>
-        <view class="tt-stat-label">累计距离</view>
-      </view>
-      <view class="tt-stat">
-        <view class="tt-stat-value num-font">{{sport.totalDays}}</view>
-        <view class="tt-stat-label">打卡天数</view>
-      </view>
-      <view class="tt-stat">
-        <view class="tt-stat-value num-font">{{sport.badgeCount}}</view>
-        <view class="tt-stat-label">徽章</view>
-      </view>
-    </view>
-
-    <view class="udetail-sport-sub">
-      <text>今日饮水</text>
-      <text class="num-font udetail-sport-val">{{sport.waterToday.total}} / {{sport.waterToday.target}} ml</text>
-    </view>
-    <view class="udetail-sport-sub" wx:if="{{goal && goal.planName}}">
-      <text>当前计划</text>
-      <text class="udetail-sport-val">{{goal.planName}}{{goal.autoMatched ? '（AI）' : ''}}</text>
-    </view>
-
-    <block wx:if="{{sport.recentRuns.length}}">
-      <view class="tt-divider"></view>
-      <view class="udetail-sport-sub" style="margin-top: 16rpx">
-        <text>最近运动</text>
-        <text class="udetail-sport-val">{{sport.recentRuns.length}} 条</text>
-      </view>
-      <view class="tt-row" wx:for="{{sport.recentRuns}}" wx:key="_id" bind:tap="openRun" data-id="{{item._id}}">
-        <view class="udetail-log-icon">
-          <t-icon name="{{item.source === 'gps' ? 'location' : 'logo-wechat-stroke'}}" size="32rpx" color="var(--tt-brand)" />
-        </view>
-        <view class="flex-1">
-          <view class="tt-row-title">{{item.dateText}} · {{item.sourceText}}</view>
-          <view class="tt-row-sub">{{item.durationText}} · {{item.distanceKm}} km</view>
-        </view>
-        <view class="udetail-run-steps num-font">{{item.steps}} 步</view>
-        <t-icon name="chevron-right" size="30rpx" color="var(--tt-text-3)" />
-      </view>
-    </block>
-  </view>
-
-  <!-- ===== 当前限制（限制登录 / 限制微信同步 / 限制 GPS） ===== -->
+  <!-- ===== 3. 当前限制（有则显示，解除按钮就在事实旁边） ===== -->
   <block wx:if="{{restrictions.length}}">
     <view class="tt-section">
       <text>当前限制</text>
       <text class="tt-section-extra">{{restrictions.length}} 项生效中</text>
     </view>
-    <view class="tt-card udetail-card">
-      <view class="udetail-field" wx:for="{{restrictions}}" wx:key="scope">
-        <text class="udetail-label">{{item.text}}</text>
-        <text class="udetail-value">至 {{item.untilText}}</text>
-      </view>
-      <view class="udetail-ban" wx:for="{{restrictions}}" wx:key="scope">
-        <view class="udetail-ban-row">
-          <text class="udetail-ban-label">{{item.text}}原因</text>
-          <text class="udetail-ban-text">{{item.reason || '-'}}</text>
+    <view class="tt-card ud-card">
+      <view class="ud-limit" wx:for="{{restrictions}}" wx:key="scope">
+        <view class="ud-limit-icon">
+          <t-icon name="{{item.icon}}" size="32rpx" color="var(--td-error-color-6)" />
+        </view>
+        <view class="flex-1">
+          <view class="ud-limit-title">
+            <text>{{item.text}}</text>
+            <text class="ud-limit-until">至 {{item.untilText}}</text>
+          </view>
+          <view class="ud-limit-reason">{{item.reason || '违反社区规范'}}</view>
         </view>
       </view>
-      <view class="udetail-note">用户可在小程序「申诉」页按类型申诉；审核通过只解除对应类型</view>
+      <view class="ud-actions">
+        <t-button theme="primary" size="small" bind:tap="unban">解除限制</t-button>
+      </view>
+      <view class="ud-note">审核申诉通过时只解除对应类型；这里可手动全部或按类型解除</view>
     </view>
   </block>
 
-  <!-- ===== 账号操作 ===== -->
-  <view class="tt-section">账号操作</view>
-  <view class="tt-card udetail-card">
-    <t-button wx:if="{{canManagePerms}}" theme="default" block bind:tap="goEdit" class="udetail-edit-btn">编辑账户资料</t-button>
-    <block wx:if="{{user.role !== 'admin'}}">
-      <t-button theme="danger" block bind:tap="openBanSheet" class="udetail-edit-btn">限制账号功能</t-button>
-      <t-button wx:if="{{restrictions.length}}" theme="primary" block bind:tap="unban">解除限制</t-button>
-    </block>
-    <view class="udetail-note" wx:else>管理员账号不可封禁</view>
-    <view class="udetail-note">「限制账号功能」可选 限制登录 / 限制微信同步 / 限制 GPS 实跑，并可设置时长</view>
-    <view wx:if="{{canManagePerms}}" class="udetail-reset">
-      <t-button theme="default" block bind:tap="resetPassword">重置登录密码</t-button>
-      <view class="udetail-note">重置为初始密码（学号/身份证后8位），并要求该用户下次登录时修改</view>
+  <!-- ===== 4. 基本信息：两列网格（原来 9 行单列） ===== -->
+  <view class="tt-section">基本信息</view>
+  <view class="tt-card ud-card">
+    <view class="ud-grid">
+      <view class="ud-grid-item">
+        <text class="ud-grid-l">学号</text>
+        <text class="ud-grid-v">{{user.studentId || '—'}}</text>
+      </view>
+      <view class="ud-grid-item">
+        <text class="ud-grid-l">院校</text>
+        <text class="ud-grid-v">{{user.schoolName || '—'}}</text>
+      </view>
+      <view class="ud-grid-item">
+        <text class="ud-grid-l">院系</text>
+        <text class="ud-grid-v">{{user.departmentName || '—'}}</text>
+      </view>
+      <view class="ud-grid-item">
+        <text class="ud-grid-l">专业</text>
+        <text class="ud-grid-v">{{user.specialty || '—'}}</text>
+      </view>
+      <view class="ud-grid-item">
+        <text class="ud-grid-l">班级</text>
+        <text class="ud-grid-v">{{user.className || '—'}}</text>
+      </view>
+      <view class="ud-grid-item">
+        <text class="ud-grid-l">注册时间</text>
+        <text class="ud-grid-v">{{user.createdText || '—'}}</text>
+      </view>
     </view>
-    <view wx:if="{{canManagePerms && !isSuper}}" class="udetail-reset">
-      <t-button theme="danger" variant="outline" block bind:tap="removeAccount">删除账户</t-button>
-      <view class="udetail-note">将删除该账号及其全部运动 / 饮水 / 徽章数据，不可恢复</view>
-    </view>
-    <view class="udetail-note">微信绑定后不可解绑；其他微信登录该账号会被拒绝</view>
   </view>
 
-  <!-- ===== 权限管理（需 permission.manage） ===== -->
-  <block wx:if="{{canManagePerms}}">
-    <view class="tt-section">
-      <text>权限管理</text>
-      <text class="tt-section-extra" bind:tap="goGroupManager">管理权限组 ›</text>
+  <!-- ===== 5. 考核与目标 ===== -->
+  <block wx:if="{{rates}}">
+    <view class="tt-section">考核与目标</view>
+    <view class="tt-card ud-card">
+      <view class="ud-rate-row">
+        <view class="ud-rate">
+          <text class="num-font ud-rate-v">{{rates.dailyRateText}}</text>
+          <text class="ud-rate-l">综合日达标率</text>
+        </view>
+        <view class="ud-rate">
+          <text class="num-font ud-rate-v">{{rates.weeklyRateText}}</text>
+          <text class="ud-rate-l">综合周达标率</text>
+        </view>
+      </view>
+      <view class="ud-kv"><text>日达标</text><text class="ud-kv-v">{{rates.dailyText}}</text></view>
+      <view class="ud-kv"><text>周达标</text><text class="ud-kv-v">{{rates.weeklyText}}</text></view>
+      <view class="ud-kv" wx:if="{{goal}}">
+        <text>当前目标</text>
+        <text class="ud-kv-v">{{goal.planName}} · 日 {{goal.dailyStepsText}} · 周 {{goal.weeklyStepsText}}</text>
+      </view>
     </view>
-    <view class="tt-card udetail-card">
-      <view class="udetail-group">
-        <text class="udetail-label">用户角色</text>
-        <view class="udetail-chips">
-          <view class="tt-chip {{draft.role === 'student' ? 'active' : ''}}" bind:tap="pickRole" data-value="student">学生</view>
-          <view class="tt-chip {{draft.role === 'teacher' ? 'active' : ''}}" bind:tap="pickRole" data-value="teacher">教师</view>
+  </block>
+
+  <!-- ===== 6. 运动明细：原来 4 个独立区块（最近运动/日记录/周记录/饮水/徽章）合并成一张卡 + Tab ===== -->
+  <view class="tt-section">
+    <text>运动明细</text>
+    <text class="tt-section-extra" wx:if="{{sport}}">今日饮水 {{sport.waterToday.total}}/{{sport.waterToday.target}} ml</text>
+  </view>
+  <view class="tt-card ud-card">
+    <view class="ud-tabs">
+      <view class="ud-tab {{recordTab === 'runs' ? 'active' : ''}}" bind:tap="switchRecordTab" data-tab="runs">最近运动</view>
+      <view class="ud-tab {{recordTab === 'daily' ? 'active' : ''}}" bind:tap="switchRecordTab" data-tab="daily">日记录</view>
+      <view class="ud-tab {{recordTab === 'weekly' ? 'active' : ''}}" bind:tap="switchRecordTab" data-tab="weekly">周记录</view>
+      <view class="ud-tab {{recordTab === 'water' ? 'active' : ''}}" bind:tap="switchRecordTab" data-tab="water">饮水</view>
+      <view class="ud-tab {{recordTab === 'badges' ? 'active' : ''}}" bind:tap="switchRecordTab" data-tab="badges">徽章</view>
+    </view>
+
+    <!-- 6.1 最近运动 -->
+    <block wx:if="{{recordTab === 'runs'}}">
+      <view class="tt-row ud-log" wx:for="{{sport.recentRuns}}" wx:key="_id" bind:tap="openRun" data-id="{{item._id}}">
+        <view class="ud-log-icon">
+          <t-icon name="{{item.source === 'gps' ? 'location' : 'logo-wechat-stroke'}}" size="30rpx" color="var(--tt-brand)" />
+        </view>
+        <view class="flex-1">
+          <view class="tt-row-title">{{item.dateText}} · {{item.sourceText}}</view>
+          <view class="tt-row-sub">{{item.durationText}} · {{item.distanceText}}</view>
+        </view>
+        <text class="num-font ud-row-value">{{item.steps}} 步</text>
+        <t-icon name="chevron-right" size="28rpx" color="var(--tt-text-3)" />
+      </view>
+      <view class="tt-empty" wx:if="{{!sport.recentRuns.length}}">暂无运动记录</view>
+    </block>
+
+    <!-- 6.2 日记录（近 30 天） -->
+    <block wx:elif="{{recordTab === 'daily'}}">
+      <view class="tt-row ud-log" wx:for="{{dailyRecords}}" wx:key="date">
+        <view class="flex-1">
+          <view class="tt-row-title">{{item.dateText}}</view>
+          <view class="tt-row-sub">{{item.recordCount}} 条 · {{item.distanceKm}} km</view>
+        </view>
+        <text class="num-font ud-row-value">{{item.stepsText}} 步</text>
+        <t-icon wx:if="{{item.achieved}}" name="check-circle" size="30rpx" color="var(--td-success-color-5)" />
+      </view>
+      <view class="tt-empty" wx:if="{{!dailyRecords.length}}">近 30 天暂无记录</view>
+    </block>
+
+    <!-- 6.3 周记录（近 8 周） -->
+    <block wx:elif="{{recordTab === 'weekly'}}">
+      <view class="tt-row ud-log" wx:for="{{weeklyRecords}}" wx:key="weekStart">
+        <view class="flex-1">
+          <view class="tt-row-title">{{item.rangeText}}</view>
+          <view class="tt-row-sub">活跃 {{item.activeDays}} 天</view>
+        </view>
+        <text class="num-font ud-row-value">{{item.stepsText}} 步</text>
+        <t-icon wx:if="{{item.achieved}}" name="check-circle" size="30rpx" color="var(--td-success-color-5)" />
+      </view>
+      <view class="tt-empty" wx:if="{{!weeklyRecords.length}}">近 8 周暂无记录</view>
+    </block>
+
+    <!-- 6.4 饮水（近 14 天） -->
+    <block wx:elif="{{recordTab === 'water'}}">
+      <view class="tt-row ud-log" wx:for="{{water}}" wx:key="date">
+        <view class="flex-1">
+          <view class="tt-row-title">{{item.dateText}}</view>
+          <view class="tt-row-sub">{{item.total}} / {{item.target}} ml</view>
+        </view>
+        <text class="num-font ud-row-value">{{item.percent}}%</text>
+      </view>
+      <view class="tt-empty" wx:if="{{!water.length}}">暂无饮水记录</view>
+    </block>
+
+    <!-- 6.5 徽章 -->
+    <block wx:else>
+      <view class="tt-row ud-log" wx:for="{{badges}}" wx:key="key">
+        <view class="ud-log-icon">
+          <t-icon name="{{item.icon || 'star'}}" size="30rpx" color="{{item.tierColor || 'var(--tt-brand)'}}" />
+        </view>
+        <view class="flex-1">
+          <view class="tt-row-title">{{item.name}}</view>
+          <view class="tt-row-sub">{{item.earnedText}}</view>
         </view>
       </view>
+      <view class="tt-empty" wx:if="{{!badges.length}}">暂未获得徽章</view>
+    </block>
 
-      <view class="tt-divider"></view>
+    <view class="ud-note" wx:if="{{recordTab === 'daily' || recordTab === 'weekly'}}">✓ 表示达标（步数 ≥ 生效目标）</view>
+  </view>
 
-      <view class="udetail-group">
-        <text class="udetail-label">权限组</text>
-        <view class="udetail-chips">
-          <view
-            wx:for="{{permGroups}}"
-            wx:key="key"
-            class="tt-chip {{draft.groupMap[item.key] ? 'active' : ''}}"
-            bind:tap="toggleGroup"
-            data-key="{{item.key}}"
-          >
-            {{item.name}}{{item.permissions[0] === '*' ? '（全部）' : '（' + item.permissions.length + '项）'}}
-          </view>
-        </view>
-      </view>
+  <!-- ===== 7. 登录与绑定 ===== -->
+  <block wx:if="{{loginInfo}}">
+    <view class="tt-section">
+      <text>登录与绑定</text>
+      <text class="tt-section-extra" wx:if="{{loginInfo.wechatBound && canManageUser}}" catch:tap="unbindWechat">
+        {{unbinding ? '解绑中…' : '解绑微信'}}
+      </text>
+    </view>
+    <view class="tt-card ud-card">
+      <view class="ud-kv"><text>微信</text><text class="ud-kv-v">{{loginInfo.wechatBound ? loginInfo.wechatOpenidMasked : '未绑定'}}</text></view>
+      <view class="ud-kv" wx:if="{{loginInfo.wechatBoundAtText}}"><text>绑定时间</text><text class="ud-kv-v">{{loginInfo.wechatBoundAtText}}</text></view>
+      <view class="ud-kv"><text>最近登录</text><text class="ud-kv-v">{{loginInfo.lastLoginText || '—'}}</text></view>
+      <view class="ud-kv"><text>步数同步</text><text class="ud-kv-v">{{loginInfo.lastSyncText || '—'}}</text></view>
+      <view class="ud-kv"><text>微信会话</text><text class="ud-kv-v">{{loginInfo.lastWxSessionText || '—'}}</text></view>
 
-      <block wx:for="{{permModules}}" wx:key="name" wx:for-item="mod">
-        <view class="tt-divider"></view>
-        <view class="udetail-group">
-          <text class="udetail-label">独立权限 · {{mod.name}}</text>
-          <view class="udetail-chips">
-            <view
-              wx:for="{{mod.list}}"
-              wx:key="key"
-              class="tt-chip {{draft.permMap[item.key] ? 'active' : ''}}"
-              bind:tap="togglePerm"
-              data-key="{{item.key}}"
-            >
-              {{item.name}}
-            </view>
+      <block wx:if="{{loginInfo.devices.length}}">
+        <view class="ud-sub-title">登录设备 · {{loginInfo.devices.length}} 台</view>
+        <view class="ud-device" wx:for="{{loginInfo.devices}}" wx:key="_id">
+          <t-icon name="laptop" size="30rpx" color="var(--tt-text-3)" />
+          <view class="flex-1">
+            <view class="tt-row-title">{{item.label || '未知设备'}}</view>
+            <view class="tt-row-sub">{{item.lastUsedText}} · {{item.expireText}}</view>
           </view>
         </view>
       </block>
-
-      <view class="udetail-actions">
-        <t-button theme="primary" block loading="{{savingPerms}}" bind:tap="savePerms">保存权限</t-button>
-      </view>
-      <view class="udetail-tip">有效权限 = 独立权限 ∪ 权限组展开；超级管理员组拥有全部权限</view>
+      <view class="ud-note">解绑后该微信退出登录，可由任意微信重新绑定；运动数据保留</view>
     </view>
   </block>
 
-  <!-- ===== 限制 / 解除流水 ===== -->
+  <!-- ===== 8. 限制 / 解除流水 ===== -->
   <view class="tt-section">
-    <text>限制 / 解除流水</text>
+    <text>限制流水</text>
     <text class="tt-section-extra">{{bans.length}} 条</text>
   </view>
-  <view class="tt-card udetail-card">
-    <view class="tt-row" wx:for="{{bans}}" wx:key="_id">
-      <view class="udetail-log-icon {{item.action === 'ban' ? 'is-ban' : 'is-unban'}}">
-        <t-icon wx:if="{{item.action === 'ban'}}" name="lock-on" size="32rpx" color="var(--td-error-color-6)" />
-        <t-icon wx:else name="lock-off" size="32rpx" color="var(--td-success-color-5)" />
+  <view class="tt-card ud-card">
+    <view class="tt-row ud-log" wx:for="{{bans}}" wx:key="_id">
+      <view class="ud-log-icon {{item.action === 'ban' ? 'is-ban' : 'is-unban'}}">
+        <t-icon wx:if="{{item.action === 'ban'}}" name="lock-on" size="30rpx" color="var(--td-error-color-6)" />
+        <t-icon wx:else name="lock-off" size="30rpx" color="var(--td-success-color-5)" />
       </view>
       <view class="flex-1">
-        <view class="tt-row-title">{{item.typeText}} · {{item.reason || '-'}}</view>
-        <view class="tt-row-sub">{{item.timeText}} · {{item.operator === 'system' ? '系统自动' : '管理员'}}{{item.durationDays ? ' · ' + item.durationDays + '天' : (item.action === 'ban' ? ' · 永久' : '')}}</view>
+        <view class="tt-row-title">{{item.typeText}} · {{item.reason || '—'}}</view>
+        <view class="tt-row-sub">
+          {{item.timeText}} · {{item.operator === 'system' ? '系统自动' : '管理员'}}{{item.durationDays ? ' · ' + item.durationDays + ' 天' : (item.action === 'ban' ? ' · 永久' : '')}}
+        </view>
       </view>
       <t-tag theme="{{item.action === 'ban' ? 'danger' : 'success'}}" variant="light" size="small">
         {{item.action === 'ban' ? '限制' : '解除'}}
@@ -245,6 +281,8 @@
     </view>
     <view class="tt-empty" wx:if="{{!bans.length}}">暂无流水</view>
   </view>
+
+  <view class="tt-footer">数据每 30 秒随看板刷新；申诉审核通过只解除对应类型的限制</view>
 </view>
 
 <!-- ===== 限制账号功能（类型 + 时长 + 原因） ===== -->

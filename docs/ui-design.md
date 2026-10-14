@@ -267,10 +267,15 @@ box-shadow: 0 12rpx 32rpx rgba(255, 107, 0, 0.24);
 - **管理端 · 权限组管理 `packageAdmin/permissions/groups`**：列表（名称 + 内置标记 + 标识 + 权限数 + 使用账号数 + 权限清单）
   → 「+ 新增权限组」/ 行内「编辑 / 删除」→ 底部抽屉表单（名称、标识、说明 + 按模块的权限多选）。
   内置组显示「系统维护」、不可编辑删除；删除失败（仍被账号使用）时把服务端文案原样提示。
-  入口：账户编辑页「账户权限」标题右侧、用户详情页「权限管理」标题右侧。
+  入口：账户编辑页「账户权限」标题右侧（用户详情页的权限管理区已移除，不再有此入口）。
   接口：`GET/POST /api/admin/permission-groups`、`PUT/DELETE /api/admin/permission-groups/:id`（需 `permission.manage`）。
-- **管理端 · 用户详情 `packageAdmin/user-detail/user-detail`**：账号操作区依次为 编辑账户资料（`permission.manage`）、封禁/解封、
-  重置登录密码、**删除账户**（`canManagePerms && !isSuper`，二次确认后 `DELETE /api/admin/users/:id` 并返回列表）。
+- **管理端 · 用户详情 `packageAdmin/user-detail/user-detail`**：**权限管理区已移除**（角色/权限编辑只在账户编辑页）；
+  编辑资料/重置密码/删除按钮按**当前登录者** effectivePermissions（`permission.manage`）显隐，不再调权限接口探测。
+  区块顺序：Hero（绑定状态脱敏展示）→ 基本信息 → **考核与目标**（综合日/周达标率大数字 + 达标计数 + 当前目标）→
+  运动数据（累计 + 最近运动）→ **运动记录**（日/周 chips 切换，✓=达标）→ **饮水记录**（近 14 天）→ **徽章记录** →
+  **登录与绑定**（微信绑定脱敏展示，持 `user.manage` 者可「解绑」：清 openid/wx_sessions 并吊销设备令牌，业务数据保留）→
+  当前限制 → 账号操作（封禁/解封、重置密码 `permission.manage`、删除账户）→ 限制/解除流水。
+  数据来源：`GET /api/admin/users/:id`（含 loginInfo）+ `GET /api/admin/users/:id/sport-detail`（日/周窗口、全历史达标率、饮水、徽章、生效目标）。
 - **管理端 · 分类中枢页**：`config/config`、`content/index`、`assessment/index` 是同一套「分类中枢」语言——
   `.tt-section` 标题（副文案写清生效范围）+ 单张 `.tt-card` 内多行 `tt-row` 分类项
   （`.cfg-cat-icon`/`.ct-cat-icon`/`.am-cat-icon`：72rpx 品牌软底圆角块 + 品牌色图标 + 标题/摘要 + `chevron-right`），

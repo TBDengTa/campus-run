@@ -1,201 +1,371 @@
-/* 管理端 · 用户详情（白橙设计系统） */
-.udetail-page {
+/* 管理端 · 用户详情：紧凑版（身份卡 → 快捷操作 → 限制 → 信息/考核 → 明细 Tab → 登录 → 流水） */
+.ud-page {
   padding-bottom: calc(32rpx + env(safe-area-inset-bottom));
 }
 
-/* 卡片内边距局部收紧 */
-.udetail-card {
-  padding: 24rpx;
+/* ===== 1. 身份卡 ===== */
+.ud-hero {
+  padding: 28rpx 28rpx 22rpx;
+  border-radius: 32rpx;
 }
 
-/* ===== 用户主视觉 ===== */
-.udetail-hero-top {
+.ud-hero-top {
   display: flex;
   align-items: center;
-  gap: 20rpx;
+  gap: 18rpx;
 }
 
-.udetail-avatar {
-  width: 88rpx;
-  height: 88rpx;
+.ud-avatar {
+  width: 76rpx;
+  height: 76rpx;
   flex-shrink: 0;
-  border-radius: 28rpx;
+  border-radius: 24rpx;
   display: flex;
   align-items: center;
   justify-content: center;
   background: rgba(255, 255, 255, 0.22);
 }
 
-.udetail-name {
+.ud-hero-main {
+  min-width: 0;
+}
+
+.ud-name {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+}
+
+.ud-name-text {
   font-size: 34rpx;
   font-weight: 700;
   color: #fff;
+  max-width: 320rpx;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
-.udetail-openid {
+.ud-hero-meta {
   margin-top: 6rpx;
-  font-size: 22rpx;
-  color: rgba(255, 255, 255, 0.8);
-  word-break: break-all;
+  font-size: 23rpx;
+  color: rgba(255, 255, 255, 0.86);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
-.udetail-status {
+.ud-status {
   flex-shrink: 0;
-  padding: 6rpx 20rpx;
+  padding: 6rpx 18rpx;
   border-radius: 999rpx;
   font-size: 22rpx;
   color: #fff;
   background: rgba(255, 255, 255, 0.24);
 }
 
-.udetail-status.is-banned {
+.ud-status.is-warn {
   color: var(--td-error-color-6);
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.94);
+  font-weight: 600;
 }
 
-.udetail-hero-foot {
-  margin-top: 20rpx;
-  font-size: 24rpx;
-  color: rgba(255, 255, 255, 0.88);
-}
-
-/* ===== 标签-值 两列行 ===== */
-.udetail-field {
+/* 累计四项：贴在身份卡里，取代原来重复的「运动数据」累计行 */
+.ud-hero-stats {
   display: flex;
-  align-items: flex-start;
-  gap: 20rpx;
-  padding: 20rpx 0;
-  border-bottom: 2rpx solid var(--tt-line);
-  font-size: 27rpx;
+  margin-top: 22rpx;
+  padding: 16rpx 0 4rpx;
+  border-top: 2rpx solid rgba(255, 255, 255, 0.22);
 }
 
-.udetail-field:last-child {
-  border-bottom: none;
-}
-
-.udetail-label {
-  flex-shrink: 0;
-  width: 150rpx;
-  font-size: 25rpx;
-  color: var(--tt-text-3);
-}
-
-.udetail-value {
+.ud-hero-stat {
   flex: 1;
-  text-align: right;
-  color: var(--tt-text-1);
-  word-break: break-all;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4rpx;
 }
 
-/* ===== 封禁信息 ===== */
-.udetail-ban {
-  margin-top: 24rpx;
-  padding: 20rpx 24rpx;
-  border-radius: var(--tt-radius-sm);
+.ud-hero-stat-v {
+  font-size: 28rpx;
+  font-weight: 700;
+  color: #fff;
+}
+
+.ud-hero-stat-l {
+  font-size: 20rpx;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+/* ===== 2. 快捷操作（一行图标，取代原来 5 个全宽按钮） ===== */
+.ud-quick {
+  display: flex;
+  margin: 0 var(--tt-gap) var(--tt-gap);
+  padding: 18rpx 8rpx;
+  border-radius: var(--tt-radius);
+  background: var(--tt-card);
+  box-shadow: var(--tt-card-shadow);
+}
+
+.ud-quick-item {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8rpx;
+  font-size: 22rpx;
+  color: var(--tt-text-2);
+}
+
+.ud-quick-item:active {
+  opacity: 0.75;
+}
+
+.ud-quick-icon {
+  width: 76rpx;
+  height: 76rpx;
+  border-radius: 24rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--tt-brand-soft);
+}
+
+.ud-quick-icon.is-warn {
+  background: var(--td-warning-color-1);
+}
+
+.ud-quick-icon.is-danger {
   background: var(--td-error-color-1);
 }
 
-.udetail-ban-row {
+/* ===== 通用卡片（管理端信息密度更高） ===== */
+.ud-card {
+  padding: 10rpx 24rpx;
+}
+
+/* ===== 3. 当前限制 ===== */
+.ud-limit {
   display: flex;
+  align-items: center;
   gap: 16rpx;
-  font-size: 24rpx;
-  line-height: 40rpx;
+  padding: 18rpx 0;
+  border-bottom: 2rpx solid var(--tt-line);
 }
 
-.udetail-ban-label {
-  flex-shrink: 0;
-  color: var(--td-error-color-6);
-}
-
-.udetail-ban-text {
-  flex: 1;
-  color: var(--tt-text-1);
-}
-
-/* ===== 账号操作 ===== */
-.udetail-note {
-  text-align: center;
-  font-size: 26rpx;
-  color: var(--tt-text-3);
-  padding: 12rpx 0;
-}
-
-/* ===== 权限编辑 ===== */
-.udetail-group {
-  padding: 4rpx 0;
-}
-
-.udetail-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12rpx;
-  margin-top: 16rpx;
-}
-
-.udetail-actions {
-  margin-top: 8rpx;
-}
-
-.udetail-tip {
-  margin-top: 16rpx;
-  font-size: 22rpx;
-  line-height: 34rpx;
-  color: var(--tt-text-3);
-}
-
-/* ===== 流水 ===== */
-.udetail-log-icon {
-  width: 64rpx;
-  height: 64rpx;
+.ud-limit-icon {
+  width: 60rpx;
+  height: 60rpx;
   flex-shrink: 0;
   border-radius: 20rpx;
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-.udetail-log-icon.is-ban {
   background: var(--td-error-color-1);
 }
 
-.udetail-log-icon.is-unban {
+.ud-limit-title {
+  display: flex;
+  align-items: baseline;
+  gap: 12rpx;
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.ud-limit-until {
+  font-size: 21rpx;
+  font-weight: 400;
+  color: var(--td-error-color-6);
+}
+
+.ud-limit-reason {
+  margin-top: 4rpx;
+  font-size: 23rpx;
+  line-height: 32rpx;
+  color: var(--tt-text-3);
+  word-break: break-all;
+}
+
+.ud-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 18rpx 0 6rpx;
+}
+
+/* ===== 4. 基本信息：两列网格（原来 9 行单列） ===== */
+.ud-grid {
+  display: flex;
+  flex-wrap: wrap;
+  padding: 4rpx 0;
+}
+
+.ud-grid-item {
+  width: 50%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 4rpx;
+  padding: 16rpx 0;
+}
+
+.ud-grid-item:nth-child(odd) {
+  padding-right: 16rpx;
+}
+
+.ud-grid-l {
+  font-size: 21rpx;
+  color: var(--tt-text-3);
+}
+
+.ud-grid-v {
+  font-size: 27rpx;
+  color: var(--tt-text-1);
+  word-break: break-all;
+}
+
+/* ===== 5. 考核与目标 ===== */
+.ud-rate-row {
+  display: flex;
+  padding: 12rpx 0 8rpx;
+  border-bottom: 2rpx solid var(--tt-line);
+}
+
+.ud-rate {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4rpx;
+}
+
+.ud-rate-v {
+  font-size: 40rpx;
+  font-weight: 700;
+  color: var(--tt-brand);
+}
+
+.ud-rate-l {
+  font-size: 21rpx;
+  color: var(--tt-text-3);
+}
+
+/* 键值行（考核 / 登录信息共用） */
+.ud-kv {
+  display: flex;
+  align-items: flex-start;
+  gap: 16rpx;
+  padding: 14rpx 0;
+  border-bottom: 2rpx solid var(--tt-line);
+  font-size: 25rpx;
+  color: var(--tt-text-3);
+}
+
+.ud-kv:last-child {
+  border-bottom: none;
+}
+
+.ud-kv-v {
+  flex: 1;
+  text-align: right;
+  font-size: 26rpx;
+  color: var(--tt-text-1);
+  word-break: break-all;
+}
+
+/* ===== 6. 运动明细：Tab + 列表 ===== */
+.ud-tabs {
+  display: flex;
+  gap: 10rpx;
+  padding: 14rpx 0 10rpx;
+  border-bottom: 2rpx solid var(--tt-line);
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.ud-tab {
+  flex-shrink: 0;
+  padding: 10rpx 24rpx;
+  border-radius: 999rpx;
+  background: var(--td-bg-color-component);
+  font-size: 24rpx;
+  color: var(--tt-text-2);
+}
+
+.ud-tab.active {
+  color: #fff;
+  font-weight: 600;
+  background: linear-gradient(135deg, #ff9a3d, var(--tt-brand));
+}
+
+.ud-row-value {
+  flex-shrink: 0;
+  font-size: 26rpx;
+  font-weight: 600;
+  color: var(--tt-brand);
+}
+
+.ud-log {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 16rpx 0;
+  border-bottom: 2rpx solid var(--tt-line);
+}
+
+.ud-log:last-child {
+  border-bottom: none;
+}
+
+.ud-log-icon {
+  width: 56rpx;
+  height: 56rpx;
+  flex-shrink: 0;
+  border-radius: 18rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--tt-brand-soft);
+}
+
+.ud-log-icon.is-ban {
+  background: var(--td-error-color-1);
+}
+
+.ud-log-icon.is-unban {
   background: var(--td-success-color-1);
+}
+
+/* ===== 7. 登录与绑定 ===== */
+.ud-sub-title {
+  padding: 18rpx 0 6rpx;
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+.ud-device {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  padding: 14rpx 0;
+  border-bottom: 2rpx solid var(--tt-line);
+}
+
+.ud-device:last-child {
+  border-bottom: none;
+}
+
+.ud-note {
+  padding: 12rpx 0 8rpx;
+  font-size: 21rpx;
+  line-height: 32rpx;
+  color: var(--tt-text-3);
 }
 
 .udetail-loading {
   display: flex;
   justify-content: center;
   padding: 120rpx 0;
-}
-
-.udetail-reset {
-  margin-top: 16rpx;
-}
-
-/* ===== 运动数据 ===== */
-.udetail-sport-row {
-  margin-bottom: 8rpx;
-}
-
-.udetail-sport-sub {
-  display: flex;
-  justify-content: space-between;
-  font-size: 24rpx;
-  color: var(--td-text-color-secondary);
-  padding: 8rpx 0;
-}
-
-.udetail-sport-val {
-  color: var(--td-text-color-primary);
-  font-size: 24rpx;
-}
-
-.udetail-run-steps {
-  font-size: 26rpx;
-  font-weight: 600;
-  margin-right: 8rpx;
-}
-
-.udetail-edit-btn {
-  margin-bottom: 16rpx;
 }

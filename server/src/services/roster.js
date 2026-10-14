@@ -176,11 +176,15 @@ async function importRows(rows, mode = 'create') {
         }
         if (item.school) existing.schoolName = item.school;
         if (item.department) existing.departmentName = item.department;
-        if (item.className) existing.className = item.className;
         if (item.specialty) existing.specialty = item.specialty;
         // 名单未给年级时按学号前 4 位（入学年份）推导
         const grade = item.grade || gradeFromStudentId(item.studentId);
         if (grade) existing.grade = grade;
+        // 班级统一按「年级+专业」组合：名单班级列可选，显式写了同前缀更细班时原样保留
+        const specialty = item.specialty || existing.specialty;
+        if (item.className || (grade && specialty)) {
+          existing.className = classNameFromGradeSpecialty(grade, specialty, item.className);
+        }
         if (item.gender != null) existing.gender = item.gender;
         if (item.birthdate) existing.birthdate = new Date(item.birthdate);
         await existing.save();
@@ -210,15 +214,17 @@ async function importRows(rows, mode = 'create') {
         continue;
       }
 
+      const grade = item.grade || gradeFromStudentId(item.studentId);
       await User.create({
         account: item.name,
         realName: item.name,
         studentId: item.studentId,
         schoolName: item.school,
         departmentName: item.department,
-        className: item.className,
+        // 班级统一按「年级+专业」组合：名单班级列可选，显式写了同前缀更细班时原样保留
+        className: classNameFromGradeSpecialty(grade, item.specialty, item.className),
         specialty: item.specialty,
-        grade: item.grade || gradeFromStudentId(item.studentId),
+        grade,
         gender: item.gender != null ? item.gender : 0,
         birthdate: item.birthdate ? new Date(item.birthdate) : undefined,
         role: 'student',

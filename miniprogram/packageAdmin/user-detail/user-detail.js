@@ -1,9 +1,14 @@
 const auth = require('../../utils/request');
+const fmt = require('../../utils/format');
 
-function toMap(arr) {
-  const m = {};
-  for (const k of arr || []) m[k] = true;
-  return m;
+function fmtTime(v) {
+  return v ? String(v).slice(0, 16).replace('T', ' ') : '';
+}
+
+// 日期 → 「M月D日」
+function dateText(dateKey) {
+  if (!dateKey) return '';
+  return `${Number(dateKey.slice(5, 7))}月${Number(dateKey.slice(8, 10))}日`;
 }
 
 Page({
@@ -13,17 +18,23 @@ Page({
     bans: [],
     loading: true,
     isSuper: false,
+    // 当前登录者权限：编辑资料/重置密码/删除账户需 permission.manage，解绑微信需 user.manage
+    canManagePerms: false,
+    canManageUser: false,
     // 当前生效的限制（限制登录 / 限制微信同步 / 限制 GPS）
     restrictions: [],
     // 「限制账号功能」抽屉
     banSheet: { visible: false, user: null, busy: false },
-    // ===== 权限管理（需 permission.manage）=====
-    canManagePerms: false,
-    permsCatalog: [],
-    permGroups: [],
-    permModules: [], // 按模块分组的权限目录
-    draft: { role: 'student', groups: [], perms: [] },
-    savingPerms: false,
+    // ===== 考核与运动全景 =====
+    rates: null,
+    goal: null,
+    recordTab: 'daily', // daily 日记录 | weekly 周记录
+    dailyRecords: [],
+    weeklyRecords: [],
+    water: [],
+    badges: [],
+    loginInfo: null,
+    unbinding: false,
   },
 
   onLoad(options) {
@@ -34,35 +45,46 @@ Page({
   async load() {
     try {
       await getApp().ensureLogin();
-      const { user, bans, sport: sportArg, goal: goalArg, restrictions } = await auth.get(
-        `/api/admin/users/${this.data.id}`
-      );
-      const fmt = require('../../utils/format');
+      const me = (getApp().globalData.userInfo || {}).effectivePermissions || [];
+      this.setData({
+        canManagePerms: me.includes('*') || me.includes('permission.manage'),
+        canManageUser: me.includes('*') || me.includes('user.manage'),
+      });
+      const [detail, sportDetail] = await Promise.all([
+        auth.get(`/api/admin/users/${this.data.id}`),
+        auth.get(`/api/admin/users/${this.data.id}/sport-detail`).catch(() => null),
+      ]);
+      const { user, bans, sport: sportArg, goal: goalArg, loginInfo, restrictions } = detail;
       const SCOPE_TEXT = { login: '限制登录', sync: '限制微信同步', gps: '限制 GPS', manual: '限制登录' };
+      // 限制类型对应图标（在 JS 里算好：WXML 的三元表达式会让静态检查把 'sync' 当成图标名）
+      const SCOPE_ICON = { login: 'lock-on', sync: 'logo-wechat-stroke', gps: 'location' };
       const recentRuns = ((sportArg && sportArg.recentRuns) || []).map((r) => ({
         ...r,
-        dateText: r.date ? `${Number(r.date.slice(5, 7))}月${Number(r.date.slice(8, 10))}日` : '',
+        dateText: dateText(r.date),
         distanceText: fmt.formatDistance(r.distance),
         durationText: fmt.formatDuration(r.durationSeconds),
         sourceText: r.source === 'gps' ? 'GPS 实跑' : '微信运动',
       }));
+
+      const rates = sportDetail && sportDetail.rates;
+      const goal = (sportDetail && sportDetail.goal) || goalArg || null;
       this.setData({
         loading: false,
         isSuper: (user.permissionGroups || []).includes('superadmin'),
         user: {
           ...user,
-          createdText: (user.createdAt || '').slice(0, 16).replace('T', ' '),
+          createdText: fmtTime(user.createdAt),
           bannedUntilText: user.bannedUntil ? user.bannedUntil.slice(0, 16).replace('T', ' ') : '',
         },
         bans: bans.map((b) => ({
           ...b,
-          timeText: (b.createdAt || '').slice(0, 16).replace('T', ' '),
+          timeText: fmtTime(b.createdAt),
           typeText: SCOPE_TEXT[b.banType] || (b.banType === 'manual' ? '限制登录' : '功能限制'),
         })),
-        // 当前生效的限制（限制登录 / 限制微信同步 / 限制 GPS）
         restrictions: (restrictions || []).map((r) => ({
           ...r,
-          untilText: r.until ? String(r.until).slice(0, 16).replace('T', ' ') : '永久',
+          icon: SCOPE_ICON[r.scope] || 'lock-on',
+          untilText: r.until ? fmtTime(r.until) : '永久',
         })),
         sport: {
           totalStepsText: fmt.formatNumber(user.totalSteps || 0),
@@ -72,13 +94,87 @@ Page({
           waterToday: (sportArg && sportArg.waterToday) || { total: 0, target: 0 },
           recentRuns,
         },
-        goal: goalArg || null,
+        rates: rates
+          ? {
+              dailyRateText: rates.dailyRate == null ? '—' : `${rates.dailyRate}%`,
+              weeklyRateText: rates.weeklyRate == null ? '—' : `${rates.weeklyRate}%`,
+              dailyText: rates.dailyTotal ? `达标 ${rates.dailyAchieved} / ${rates.dailyTotal} 天` : '暂无记录',
+              weeklyText: rates.weeklyTotal ? `达标 ${rates.weeklyAchieved} / ${rates.weeklyTotal} 周` : '暂无记录',
+            }
+          : null,
+        goal: goal
+          ? {
+              planName: goal.planName || '默认目标',
+              dailyStepsText: fmt.formatNumber(goal.daily && goal.daily.steps),
+              weeklyStepsText: fmt.formatNumber(goal.weekly && goal.weekly.steps),
+            }
+          : null,
+        dailyRecords: ((sportDetail && sportDetail.dailyRecords) || []).map((d) => ({
+          ...d,
+          dateText: dateText(d.date),
+          stepsText: fmt.formatNumber(d.steps),
+        })),
+        weeklyRecords: ((sportDetail && sportDetail.weeklyRecords) || []).map((w) => ({
+          ...w,
+          rangeText: `${w.weekStart.slice(5).replace('-', '.')} - ${w.weekEnd.slice(5).replace('-', '.')}`,
+          stepsText: fmt.formatNumber(w.steps),
+        })),
+        water: ((sportDetail && sportDetail.water) || []).map((w) => ({
+          ...w,
+          dateText: dateText(w.date),
+        })),
+        badges: ((sportDetail && sportDetail.badges) || []).map((b) => ({
+          ...b,
+          earnedText: fmtTime(b.earnedAt),
+        })),
+        loginInfo: loginInfo
+          ? {
+              ...loginInfo,
+              wechatBoundAtText: fmtTime(loginInfo.wechatBoundAt),
+              lastLoginText: fmtTime(loginInfo.lastLogin),
+              lastWxSessionText: fmtTime(loginInfo.lastWxSessionAt),
+              lastSyncText: fmtTime(loginInfo.lastSyncAt),
+              devices: (loginInfo.devices || []).map((d) => ({
+                ...d,
+                lastUsedText: fmtTime(d.lastUsedAt || d.createdAt),
+                expireText: d.revoked ? '已吊销' : fmtTime(d.expiresAt) + ' 过期',
+              })),
+            }
+          : null,
       });
-      this.loadPermEditor(user);
     } catch (e) {
       this.setData({ loading: false });
       wx.showToast({ title: e.message, icon: 'none' });
     }
+  },
+
+  // 日/周记录切换
+  switchRecordTab(e) {
+    const tab = e.currentTarget.dataset.tab;
+    if (tab && tab !== this.data.recordTab) this.setData({ recordTab: tab });
+  },
+
+  // 解绑微信：二次确认后清除绑定（可被新微信重新绑定）
+  unbindWechat() {
+    const that = this;
+    wx.showModal({
+      title: '解绑微信',
+      content: '解绑后该账号将被此微信退出登录，可由任意微信重新绑定姓名密码；其运动等数据保留。确认解绑？',
+      confirmColor: '#e5484d',
+      success: async (res) => {
+        if (!res.confirm) return;
+        that.setData({ unbinding: true });
+        try {
+          await auth.post(`/api/admin/users/${that.data.id}/unbind-wechat`);
+          wx.showToast({ title: '已解绑', icon: 'success' });
+          that.load();
+        } catch (err) {
+          wx.showToast({ title: err.message, icon: 'none' });
+        } finally {
+          that.setData({ unbinding: false });
+        }
+      },
+    });
   },
 
   openRun(e) {
@@ -87,100 +183,6 @@ Page({
 
   goEdit() {
     wx.navigateTo({ url: `/packageAdmin/users/account-edit/account-edit?id=${this.data.id}` });
-  },
-
-  // 尝试加载权限编辑数据（无 permission.manage 权限时 403，静默降级）
-  async loadPermEditor(user) {
-    try {
-      const { catalog, groups } = await auth.get('/api/admin/permissions');
-      // 按模块分组
-      const moduleMap = new Map();
-      for (const p of catalog) {
-        if (!moduleMap.has(p.module)) moduleMap.set(p.module, []);
-        moduleMap.get(p.module).push(p);
-      }
-      this.setData({
-        canManagePerms: true,
-        permsCatalog: catalog,
-        permGroups: groups,
-        permModules: [...moduleMap.entries()].map(([name, list]) => ({ name, list })),
-        draft: {
-          role: user.role || 'student',
-          groups: [...(user.permissionGroups || [])],
-          perms: [...(user.permissions || [])],
-          // WXML 无法调用方法，用映射表做选中态
-          groupMap: toMap(user.permissionGroups),
-          permMap: toMap(user.permissions),
-        },
-      });
-    } catch (e) {
-      this.setData({ canManagePerms: false });
-    }
-  },
-
-  // 权限组管理（增删改权限组）
-  goGroupManager() {
-    wx.navigateTo({ url: '/packageAdmin/permissions/groups' });
-  },
-
-  pickRole(e) {
-    this.setData({ 'draft.role': e.currentTarget.dataset.value });
-  },
-
-  toggleGroup(e) {
-    const key = e.currentTarget.dataset.key;
-    const groups = [...this.data.draft.groups];
-    const groupMap = { ...this.data.draft.groupMap };
-    const i = groups.indexOf(key);
-    if (i >= 0) {
-      groups.splice(i, 1);
-      delete groupMap[key];
-    } else {
-      groups.push(key);
-      groupMap[key] = true;
-    }
-    this.setData({ 'draft.groups': groups, 'draft.groupMap': groupMap });
-  },
-
-  togglePerm(e) {
-    const key = e.currentTarget.dataset.key;
-    const perms = [...this.data.draft.perms];
-    const permMap = { ...this.data.draft.permMap };
-    const i = perms.indexOf(key);
-    if (i >= 0) {
-      perms.splice(i, 1);
-      delete permMap[key];
-    } else {
-      perms.push(key);
-      permMap[key] = true;
-    }
-    this.setData({ 'draft.perms': perms, 'draft.permMap': permMap });
-  },
-
-  async savePerms() {
-    if (this.data.savingPerms) return;
-    this.setData({ savingPerms: true });
-    const { id, draft } = this.data;
-    try {
-      const user = await auth.put(`/api/admin/users/${id}/permissions`, {
-        role: draft.role,
-        permissionGroups: draft.groups,
-        permissions: draft.perms,
-      });
-      this.setData({
-        user: {
-          ...this.data.user,
-          ...user,
-          createdText: this.data.user.createdText,
-          bannedUntilText: this.data.user.bannedUntilText,
-        },
-      });
-      wx.showToast({ title: '权限已更新', icon: 'success' });
-    } catch (e) {
-      wx.showToast({ title: e.message, icon: 'none' });
-    } finally {
-      this.setData({ savingPerms: false });
-    }
   },
 
   // 限制账号功能（类型 + 时长 + 原因）——走 ban-sheet 抽屉

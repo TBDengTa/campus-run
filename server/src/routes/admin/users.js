@@ -16,6 +16,10 @@ const UserGoal = require('../../models/user-goal');
 const RunRecord = require('../../models/run-record');
 const WaterRecord = require('../../models/water-record');
 const UserBadge = require('../../models/user-badge');
+const Badge = require('../../models/badge');
+const WxSession = require('../../models/wx-session');
+const LoginDevice = require('../../models/login-device');
+const deviceSvc = require('../../services/login-device');
 const Appeal = require('../../models/appeal');
 
 const router = express.Router();
@@ -258,6 +262,7 @@ router.delete(
         ]
       : [];
     await Promise.all([...byOpenid, BanRecord.deleteMany({ userId: user._id })]);
+    await deviceSvc.revokeAllForUser(user._id); // 吊销「记住我」设备令牌（原实现漏删）
     await user.deleteOne();
     ok(res, { success: true, deleted: user.account || user.nickname });
   })
@@ -438,17 +443,35 @@ router.get(
 router.get(
   '/:id',
   wrap(async (req, res) => {
-    const user = await User.findById(req.params.id).select('-__v').lean();
+    const user = await User.findById(req.params.id)
+      .select('-__v -passwordHash -initialHashes -resetHashes -failedLogins -lockUntil')
+      .lean();
     if (!user) throw new ApiError(404, 404, '用户不存在');
     const bans = await BanRecord.find({ userId: user._id }).sort({ createdAt: -1 }).limit(50).lean();
     const openid = user.openid || '';
-    const [recentRuns, waterToday, badgeCount, effective, userGoal] = await Promise.all([
+    const [recentRuns, waterToday, badgeCount, effective, userGoal, devices, wxSession] = await Promise.all([
       openid ? RunRecord.find({ openid }).sort({ date: -1, createdAt: -1 }).limit(10).select('date steps distance calories durationSeconds source goalAchieved').lean() : Promise.resolve([]),
-      openid ? WaterRecord.findOne({ openid, date: require('../../utils/dates').todayKey() }).select('total target').lean() : Promise.resolve(null),
+      openid ? WaterRecord.findOne({ openid, date: dates.todayKey() }).select('total target').lean() : Promise.resolve(null),
       openid ? UserBadge.countDocuments({ openid }) : Promise.resolve(0),
-      openid ? (async () => { const User = require('../../models/user'); const u = await User.findById(user._id); return u ? await u.getEffectivePermissions() : []; })() : Promise.resolve([]),
+      openid ? (async () => { const u = await User.findById(user._id); return u ? await u.getEffectivePermissions() : []; })() : Promise.resolve([]),
       openid ? require('../../models/user-goal').findOne({ openid }).lean() : Promise.resolve(null),
+      LoginDevice.find({ userId: user._id }).sort({ lastUsedAt: -1 }).limit(5).select('label lastUsedAt expiresAt revoked createdAt').lean(),
+      openid ? WxSession.findOne({ openid }).select('updatedAt').lean() : Promise.resolve(null),
     ]);
+    const lastLogin = devices.reduce((acc, d) => {
+      const t = d.lastUsedAt || d.createdAt;
+      return t && (!acc || t > acc) ? t : acc;
+    }, null);
+    const loginInfo = {
+      // 绑定状态：openid 只脱敏展示
+      wechatBound: !!openid,
+      wechatOpenidMasked: openid ? `${openid.slice(0, 2)}***${openid.slice(-4)}` : '',
+      wechatBoundAt: user.openidBoundAt || null,
+      lastLogin,
+      lastWxSessionAt: wxSession ? wxSession.updatedAt : null,
+      lastSyncAt: user.lastSyncAt || null,
+      devices,
+    };
     const sport = {
       totalSteps: user.totalSteps || 0,
       totalDistance: user.totalDistance || 0,
@@ -468,10 +491,141 @@ router.get(
       bans,
       sport,
       goal: goalInfo,
+      loginInfo,
       effectivePermissions: effective,
       // 当前生效的限制（限制登录 / 限制微信同步 / 限制 GPS）
       restrictions: anticheat.activeRestrictions(user),
     });
+  })
+);
+
+// 用户全景运动数据：日/周记录窗口 + 综合达标率 + 饮水历史 + 徽章记录 + 生效目标
+router.get(
+  '/:id/sport-detail',
+  wrap(async (req, res) => {
+    const user = await User.findById(req.params.id).select('openid').lean();
+    if (!user) throw new ApiError(404, 404, '用户不存在');
+    const openid = user.openid || '';
+    const empty = { dailyRecords: [], weeklyRecords: [], rates: null, water: [], badges: [], earnedCount: 0, goal: null };
+    if (!openid) return ok(res, empty);
+
+    const goalsSvc = require('../../services/goals');
+    const goal = await goalsSvc.getEffectiveGoal(openid);
+    const dailyGoal = (goal && goal.daily && goal.daily.steps) || 0;
+    const weeklyGoal = (goal && goal.weekly && goal.weekly.steps) || 0;
+
+    // 全历史按日聚合（一次查询同时供达标率计算与展示窗口切分）
+    const dayAgg = await RunRecord.aggregate([
+      { $match: { openid } },
+      {
+        $group: {
+          _id: '$date',
+          steps: { $sum: '$steps' },
+          distance: { $sum: '$distance' },
+          calories: { $sum: '$calories' },
+          durationSeconds: { $sum: '$durationSeconds' },
+          recordCount: { $sum: 1 },
+          // 达标时该日多条 werun 记录都被置 true：取 max 再配合步数判定，按天去重不重复计
+          werunAchieved: { $max: { $cond: [{ $eq: ['$source', 'werun'] }, '$goalAchieved', false] } },
+        },
+      },
+    ]);
+    const dayRows = dayAgg
+      .map((d) => ({ ...d, date: d._id, achieved: !!d.werunAchieved || (dailyGoal > 0 && d.steps >= dailyGoal) }))
+      .sort((a, b) => (a.date < b.date ? -1 : 1));
+
+    // 周归并（周一起始，与用户端 /weeks 同口径）
+    const weekBounds = (dateKey) => {
+      const d = new Date(`${dateKey}T00:00:00`);
+      const diff = (d.getDay() + 6) % 7; // 周一=0
+      const start = new Date(d.getTime());
+      start.setDate(d.getDate() - diff);
+      const end = new Date(start.getTime());
+      end.setDate(start.getDate() + 6);
+      return { start: dates.toDateKey(start), end: dates.toDateKey(end) };
+    };
+    const weekMap = new Map();
+    for (const d of dayRows) {
+      const wk = weekBounds(d.date);
+      let w = weekMap.get(wk.start);
+      if (!w) {
+        w = { weekStart: wk.start, weekEnd: wk.end, steps: 0, distance: 0, activeDays: 0 };
+        weekMap.set(wk.start, w);
+      }
+      w.steps += d.steps;
+      w.distance += d.distance;
+      w.activeDays += 1;
+    }
+    const weekRows = [...weekMap.values()]
+      .map((w) => ({ ...w, achieved: weeklyGoal > 0 && w.steps >= weeklyGoal }))
+      .sort((a, b) => (a.weekStart < b.weekStart ? -1 : 1));
+
+    const achievedDays = dayRows.filter((d) => d.achieved).length;
+    const achievedWeeks = weekRows.filter((w) => w.achieved).length;
+    const rates = {
+      dailyRate: dayRows.length ? Math.round((achievedDays / dayRows.length) * 100) : null,
+      dailyAchieved: achievedDays,
+      dailyTotal: dayRows.length,
+      weeklyRate: weekRows.length ? Math.round((achievedWeeks / weekRows.length) * 100) : null,
+      weeklyAchieved: achievedWeeks,
+      weeklyTotal: weekRows.length,
+    };
+
+    const dailyRecords = dayRows.slice(-30).reverse().map((d) => ({
+      date: d.date,
+      steps: d.steps,
+      distanceKm: ((d.distance || 0) / 1000).toFixed(2),
+      recordCount: d.recordCount,
+      achieved: d.achieved,
+    }));
+    const weeklyRecords = weekRows.slice(-8).reverse();
+
+    const water = (await WaterRecord.find({ openid }).sort({ date: -1 }).limit(14).select('date total target').lean()).map((w) => ({
+      ...w,
+      percent: w.target ? Math.min(100, Math.round((w.total / w.target) * 100)) : 0,
+    }));
+
+    const [allBadges, earned] = await Promise.all([
+      Badge.find({ enabled: true }).sort({ sort: 1 }).lean(),
+      UserBadge.find({ openid }).lean(),
+    ]);
+    const byKey = new Map(earned.map((b) => [b.badgeKey, b]));
+    const badges = allBadges
+      .filter((b) => byKey.has(b.key))
+      .map((b) => ({
+        key: b.key,
+        name: b.name,
+        icon: b.icon,
+        tierColor: b.tierColor,
+        earnedAt: byKey.get(b.key).createdAt,
+      }))
+      .sort((a, b) => new Date(b.earnedAt) - new Date(a.earnedAt));
+
+    ok(res, {
+      dailyRecords,
+      weeklyRecords,
+      rates,
+      water,
+      badges,
+      earnedCount: badges.length,
+      goal: { planName: (goal && goal.planName) || '', daily: goal && goal.daily, weekly: goal && goal.weekly },
+    });
+  })
+);
+
+// 解绑微信（需 user.manage）：清绑定字段 + 微信会话 + 记住我设备令牌；运动等业务数据保留
+router.post(
+  '/:id/unbind-wechat',
+  requirePermission('user.manage'),
+  wrap(async (req, res) => {
+    const user = await User.findById(req.params.id);
+    if (!user) throw new ApiError(404, 404, '用户不存在');
+    if (!user.openid) throw new ApiError(400, 400, '该账号未绑定微信');
+    const openid = user.openid;
+    await User.updateOne({ _id: user._id }, { $unset: { openid: 1, openidBoundAt: 1 } });
+    await WxSession.deleteMany({ openid });
+    await deviceSvc.revokeAllForUser(user._id);
+    ok(res, { success: true });
   })
 );
 
