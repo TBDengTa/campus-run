@@ -47,6 +47,8 @@ Page({
     canManagePerms: false,
     roleText: '学生',
     banned: false,
+    // 跑分（学生端展示，来自 /api/points/me；教师或未开启时为 null）
+    points: null,
     devMode: !!auth.env.DEV_LOGIN, // 本地测试登录：登录的是 dev_* 账号，不是真实学籍
   },
 
@@ -76,11 +78,32 @@ Page({
       const perms = user.effectivePermissions || [];
       const isTeacher = user.role === 'teacher';
       const enroll = enrollOf(user);
+      // 跑分（学生端展示；接口不可用或未开启时为 null）
+      let points = null;
+      if (!isTeacher) {
+        try {
+          const p = await auth.get('/api/points/me');
+          if (p && p.config && p.config.enabled) {
+            points = {
+              today: fmt.formatNumber(p.today || 0),
+              week: fmt.formatNumber(p.week || 0),
+              total: fmt.formatNumber(p.total || 0),
+              dailyGoal: p.config.dailyGoal,
+              weeklyGoal: p.config.weeklyGoal,
+              perStep: p.config.perStep,
+              perStepScore: p.config.perStepScore,
+            };
+          }
+        } catch (e) {
+          points = null;
+        }
+      }
       this.setData({
         user,
         enroll,
         heroMeta: heroMetaOf(user, enroll, isTeacher),
         isTeacher,
+        points,
         isAdmin: !!user.isManager,
         canManagePerms: perms.includes('*') || perms.includes('permission.manage'),
         roleText: isTeacher ? '教师' : '学生',

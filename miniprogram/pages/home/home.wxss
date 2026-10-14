@@ -262,6 +262,42 @@
   color: var(--tt-text-3);
 }
 
+/* 跑分（今日 / 本周 / 累计）：三格等分，浅底圆角 */
+.today-points {
+  display: flex;
+  align-items: center;
+  margin-top: 18rpx;
+  padding: 16rpx 8rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-brand-soft);
+}
+
+.today-points-item {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4rpx;
+}
+
+.today-points-v {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: var(--tt-brand);
+}
+
+.today-points-l {
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+}
+
+.today-points-line {
+  width: 2rpx;
+  height: 44rpx;
+  background: rgba(255, 107, 0, 0.16);
+}
+
 /* 本周 7 天 */
 .week-days {
   display: flex;

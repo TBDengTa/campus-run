@@ -98,6 +98,31 @@
     </view>
   </block>
 
+  <!-- ===== 我的跑分（学校统一衡量标准；教师不参与） ===== -->
+  <block wx:if="{{points}}">
+    <view class="tt-section">
+      <text>我的跑分</text>
+      <text class="tt-section-extra">日目标 {{points.dailyGoal}} 分 · 周目标 {{points.weeklyGoal}} 分</text>
+    </view>
+    <view class="tt-card points-card">
+      <view class="points-item">
+        <text class="num-font points-v">{{points.today}}</text>
+        <text class="points-l">今日</text>
+      </view>
+      <view class="points-line"></view>
+      <view class="points-item">
+        <text class="num-font points-v">{{points.week}}</text>
+        <text class="points-l">本周</text>
+      </view>
+      <view class="points-line"></view>
+      <view class="points-item">
+        <text class="num-font points-v">{{points.total}}</text>
+        <text class="points-l">累计</text>
+      </view>
+    </view>
+    <view class="points-note">完成日/周目标得分，超出目标每 {{points.perStep}} 步再加 {{points.perStepScore}} 分</view>
+  </block>
+
   <!-- ===== 运动与健康（教师不参与运动记录，整块隐藏） ===== -->
   <block wx:if="{{!isTeacher}}">
   <view class="tt-section">运动与健康</view>

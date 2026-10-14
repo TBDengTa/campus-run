@@ -284,3 +284,43 @@
 .logout-btn:active {
   background: var(--td-bg-color-container-active);
 }
+
+/* ===== 我的跑分 ===== */
+.points-card {
+  display: flex;
+  align-items: center;
+  padding: 24rpx 8rpx;
+}
+
+.points-item {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4rpx;
+}
+
+.points-v {
+  font-size: 40rpx;
+  font-weight: 700;
+  color: var(--tt-brand);
+}
+
+.points-l {
+  font-size: 21rpx;
+  color: var(--tt-text-3);
+}
+
+.points-line {
+  width: 2rpx;
+  height: 52rpx;
+  background: var(--tt-line);
+}
+
+.points-note {
+  margin: 0 var(--tt-gap);
+  font-size: 21rpx;
+  line-height: 32rpx;
+  color: var(--tt-text-3);
+}

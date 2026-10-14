@@ -81,6 +81,24 @@
       <text class="today-goal-right" wx:else>未开始</text>
     </view>
 
+    <!-- 跑分（学校统一衡量标准：完成日/周目标与超出步数都会加分） -->
+    <view class="today-points" wx:if="{{points && pointsEnabled}}">
+      <view class="today-points-item">
+        <text class="num-font today-points-v">{{pointsToday}}</text>
+        <text class="today-points-l">今日跑分</text>
+      </view>
+      <view class="today-points-line"></view>
+      <view class="today-points-item">
+        <text class="num-font today-points-v">{{pointsWeek}}</text>
+        <text class="today-points-l">本周跑分</text>
+      </view>
+      <view class="today-points-line"></view>
+      <view class="today-points-item">
+        <text class="num-font today-points-v">{{pointsTotal}}</text>
+        <text class="today-points-l">累计跑分</text>
+      </view>
+    </view>
+
     <!-- 本周 7 天：圆形背景即当日完成度的环形进度条 -->
     <view class="week-days">
       <view class="day-chip" wx:for="{{weekDays}}" wx:key="key">

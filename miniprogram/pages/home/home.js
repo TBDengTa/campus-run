@@ -119,6 +119,12 @@ Page({
     noticeText: '',
     noticeMarquee: false,
     noticeDuration: 12,
+    // 跑分（学生端展示；教师/接口不可用时为空）
+    points: null,
+    pointsToday: '',
+    pointsWeek: '',
+    pointsTotal: '',
+    pointsEnabled: false,
     banned: false,
     isAdmin: false,
     syncing: false,
@@ -169,12 +175,14 @@ Page({
   async refresh() {
     try {
       await getApp().ensureLogin();
-      const [today, week, ads, announcements, me] = await Promise.allSettled([
+      const [today, week, ads, announcements, me, pointsRes] = await Promise.allSettled([
         auth.get('/api/run/today'),
         auth.get('/api/run/week').catch(() => ({ records: [] })),
         auth.get('/api/ads/slot/home_banner').catch(() => []),
         auth.get('/api/content/announcements').catch(() => []),
         getApp().refreshUser().catch(() => null),
+        // 跑分（教师账号不参与，接口会返回 0；失败不影响首页）
+        auth.get('/api/points/me').catch(() => null),
       ]);
       const user = getApp().globalData.userInfo || {};
       // 游客态（未绑定账号）→ 登录页；首次登录强制改密
@@ -231,6 +239,15 @@ Page({
         isAdmin: isManager,
         greetName,
         greetText: greetByHour(),
+      });
+      // 跑分（学生才展示；接口不可用时隐藏整块）
+      const points = pointsRes.status === 'fulfilled' ? pointsRes.value : null;
+      this.setData({
+        points: points && !isTeacher ? points : null,
+        pointsToday: points ? fmt.formatNumber(points.today) : '',
+        pointsWeek: points ? fmt.formatNumber(points.week) : '',
+        pointsTotal: points ? fmt.formatNumber(points.total) : '',
+        pointsEnabled: !!(points && points.config && points.config.enabled),
       });
       // 登录信息到手后刷新自定义 tabBar（教师端导航项不同）
       this.syncTabBar();
