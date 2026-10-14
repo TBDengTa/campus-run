@@ -28,6 +28,7 @@ Page({
       weeklyGoals: [],
     },
     filters: { school: '', department: '', specialty: '', grade: '', dailyGoal: '', weeklyGoal: '' },
+    hasActiveFilter: false,
     canManage: false,
   },
 
@@ -58,15 +59,33 @@ Page({
     }
   },
 
+  updateFilterState() {
+    const f = this.data.filters;
+    const active = !!(f.school || f.department || f.specialty || f.grade || f.dailyGoal || f.weeklyGoal || this.data.keyword || this.data.status);
+    this.setData({ hasActiveFilter: active });
+  },
+
+  clearFilters() {
+    this.setData({
+      filters: { school: '', department: '', specialty: '', grade: '', dailyGoal: '', weeklyGoal: '' },
+      keyword: '',
+      status: '',
+      hasActiveFilter: false,
+    });
+    this.reload();
+  },
+
   onDropdownChange(e) {
     const key = e.currentTarget.dataset.key;
     const value = e.detail.value || '';
     this.setData({ [`filters.${key}`]: value });
+    this.updateFilterState();
     this.reload();
   },
 
   onSearch(e) {
     this.setData({ keyword: e.detail.value || '' });
+    this.updateFilterState();
     this.reload();
   },
 
@@ -78,6 +97,7 @@ Page({
   filterStatus(e) {
     const status = e.currentTarget.dataset.status;
     this.setData({ status: this.data.status === status ? '' : status });
+    this.updateFilterState();
     this.reload();
   },
 

@@ -1,45 +1,56 @@
 .ae-page {
-  padding-bottom: 48rpx;
+  padding-bottom: 220rpx;
 }
 
-.ae-role-row {
+/* ===== 账户类型分段 ===== */
+.ae-type-card {
+  padding: 24rpx 28rpx;
+}
+
+.ae-type-seg {
   display: flex;
-  gap: 16rpx;
+  background: var(--td-gray-color-2, #eee);
+  border-radius: 999px;
+  padding: 6rpx;
 }
 
-.ae-role {
+.ae-type-item {
   flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6rpx;
-  padding: 24rpx 0;
-  border-radius: 16rpx;
-  border: 2rpx solid var(--td-component-border, #e0e0e0);
-  font-size: 28rpx;
+  text-align: center;
+  padding: 14rpx 0;
+  border-radius: 999px;
+  font-size: 26rpx;
   color: var(--td-text-color-secondary);
 }
 
-.ae-role.active {
-  border-color: var(--tt-brand, #ff6b00);
+.ae-type-item.active {
+  background: var(--td-bg-color-container, #fff);
   color: var(--tt-brand, #ff6b00);
-  background: var(--tt-brand-weak, rgba(255, 107, 0, 0.06));
   font-weight: 600;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.08);
 }
 
-.ae-role-sub {
-  font-size: 20rpx;
-  opacity: 0.7;
+.ae-type-hint {
+  margin-top: 16rpx;
+  font-size: 22rpx;
+  color: var(--td-text-color-secondary);
+  text-align: center;
+}
+
+/* ===== 表单行（统一规格） ===== */
+.ae-form {
+  padding: 8rpx 28rpx;
 }
 
 .ae-row {
   display: flex;
   align-items: center;
-  padding: 22rpx 0;
+  min-height: 88rpx;
+  padding: 8rpx 0;
 }
 
 .ae-label {
-  width: 190rpx;
+  width: 176rpx;
   font-size: 28rpx;
   color: var(--td-text-color-secondary);
   flex-shrink: 0;
@@ -48,10 +59,22 @@
 .ae-input {
   flex: 1;
   font-size: 28rpx;
+  text-align: right;
+}
+
+.ae-ph {
+  color: var(--td-text-color-placeholder);
+}
+
+.ae-divider {
+  height: 1rpx;
+  background: var(--tt-line, rgba(0, 0, 0, 0.05));
 }
 
 .ae-picker {
   font-size: 28rpx;
+  text-align: right;
+  flex: 1;
 }
 
 .ae-ph {
@@ -61,11 +84,13 @@
 .ae-chips {
   display: flex;
   gap: 14rpx;
+  flex: 1;
+  justify-content: flex-end;
 }
 
 .ae-chip {
   font-size: 24rpx;
-  padding: 10rpx 30rpx;
+  padding: 8rpx 32rpx;
   border-radius: 999px;
   background: var(--td-gray-color-2, #eee);
   color: var(--td-text-color-secondary);
@@ -76,6 +101,19 @@
   color: #fff;
 }
 
+/* ===== 固定底部保存 ===== */
 .ae-submit {
-  padding: 16rpx 24rpx;
+  position: fixed;
+  left: 24rpx;
+  right: 24rpx;
+  bottom: calc(24rpx + env(safe-area-inset-bottom));
+  z-index: 20;
+}
+
+.ae-submit-tip {
+  margin-top: 14rpx;
+  font-size: 22rpx;
+  color: var(--td-text-color-secondary);
+  text-align: center;
+  line-height: 34rpx;
 }

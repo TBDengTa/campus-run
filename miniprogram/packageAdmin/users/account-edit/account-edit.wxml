@@ -1,84 +1,80 @@
 <view class="page tt-page ae-page">
   <!-- ===== 账户类型 ===== -->
   <view class="tt-section">账户类型</view>
-  <view class="tt-card">
-    <view class="ae-role-row">
-      <view class="ae-role {{role === 'student' ? 'active' : ''}}" bind:tap="pickRole" data-value="student">
-        <t-icon name="user" size="36rpx" />
-        <text>学生</text>
-        <view class="ae-role-sub">参与运动与排名</view>
-      </view>
-      <view class="ae-role {{role === 'teacher' ? 'active' : ''}}" bind:tap="pickRole" data-value="teacher">
-        <t-icon name="assignment" size="36rpx" />
-        <text>教师</text>
-        <view class="ae-role-sub">不参与运动排名</view>
-      </view>
+  <view class="tt-card ae-type-card">
+    <view class="ae-type-seg">
+      <view class="ae-type-item {{role === 'student' ? 'active' : ''}}" bind:tap="pickRole" data-value="student">学生账户</view>
+      <view class="ae-type-item {{role === 'teacher' ? 'active' : ''}}" bind:tap="pickRole" data-value="teacher">教师账户</view>
     </view>
+    <view class="ae-type-hint">{{role === 'student' ? '学生参与运动记录与排名，需填写学籍信息' : '教师不参与运动记录与排名'}}</view>
   </view>
 
-  <!-- ===== 账号信息 ===== -->
-  <view class="tt-section">账号信息</view>
-  <view class="tt-card">
+  <!-- ===== 基本信息 ===== -->
+  <view class="tt-section">基本信息</view>
+  <view class="tt-card ae-form">
     <view class="ae-row">
       <text class="ae-label">账号（姓名）</text>
-      <input class="ae-input" value="{{account}}" placeholder="真实姓名，作为登录账号" bindinput="inputAccount" />
+      <input class="ae-input" value="{{account}}" placeholder="真实姓名，作为登录账号" placeholder-class="ae-ph" bindinput="inputAccount" />
     </view>
-    <view class="tt-divider"></view>
+    <view class="ae-divider"></view>
     <view class="ae-row" wx:if="{{mode === 'create'}}">
       <text class="ae-label">初始密码</text>
-      <input class="ae-input" password value="{{initialPassword}}" placeholder="留空则系统生成" bindinput="inputPassword" />
+      <input class="ae-input" password value="{{initialPassword}}" placeholder="留空则系统生成" placeholder-class="ae-ph" bindinput="inputPassword" />
     </view>
-    <view class="tt-divider"></view>
+    <view class="ae-divider" wx:if="{{mode === 'create'}}"></view>
     <view class="ae-row">
       <text class="ae-label">性别</text>
       <view class="ae-chips">
-        <view class="ae-chip {{gender === item.value ? 'active' : ''}}" wx:for="{{genders}}" wx:key="value" bind:tap="pickGender" data-value="{{item.value}}">{{item.label}}</view>
+        <view class="ae-chip {{gender === 1 ? 'active' : ''}}" bind:tap="pickGender" data-value="1">男</view>
+        <view class="ae-chip {{gender === 2 ? 'active' : ''}}" bind:tap="pickGender" data-value="2">女</view>
+        <view class="ae-chip {{gender === 0 ? 'active' : ''}}" bind:tap="pickGender" data-value="0">保密</view>
       </view>
     </view>
-    <view class="tt-divider"></view>
+    <view class="ae-divider"></view>
     <view class="ae-row">
       <text class="ae-label">出生日期</text>
       <picker mode="date" value="{{birthdate || today}}" start="1950-01-01" end="{{today}}" bindchange="pickBirthdate">
         <view class="ae-picker {{birthdate ? '' : 'ae-ph'}}">{{birthdate || '选择出生日期'}}</view>
       </picker>
     </view>
-    <view class="tt-divider"></view>
+    <view class="ae-divider"></view>
     <view class="ae-row">
       <text class="ae-label">学号</text>
-      <input class="ae-input" value="{{studentId}}" placeholder="选填" bindinput="inputStudentId" />
+      <input class="ae-input" value="{{studentId}}" placeholder="选填" placeholder-class="ae-ph" bindinput="inputStudentId" />
     </view>
   </view>
 
   <!-- ===== 学籍信息（学生） ===== -->
   <block wx:if="{{role === 'student'}}">
     <view class="tt-section">学籍信息</view>
-    <view class="tt-card">
+    <view class="tt-card ae-form">
       <view class="ae-row">
         <text class="ae-label">院校</text>
-        <input class="ae-input" value="{{school}}" placeholder="如 北校区" bindinput="input" data-field="school" />
+        <input class="ae-input" value="{{school}}" placeholder="如 北校区" placeholder-class="ae-ph" bindinput="input" data-field="school" />
       </view>
-      <view class="tt-divider"></view>
+      <view class="ae-divider"></view>
       <view class="ae-row">
         <text class="ae-label">系部</text>
-        <input class="ae-input" value="{{department}}" placeholder="如 机电建工系" bindinput="input" data-field="department" />
+        <input class="ae-input" value="{{department}}" placeholder="如 机电建工系" placeholder-class="ae-ph" bindinput="input" data-field="department" />
       </view>
-      <view class="tt-divider"></view>
+      <view class="ae-divider"></view>
       <view class="ae-row">
         <text class="ae-label">专业</text>
-        <input class="ae-input" value="{{specialty}}" placeholder="如 大数据技术" bindinput="input" data-field="specialty" />
+        <input class="ae-input" value="{{specialty}}" placeholder="如 大数据技术" placeholder-class="ae-ph" bindinput="input" data-field="specialty" />
       </view>
-      <view class="tt-divider"></view>
+      <view class="ae-divider"></view>
       <view class="ae-row">
         <text class="ae-label">班级</text>
-        <input class="ae-input" value="{{className}}" placeholder="如 23级大数据1班（选填）" bindinput="input" data-field="className" />
+        <input class="ae-input" value="{{className}}" placeholder="如 23级大数据1班（选填）" placeholder-class="ae-ph" bindinput="input" data-field="className" />
       </view>
     </view>
   </block>
 
+  <!-- ===== 保存（固定底部） ===== -->
   <view class="ae-submit">
     <t-button theme="primary" block loading="{{submitting}}" bind:tap="submit">
       {{mode === 'create' ? '创建账户' : '保存修改'}}
     </t-button>
+    <view class="ae-submit-tip" wx:if="{{mode === 'create'}}">创建后用户以「姓名 + 初始密码」登录，首次登录需修改密码并绑定微信</view>
   </view>
-  <view class="tt-footer" wx:if="{{mode === 'create'}}">创建后用户以「姓名 + 初始密码」登录，首次登录需修改密码，并绑定微信</view>
 </view>

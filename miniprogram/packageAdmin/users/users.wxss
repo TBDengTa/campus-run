@@ -94,3 +94,66 @@
   padding: 20rpx 24rpx;
   background: var(--td-bg-color-container, #fff);
 }
+
+/* ===== 筛选下拉卡 ===== */
+.filter-card {
+  padding: 0;
+  overflow: hidden;
+  margin-bottom: 12rpx;
+}
+
+.filter-card t-dropdown-menu {
+  width: 100%;
+}
+
+/* ===== 清除筛选 ===== */
+.clear-filter-chip {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  font-size: 22rpx;
+  color: var(--tt-brand, #ff6b00);
+  background: var(--tt-brand-weak, rgba(255, 107, 0, 0.08));
+  border-radius: 999px;
+  padding: 10rpx 20rpx;
+  white-space: nowrap;
+}
+
+.clear-filter-chip.hide {
+  display: none;
+}
+
+/* ===== 用户行（滑动内容） ===== */
+.user-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 22rpx 24rpx;
+}
+
+.users-avatar.is-teacher {
+  background: var(--td-gray-color-3, #e0e0e0);
+}
+
+.user-row-main {
+  min-width: 0;
+}
+
+.user-row-goal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+  margin-right: 4rpx;
+}
+
+.user-row-goal .num-font {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--tt-brand, #ff6b00);
+}
+
+.user-row-goal-unit {
+  font-size: 18rpx;
+  color: var(--td-text-color-secondary);
+}
