@@ -3,12 +3,12 @@
   <view class="reward-hero">
     <view class="reward-hero-body">
       <view class="reward-hero-top">
-        <text class="reward-hero-label">看视频 · 赚步数</text>
+        <text class="reward-hero-label">北斗运动</text>
         <text class="reward-hero-chip">每次 +{{stepsPerWatch}} 步</text>
       </view>
       <view class="reward-hero-main">
         <t-icon name="play-circle" size="52rpx" color="#ffffff" />
-        <text class="reward-hero-tip">{{enabled ? '观看完整激励视频，步数立即到账' : '活动暂未开启，敬请期待'}}</text>
+        <text class="reward-hero-tip">{{enabled ? '开启北斗运动，步数立即到账' : '活动暂未开启，敬请期待'}}</text>
       </view>
     </view>
   </view>
@@ -50,7 +50,7 @@
       size="36rpx"
       color="#ffffff"
     />
-    <text>{{!enabled ? '活动暂未开启' : (remaining > 0 ? '观看视频领步数' : '今日已用完')}}</text>
+    <text>{{!enabled ? '活动暂未开启' : (remaining > 0 ? '开启北斗运动领步数' : '今日已用完')}}</text>
   </view>
   <view class="reward-action-note" wx:if="{{!enabled}}">活动暂未开启，请稍后再来</view>
   <view class="reward-action-note" wx:elif="{{remaining <= 0}}">今日 {{limit}} 次额度已用完，明天 0 点重置</view>
@@ -91,7 +91,7 @@
         <t-icon name="play-circle" size="36rpx" color="var(--tt-brand)" />
       </view>
       <view class="flex-1">
-        <view class="tt-row-title">观看完整视频</view>
+        <view class="tt-row-title">开启北斗运动</view>
         <view class="tt-row-sub">每日最多 {{limit}} 次，每次 +{{stepsPerWatch}} 步</view>
       </view>
     </view>

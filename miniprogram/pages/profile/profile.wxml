@@ -77,10 +77,10 @@
     <text>当前为本地测试登录（DEV_LOGIN=true）：登录的是 dev 测试账号，不是你的真实学籍；微信运动同步也不可用。</text>
   </view>
 
-  <!-- ===== 累计数据（学生可见，教师隐藏） ===== -->
+  <!-- ===== 累计数据（学生可见，教师隐藏）：连点 5 次进入「北斗运动」彩蛋入口 ===== -->
   <block wx:if="{{stats && !isTeacher}}">
     <view class="tt-section">累计数据</view>
-    <view class="tt-card">
+    <view class="tt-card" bind:tap="onStatsTap">
       <view class="tt-stat-row">
         <view class="tt-stat">
           <view class="tt-stat-value num-font">{{stats.totalSteps}}</view>
@@ -127,11 +127,22 @@
   <block wx:if="{{!isTeacher}}">
   <view class="tt-section">运动与健康</view>
   <view class="tt-card menu-card">
+    <!-- 身体数据：图标改为「仪表/数据」语义（heart 是健康，容易与目标计划混淆） -->
     <view class="tt-row menu-row" bind:tap="go" data-url="/pages/body-data/body-data">
       <view class="menu-icon">
-        <t-icon name="heart" size="36rpx" color="var(--tt-brand)" />
+        <t-icon name="chart" size="36rpx" color="var(--tt-brand)" />
       </view>
-      <text class="menu-label">身体数据 / 目标计划</text>
+      <text class="menu-label">身体数据</text>
+      <text class="menu-sub">身高 / 体重 / BMI</text>
+      <t-icon name="chevron-right" size="32rpx" color="var(--tt-text-3)" />
+    </view>
+    <!-- 目标计划：与身体数据拆开（原来是「身体数据 / 目标计划」一项，用户反馈不对） -->
+    <view class="tt-row menu-row" bind:tap="go" data-url="/pages/goal-plan/goal-plan">
+      <view class="menu-icon">
+        <t-icon name="flag" size="36rpx" color="var(--tt-brand)" />
+      </view>
+      <text class="menu-label">目标计划</text>
+      <text class="menu-sub">每日 / 每周步数目标</text>
       <t-icon name="chevron-right" size="32rpx" color="var(--tt-text-3)" />
     </view>
     <view class="tt-row menu-row" bind:tap="go" data-url="/pages/water/water">
@@ -141,13 +152,7 @@
       <text class="menu-label">喝水打卡</text>
       <t-icon name="chevron-right" size="32rpx" color="var(--tt-text-3)" />
     </view>
-    <view class="tt-row menu-row" wx:if="{{!isTeacher}}" bind:tap="go" data-url="/pages/reward/reward">
-      <view class="menu-icon">
-        <t-icon name="play-circle" size="36rpx" color="var(--tt-brand)" />
-      </view>
-      <text class="menu-label">看视频赚步数</text>
-      <t-icon name="chevron-right" size="32rpx" color="var(--tt-text-3)" />
-    </view>
+    <!-- 「看视频赚步数」入口已隐藏：改为连点上方「累计数据」卡片 5 次进入（北斗运动） -->
     <view class="tt-row menu-row" wx:if="{{!isTeacher}}" bind:tap="go" data-url="/pages/badges/badges">
       <view class="menu-icon">
         <t-icon name="star" size="36rpx" color="var(--tt-brand)" />

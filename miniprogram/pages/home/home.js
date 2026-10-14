@@ -223,7 +223,7 @@ Page({
           perm: '',
           icon: 'dashboard',
           label: '管理中枢',
-          url: '/packageAdmin/hub/hub',
+          url: '/pages/hub/hub',
           bg: 'var(--tt-brand-soft)',
           color: 'var(--tt-brand)',
         });

@@ -2,6 +2,7 @@
   "darkmode": true,
   "pages": [
     "pages/home/home",
+    "pages/hub/hub",
     "pages/run/index",
     "pages/records/records",
     "pages/ranking/ranking",
@@ -30,7 +31,6 @@
     {
       "root": "packageAdmin",
       "pages": [
-        "hub/hub",
         "users/users",
         "users/account-edit/account-edit",
         "users/import",
@@ -68,6 +68,12 @@
     "backgroundColor": "#ffffff",
     "borderStyle": "white",
     "list": [
+      {
+        "pagePath": "pages/hub/hub",
+        "text": "管理",
+        "iconPath": "assets/tabbar/home.png",
+        "selectedIconPath": "assets/tabbar/home-active.png"
+      },
       {
         "pagePath": "pages/home/home",
         "text": "首页",

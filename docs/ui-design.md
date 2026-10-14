@@ -85,7 +85,7 @@ box-shadow: 0 12rpx 32rpx rgba(255, 107, 0, 0.24);
 - **图标**：用 `t-icon` 矢量图标（选中用 `*-filled` 填充态 + `#ff6b00`，未选中用线性态 + `#9aa0a6`），
   不用位图，便于随主题换色；`assets/tabbar/*.png` 仅作为关闭 custom 时的原生兜底。
 - **角色差异**：学生 = 首页 / 跑步 / 记录 / 排行 / 我的；
-  教师（有管理权限）= 首页 / **管理** / 我的，其中「管理」指向 **管理中枢** `packageAdmin/hub/hub`（分类列出全部管理入口，
+  教师（有管理权限）= 首页 / **管理** / 我的，其中「管理」指向 **管理中枢** `pages/hub/hub`（分类列出全部管理入口，
   不再直接跳用户管理）；教师（无管理权限但是**班主任**）= 首页 / **班级** / 我的，指向 `packageAdmin/class/class`；
   其余无权限教师 = 首页 / 公告 / 我的。
   教师账号不参与运动记录与排名，故不展示跑步 / 记录 / 排行入口。
@@ -93,8 +93,11 @@ box-shadow: 0 12rpx 32rpx rgba(255, 107, 0, 0.24);
   （页面根节点同时加 `.tt-page-tab`，底部留白 `200rpx + 安全区`，避免内容被悬浮胶囊遮挡）。
 - 非 tab 入口（管理端控制台 / 公告）在组件内用 `wx.navigateTo`，tab 页用 `wx.switchTab`。
 
-### 管理中枢 `packageAdmin/hub/hub`（教师端「管理」入口）
+### 管理中枢 `pages/hub/hub`（**主包 tabBar 页**，教师端「管理」入口）
 
+- **它是 tabBar 页而不是普通跳转页**：`app.json` 的 `tabBar.list` 含 `pages/hub/hub`，教师端自定义 tabBar 的「管理」
+  项用 `switchTab` 进入 → **切换导航时底部栏常驻、可随时切回首页/我的**；页面根节点带 `.tt-page-tab`，
+  `onShow` 里调 `this.getTabBar().setActive('/pages/hub/hub')` 点亮选中态。学生端的自定义 tabBar 不渲染该项。
 - **定位**：把所有管理端入口**按分类**列出来，按 `effectivePermissions` 过滤（`'*'` 全显），
   没有可用权限时给明确空状态而不是空白页。
 - **版式**：顶部 `.tt-hero` 身份卡（内容 = 管理中枢 / 角色胶囊 / 姓名·班级·一句说明），

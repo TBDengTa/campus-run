@@ -170,6 +170,21 @@ Page({
     });
   },
 
+  // 累计数据卡片：连点 5 次进入「北斗运动」（原「看视频赚步数」，入口已隐藏）
+  onStatsTap() {
+    const now = Date.now();
+    const taps = now - (this._tapLast || 0) < 2000 ? (this._taps || 0) + 1 : 1;
+    this._taps = taps;
+    this._tapLast = now;
+    if (taps >= 5) {
+      this._taps = 0;
+      if (wx.vibrateShort) wx.vibrateShort({ type: 'light' });
+      wx.navigateTo({ url: '/pages/reward/reward' });
+      return;
+    }
+    if (taps >= 3) wx.showToast({ title: `再点 ${5 - taps} 次进入北斗运动`, icon: 'none', duration: 800 });
+  },
+
   go(e) {
     wx.navigateTo({ url: e.currentTarget.dataset.url });
   },

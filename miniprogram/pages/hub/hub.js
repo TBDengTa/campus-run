@@ -75,7 +75,15 @@ Page({
 
   onShow() {
     if (!getApp().requireLogin()) return;
+    // 本页是 tabBar 页（教师端「管理」），要主动点亮底部导航
+    this.syncTabBar();
     this.load();
+  },
+
+  syncTabBar() {
+    if (typeof this.getTabBar !== 'function') return;
+    const bar = this.getTabBar();
+    if (bar && typeof bar.setActive === 'function') bar.setActive('/pages/hub/hub');
   },
 
   async load() {

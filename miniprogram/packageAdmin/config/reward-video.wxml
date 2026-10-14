@@ -1,6 +1,6 @@
 <view class="page tt-page cfg-page" wx:if="{{config}}">
   <view class="tt-section">
-    <text>激励视频赚步数</text>
+    <text>北斗运动（激励视频赚步数）</text>
     <text class="tt-section-extra">观看广告换取步数</text>
   </view>
 

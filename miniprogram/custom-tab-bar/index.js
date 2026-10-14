@@ -14,10 +14,10 @@ const STUDENT_TABS = [
 // 班委版：在「排行」与「我的」之间插入「班级」
 const CLASS_TAB = { key: 'class', path: '/packageAdmin/class/class', text: '班级', icon: 'usergroup', activeIcon: 'usergroup-filled', tab: false };
 
-// 教师（有管理权限）：管理端入口指向「管理中枢」（分类列出全部管理操作），不再直接跳用户管理
+// 教师（有管理权限）：管理端入口 = 「管理中枢」，它是主包 tabBar 页（受底部导航控制，切换时导航栏常驻）
 const TEACHER_TABS_ADMIN = [
   { key: 'home', path: '/pages/home/home', text: '首页', icon: 'home', activeIcon: 'home-filled', tab: true },
-  { key: 'hub', path: '/packageAdmin/hub/hub', text: '管理', icon: 'dashboard', activeIcon: 'dashboard-filled', tab: false },
+  { key: 'hub', path: '/pages/hub/hub', text: '管理', icon: 'dashboard', activeIcon: 'dashboard-filled', tab: true },
   { key: 'profile', path: '/pages/profile/profile', text: '我的', icon: 'user-circle', activeIcon: 'user-circle-filled', tab: true },
 ];
 

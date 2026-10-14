@@ -157,11 +157,35 @@
     </block>
   </view>
 
-  <!-- ===== 5. 考核与目标 ===== -->
+  <!-- ===== 5. 跑分（独立卡片：没运动记录的用户也要能看到，学校统一衡量标准） ===== -->
+  <block wx:if="{{points}}">
+    <view class="tt-section">
+      <text>跑分</text>
+      <text class="tt-section-extra">学校统一衡量标准</text>
+    </view>
+    <view class="tt-card ud-card">
+      <view class="ud-points-row">
+        <view class="ud-points">
+          <text class="num-font ud-points-v">{{points.totalText}}</text>
+          <text class="ud-points-l">总跑分</text>
+        </view>
+        <view class="ud-points">
+          <text class="num-font ud-points-v">{{points.todayText}}</text>
+          <text class="ud-points-l">今日</text>
+        </view>
+        <view class="ud-points">
+          <text class="num-font ud-points-v">{{points.weekText}}</text>
+          <text class="ud-points-l">本周</text>
+        </view>
+      </view>
+      <view class="ud-note">{{points.enabled ? '计分规则：' + points.configText : '跑分体系已停用（系统配置 → 跑分设置）'}}</view>
+    </view>
+  </block>
+
+  <!-- ===== 6. 考核与目标 ===== -->
   <block wx:if="{{rates}}">
     <view class="tt-section">
       <text>考核与目标</text>
-      <text class="tt-section-extra" wx:if="{{points}}">跑分：学校统一衡量标准</text>
     </view>
     <view class="tt-card ud-card">
       <view class="ud-rate-row">
@@ -180,22 +204,6 @@
         <text>当前目标</text>
         <text class="ud-kv-v">{{goal.planName}} · 日 {{goal.dailyStepsText}} · 周 {{goal.weeklyStepsText}}</text>
       </view>
-      <!-- 跑分：总 / 今日 / 本周（周一起） -->
-      <view class="ud-points-row" wx:if="{{points}}">
-        <view class="ud-points">
-          <text class="num-font ud-points-v">{{points.totalText}}</text>
-          <text class="ud-points-l">总跑分</text>
-        </view>
-        <view class="ud-points">
-          <text class="num-font ud-points-v">{{points.todayText}}</text>
-          <text class="ud-points-l">今日</text>
-        </view>
-        <view class="ud-points">
-          <text class="num-font ud-points-v">{{points.weekText}}</text>
-          <text class="ud-points-l">本周</text>
-        </view>
-      </view>
-      <view class="ud-note" wx:if="{{points}}">{{points.enabled ? '计分规则：' + points.configText : '跑分体系已停用（系统配置 → 跑分设置）'}}</view>
     </view>
   </block>
 

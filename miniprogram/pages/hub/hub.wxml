@@ -1,4 +1,4 @@
-<view class="page tt-page hub-page">
+<view class="page tt-page tt-page-tab hub-page">
   <!-- ===== 顶部：身份 + 权限说明 ===== -->
   <view class="tt-hero hub-hero">
     <view class="tt-hero-body">
