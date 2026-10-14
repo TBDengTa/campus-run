@@ -575,6 +575,12 @@
 }
 
 /* ===== 督促抽屉 ===== */
+/* 关键：.tt-sheet-body 是 flex 子项，默认 min-height:auto 会被长名单（几十人）撑到内容高度，
+   结果是抽屉被 max-height 裁切、名单无法滚动、底部「复制名单」被推出屏幕。这里显式归零。 */
+.cls-sheet .tt-sheet-body {
+  min-height: 0;
+}
+
 .cls-nudge-row {
   display: flex;
   align-items: center;

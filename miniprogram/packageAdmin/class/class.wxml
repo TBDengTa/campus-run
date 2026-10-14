@@ -233,7 +233,7 @@
 
   <!-- ===== 督促抽屉：今日未达标名单（仅班主任可见）===== -->
   <t-popup visible="{{nudgeVisible}}" placement="bottom" bind:visible-change="onNudgeVisible">
-    <view class="tt-sheet">
+    <view class="tt-sheet cls-sheet">
       <view class="tt-sheet-grab"></view>
       <view class="tt-sheet-head">
         <view class="tt-sheet-icon">
