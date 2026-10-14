@@ -69,6 +69,30 @@
   令牌**用后即轮换**（旧令牌立刻失效，客户端需用返回值覆盖本地记录），删除记录时调 `POST /api/auth/device-revoke`。
   退出登录**不撤销** deviceToken（否则"退出后一键登回"就没意义），只有用户删除历史记录或管理员踢下线才撤销。
 
+## 班主任与班委（班级域）
+- **班主任**：教师可被分配多个班级 —— `user.homeroomClasses: [String]`（存班级名，与 `className` 同口径）。
+  班主任**不需要任何管理权限**即可查看/督促自己班的学生数据。
+- **班委**：学生可被设为班委 —— `user.isClassOfficer: Boolean`（同班可多人）。
+  班委**只读**本班数据，没有任何写操作。
+- **权限模型（重要）**：班级域接口在 `/api/class/*`（`server/src/routes/class.js`），
+  **不使用 `requirePermission`**，而用成员资格校验：
+  ① 班主任 = `user.homeroomClasses.includes(className)` → 可读该班全部数据；
+  ② 班委 = `user.isClassOfficer === true && user.className === className` → 只读且仅限本班；
+  ③ 其余一律 403。
+  新增任何 `/api/class/*` 接口**都必须先校验「目标学生属于该 className」**，防止跨班越权。
+- 分配入口在管理端用户详情页（需 `user.manage`）。
+- `/api/auth/me` 必须暴露 `homeroomClasses` 与 `isClassOfficer`：自定义 tabBar 依赖它决定教师中间导航项
+  （有管理权限 → 管理中枢；无权限但是班主任 → 班级管理；否则 → 公告）。
+- 班级统计口径与首页数据概况一致；班级排名只统计 `role != 'teacher'` 的学生。
+
+## 跑分（积分体系）
+- 配置在单例 `goal_config.points`（系统配置 → 跑分设置）：完成日目标得分、完成周目标得分、
+  超出部分「每 N 步加 M 分」（可设单日上限）。
+- 计算**统一走 `server/src/services/points.js`**，禁止在路由或页面里各写一套公式；
+  达标口径与 `services/goals.js::getEffectiveGoal` 一致，周为 **ISO 周一**起始。
+- 展示位置：排行榜（支持 `metric=points`）、记录页日/周行、管理端用户详情与日周明细页、首页与我的页面。
+- 跑分按**当前配置口径实时计算**（不落库快照），因此调配置会连带影响历史数值——刻意如此（学校统一衡量标准）。
+
 ## 迁移
 - 旧库（1.0）只读；任何迁移通过 `server/scripts/migrate-v1-to-v2.js`，先 `--dry-run` 再正式执行。
 - 启动期迁移（`services/rbac.js` 的 `seedRbac`）必须**先归一化历史角色，再保存任何用户文档**：
