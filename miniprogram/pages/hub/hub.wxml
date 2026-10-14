@@ -14,7 +14,7 @@
 
   <t-loading wx:if="{{loading}}" theme="circular" size="40rpx" text="加载中…" class="hub-loading" />
 
-  <!-- ===== 分类列出全部管理入口 ===== -->
+  <!-- ===== 分类列出全部管理入口（单组超过一行可折叠） ===== -->
   <block wx:for="{{groups}}" wx:key="key" wx:for-item="group">
     <view class="tt-section">
       <text>{{group.title}}</text>
@@ -22,12 +22,50 @@
     </view>
     <view class="tt-card hub-card">
       <view class="tt-grid">
-        <view class="tt-grid-item" wx:for="{{group.items}}" wx:key="key" bind:tap="go" data-url="{{item.url}}">
+        <view
+          class="tt-grid-item"
+          wx:for="{{group.shown || group.items}}"
+          wx:key="key"
+          bind:tap="go"
+          data-url="{{item.url}}"
+          data-key="{{item.key}}"
+        >
           <view class="tt-chip-icon" style="background: {{item.bg || 'var(--tt-brand-soft)'}}">
             <t-icon name="{{item.icon}}" size="40rpx" color="{{item.color || 'var(--tt-brand)'}}" />
           </view>
           <text class="tt-grid-text">{{item.label}}</text>
         </view>
+      </view>
+
+      <!-- 分组折叠：超过 4 项时只展示一行 -->
+      <view class="hub-fold" wx:if="{{group.foldable}}" bind:tap="toggleGroup" data-key="{{group.key}}">
+        <text>{{group.expanded ? '收起' : '展开全部 ' + group.items.length + ' 项'}}</text>
+        <t-icon name="{{group.expanded ? 'chevron-up' : 'chevron-down'}}" size="28rpx" color="var(--tt-text-3)" />
+      </view>
+
+      <!-- 我的班级：班级过多时折叠展示，可展开逐个进入 -->
+      <view class="hub-classes" wx:if="{{group.key === 'class' && classFold}}">
+        <view class="hub-classes-head">
+          <text class="hub-classes-title">我的班级 · 共 {{classes.length}} 个</text>
+          <view class="hub-classes-toggle" bind:tap="toggleClasses">
+            <text>{{classExpanded ? '收起' : '展开选择'}}</text>
+            <t-icon name="{{classExpanded ? 'chevron-up' : 'chevron-down'}}" size="26rpx" color="var(--tt-brand)" />
+          </view>
+        </view>
+        <view class="hub-class-chips">
+          <view
+            class="tt-chip hub-class-chip"
+            wx:for="{{visibleClasses}}"
+            wx:key="*this"
+            bind:tap="openClass"
+            data-class="{{item}}"
+          >{{item}}</view>
+        </view>
+        <view class="hub-classes-tip" wx:if="{{!classExpanded}}">点「班级管理」会先让你选择要进入的班级</view>
+      </view>
+
+      <view class="hub-classes-tip" wx:if="{{group.key === 'class' && !classFold && classes.length}}">
+        直接进入 {{classes[0]}}
       </view>
     </view>
   </block>
@@ -39,4 +77,37 @@
   </view>
 
   <view class="tt-footer">管理操作均以服务端权限校验为准</view>
+
+  <!-- ===== 班级选择：多个班时必须先选一个再进班级管理 ===== -->
+  <t-popup visible="{{classPickVisible}}" placement="bottom" bind:visible-change="onClassPickVisible">
+    <view class="tt-sheet hub-sheet">
+      <view class="tt-sheet-grab"></view>
+      <view class="tt-sheet-head">
+        <view class="tt-sheet-icon">
+          <t-icon name="usergroup" size="36rpx" color="var(--tt-brand)" />
+        </view>
+        <view class="tt-sheet-title">
+          选择班级
+          <view class="tt-sheet-sub">你负责 {{classes.length}} 个班 · 选择后进入该班管理</view>
+        </view>
+        <view class="tt-sheet-close" bind:tap="closeClassPick">
+          <t-icon name="close" size="32rpx" color="var(--tt-text-2)" />
+        </view>
+      </view>
+
+      <scroll-view scroll-y class="tt-sheet-body hub-class-scroll">
+        <view class="tt-sheet-item" wx:for="{{classes}}" wx:key="*this" bind:tap="pickClass" data-class="{{item}}">
+          <view class="tt-sheet-item-icon">
+            <t-icon name="usergroup" size="32rpx" color="var(--tt-brand)" />
+          </view>
+          <view class="tt-sheet-item-main">
+            <view class="tt-sheet-item-title">{{item}}</view>
+            <view class="tt-sheet-item-desc">概况 · 名单 · 榜单 · 督促{{classRole === 'homeroom' ? '（可督促）' : '（仅查看）'}}</view>
+          </view>
+          <t-icon name="chevron-right" size="30rpx" color="var(--tt-text-3)" />
+        </view>
+        <view class="tt-sheet-note">同一个班级的班主任与班委看到的是同一份数据：班主任可督促未达标学生，班委仅查看。</view>
+      </scroll-view>
+    </view>
+  </t-popup>
 </view>

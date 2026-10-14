@@ -82,6 +82,7 @@ Page({
     keyword: '',
     sort: 'today',
     achieved: '',
+    hasFilter: false, // 搜索 / 达标筛选 / 非默认排序任一为真 → chips 行右侧显示「重置」
     sorts: SORTS,
     filters: FILTERS,
     // 督促抽屉
@@ -199,6 +200,7 @@ Page({
       });
       const rows = (res.list || []).map((s) => ({
         ...s,
+        initial: String(s.name || '?').slice(0, 1),
         todayStepsText: fmt.formatNumber(s.todaySteps),
         weekStepsText: fmt.formatNumber(s.weekSteps),
         targetText: fmt.formatNumber(s.todayTarget),
@@ -256,6 +258,7 @@ Page({
 
   onSearch(e) {
     this.setData({ keyword: (e.detail && e.detail.value) || '' });
+    this.syncFilterState();
     this._searchTimer && clearTimeout(this._searchTimer);
     // 输入停顿 400ms 再查，避免每个字符都打接口
     this._searchTimer = setTimeout(() => this.loadStudents(1), 400);
@@ -263,6 +266,7 @@ Page({
 
   onClearSearch() {
     this.setData({ keyword: '' });
+    this.syncFilterState();
     this.loadStudents(1);
   },
 
@@ -270,6 +274,7 @@ Page({
     const sort = e.currentTarget.dataset.key;
     if (sort === this.data.sort) return;
     this.setData({ sort });
+    this.syncFilterState();
     this.loadStudents(1);
   },
 
@@ -277,17 +282,30 @@ Page({
     const achieved = e.currentTarget.dataset.key || '';
     if (achieved === this.data.achieved) return;
     this.setData({ achieved });
+    this.syncFilterState();
     this.loadStudents(1);
   },
 
-  // 学生日/周明细：复用管理端的 period-detail，带 scope=class 走班级域接口（只读）
-  openPeriod(e) {
-    const { id, type, date } = e.currentTarget.dataset;
-    if (!id || !date) return;
-    const row = (this.data.students || []).find((s) => s.userId === id) || {};
+  // 「重置」：清空搜索 / 达标筛选，排序回到默认（今日步数）
+  clearFilters() {
+    if (!this.data.hasFilter) return;
+    this.setData({ keyword: '', achieved: '', sort: 'today', hasFilter: false });
+    this.loadStudents(1);
+  },
+
+  // chips 行右侧「重置」的显隐：搜索、达标筛选、非默认排序任一命中
+  syncFilterState() {
+    const hasFilter = !!(this.data.keyword || this.data.achieved || this.data.sort !== 'today');
+    if (hasFilter !== this.data.hasFilter) this.setData({ hasFilter });
+  },
+
+  // 学生详情：与管理端用户详情同一个页面，带 scope=class 走班级域（只读；有权限时数据与管理端一致）
+  openDetail(e) {
+    const { id, name } = e.currentTarget.dataset;
+    if (!id) return;
     const url =
-      `/packageAdmin/user-detail/period-detail/period-detail?id=${id}&type=${type || 'day'}&date=${date}` +
-      `&scope=class&name=${encodeURIComponent(row.name || '')}&className=${encodeURIComponent(this.data.className)}`;
+      `/packageAdmin/user-detail/user-detail?id=${id}&scope=class` +
+      `&name=${encodeURIComponent(name || '')}&className=${encodeURIComponent(this.data.className)}`;
     wx.navigateTo({ url });
   },
 

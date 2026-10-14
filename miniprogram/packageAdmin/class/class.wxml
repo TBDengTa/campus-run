@@ -118,85 +118,90 @@
       </view>
     </view>
 
-    <!-- ===== 4. 名单工具：搜索 + 一行可横滑的筛选/排序 chips ===== -->
+    <!-- ===== 4. 名单工具：搜索 + 一行可横滑的「筛选 | 排序」chips（右侧固定重置） ===== -->
     <view class="cls-head">
       <view class="cls-search-card">
         <t-search shape="round" placeholder="搜索姓名 / 学号" value="{{keyword}}" bind:change="onSearch" bind:clear="onClearSearch" />
       </view>
-      <scroll-view scroll-x class="cls-chips">
-        <text class="cls-chips-label">筛选</text>
-        <view
-          class="tt-chip {{achieved === item.key ? 'active' : ''}}"
-          wx:for="{{filters}}"
-          wx:key="label"
-          bind:tap="pickFilter"
-          data-key="{{item.key}}"
-        >{{item.label}}</view>
-        <text class="cls-chips-label">排序</text>
-        <view
-          class="tt-chip {{sort === item.key ? 'active' : ''}}"
-          wx:for="{{sorts}}"
-          wx:key="key"
-          bind:tap="pickSort"
-          data-key="{{item.key}}"
-        >{{item.label}}</view>
-      </scroll-view>
+
+      <view class="cls-chips-bar">
+        <scroll-view scroll-x class="cls-chips" enable-flex>
+          <text class="cls-chips-label">筛选</text>
+          <view
+            class="tt-chip cls-chip {{achieved === item.key ? 'active' : ''}}"
+            wx:for="{{filters}}"
+            wx:key="label"
+            bind:tap="pickFilter"
+            data-key="{{item.key}}"
+          >{{item.label}}</view>
+          <view class="cls-chips-split"></view>
+          <text class="cls-chips-label">排序</text>
+          <view
+            class="tt-chip cls-chip {{sort === item.key ? 'active' : ''}}"
+            wx:for="{{sorts}}"
+            wx:key="key"
+            bind:tap="pickSort"
+            data-key="{{item.key}}"
+          >{{item.label}}</view>
+        </scroll-view>
+        <view class="cls-chips-clear" wx:if="{{hasFilter}}" bind:tap="clearFilters">
+          <t-icon name="close-circle-filled" size="26rpx" color="var(--tt-brand)" />
+          <text>重置</text>
+        </view>
+      </view>
     </view>
 
-    <!-- ===== 5. 学生名单：紧凑两行 + 按钮式分页 ===== -->
+    <!-- ===== 5. 学生名单：与用户管理列表同一套行卡片 ===== -->
     <view class="tt-section">
       <text>学生名单</text>
       <text class="tt-section-extra">共 {{total}} 人 · 今日达标 {{overview.achievedToday}}/{{overview.studentCount}}</text>
     </view>
 
-    <view class="tt-card cls-list" id="clsList">
+    <view class="cls-list" id="clsList">
       <view class="cls-tip" wx:if="{{!canNudge}}">
         <t-icon name="info-circle" size="26rpx" color="var(--tt-brand)" />
-        <text>仅查看：点开任意同学可看他的今日 / 本周明细</text>
+        <text>仅查看：点开任意同学可看他的资料与今日 / 本周明细</text>
       </view>
 
       <view
         class="cls-row"
         wx:for="{{students}}"
         wx:key="userId"
-        bind:tap="openPeriod"
+        bind:tap="openDetail"
         data-id="{{item.userId}}"
-        data-type="day"
-        data-date="{{today}}"
+        data-name="{{item.name}}"
       >
-        <view class="cls-avatar">
-          <t-icon name="user" size="30rpx" color="var(--tt-brand)" />
+        <view class="cls-avatar {{item.isClassOfficer ? 'is-officer' : ''}}">
+          <text class="cls-avatar-txt">{{item.initial}}</text>
         </view>
-        <view class="flex-1 cls-row-main">
-          <view class="cls-row-line1">
+        <view class="cls-row-main">
+          <view class="cls-name">
             <text class="cls-row-name">{{item.name}}</text>
-            <text class="cls-officer" wx:if="{{item.isClassOfficer}}">班委</text>
-            <text class="cls-badge {{item.achievedToday ? 'is-ok' : 'is-warn'}}">{{item.achievedToday ? '今日达标' : '未达标'}}</text>
+            <text class="cls-tag cls-tag-officer" wx:if="{{item.isClassOfficer}}">班委</text>
+            <text class="cls-tag {{item.achievedToday ? 'is-ok' : 'is-warn'}}">{{item.achievedToday ? '今日达标' : '未达标'}}</text>
           </view>
-          <view class="cls-row-line2">
-            <text class="cls-row-cell">今日 <text class="num-font cls-row-v">{{item.todayStepsText}}</text> 步</text>
-            <view
-              class="cls-row-week"
-              catch:tap="openPeriod"
-              data-id="{{item.userId}}"
-              data-type="week"
-              data-date="{{weekStart}}"
-            >
-              <text>本周 <text class="num-font cls-row-v">{{item.weekStepsText}}</text> 步</text>
-              <t-icon name="chevron-right" size="22rpx" color="var(--tt-brand)" />
-            </view>
+          <view class="cls-row-sub">
+            <text>学号 {{item.studentId || '—'}}</text>
+            <text>{{item.className || className}}</text>
+          </view>
+          <view class="cls-row-sub">
+            <text>本周 {{item.weekStepsText}} 步 · 活跃 {{item.activeDays}} 天 · 同步 {{item.syncText}}</text>
           </view>
         </view>
-        <view class="cls-row-go">
-          <text>查看</text>
-          <t-icon name="chevron-right" size="24rpx" color="var(--tt-text-3)" />
+        <view class="cls-row-right">
+          <view class="cls-row-steps">
+            <text class="num-font cls-row-steps-v">{{item.todayStepsText}}</text>
+            <text class="cls-row-steps-u">步</text>
+          </view>
+          <text class="cls-row-steps-sub">今日</text>
         </view>
+        <t-icon name="chevron-right" size="30rpx" color="var(--tt-text-3)" />
       </view>
 
-      <view class="tt-empty" wx:if="{{!students.length && !loading}}">{{keyword || achieved ? '没有符合条件的学生' : '该班还没有学生'}}</view>
+      <view class="tt-empty" wx:if="{{!students.length && !loading}}">{{hasFilter ? '没有符合条件的学生' : '该班还没有学生'}}</view>
 
       <!-- 分页：上一页 / 页码 / 下一页（不做触底加载） -->
-      <block wx:if="{{total > 0}}">
+      <view class="tt-card cls-pager-card" wx:if="{{total > 0}}">
         <view class="cls-pager">
           <view class="cls-page-btn {{page <= 1 || loadingMore ? 'is-disabled' : ''}}" bind:tap="prevPage">上一页</view>
           <block wx:if="{{!loadingMore}}">
@@ -212,10 +217,10 @@
           <view class="cls-page-btn {{page >= pagesTotal || loadingMore ? 'is-disabled' : ''}}" bind:tap="nextPage">下一页</view>
         </view>
         <view class="cls-page-info">第 {{page}} / {{pagesTotal}} 页 · 共 {{total}} 人</view>
-      </block>
+      </view>
     </view>
 
-    <view class="tt-footer">点学生行看「今日」明细，点行内「本周」看周明细；达标 = 当日步数 ≥ 该生生效目标（个人计划优先）</view>
+    <view class="tt-footer">点学生卡片看资料与今日 / 本周明细；达标 = 当日步数 ≥ 该生生效目标（个人计划优先）</view>
   </block>
 
   <t-loading wx:if="{{loading}}" theme="circular" size="44rpx" text="加载班级数据…" class="cls-loading" />
@@ -255,7 +260,7 @@
             <view class="flex-1 cls-nudge-main">
               <view class="cls-top-line">
                 <text class="cls-row-name">{{item.name}}</text>
-                <text class="cls-officer" wx:if="{{item.isClassOfficer}}">班委</text>
+                <text class="cls-tag cls-tag-officer" wx:if="{{item.isClassOfficer}}">班委</text>
               </view>
               <view class="cls-top-sub">今日 <text class="num-font cls-row-v">{{item.todayStepsText}}</text> / {{item.targetText}} 步 · 还差 {{item.gapText}} 步</view>
             </view>

@@ -47,6 +47,15 @@ Page({
     user: null,
     bans: [],
     loading: true,
+    // ===== 视角（管理端 / 班级域）=====
+    scope: 'admin', // admin | class
+    readonlyScope: false, // 班级域打开时是否为只读降级视图（管理权限不足才会走到这里）
+    className: '',
+    classOnly: false, // true = 用班级域数据渲染（无管理权限的班主任 / 班委）
+    classMissing: false, // 班级域回退也拿不到该生数据
+    classInfo: null, // 班级域的今日 / 本周摘要
+    fallbackName: '',
+    isTeacherUser: false, // 目标账号是教师：不展示运动 / 跑分 / 考核内容
     isSuper: false,
     // 当前登录者权限：编辑资料/重置密码/删除账户需 permission.manage，解绑微信需 user.manage
     canManagePerms: false,
@@ -96,7 +105,14 @@ Page({
   },
 
   onLoad(options) {
-    this.setData({ id: options.id || '' });
+    const scope = options.scope === 'class' ? 'class' : 'admin';
+    this.setData({
+      id: options.id || '',
+      scope,
+      readonlyScope: scope === 'class',
+      className: options.className ? decodeURIComponent(options.className) : '',
+      fallbackName: options.name ? decodeURIComponent(options.name) : '',
+    });
     this.load();
   },
 
@@ -110,8 +126,20 @@ Page({
         // 班级身份（班主任班级 / 班委）在本页分配，需 user.manage
         canManageClass: me.includes('*') || me.includes('user.manage'),
       });
-      const [detail, sportDetail] = await Promise.all([
-        auth.get(`/api/admin/users/${this.data.id}`),
+      // 班级域打开时：先按管理端权限取资料（有权限 → 与管理面板完全一致）；
+      // 无权限（403）才降级为班级域只读数据，绝不绕过服务端权限
+      let detail = null;
+      try {
+        detail = await auth.get(`/api/admin/users/${this.data.id}`);
+      } catch (e) {
+        if (this.data.scope !== 'class') throw e;
+        detail = null;
+      }
+      if (!detail) {
+        await this.loadClassScope();
+        return;
+      }
+      const [sportDetail] = await Promise.all([
         auth.get(`/api/admin/users/${this.data.id}/sport-detail`).catch(() => null),
       ]);
       const { user, bans, sport: sportArg, goal: goalArg, loginInfo, restrictions } = detail;
@@ -132,6 +160,11 @@ Page({
       const pts = (sportDetail && sportDetail.points) || null;
       this.setData({
         loading: false,
+        // 目标账号是教师：教师不参与运动记录与排名 → 隐藏运动 / 跑分 / 考核内容（班级身份与账号操作保留）
+        isTeacherUser: user.role === 'teacher',
+        classOnly: false,
+        classMissing: false,
+        classInfo: null,
         isSuper: (user.permissionGroups || []).includes('superadmin'),
         homeroomClasses: user.homeroomClasses || [],
         isClassOfficer: !!user.isClassOfficer,
@@ -215,6 +248,86 @@ Page({
     }
   },
 
+  // ===== 班级域只读视图（scope=class 且无管理端权限：班主任 / 班委）=====
+  // 数据只用 /api/class/*（服务端成员资格校验、只读），不出现任何写操作
+  async loadClassScope() {
+    const { id, className, fallbackName } = this.data;
+    const cls = className || '';
+    let row = null;
+    try {
+      const res = await auth.get('/api/class/students', { className: cls, keyword: id, page: 1, limit: 5 });
+      const list = (res && res.list) || [];
+      row = list.find((s) => s.userId === id) || null;
+    } catch (e) {
+      row = null;
+    }
+    if (!row) {
+      this.setData({ loading: false, classOnly: true, classMissing: true });
+      return;
+    }
+    const todayTarget = Number(row.todayTarget) || 0;
+    const weekTarget = Number(row.weekTarget) || 0;
+    this.setData({
+      loading: false,
+      classOnly: true,
+      classMissing: false,
+      isTeacherUser: false,
+      isSuper: false,
+      // 走到回退分支就说明管理端资料接口 403：管理类操作一律不渲染（班委仅查看）
+      canManagePerms: false,
+      canManageUser: false,
+      canManageClass: false,
+      bans: [],
+      restrictions: [],
+      loginInfo: null,
+      rates: null,
+      goal: null,
+      points: null,
+      homeroomClasses: [],
+      isClassOfficer: !!row.isClassOfficer,
+      user: {
+        _id: id,
+        realName: row.name || fallbackName || '未命名',
+        nickname: '',
+        className: cls,
+        studentId: row.studentId || '',
+        role: 'student',
+        isClassOfficer: !!row.isClassOfficer,
+      },
+      // hero 四项换成班级域口径（累计字段班级接口不提供，只有本周 / 活跃 / 跑分）
+      sport: {
+        totalStepsText: fmt.formatNumber(row.weekSteps),
+        totalDistanceText: fmt.formatDistance(row.weekDistance),
+        totalDays: row.activeDays || 0,
+        badgeCount: 0,
+        weekPointsText: fmt.formatNumber(row.weekPoints || 0),
+        waterToday: null,
+        recentRuns: [],
+        classScope: true,
+      },
+      classInfo: {
+        todayStepsText: fmt.formatNumber(row.todaySteps),
+        todayTargetText: fmt.formatNumber(todayTarget),
+        weekStepsText: fmt.formatNumber(row.weekSteps),
+        weekTargetText: fmt.formatNumber(weekTarget),
+        achievedToday: !!row.achievedToday,
+        achievedWeek: !!row.achievedWeek,
+        syncText: row.lastSyncAt ? fmtTime(row.lastSyncAt) : '从未同步',
+        totalStepsText: fmt.formatNumber(row.totalSteps || 0),
+        totalDays: row.totalDays || 0,
+      },
+      records: { runs: [], daily: [], weekly: [], water: [], badges: [] },
+      recordPages: { runs: 1, daily: 1, weekly: 1, water: 1, badges: 1 },
+      recordTotals: { runs: 0, daily: 0, weekly: 0, water: 0, badges: 0 },
+      recordPage: 1,
+      recordPagesTotal: 1,
+      recordTotal: 0,
+      pageItems: [],
+      recordTab: 'daily',
+    });
+    this.loadRecords('daily', 1);
+  },
+
   // 明细 Tab 切换：首次进入该 Tab 才拉数据；已加载过则恢复它自己的页码
   switchRecordTab(e) {
     const tab = e.currentTarget.dataset.tab;
@@ -235,13 +348,21 @@ Page({
   },
 
   // 运动明细分页加载：每次只取一页（type: runs|daily|weekly|water|badges）
+  // 班级域回退（classOnly）走 /api/class/student/:id/records，只有 runs|daily|weekly 三类
   async loadRecords(tab, page) {
     const type = tab || this.data.recordTab;
     if (this.data.recordLoading) return;
     const p = Math.max(1, page || 1);
     this.setData({ recordLoading: true });
     try {
-      const res = await auth.get(`/api/admin/users/${this.data.id}/records`, { type, page: p, limit: PAGE_SIZE });
+      const res = this.data.classOnly
+        ? await auth.get(`/api/class/student/${this.data.id}/records`, {
+            className: this.data.className,
+            type,
+            page: p,
+            limit: PAGE_SIZE,
+          })
+        : await auth.get(`/api/admin/users/${this.data.id}/records`, { type, page: p, limit: PAGE_SIZE });
       const list = ((res && res.list) || []).map((it) => this.fmtRecord(type, it));
       const total = (res && res.total) || 0;
       const pagesTotal = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -329,22 +450,37 @@ Page({
   },
 
   openRun(e) {
+    // 班级视角只有只读汇总，单条运动详情需要管理端权限
+    if (this.data.classOnly) {
+      wx.showToast({ title: '班级视角仅查看汇总明细', icon: 'none' });
+      return;
+    }
     wx.navigateTo({ url: `/pages/run/detail?id=${e.currentTarget.dataset.id}&admin=1&uid=${this.data.id}` });
   },
 
   // 日/周记录 → 时段明细页（日：当天逐条；周：按天拆分）
+  // 班级视角必须带上 scope=class，明细页才会走 /api/class/student/:id/period（只读）
   openPeriod(e) {
     const { type, date } = e.currentTarget.dataset;
     if (!date) return;
     const u = this.data.user || {};
     const name = u.realName || u.nickname || '';
+    const scopeQuery = this.data.classOnly
+      ? `&scope=class&className=${encodeURIComponent(this.data.className)}`
+      : '';
     wx.navigateTo({
-      url: `/packageAdmin/user-detail/period-detail/period-detail?id=${this.data.id}&type=${type || 'day'}&date=${date}&name=${encodeURIComponent(name)}`,
+      url: `/packageAdmin/user-detail/period-detail/period-detail?id=${this.data.id}&type=${type || 'day'}&date=${date}&name=${encodeURIComponent(name)}${scopeQuery}`,
     });
   },
 
   goEdit() {
     wx.navigateTo({ url: `/packageAdmin/users/account-edit/account-edit?id=${this.data.id}` });
+  },
+
+  // 返回：班级视角下数据缺失时的兜底出口
+  goBack() {
+    if (getCurrentPages().length > 1) wx.navigateBack();
+    else wx.switchTab({ url: '/pages/home/home' });
   },
 
   // 限制账号功能（类型 + 时长 + 原因）——走 ban-sheet 抽屉

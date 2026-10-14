@@ -41,6 +41,87 @@
   padding: 22rpx 16rpx 6rpx;
 }
 
+/* ===== 分组折叠：超过一行（4 项）时只展示一行 ===== */
+.hub-fold {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6rpx;
+  margin: 4rpx 6rpx 14rpx;
+  padding: 14rpx 0;
+  border-radius: 16rpx;
+  background: var(--td-bg-color-component);
+  font-size: 23rpx;
+  color: var(--tt-text-2);
+}
+
+.hub-fold:active {
+  opacity: 0.8;
+}
+
+/* ===== 我的班级：班级过多时折叠展示 ===== */
+.hub-classes {
+  margin: 2rpx 6rpx 16rpx;
+  padding: 16rpx 16rpx 14rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-brand-soft);
+}
+
+.hub-classes-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+}
+
+.hub-classes-title {
+  font-size: 24rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.hub-classes-toggle {
+  display: flex;
+  align-items: center;
+  gap: 2rpx;
+  flex-shrink: 0;
+  font-size: 22rpx;
+  color: var(--tt-brand);
+}
+
+.hub-classes-toggle:active {
+  opacity: 0.8;
+}
+
+.hub-class-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin-top: 12rpx;
+}
+
+.hub-class-chip {
+  background: var(--tt-card);
+}
+
+.hub-class-chip:active {
+  opacity: 0.8;
+}
+
+.hub-classes-tip {
+  margin: 10rpx 6rpx 16rpx;
+  font-size: 21rpx;
+  line-height: 30rpx;
+  color: var(--tt-text-3);
+}
+
+/* 班级选择抽屉：长列表给确定高度才能滚动 */
+.hub-sheet .hub-class-scroll {
+  flex: none;
+  min-height: 0;
+  height: 46vh;
+}
+
 .hub-loading {
   display: flex;
   justify-content: center;

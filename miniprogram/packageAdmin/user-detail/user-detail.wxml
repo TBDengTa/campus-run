@@ -11,6 +11,7 @@
             <text class="ud-name-text">{{user.realName || user.nickname || '未命名'}}</text>
             <t-tag wx:if="{{isSuper}}" theme="primary" variant="light" size="small">管理员</t-tag>
             <t-tag wx:elif="{{user.role === 'teacher'}}" theme="default" variant="light" size="small">教师</t-tag>
+            <t-tag wx:if="{{classOnly}}" theme="warning" variant="light" size="small">仅查看</t-tag>
           </view>
           <view class="ud-hero-meta">
             <text>{{user.role === 'teacher' ? '教师' : '学生'}}</text>
@@ -23,29 +24,30 @@
         </view>
       </view>
 
-      <view class="ud-hero-stats" wx:if="{{sport}}">
+      <!-- 教师目标账号不参与运动记录与排名：整块隐藏（保留班级身份与账号操作） -->
+      <view class="ud-hero-stats" wx:if="{{sport && !isTeacherUser}}">
         <view class="ud-hero-stat">
           <text class="num-font ud-hero-stat-v">{{sport.totalStepsText}}</text>
-          <text class="ud-hero-stat-l">累计步数</text>
+          <text class="ud-hero-stat-l">{{classOnly ? '本周步数' : '累计步数'}}</text>
         </view>
         <view class="ud-hero-stat">
           <text class="num-font ud-hero-stat-v">{{sport.totalDistanceText}}</text>
-          <text class="ud-hero-stat-l">累计距离</text>
+          <text class="ud-hero-stat-l">{{classOnly ? '本周距离' : '累计距离'}}</text>
         </view>
         <view class="ud-hero-stat">
           <text class="num-font ud-hero-stat-v">{{sport.totalDays}}</text>
-          <text class="ud-hero-stat-l">打卡天数</text>
+          <text class="ud-hero-stat-l">{{classOnly ? '活跃天数' : '打卡天数'}}</text>
         </view>
         <view class="ud-hero-stat">
-          <text class="num-font ud-hero-stat-v">{{sport.badgeCount}}</text>
-          <text class="ud-hero-stat-l">徽章</text>
+          <text class="num-font ud-hero-stat-v">{{classOnly ? sport.weekPointsText : sport.badgeCount}}</text>
+          <text class="ud-hero-stat-l">{{classOnly ? '本周跑分' : '徽章'}}</text>
         </view>
       </view>
     </view>
   </view>
 
   <!-- ===== 2. 快捷操作：原来 5 个全宽按钮 + 5 段说明 → 一行图标 ===== -->
-  <view class="ud-quick">
+  <view class="ud-quick" wx:if="{{canManagePerms || canManageUser}}">
     <view class="ud-quick-item" wx:if="{{canManagePerms}}" bind:tap="goEdit">
       <view class="ud-quick-icon"><t-icon name="edit-1" size="38rpx" color="var(--tt-brand)" /></view>
       <text>编辑资料</text>
@@ -58,7 +60,7 @@
       <view class="ud-quick-icon is-warn"><t-icon name="logo-wechat-stroke" size="38rpx" color="var(--td-warning-color-6)" /></view>
       <text>解绑微信</text>
     </view>
-    <view class="ud-quick-item" wx:if="{{!isSuper}}" bind:tap="openBanSheet">
+    <view class="ud-quick-item" wx:if="{{!isSuper && canManageUser}}" bind:tap="openBanSheet">
       <view class="ud-quick-icon is-warn"><t-icon name="user-blocked" size="38rpx" color="var(--td-error-color-6)" /></view>
       <text>限制功能</text>
     </view>
@@ -125,40 +127,62 @@
     </view>
   </view>
 
-  <!-- ===== 4.5 班级身份：教师（班主任班级多选）/ 学生（班委开关） ===== -->
-  <view class="tt-section">
-    <text>班级身份</text>
-    <text class="tt-section-extra">{{user.role === 'teacher' ? '班主任' : '班委（班长等）'}}</text>
-  </view>
-  <view class="tt-card ud-card">
-    <block wx:if="{{user.role === 'teacher'}}">
-      <view class="ud-pick-row" bind:tap="openClassSheet">
-        <text class="ud-pick-label">班主任班级</text>
-        <view class="ud-pick-value">
-          <text class="{{homeroomClasses.length ? '' : 'ud-ph'}}">{{homeroomClasses.length ? '已分配 ' + homeroomClasses.length + ' 个班' : '未分配'}}</text>
-          <t-icon name="chevron-right" size="30rpx" color="var(--tt-text-3)" />
-        </view>
+  <!-- ===== 4.5b 班级视角：今日 / 本周摘要（无管理权限时的只读数据） ===== -->
+  <block wx:if="{{classOnly && classInfo}}">
+    <view class="tt-section">
+      <text>今日与本周</text>
+      <text class="tt-section-extra">班级视角 · 只读</text>
+    </view>
+    <view class="tt-card ud-card">
+      <view class="ud-kv">
+        <text>今日步数</text>
+        <text class="ud-kv-v">{{classInfo.todayStepsText}} / {{classInfo.todayTargetText}} 步 · {{classInfo.achievedToday ? '已达标' : '未达标'}}</text>
       </view>
-      <view class="ud-chips" wx:if="{{homeroomClasses.length}}">
-        <text class="ud-chip" wx:for="{{homeroomClasses}}" wx:key="*this">{{item}}</text>
+      <view class="ud-kv">
+        <text>本周步数</text>
+        <text class="ud-kv-v">{{classInfo.weekStepsText}} / {{classInfo.weekTargetText}} 步 · {{classInfo.achievedWeek ? '已达标' : '未达标'}}</text>
       </view>
-      <view class="ud-note">班主任不需要任何管理权限，即可查看所分配班级的概况 / 名单 / 排名与学生日周明细（只读），并可复制未达标名单督促；教师不参与运动记录与排名。</view>
-    </block>
-    <block wx:else>
-      <view class="ud-switch-row">
-        <view class="flex-1">
-          <view class="ud-switch-title">班委（班长等）</view>
-          <view class="ud-note">开启后该学生可查看本班概况、名单与排名——仅查看，没有任何操作权限</view>
-        </view>
-        <t-switch value="{{isClassOfficer}}" disabled="{{!canManageClass || !user.className}}" loading="{{officerSaving}}" bind:change="onOfficerChange" />
-      </view>
-      <view class="ud-note" wx:if="{{!canManageClass}}">分配班级身份需要「封禁/解封用户」权限（user.manage）</view>
-      <view class="ud-note" wx:if="{{!user.className}}">该学生还没有识别出班级（年级 + 专业），无法设为班委</view>
-    </block>
-  </view>
+      <view class="ud-kv"><text>累计</text><text class="ud-kv-v">{{classInfo.totalStepsText}} 步 · 打卡 {{classInfo.totalDays}} 天</text></view>
+      <view class="ud-kv"><text>最近同步</text><text class="ud-kv-v">{{classInfo.syncText}}</text></view>
+      <view class="ud-note">班级视角只读：可查看该同学的今日 / 本周汇总与日周记录；提交类操作请在管理端进行。</view>
+    </view>
+  </block>
 
-  <!-- ===== 5. 跑分（独立卡片：没运动记录的用户也要能看到，学校统一衡量标准） ===== -->
-  <block wx:if="{{points}}">
+  <!-- ===== 4.5 班级身份：教师（班主任班级多选）/ 学生（班委开关），需 user.manage ===== -->
+  <block wx:if="{{canManageClass}}">
+    <view class="tt-section">
+      <text>班级身份</text>
+      <text class="tt-section-extra">{{user.role === 'teacher' ? '班主任' : '班委（班长等）'}}</text>
+    </view>
+    <view class="tt-card ud-card">
+      <block wx:if="{{user.role === 'teacher'}}">
+        <view class="ud-pick-row" bind:tap="openClassSheet">
+          <text class="ud-pick-label">班主任班级</text>
+          <view class="ud-pick-value">
+            <text class="{{homeroomClasses.length ? '' : 'ud-ph'}}">{{homeroomClasses.length ? '已分配 ' + homeroomClasses.length + ' 个班' : '未分配'}}</text>
+            <t-icon name="chevron-right" size="30rpx" color="var(--tt-text-3)" />
+          </view>
+        </view>
+        <view class="ud-chips" wx:if="{{homeroomClasses.length}}">
+          <text class="ud-chip" wx:for="{{homeroomClasses}}" wx:key="*this">{{item}}</text>
+        </view>
+        <view class="ud-note">班主任不需要任何管理权限，即可查看所分配班级的概况 / 名单 / 排名与学生日周明细（只读），并可复制未达标名单督促；教师不参与运动记录与排名。</view>
+      </block>
+      <block wx:else>
+        <view class="ud-switch-row">
+          <view class="flex-1">
+            <view class="ud-switch-title">班委（班长等）</view>
+            <view class="ud-note">开启后该学生可查看本班概况、名单与排名——仅查看，没有任何操作权限</view>
+          </view>
+          <t-switch value="{{isClassOfficer}}" disabled="{{!canManageClass || !user.className}}" loading="{{officerSaving}}" bind:change="onOfficerChange" />
+        </view>
+        <view class="ud-note" wx:if="{{!user.className}}">该学生还没有识别出班级（年级 + 专业），无法设为班委</view>
+      </block>
+    </view>
+  </block>
+
+  <!-- ===== 5. 跑分（独立卡片：没运动记录的用户也要能看到，学校统一衡量标准）；教师无跑分 ===== -->
+  <block wx:if="{{points && !isTeacherUser}}">
     <view class="tt-section">
       <text>跑分</text>
       <text class="tt-section-extra">学校统一衡量标准</text>
@@ -182,8 +206,8 @@
     </view>
   </block>
 
-  <!-- ===== 6. 考核与目标 ===== -->
-  <block wx:if="{{rates}}">
+  <!-- ===== 6. 考核与目标（教师不参与运动考核，整块隐藏）===== -->
+  <block wx:if="{{rates && !isTeacherUser}}">
     <view class="tt-section">
       <text>考核与目标</text>
     </view>
@@ -207,18 +231,20 @@
     </view>
   </block>
 
-  <!-- ===== 6. 运动明细：原来 4 个独立区块（最近运动/日记录/周记录/饮水/徽章）合并成一张卡 + Tab ===== -->
+  <!-- ===== 6. 运动明细：原来 4 个独立区块（最近运动/日记录/周记录/饮水/徽章）合并成一张卡 + Tab；
+       教师目标账号不展示（不参与运动记录与排名）===== -->
+  <block wx:if="{{!isTeacherUser}}">
   <view class="tt-section">
     <text>运动明细</text>
-    <text class="tt-section-extra" wx:if="{{sport}}">今日饮水 {{sport.waterToday.total}}/{{sport.waterToday.target}} ml</text>
+    <text class="tt-section-extra" wx:if="{{sport && sport.waterToday}}">今日饮水 {{sport.waterToday.total}}/{{sport.waterToday.target}} ml</text>
   </view>
   <view class="tt-card ud-card">
     <view class="ud-tabs">
       <view class="ud-tab {{recordTab === 'runs' ? 'active' : ''}}" bind:tap="switchRecordTab" data-tab="runs">最近运动</view>
       <view class="ud-tab {{recordTab === 'daily' ? 'active' : ''}}" bind:tap="switchRecordTab" data-tab="daily">日记录</view>
       <view class="ud-tab {{recordTab === 'weekly' ? 'active' : ''}}" bind:tap="switchRecordTab" data-tab="weekly">周记录</view>
-      <view class="ud-tab {{recordTab === 'water' ? 'active' : ''}}" bind:tap="switchRecordTab" data-tab="water">饮水</view>
-      <view class="ud-tab {{recordTab === 'badges' ? 'active' : ''}}" bind:tap="switchRecordTab" data-tab="badges">徽章</view>
+      <view class="ud-tab {{recordTab === 'water' ? 'active' : ''}}" wx:if="{{!classOnly}}" bind:tap="switchRecordTab" data-tab="water">饮水</view>
+      <view class="ud-tab {{recordTab === 'badges' ? 'active' : ''}}" wx:if="{{!classOnly}}" bind:tap="switchRecordTab" data-tab="badges">徽章</view>
     </view>
 
     <!-- 6.1 最近运动 -->
@@ -247,7 +273,7 @@
           <view class="tt-row-title">{{item.dateText}}</view>
           <view class="tt-row-sub">{{item.recordCount}} 条 · {{item.distanceKm}} km</view>
         </view>
-        <view class="ud-log-points">
+        <view class="ud-log-points" wx:if="{{!classOnly}}">
           <text class="num-font ud-lp-num">{{item.pointsText}}</text>
           <text class="ud-lp-label">跑分</text>
         </view>
@@ -268,7 +294,7 @@
           <view class="tt-row-title">{{item.rangeText}}</view>
           <view class="tt-row-sub">活跃 {{item.activeDays}} 天</view>
         </view>
-        <view class="ud-log-points">
+        <view class="ud-log-points" wx:if="{{!classOnly}}">
           <text class="num-font ud-lp-num">{{item.pointsText}}</text>
           <text class="ud-lp-label">周跑分</text>
         </view>
@@ -329,8 +355,9 @@
 
     <view class="ud-note" wx:if="{{recordTab === 'daily' || recordTab === 'weekly'}}">✓ 表示达标（步数 ≥ 生效目标）</view>
   </view>
+  </block>
 
-  <!-- ===== 7. 登录与绑定 ===== -->
+  <!-- ===== 7. 登录与绑定（班级视角不提供） ===== -->
   <block wx:if="{{loginInfo}}">
     <view class="tt-section">
       <text>登录与绑定</text>
@@ -362,7 +389,8 @@
     </view>
   </block>
 
-  <!-- ===== 8. 限制 / 解除流水 ===== -->
+  <!-- ===== 8. 限制 / 解除流水（班级视角不展示） ===== -->
+  <block wx:if="{{!classOnly}}">
   <view class="tt-section">
     <text>限制流水</text>
     <text class="tt-section-extra">{{bans.length}} 条</text>
@@ -385,8 +413,18 @@
     </view>
     <view class="tt-empty" wx:if="{{!bans.length}}">暂无流水</view>
   </view>
+  </block>
 
-  <view class="tt-footer">数据每 30 秒随看板刷新；申诉审核通过只解除对应类型的限制</view>
+  <view class="tt-footer" wx:if="{{!classOnly}}">数据每 30 秒随看板刷新；申诉审核通过只解除对应类型的限制</view>
+  <view class="tt-footer" wx:else>班级视角：只读查看本班学生数据（班主任可督促未达标学生，班委仅查看）</view>
+</view>
+
+<!-- ===== 班级视角下数据缺失 ===== -->
+<view class="page tt-page ud-page" wx:if="{{!loading && !user}}">
+  <view class="tt-card ud-card">
+    <view class="tt-empty">{{classMissing ? '没有查到该同学的班级数据（可能已不在本班）' : '没有找到该用户'}}</view>
+    <t-button theme="default" block bind:tap="goBack">返回</t-button>
+  </view>
 </view>
 
 <!-- ===== 限制账号功能（类型 + 时长 + 原因） ===== -->

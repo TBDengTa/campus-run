@@ -336,7 +336,7 @@
   color: var(--tt-brand-deep);
 }
 
-/* ===== 4. 搜索 + 一行可横滑的筛选/排序 ===== */
+/* ===== 4. 搜索 + 一行可横滑的「筛选 | 排序」chips ===== */
 .cls-head {
   margin: 0 var(--tt-gap) 16rpx;
 }
@@ -353,16 +353,35 @@
   width: 100%;
 }
 
+/* chips 行：白卡托住，可横滑，右侧固定「重置」（有筛选时才出现） */
+.cls-chips-bar {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  margin-top: 12rpx;
+  padding: 10rpx 12rpx 10rpx 16rpx;
+  border-radius: var(--tt-radius);
+  background: var(--tt-card);
+  box-shadow: var(--tt-card-shadow);
+}
+
 .cls-chips {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 12rpx;
-  margin-top: 12rpx;
-  padding: 2rpx 0;
+  white-space: nowrap;
 }
 
-.cls-chips .tt-chip {
+.cls-chips .cls-chip {
   flex-shrink: 0;
+}
+
+/* 管理端紧凑一档：chip 内边距 8/18、字号 22rpx */
+.tt-chip.cls-chip {
+  padding: 8rpx 18rpx;
+  font-size: 22rpx;
 }
 
 .cls-chips-label {
@@ -371,21 +390,50 @@
   color: var(--tt-text-3);
 }
 
-/* ===== 5. 学生名单 ===== */
-.tt-card.cls-list {
-  padding: 0 20rpx 8rpx;
-  margin-bottom: 16rpx;
+/* 筛选 / 排序 之间的竖分隔 */
+.cls-chips-split {
+  width: 2rpx;
+  height: 26rpx;
+  flex-shrink: 0;
+  margin: 0 2rpx;
+  background: var(--tt-line);
 }
 
+.cls-chips-clear {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4rpx;
+  padding: 8rpx 16rpx;
+  border-radius: 999rpx;
+  font-size: 22rpx;
+  color: var(--tt-brand);
+  background: var(--tt-brand-soft);
+}
+
+.cls-chips-clear:active {
+  opacity: 0.8;
+}
+
+/* ===== 5. 学生名单：与用户管理列表同一套行卡片 ===== */
+.cls-list {
+  margin: 0 var(--tt-gap);
+}
+
+.cls-tip + .cls-row {
+  margin-top: 12rpx;
+}
+
+/* 行卡片：一行一人，独立白卡（不叠 .tt-card，避免二次内缩） */
 .cls-row {
   display: flex;
   align-items: center;
-  gap: 14rpx;
-  padding: 16rpx 0;
-}
-
-.cls-row + .cls-row {
-  border-top: 2rpx solid var(--tt-line);
+  gap: 16rpx;
+  padding: 16rpx 18rpx;
+  margin-bottom: 12rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-card);
+  box-shadow: 0 2rpx 8rpx rgba(28, 31, 35, 0.05);
 }
 
 .cls-row:active {
@@ -393,88 +441,127 @@
 }
 
 .cls-avatar {
-  width: 60rpx;
-  height: 60rpx;
+  width: 72rpx;
+  height: 72rpx;
   flex-shrink: 0;
   border-radius: 18rpx;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
   background: var(--tt-brand-soft);
 }
 
+.cls-avatar.is-officer {
+  background: var(--tt-brand-soft-2);
+}
+
+.cls-avatar-txt {
+  font-size: 28rpx;
+  font-weight: 500;
+  color: var(--tt-brand);
+}
+
 .cls-row-main {
+  flex: 1;
   min-width: 0;
 }
 
-.cls-row-line1 {
+.cls-name {
   display: flex;
   align-items: center;
-  gap: 10rpx;
+  flex-wrap: wrap;
+  gap: 8rpx;
 }
 
 .cls-row-name {
-  max-width: 240rpx;
+  max-width: 260rpx;
   font-size: 28rpx;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--tt-text-1);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 
-.cls-badge {
-  margin-left: auto;
+.cls-tag {
   flex-shrink: 0;
   padding: 2rpx 12rpx;
   border-radius: 999rpx;
   font-size: 19rpx;
 }
 
-.cls-badge.is-ok {
+.cls-tag-officer {
+  color: var(--tt-brand-deep);
+  background: var(--tt-brand-soft-2);
+}
+
+.cls-tag.is-ok {
   color: var(--td-success-color-5);
   background: var(--td-success-color-1);
 }
 
-.cls-badge.is-warn {
+.cls-tag.is-warn {
   color: var(--td-warning-color-6);
   background: var(--td-warning-color-1);
 }
 
-.cls-row-line2 {
+.cls-row-sub {
   display: flex;
   align-items: center;
-  gap: 16rpx;
-  margin-top: 6rpx;
-  font-size: 21rpx;
+  gap: 12rpx;
+  margin-top: 4rpx;
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 右侧数值列：今日步数 + 单位，下面是 chevron */
+.cls-row-right {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 108rpx;
+}
+
+.cls-row-steps {
+  display: flex;
+  align-items: baseline;
+  gap: 4rpx;
+}
+
+.cls-row-steps-v {
+  font-size: 30rpx;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--tt-brand);
+}
+
+.cls-row-steps-u {
+  font-size: 20rpx;
+  color: var(--tt-brand);
+}
+
+.cls-row-steps-sub {
+  margin-top: 2rpx;
+  font-size: 20rpx;
   color: var(--tt-text-3);
 }
 
-.cls-row-cell {
-  flex-shrink: 0;
-}
-
+/* 抽屉名单里的数值强调色 */
 .cls-row-v {
   font-size: 24rpx;
   font-weight: 600;
   color: var(--tt-brand);
 }
 
-.cls-row-week {
-  display: flex;
-  align-items: center;
-  gap: 2rpx;
-  flex-shrink: 0;
-  color: var(--tt-brand-deep);
-}
-
-.cls-row-go {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 2rpx;
-  font-size: 21rpx;
-  color: var(--tt-text-3);
+/* 分页卡片（名单行已各自成卡，分页单独一张） */
+.tt-card.cls-pager-card {
+  margin: 4rpx 0 0;
+  padding: 6rpx 20rpx 12rpx;
 }
 
 /* 按钮式分页：上一页 / 页码 / 下一页（不做触底加载） */
@@ -486,7 +573,6 @@
   gap: 10rpx;
   min-height: 76rpx;
   padding: 14rpx 0 4rpx;
-  border-top: 2rpx solid var(--tt-line);
 }
 
 .cls-page-btn {
@@ -576,9 +662,12 @@
 
 /* ===== 督促抽屉 ===== */
 /* 关键：.tt-sheet-body 是 flex 子项，默认 min-height:auto 会被长名单（几十人）撑到内容高度，
-   结果是抽屉被 max-height 裁切、名单无法滚动、底部「复制名单」被推出屏幕。这里显式归零。 */
+   结果是抽屉被 max-height 裁切、名单无法滚动、底部「复制名单」被推出屏幕。
+   这里给它一个**确定高度**（flex: none + 52vh），滚动手感与用户详情的班级抽屉一致。 */
 .cls-sheet .tt-sheet-body {
+  flex: none;
   min-height: 0;
+  height: 52vh;
 }
 
 .cls-nudge-row {

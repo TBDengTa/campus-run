@@ -63,6 +63,9 @@ const GROUPS = [
   },
 ];
 
+const FOLD_LIMIT = 4; // 单组宫格「一行」的项数：超过就折叠
+const CLASS_FOLD_LIMIT = 3; // 「我的班级」chips 折叠时展示的班数（多于 3 个班默认折叠）
+
 Page({
   data: {
     loading: true,
@@ -71,6 +74,13 @@ Page({
     roleText: '',
     classText: '',
     hasAny: false,
+    // ===== 我的班级（班主任多班：折叠展示 + 进入前先选班）=====
+    classes: [],
+    classRole: '', // homeroom | officer
+    classExpanded: false,
+    classFold: false, // 班级数 > 1 → 需要折叠/选择
+    visibleClasses: [],
+    classPickVisible: false,
   },
 
   onShow() {
@@ -94,26 +104,30 @@ Page({
       const isSuper = perms.includes('*');
       // 班主任 / 班委：无管理权限也能进班级管理
       let classRole = null;
-      let homeroomClasses = [];
+      let classes = [];
       try {
         const mine = await auth.get('/api/class/mine');
         classRole = mine && mine.role ? mine.role : null;
-        homeroomClasses = (mine && mine.homeroomClasses) || [];
+        classes = ((mine && (mine.classes || mine.homeroomClasses)) || []).filter(Boolean);
       } catch (e) {
         classRole = null; // 接口未就绪/无班级身份：不显示班级分组
+        classes = [];
       }
 
       const groups = GROUPS.map((g) => {
         if (g.key === 'class') {
           if (!classRole) return null;
-          const g2 = {
+          return {
             ...g,
-            desc: classRole === 'homeroom' ? `班主任：${homeroomClasses.join('、') || '未分配班级'}` : '班委：仅查看本班数据',
+            desc: classRole === 'homeroom' ? `班主任：${classes.join('、') || '未分配班级'}` : '班委：仅查看本班数据',
+            foldable: false,
           };
-          return g2;
         }
         const items = g.items.filter((it) => isSuper || perms.includes(it.perm));
-        return items.length ? { ...g, items } : null;
+        if (!items.length) return null;
+        // 单个分组超过一行（4 项）时折叠，先展示前 4 项
+        const foldable = items.length > FOLD_LIMIT;
+        return { ...g, items, shown: foldable ? items.slice(0, FOLD_LIMIT) : items, foldable, expanded: false };
       }).filter(Boolean);
 
       this.setData({
@@ -123,6 +137,11 @@ Page({
         name: (me && (me.realName || me.nickname)) || '',
         roleText: me && me.role === 'teacher' ? '教师' : '学生',
         classText: (me && me.className) || '',
+        classes,
+        classRole: classRole || '',
+        classFold: classes.length > 1,
+        visibleClasses: classes.length > 1 ? classes.slice(0, CLASS_FOLD_LIMIT) : classes,
+        classExpanded: false,
       });
     } catch (e) {
       this.setData({ loading: false });
@@ -130,8 +149,69 @@ Page({
     }
   },
 
+  // 宫格入口：班级管理先让用户选班（多班时），其余按 url 直达
   go(e) {
-    const url = e.currentTarget.dataset.url;
+    const { url, key } = e.currentTarget.dataset;
+    if (key === 'class') {
+      this.openClassEntry();
+      return;
+    }
     if (url) wx.navigateTo({ url });
+  },
+
+  // 「班级管理」主入口：1 个班直接进；多个班先弹班级选择抽屉（必选其一）
+  openClassEntry() {
+    const classes = this.data.classes || [];
+    if (!classes.length) return;
+    if (classes.length === 1) {
+      this.navClass(classes[0]);
+      return;
+    }
+    this.setData({ classPickVisible: true, classExpanded: true, visibleClasses: classes });
+  },
+
+  onClassPickVisible(e) {
+    if (!(e.detail && e.detail.visible)) this.setData({ classPickVisible: false });
+  },
+
+  closeClassPick() {
+    this.setData({ classPickVisible: false });
+  },
+
+  // 抽屉里选定班级
+  pickClass(e) {
+    this.navClass(e.currentTarget.dataset.class);
+  },
+
+  // 班级 chips：展开/收起（班级过多时默认折叠）
+  toggleClasses() {
+    const expanded = !this.data.classExpanded;
+    const all = this.data.classes || [];
+    this.setData({
+      classExpanded: expanded,
+      visibleClasses: expanded ? all : all.slice(0, CLASS_FOLD_LIMIT),
+    });
+  },
+
+  // chips 直接进某个班
+  openClass(e) {
+    this.navClass(e.currentTarget.dataset.class);
+  },
+
+  // 其余分组：展开全部 / 收起（超过一行时）
+  toggleGroup(e) {
+    const key = e.currentTarget.dataset.key;
+    const groups = (this.data.groups || []).map((g) => {
+      if (g.key !== key || !g.foldable) return g;
+      const expanded = !g.expanded;
+      return { ...g, expanded, shown: expanded ? g.items : g.items.slice(0, FOLD_LIMIT) };
+    });
+    this.setData({ groups });
+  },
+
+  navClass(className) {
+    if (!className) return;
+    this.setData({ classPickVisible: false });
+    wx.navigateTo({ url: `/packageAdmin/class/class?className=${encodeURIComponent(className)}` });
   },
 });
