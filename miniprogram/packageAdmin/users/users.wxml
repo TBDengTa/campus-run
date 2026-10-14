@@ -53,8 +53,8 @@
     <view class="users-dd">
       <t-dropdown-menu>
         <t-dropdown-item label="年级" value="{{filters.grade}}" options="{{filterOptions.grades}}" bind:change="onDropdownChange" data-key="grade" />
-        <t-dropdown-item label="日目标" value="{{filters.dailyGoal}}" options="{{filterOptions.dailyGoals}}" bind:change="onDropdownChange" data-key="dailyGoal" />
-        <t-dropdown-item label="周目标" value="{{filters.weeklyGoal}}" options="{{filterOptions.weeklyGoals}}" bind:change="onDropdownChange" data-key="weeklyGoal" />
+        <t-dropdown-item label="日目标" value="{{filters.dailyAchieved}}" options="{{filterOptions.dailyAchieved}}" bind:change="onDropdownChange" data-key="dailyAchieved" />
+        <t-dropdown-item label="周目标" value="{{filters.weeklyAchieved}}" options="{{filterOptions.weeklyAchieved}}" bind:change="onDropdownChange" data-key="weeklyAchieved" />
       </t-dropdown-menu>
     </view>
 

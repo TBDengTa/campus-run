@@ -5,8 +5,10 @@ const { requirePermission } = require('../../middlewares/admin');
 const anticheat = require('../../services/anticheat');
 const pwd = require('../../services/password');
 const roster = require('../../services/roster');
+const dates = require('../../utils/dates');
 const BanRecord = require('../../models/ban-record');
 const User = require('../../models/user');
+const GoalConfig = require('../../models/goal-config');
 const PermissionGroup = require('../../models/permission-group');
 const Permission = require('../../models/permission');
 const UserGoal = require('../../models/user-goal');
@@ -223,19 +225,18 @@ router.put(
   })
 );
 
-// 筛选可选项（院校/系部/专业/年级/日目标/周目标）
+// 筛选可选项（院校/系部/专业/年级）
+// 日/周目标不再返回目标步数：它们是「当日/当周是否达标」，选项由前端固定（已达标/未达标）
 router.get(
   '/filters',
   requirePermission('user.view'),
   wrap(async (req, res) => {
-    const [schools, departments, specialties, studentIds, gradeValues, dailyGoals, weeklyGoals] = await Promise.all([
+    const [schools, departments, specialties, studentIds, gradeValues] = await Promise.all([
       User.distinct('schoolName', { schoolName: { $nin: [null, ''] } }),
       User.distinct('departmentName', { departmentName: { $nin: [null, ''] } }),
       User.distinct('specialty', { specialty: { $nin: [null, ''] } }),
       User.distinct('studentId', { studentId: { $exists: true, $nin: [null, ''] } }),
       User.distinct('grade', { grade: { $exists: true, $nin: [null, ''] } }),
-      UserGoal.aggregate([{ $group: { _id: '$daily.steps' } }, { $sort: { _id: 1 } }]),
-      UserGoal.aggregate([{ $group: { _id: '$weekly.steps' } }, { $sort: { _id: 1 } }]),
     ]);
     // 年级：grade 字段优先，缺失的存量数据按学号前 4 位（入学年份）推导
     const grades = [
@@ -246,14 +247,7 @@ router.get(
         ].filter(Boolean)
       ),
     ].sort().reverse();
-    ok(res, {
-      schools,
-      departments,
-      specialties,
-      grades,
-      dailyGoals: dailyGoals.map((g) => g._id).filter((v) => v > 0),
-      weeklyGoals: weeklyGoals.map((g) => g._id).filter((v) => v > 0),
-    });
+    ok(res, { schools, departments, specialties, grades });
   })
 );
 
@@ -293,16 +287,57 @@ router.get(
     }
     if (and.length) cond.$and = and;
 
-    // 日/周目标筛选需关联 user_goals
-    if (req.query.dailyGoal || req.query.weeklyGoal) {
-      const goalMatch = {};
-      if (req.query.dailyGoal) goalMatch['g.daily.steps'] = Number(req.query.dailyGoal);
-      if (req.query.weeklyGoal) goalMatch['g.weekly.steps'] = Number(req.query.weeklyGoal);
+    // 日/周目标筛选 = 「当日 / 当周是否达标」（按用户生效目标：个人计划 > 全局默认）
+    // dailyAchieved/weeklyAchieved: '1' 已达标 / '0' 未达标
+    const pick = (v) => (['0', '1'].includes(String(v ?? '')) ? String(v) : '');
+    const dailyAchieved = pick(req.query.dailyAchieved);
+    const weeklyAchieved = pick(req.query.weeklyAchieved);
+    if (dailyAchieved || weeklyAchieved) {
+      const today = dates.todayKey();
+      const { startKey } = dates.weekRange(today);
+      const globalConfig = await GoalConfig.getSingleton();
+      const globalDaily = Number(globalConfig.daily?.steps) || 0;
+      const globalWeekly = Number(globalConfig.weekly?.steps) || 0;
+      // 按日期区间汇总该用户 run_records 的步数（werun + gps + beidou 全部来源）
+      const stepsLookup = (as, from, to) => ({
+        $lookup: {
+          from: 'run_records',
+          let: { oid: '$openid' },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $and: [{ $eq: ['$openid', '$$oid'] }, { $gte: ['$date', from] }, { $lte: ['$date', to] }] },
+              },
+            },
+            { $group: { _id: null, steps: { $sum: '$steps' } } },
+          ],
+          as,
+        },
+      });
+      const expr = [];
+      if (dailyAchieved) {
+        expr.push({ [dailyAchieved === '0' ? '$lt' : '$gte']: ['$todaySteps', '$dailyTarget'] });
+      }
+      if (weeklyAchieved) {
+        expr.push({ [weeklyAchieved === '0' ? '$lt' : '$gte']: ['$weekSteps', '$weeklyTarget'] });
+      }
       const basePipeline = [
         { $match: cond },
         { $lookup: { from: 'user_goals', localField: 'openid', foreignField: 'openid', as: 'g' } },
         { $addFields: { g: { $arrayElemAt: ['$g', 0] } } },
-        { $match: goalMatch },
+        stepsLookup('todayAgg', today, today),
+        stepsLookup('weekAgg', startKey, today),
+        {
+          $addFields: {
+            todaySteps: { $ifNull: [{ $arrayElemAt: ['$todayAgg.steps', 0] }, 0] },
+            weekSteps: { $ifNull: [{ $arrayElemAt: ['$weekAgg.steps', 0] }, 0] },
+            dailyTarget: { $ifNull: ['$g.daily.steps', globalDaily] },
+            weeklyTarget: { $ifNull: ['$g.weekly.steps', globalWeekly] },
+          },
+        },
+        { $match: { $expr: { $and: expr } } },
+        // 清掉聚合中间字段，响应结构与普通列表一致
+        { $project: { g: 0, todayAgg: 0, weekAgg: 0, todaySteps: 0, weekSteps: 0, dailyTarget: 0, weeklyTarget: 0 } },
       ];
       const [list, countAgg] = await Promise.all([
         User.aggregate([...basePipeline, { $sort: { createdAt: -1 } }, { $skip: skip }, { $limit: limit }]),

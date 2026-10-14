@@ -213,10 +213,18 @@ box-shadow: 0 12rpx 32rpx rgba(255, 107, 0, 0.24);
   「筛选 / 导入名单 / 创建账户（橙色渐变主按钮）」，**筛选面板默认收起**（`showFilters`），点「筛选」才展开——
   面板内是两行带小标签的分段 **状态（全部/正常/封禁）** 与 **角色（全部/学生/教师）**，
   以及两行 6 个下拉筛选（下拉行高由 `--td-dropdown-menu-height: 76rpx` 压到 76rpx）；
+  **「日目标 / 周目标」筛的是「当日 / 当周是否达标」，不是目标步数**（选项固定为 已达标 / 未达标）：
+  前端传 `dailyAchieved` / `weeklyAchieved`（`'1'` 达标 / `'0'` 未达标），服务端聚合 `run_records`
+  当日步数（周为本周一至今之和）与该用户生效目标（`user_goals` 优先，缺省取 `goal_config` 全局值）比较，
+  **不要退回成按 `user_goals.daily.steps` 匹配数值**；注意传空串时要当成「不筛」（服务端只认 `'0'/'1'`）。
   条件生效时「筛选」按钮右上角显示条件数角标，下方另有 `.users-active-bar` 提示当前条件并提供一键清除。
   列表行 = 头像 60rpx + 姓名 28rpx + 学号/日目标 22rpx + 右侧 `chevron-right`，行内边距 16rpx 18rpx。
   **操作路径**：点整行 → 用户详情（`onRowTap`，手机端主路径）；左滑留 3 键「编辑 · 封禁/解封 · 删除」
-  （滑出区 3×104rpx，颜色为品牌橙 / `--td-error-color-6` / 中性灰，**不要再用蓝色 `#2f7cf6`**）。
+  （滑出区 3×104rpx，内联样式**必须写 `padding:0`**：TDesign 的 `.t-swipe-cell__content` 自带 `padding:0 32rpx`，
+  不清掉每个按钮实际宽 168rpx、三个按钮要滑出 504rpx 才吸附展开，手机上一次很难滑到底。
+  颜色为品牌橙 / `--td-error-color-6` / 中性灰，**不要再用蓝色 `#2f7cf6`**）。
+  滑动按钮必须用**映射后**的 item（含 `isSuper`）生成：`buildSwipeButtons(u)` 依赖 `u.isSuper`，
+  传原始接口对象会让超管也出现「封禁 / 删除」。
   行卡片不使用 `.tt-card`（会被列表外边距二次内缩），改用页面私有 `.user-row`；
   投影写在 `t-swipe-cell` 宿主节点上（写在行上会被宿主 `overflow: hidden` 裁掉）。
   跳转账户编辑页必须写全两级路径 `packageAdmin/users/account-edit/account-edit`（少一级会静默跳转失败）。

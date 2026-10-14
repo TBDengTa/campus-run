@@ -1,8 +1,9 @@
 const auth = require('../../utils/request');
 
 // 左滑按钮：滑出区域由组件内部节点渲染，只能用内联样式；
-// 宽度收到 104rpx、字号 24rpx 以适配手机端（颜色取设计令牌：橙 / 错误红 / 成功绿 / 中性灰）
-const BTN_BASE = 'color:#fff;font-size:24rpx;width:104rpx;height:100%;display:flex;align-items:center;justify-content:center';
+// 宽度 104rpx、字号 24rpx（适配手机端），并显式清掉 TDesign 自带的 `padding: 0 32rpx`
+// —— 否则每个按钮实际宽 168rpx，三个按钮要滑出 504rpx 才吸附展开，手机上一次很难滑到底
+const BTN_BASE = 'box-sizing:border-box;padding:0;color:#fff;font-size:24rpx;width:104rpx;height:100%;display:flex;align-items:center;justify-content:center';
 const BTN_STYLE = {
   edit: `background:#ff6b00;${BTN_BASE}`,
   ban: `background:#e5484d;${BTN_BASE}`,
@@ -16,9 +17,16 @@ const FILTER_LABELS = {
   department: '系部',
   specialty: '专业',
   grade: '年级',
-  dailyGoal: '日目标',
-  weeklyGoal: '周目标',
+  dailyAchieved: '日目标',
+  weeklyAchieved: '周目标',
 };
+
+// 日/周目标筛的是「当日 / 当周是否达标」，不是目标步数
+const ACHIEVE_OPTIONS = [
+  { label: '已达标', value: '1' },
+  { label: '未达标', value: '0' },
+];
+const ACHIEVE_TEXT = { 1: '已达标', 0: '未达标' };
 
 Page({
   data: {
@@ -37,10 +45,10 @@ Page({
       departments: [],
       specialties: [],
       grades: [],
-      dailyGoals: [],
-      weeklyGoals: [],
+      dailyAchieved: ACHIEVE_OPTIONS,
+      weeklyAchieved: ACHIEVE_OPTIONS,
     },
-    filters: { school: '', department: '', specialty: '', grade: '', dailyGoal: '', weeklyGoal: '' },
+    filters: { school: '', department: '', specialty: '', grade: '', dailyAchieved: '', weeklyAchieved: '' },
     hasActiveFilter: false,
     filterCount: 0, // 筛选面板按钮上的角标
     filterSummary: '', // 已生效条件文案
@@ -62,13 +70,12 @@ Page({
       const toOptions = (arr) => (arr || []).map((v) => ({ label: String(v), value: String(v) }));
       this.setData({
         filterOptions: {
+          ...this.data.filterOptions,
           schools: toOptions(opt.schools),
           departments: toOptions(opt.departments),
           specialties: toOptions(opt.specialties),
           // 年级展示为「2024级」，筛选值仍是年份
           grades: (opt.grades || []).map((v) => ({ label: `${v}级`, value: String(v) })),
-          dailyGoals: toOptions(opt.dailyGoals).map((o) => ({ label: `${o.label} 步`, value: o.value })),
-          weeklyGoals: toOptions(opt.weeklyGoals).map((o) => ({ label: `${o.label} 步`, value: o.value })),
         },
       });
     } catch (e) {
@@ -81,8 +88,11 @@ Page({
     const summary = [];
     for (const k of Object.keys(FILTER_LABELS)) {
       if (!f[k]) continue;
-      const unit = k === 'dailyGoal' || k === 'weeklyGoal' ? ' 步' : '';
-      summary.push(`${FILTER_LABELS[k]} ${f[k]}${unit}`);
+      if (k === 'dailyAchieved' || k === 'weeklyAchieved') {
+        summary.push(`${FILTER_LABELS[k]} ${ACHIEVE_TEXT[f[k]] || ''}`);
+        continue;
+      }
+      summary.push(`${FILTER_LABELS[k]} ${f[k]}`);
     }
     if (this.data.status === 'active') summary.push('状态 正常');
     if (this.data.status === 'banned') summary.push('状态 封禁');
@@ -103,7 +113,7 @@ Page({
 
   clearFilters() {
     this.setData({
-      filters: { school: '', department: '', specialty: '', grade: '', dailyGoal: '', weeklyGoal: '' },
+      filters: { school: '', department: '', specialty: '', grade: '', dailyAchieved: '', weeklyAchieved: '' },
       keyword: '',
       status: '',
       role: '',
@@ -154,7 +164,7 @@ Page({
     if (keyword) q.keyword = keyword;
     if (status) q.status = status;
     if (role) q.role = role;
-    for (const k of ['school', 'department', 'specialty', 'grade', 'dailyGoal', 'weeklyGoal']) {
+    for (const k of ['school', 'department', 'specialty', 'grade', 'dailyAchieved', 'weeklyAchieved']) {
       if (filters[k]) q[k] = filters[k];
     }
     return q;
@@ -174,11 +184,13 @@ Page({
       const me = getApp().globalData.userInfo;
       if (me && !this.data.canManage) this.setData({ canManage: !!me.isManager });
       const res = await auth.get('/api/admin/users', this.buildQuery({ page, limit }));
-      const list = res.list.map((u) => ({
-        ...u,
-        isSuper: (u.permissionGroups || []).includes('superadmin'),
-        swipeRight: this.buildSwipeButtons(u),
-      }));
+      const list = res.list.map((u) => {
+        // 先算出 isSuper 再生成滑动按钮：buildSwipeButtons 依赖 isSuper，
+        // 直接把原始 u 传进去会让超管的「封禁/删除」也出现（u.isSuper 为 undefined）
+        const item = { ...u, isSuper: (u.permissionGroups || []).includes('superadmin') };
+        item.swipeRight = this.buildSwipeButtons(item);
+        return item;
+      });
       this.setData({ list, total: res.total });
     } catch (e) {
       wx.showToast({ title: e.message, icon: 'none' });
