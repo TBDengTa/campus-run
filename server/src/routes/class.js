@@ -57,7 +57,7 @@ const TOP_LIMIT = 50; // 班内榜单返回条数
 const CLASS_RANK_TTL = 60 * 1000; // 全校班级排名缓存（首页班级卡与班级页会同时打这个聚合）
 
 const STUDENT_FIELDS =
-  'openid realName nickname account studentId className isClassOfficer totalSteps totalDistance totalDays lastSyncAt privacy';
+  'openid realName nickname account studentId className isClassOfficer totalSteps totalDistance totalDays lastSyncAt privacy avatarUrl';
 
 // ===== 权限：可见班级与目标班级 =====
 
@@ -201,6 +201,7 @@ async function loadClassStats(className) {
       userId: String(s._id),
       name,
       studentId: s.studentId || '',
+      avatarUrl: s.avatarUrl || '',
       isClassOfficer: !!s.isClassOfficer,
       todaySteps: day.steps,
       todayDistance: day.distance,
@@ -312,6 +313,8 @@ function presentStudent(s, { masked }) {
     userId: s.userId,
     name: masked && s.hideName ? maskName(s.name) : s.name,
     studentId: s.studentId,
+    // 头像与管理端用户列表同口径（取用户 avatarUrl，没有则空串→前端回退姓名首字）
+    avatarUrl: s.avatarUrl || '',
     isClassOfficer: s.isClassOfficer,
     todaySteps: s.todaySteps,
     todayDistance: s.todayDistance,

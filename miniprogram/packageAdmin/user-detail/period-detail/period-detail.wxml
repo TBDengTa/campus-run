@@ -8,7 +8,7 @@
         <view class="pd-hero-tag {{achieved ? 'is-ok' : ''}}">{{achieved ? '已达标' : '未达标'}}</view>
       </view>
       <view class="pd-hero-sub">{{type === 'week' ? '周明细' : '日明细'}} · {{rangeText}} · 目标 {{goalSteps}} 步（{{planName}}）</view>
-      <view class="pd-hero-sub" wx:if="{{readonlyScope}}">班级视角{{className ? ' · ' + className : ''}}：只读汇总，单条运动详情请在管理端查看</view>
+      <view class="pd-hero-sub" wx:if="{{readonlyScope}}">班级视角{{className ? ' · ' + className : ''}}：只读查看，点任意一条运动记录可看详情（不能修改或代跑）</view>
 
       <view class="pd-stats">
         <view class="pd-stat">
@@ -63,7 +63,7 @@
               <view class="tt-row-sub">{{run.distanceText}} · {{run.durationText}}</view>
             </view>
             <text class="num-font pd-run-steps">{{run.steps}} 步</text>
-            <t-icon wx:if="{{!readonlyScope}}" name="chevron-right" size="26rpx" color="var(--tt-text-3)" />
+            <t-icon name="chevron-right" size="26rpx" color="var(--tt-text-3)" />
           </view>
           <view class="tt-empty" wx:if="{{!modeRecords.length}}">当天没有记录</view>
         </view>
@@ -87,12 +87,12 @@
         <view class="tt-row-sub">{{item.timeText}} · {{item.distanceText}} · {{item.durationText}}</view>
       </view>
       <text class="num-font pd-run-steps">{{item.steps}} 步</text>
-      <t-icon wx:if="{{!readonlyScope}}" name="chevron-right" size="26rpx" color="var(--tt-text-3)" />
+      <t-icon name="chevron-right" size="26rpx" color="var(--tt-text-3)" />
     </view>
     <view class="tt-empty" wx:if="{{!records.length}}">没有运动记录</view>
   </view>
 
-  <view class="tt-footer">{{readonlyScope ? '班级视角仅查看汇总明细（班主任 / 班委），不可进入单条运动详情' : '点任意一条可查看该次运动的详细数据'}}</view>
+  <view class="tt-footer">{{readonlyScope ? '班级视角仅查看：可点开每条运动记录看详情，不能修改或代跑' : '点任意一条可查看该次运动的详细数据'}}</view>
 </view>
 
 <t-loading wx:if="{{loading}}" theme="circular" size="44rpx" text="加载明细…" class="pd-loading" />

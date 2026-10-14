@@ -130,12 +130,18 @@ Page({
 
   openRun(e) {
     const id = e.currentTarget.dataset.id;
-    // 班级视角（班主任/班委）只读汇总：单条详情走的是管理端接口（需 user.view），无权限会 403
+    if (!id) return;
+    // 班级视角（班主任 / 班委）：走班级域只读接口 /api/class/student/:uid/run/:runId
+    // uid 必须是「被查看学生」的 id（options.id），不是班级页/当前登录者的 id
     if (this.data.scope === 'class') {
-      wx.showToast({ title: '班级视角仅查看汇总明细', icon: 'none' });
+      wx.navigateTo({
+        url:
+          `/pages/run/detail?id=${id}&scope=class&uid=${this.data.id}` +
+          `&className=${encodeURIComponent(this.data.className || '')}`,
+      });
       return;
     }
     // 管理端看的是别人的记录：带 admin=1&uid，走管理端取数接口
-    if (id) wx.navigateTo({ url: `/pages/run/detail?id=${id}&admin=1&uid=${this.data.id}` });
+    wx.navigateTo({ url: `/pages/run/detail?id=${id}&admin=1&uid=${this.data.id}` });
   },
 });

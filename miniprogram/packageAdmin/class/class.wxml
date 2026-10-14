@@ -204,7 +204,8 @@
         data-name="{{item.name}}"
       >
         <view class="cls-avatar {{item.isClassOfficer ? 'is-officer' : ''}}">
-          <text class="cls-avatar-txt">{{item.initial}}</text>
+          <image wx:if="{{item.avatarUrl}}" class="cls-avatar-img" src="{{item.avatarUrl}}" mode="aspectFill" />
+          <text wx:else class="cls-avatar-txt">{{item.initial}}</text>
         </view>
         <view class="cls-row-main">
           <view class="cls-name">
