@@ -280,6 +280,17 @@ Page({
     wx.navigateTo({ url: `/pages/run/detail?id=${e.currentTarget.dataset.id}` });
   },
 
+  // 日/周记录 → 时段明细页（日：当天逐条；周：按天拆分）
+  openPeriod(e) {
+    const { type, date } = e.currentTarget.dataset;
+    if (!date) return;
+    const u = this.data.user || {};
+    const name = u.realName || u.nickname || '';
+    wx.navigateTo({
+      url: `/packageAdmin/user-detail/period-detail/period-detail?id=${this.data.id}&type=${type || 'day'}&date=${date}&name=${encodeURIComponent(name)}`,
+    });
+  },
+
   goEdit() {
     wx.navigateTo({ url: `/packageAdmin/users/account-edit/account-edit?id=${this.data.id}` });
   },

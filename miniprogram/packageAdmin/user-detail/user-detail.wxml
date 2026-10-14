@@ -178,28 +178,36 @@
       <view class="tt-empty" wx:if="{{!records.runs.length && !recordLoading}}">暂无运动记录</view>
     </block>
 
-    <!-- 6.2 日记录 -->
+    <!-- 6.2 日记录（点某天看当天逐条明细） -->
     <block wx:elif="{{recordTab === 'daily'}}">
-      <view class="tt-row ud-log" wx:for="{{records.daily}}" wx:key="date">
+      <view class="tt-row ud-log" wx:for="{{records.daily}}" wx:key="date" bind:tap="openPeriod" data-type="day" data-date="{{item.date}}">
+        <view class="ud-log-icon">
+          <t-icon name="calendar" size="30rpx" color="var(--tt-brand)" />
+        </view>
         <view class="flex-1">
           <view class="tt-row-title">{{item.dateText}}</view>
           <view class="tt-row-sub">{{item.recordCount}} 条 · {{item.distanceKm}} km</view>
         </view>
         <text class="num-font ud-row-value">{{item.stepsText}} 步</text>
         <t-icon wx:if="{{item.achieved}}" name="check-circle" size="30rpx" color="var(--td-success-color-5)" />
+        <t-icon name="chevron-right" size="28rpx" color="var(--tt-text-3)" />
       </view>
       <view class="tt-empty" wx:if="{{!records.daily.length && !recordLoading}}">暂无记录</view>
     </block>
 
-    <!-- 6.3 周记录 -->
+    <!-- 6.3 周记录（点某周看该周按天拆分） -->
     <block wx:elif="{{recordTab === 'weekly'}}">
-      <view class="tt-row ud-log" wx:for="{{records.weekly}}" wx:key="weekStart">
+      <view class="tt-row ud-log" wx:for="{{records.weekly}}" wx:key="weekStart" bind:tap="openPeriod" data-type="week" data-date="{{item.weekStart}}">
+        <view class="ud-log-icon">
+          <t-icon name="calendar-1" size="30rpx" color="var(--tt-brand)" />
+        </view>
         <view class="flex-1">
           <view class="tt-row-title">{{item.rangeText}}</view>
           <view class="tt-row-sub">活跃 {{item.activeDays}} 天</view>
         </view>
         <text class="num-font ud-row-value">{{item.stepsText}} 步</text>
         <t-icon wx:if="{{item.achieved}}" name="check-circle" size="30rpx" color="var(--td-success-color-5)" />
+        <t-icon name="chevron-right" size="28rpx" color="var(--tt-text-3)" />
       </view>
       <view class="tt-empty" wx:if="{{!records.weekly.length && !recordLoading}}">暂无周记录</view>
     </block>

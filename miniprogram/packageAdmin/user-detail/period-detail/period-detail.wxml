@@ -1,0 +1,96 @@
+﻿<view class="page tt-page pd-page" wx:if="{{!loading}}">
+  <!-- ===== 时段汇总 ===== -->
+  <view class="tt-hero pd-hero">
+    <view class="tt-hero-body">
+      <view class="pd-hero-top">
+        <view class="pd-hero-name">{{userName || '该用户'}}</view>
+        <view class="pd-hero-tag {{achieved ? 'is-ok' : ''}}">{{achieved ? '已达标' : '未达标'}}</view>
+      </view>
+      <view class="pd-hero-sub">{{type === 'week' ? '周明细' : '日明细'}} · {{rangeText}} · 目标 {{goalSteps}} 步（{{planName}}）</view>
+
+      <view class="pd-stats">
+        <view class="pd-stat">
+          <text class="num-font pd-stat-v">{{summary.stepsText}}</text>
+          <text class="pd-stat-l">步数</text>
+        </view>
+        <view class="pd-stat">
+          <text class="num-font pd-stat-v">{{summary.distanceText}}</text>
+          <text class="pd-stat-l">距离</text>
+        </view>
+        <view class="pd-stat">
+          <text class="num-font pd-stat-v">{{summary.durationText}}</text>
+          <text class="pd-stat-l">时长</text>
+        </view>
+        <view class="pd-stat">
+          <text class="num-font pd-stat-v">{{summary.recordCount}}</text>
+          <text class="pd-stat-l">记录数</text>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- ===== 周视图：按天拆分 ===== -->
+  <block wx:if="{{type === 'week'}}">
+    <view class="tt-section">
+      <text>按天拆分</text>
+      <text class="tt-section-extra">点某天看当天记录</text>
+    </view>
+    <view class="tt-card pd-card">
+      <block wx:for="{{days}}" wx:key="date">
+        <view class="pd-day" bind:tap="openDay" data-date="{{item.date}}">
+          <view class="pd-day-date">
+            <text class="pd-day-md">{{item.dateText}}</text>
+            <text class="pd-day-week">{{item.date}}</text>
+          </view>
+          <view class="flex-1">
+            <view class="pd-day-steps"><text class="num-font pd-day-steps-v">{{item.stepsText}}</text> 步</view>
+            <view class="tt-row-sub">{{item.recordCount}} 条 · {{item.distanceKm}} km · {{item.durationText}}</view>
+          </view>
+          <t-icon wx:if="{{item.achieved}}" name="check-circle" size="32rpx" color="var(--td-success-color-5)" />
+          <t-icon name="{{modeIsDay && modeDate === item.date ? 'chevron-up' : 'chevron-down'}}" size="30rpx" color="var(--tt-text-3)" />
+        </view>
+
+        <!-- 展开该天的记录 -->
+        <view class="pd-day-open" wx:if="{{modeIsDay && modeDate === item.date}}">
+          <view class="pd-run" wx:for="{{modeRecords}}" wx:for-item="run" wx:key="_id" bind:tap="openRun" data-id="{{run._id}}">
+            <view class="pd-run-icon">
+              <t-icon name="{{run.source === 'gps' ? 'location' : 'logo-wechat-stroke'}}" size="28rpx" color="var(--tt-brand)" />
+            </view>
+            <view class="flex-1">
+              <view class="tt-row-title">{{run.sourceText}} · {{run.timeText}}</view>
+              <view class="tt-row-sub">{{run.distanceText}} · {{run.durationText}}</view>
+            </view>
+            <text class="num-font pd-run-steps">{{run.steps}} 步</text>
+            <t-icon name="chevron-right" size="26rpx" color="var(--tt-text-3)" />
+          </view>
+          <view class="tt-empty" wx:if="{{!modeRecords.length}}">当天没有记录</view>
+        </view>
+      </block>
+      <view class="tt-empty" wx:if="{{!days.length}}">该周没有运动记录</view>
+    </view>
+  </block>
+
+  <!-- ===== 逐条记录 ===== -->
+  <view class="tt-section">
+    <text>运动记录</text>
+    <text class="tt-section-extra">{{summary.recordCount}} 条</text>
+  </view>
+  <view class="tt-card pd-card">
+    <view class="pd-run" wx:for="{{records}}" wx:key="_id" bind:tap="openRun" data-id="{{item._id}}">
+      <view class="pd-run-icon">
+        <t-icon name="{{item.source === 'gps' ? 'location' : 'logo-wechat-stroke'}}" size="28rpx" color="var(--tt-brand)" />
+      </view>
+      <view class="flex-1">
+        <view class="tt-row-title">{{item.dateText}} · {{item.sourceText}}</view>
+        <view class="tt-row-sub">{{item.timeText}} · {{item.distanceText}} · {{item.durationText}}</view>
+      </view>
+      <text class="num-font pd-run-steps">{{item.steps}} 步</text>
+      <t-icon name="chevron-right" size="26rpx" color="var(--tt-text-3)" />
+    </view>
+    <view class="tt-empty" wx:if="{{!records.length}}">没有运动记录</view>
+  </view>
+
+  <view class="tt-footer">点任意一条可查看该次运动的详细数据</view>
+</view>
+
+<t-loading wx:if="{{loading}}" theme="circular" size="44rpx" text="加载明细…" class="pd-loading" />

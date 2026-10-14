@@ -723,6 +723,83 @@ function isoWeekRange(isoYear, isoWeek) {
   return { start: key(start), end: key(end) };
 }
 
+// 用户某一「日 / 周」的运动明细：type=day&date=YYYY-MM-DD 或 type=week&weekStart=YYYY-MM-DD(周一)
+// 返回汇总（步数/距离/时长/记录数）、达标判定、周视图按天拆分、以及每条记录
+router.get(
+  '/:id/period',
+  wrap(async (req, res) => {
+    const user = await User.findById(req.params.id).select('openid').lean();
+    if (!user) throw new ApiError(404, 404, '用户不存在');
+    const openid = user.openid || '';
+    const type = req.query.type === 'week' ? 'week' : 'day';
+    let from = String(req.query.date || '').slice(0, 10);
+    let to = from;
+    if (type === 'week') {
+      from = String(req.query.weekStart || '').slice(0, 10);
+      if (dates.isValidDateKey(from)) {
+        // 归一化到「所在周的周一」再取 7 天（与周记录的 ISO 周口径一致）
+        const dt = new Date(`${from}T00:00:00`);
+        dt.setDate(dt.getDate() - ((dt.getDay() + 6) % 7));
+        from = dates.toDateKey(dt);
+        to = dates.addDays(from, 6);
+      }
+    }
+    if (!dates.isValidDateKey(from)) throw new ApiError(400, 400, '日期参数不正确');
+    if (!openid) {
+      return ok(res, { type, from, to, summary: { steps: 0, distance: 0, calories: 0, durationSeconds: 0, recordCount: 0 }, records: [], days: [], goalSteps: 0, achieved: false });
+    }
+
+    const goalsSvc = require('../../services/goals');
+    const [records, goal] = await Promise.all([
+      RunRecord.find({ openid, date: { $gte: from, $lte: to } })
+        .sort({ date: 1, createdAt: 1 })
+        .select('date source steps distance calories durationSeconds startTime endTime goalAchieved location createdAt')
+        .lean(),
+      goalsSvc.getEffectiveGoal(openid),
+    ]);
+
+    const summary = records.reduce(
+      (acc, r) => ({
+        steps: acc.steps + (r.steps || 0),
+        distance: acc.distance + (r.distance || 0),
+        calories: acc.calories + (r.calories || 0),
+        durationSeconds: acc.durationSeconds + (r.durationSeconds || 0),
+        recordCount: acc.recordCount + 1,
+      }),
+      { steps: 0, distance: 0, calories: 0, durationSeconds: 0, recordCount: 0 }
+    );
+    const goalSteps = (type === 'week' ? goal && goal.weekly && goal.weekly.steps : goal && goal.daily && goal.daily.steps) || 0;
+    const achieved = goalSteps > 0 && summary.steps >= goalSteps;
+
+    // 按天拆分（周视图用；日视图就一天），达标按「日目标」判定
+    const dayMap = new Map();
+    for (const r of records) {
+      const d = dayMap.get(r.date) || { date: r.date, steps: 0, distance: 0, durationSeconds: 0, recordCount: 0 };
+      d.steps += r.steps || 0;
+      d.distance += r.distance || 0;
+      d.durationSeconds += r.durationSeconds || 0;
+      d.recordCount += 1;
+      dayMap.set(r.date, d);
+    }
+    const dayGoal = (goal && goal.daily && goal.daily.steps) || 0;
+    const days = [...dayMap.values()]
+      .sort((a, b) => (a.date < b.date ? 1 : -1))
+      .map((d) => ({ ...d, achieved: dayGoal > 0 && d.steps >= dayGoal }));
+
+    ok(res, {
+      type,
+      from,
+      to,
+      planName: (goal && goal.planName) || '',
+      goalSteps,
+      achieved,
+      summary,
+      days,
+      records,
+    });
+  })
+);
+
 // 解绑微信（需 user.manage）：清绑定字段 + 微信会话 + 记住我设备令牌；运动等业务数据保留
 router.post(
   '/:id/unbind-wechat',

@@ -35,6 +35,7 @@
         "users/import",
         "permissions/groups",
         "user-detail/user-detail",
+        "user-detail/period-detail/period-detail",
         "appeals/appeals",
         "ads/sponsors",
         "ads/slots",
