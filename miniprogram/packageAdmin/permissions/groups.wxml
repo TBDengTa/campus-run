@@ -1,0 +1,77 @@
+<view class="page tt-page pg-page">
+  <!-- ===== 权限组列表 ===== -->
+  <view class="tt-section">
+    <text>权限组</text>
+    <text class="tt-section-extra">共 {{list.length}} 组</text>
+  </view>
+  <view class="tt-card pg-card">
+    <view class="pg-row" wx:for="{{list}}" wx:key="_id">
+      <view class="pg-main">
+        <view class="pg-name">
+          <text class="pg-name-text">{{item.name}}</text>
+          <t-tag wx:if="{{item.builtIn}}" theme="primary" variant="light" size="small">内置</t-tag>
+        </view>
+        <view class="pg-meta">标识 {{item.key}} · {{item.permissionText}} · {{item.userCount}} 个账号</view>
+        <view class="pg-perms" wx:if="{{item.permNames}}">{{item.permNames}}</view>
+        <view class="pg-desc" wx:if="{{item.description}}">{{item.description}}</view>
+      </view>
+      <view class="pg-actions">
+        <view class="pg-btn" wx:if="{{!item.builtIn}}" bind:tap="openEdit" data-id="{{item._id}}">编辑</view>
+        <view class="pg-btn danger" wx:if="{{!item.builtIn}}" bind:tap="remove" data-id="{{item._id}}" data-name="{{item.name}}">删除</view>
+        <text class="pg-locked" wx:else>系统维护</text>
+      </view>
+    </view>
+    <view class="tt-empty" wx:if="{{!list.length && !loading}}">暂无权限组</view>
+    <t-loading wx:if="{{loading}}" theme="circular" size="40rpx" class="pg-loading" />
+  </view>
+
+  <view class="pg-add">
+    <t-button theme="primary" block bind:tap="openCreate">+ 新增权限组</t-button>
+  </view>
+
+  <view class="tt-footer">内置权限组由系统播种（每次启动重置）、不可修改或删除；仍被账号使用的组不可删除</view>
+
+  <!-- ===== 新增 / 编辑（底部抽屉 + 权限多选） ===== -->
+  <t-popup visible="{{formVisible}}" placement="bottom" bind:visible-change="onFormVisible">
+    <view class="pg-sheet">
+      <view class="pg-sheet-head">
+        <text class="pg-sheet-title">{{form._id ? '编辑权限组' : '新增权限组'}}</text>
+        <text class="pg-sheet-done" bind:tap="closeForm">关闭</text>
+      </view>
+      <scroll-view scroll-y class="pg-sheet-body">
+        <view class="pg-field">
+          <text class="pg-label">名称</text>
+          <input class="pg-input" value="{{form.name}}" placeholder="如 内容管理员" placeholder-class="pg-ph" bindinput="onField" data-field="name" />
+        </view>
+        <view class="pg-field">
+          <text class="pg-label">标识</text>
+          <input
+            class="pg-input"
+            value="{{form.key}}"
+            placeholder="小写字母开头，如 content_mgr"
+            placeholder-class="pg-ph"
+            disabled="{{!!form._id}}"
+            bindinput="onField"
+            data-field="key"
+          />
+        </view>
+        <view class="pg-field">
+          <text class="pg-label">说明</text>
+          <input class="pg-input" value="{{form.description}}" placeholder="选填" placeholder-class="pg-ph" bindinput="onField" data-field="description" />
+        </view>
+
+        <view class="pg-perm-head">
+          <text class="pg-label">权限</text>
+          <text class="pg-perm-count">已选 {{selectedCount}} 项</text>
+        </view>
+        <view class="pg-perm-mod" wx:for="{{modules}}" wx:key="name" wx:for-item="mod">
+          <view class="pg-perm-mod-title">{{mod.name}}</view>
+          <t-checkbox-group value="{{mod.selected}}" options="{{mod.options}}" data-module="{{mod.name}}" bind:change="onModulePermsChange" />
+        </view>
+      </scroll-view>
+      <view class="pg-sheet-foot">
+        <t-button theme="primary" block loading="{{saving}}" bind:tap="save">{{form._id ? '保存修改' : '创建权限组'}}</t-button>
+      </view>
+    </view>
+  </t-popup>
+</view>

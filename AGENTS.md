@@ -43,6 +43,12 @@
 - 权限 = 独立权限项（permissions 集合目录）+ 权限组（permission_groups 集合）；用户有效权限 = `user.permissions` ∪ 所在组展开，`'*'` 通配。
 - 管理端路由一律用 `requirePermission('xxx')` 挂载（见 `src/routes/admin/index.js`），禁止只靠前端隐藏入口。
 - 新增管理能力时：先在 `Permission.DEFAULT_CATALOG` 加权限项（启动自动播种），再挂到对应路由。
+- **权限组增删改**走 `server/src/routes/admin/permission-groups.js`（挂 `permission.manage`），规则：
+  ① 内置组（`builtIn: true`，来自 `PermissionGroup.DEFAULT_GROUPS`）**只读**——每次启动都会按默认值重新播种，改了也会被覆盖；
+  ② 自定义组标识 `key` 只能 `^[a-z][a-z0-9_.-]{1,31}$`，且不能包含通配 `*`（`*` 仅超级管理员组）；
+  ③ 删除前必须确认没有账号在用（`user.permissionGroups` 引用检查），内置组一律不可删；
+  ④ 权限项必须存在于权限目录（`assertPermsExist`）。
+  管理端页面：`packageAdmin/permissions/groups`（账户编辑页与用户详情页都有「管理权限组 ›」入口）。
 - 本地测试登录：后端 `DEV_LOGIN=true` + 前端 `env.js` `DEV_LOGIN: true, DEV_ROLE: 'dev-student|dev-teacher|dev-admin'`；生产必须关闭。
 
 ## 登录态与退出登录（小程序）

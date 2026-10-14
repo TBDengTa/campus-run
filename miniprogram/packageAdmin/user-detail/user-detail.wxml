@@ -149,7 +149,7 @@
   <block wx:if="{{canManagePerms}}">
     <view class="tt-section">
       <text>权限管理</text>
-      <text class="tt-section-extra">已选 {{draft.groups.length}} 组 / {{draft.perms.length}} 项</text>
+      <text class="tt-section-extra" bind:tap="goGroupManager">管理权限组 ›</text>
     </view>
     <view class="tt-card udetail-card">
       <view class="udetail-group">

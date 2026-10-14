@@ -50,21 +50,74 @@
   color: var(--tt-text-3, rgba(0, 0, 0, 0.42));
 }
 
-/* ===== 权限组 / 独立权限 ===== */
-.ae-perm-group {
+/* 手填 → 选已有 */
+.ae-switch {
+  flex-shrink: 0;
+  margin-left: 16rpx;
+  font-size: 24rpx;
+  color: var(--tt-brand, #ff6b00);
+}
+
+/* ===== 权限：点击行 + 多选抽屉 ===== */
+.ae-pick-row {
+  display: flex;
+  align-items: center;
+  min-height: 88rpx;
   padding: 8rpx 0;
 }
 
-.ae-perm-label {
-  font-size: 26rpx;
-  color: var(--tt-text-2);
+.ae-pick-value {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8rpx;
+  font-size: 28rpx;
+  color: var(--tt-text-1);
 }
 
-.ae-perm-chips {
+.ae-sheet {
   display: flex;
-  flex-wrap: wrap;
-  gap: 12rpx;
-  margin-top: 16rpx;
+  flex-direction: column;
+  max-height: 70vh;
+  background: var(--tt-card);
+  border-radius: 28rpx 28rpx 0 0;
+}
+
+.ae-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 28rpx 32rpx 20rpx;
+  border-bottom: 2rpx solid var(--tt-line);
+}
+
+.ae-sheet-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.ae-sheet-done {
+  font-size: 28rpx;
+  color: var(--tt-brand, #ff6b00);
+}
+
+.ae-sheet-body {
+  flex: 1;
+  max-height: 56vh;
+  padding: 8rpx 32rpx 32rpx;
+  box-sizing: border-box;
+}
+
+.ae-perm-mod {
+  padding: 16rpx 0 4rpx;
+}
+
+.ae-perm-mod-title {
+  margin-bottom: 8rpx;
+  font-size: 24rpx;
+  color: var(--tt-text-3);
 }
 
 /* ===== 表单行（统一规格） ===== */

@@ -1,4 +1,6 @@
 {
   "navigationBarTitleText": "账户信息",
-  "usingComponents": {}
+  "usingComponents": {
+    "t-checkbox-group": "tdesign-miniprogram/checkbox-group/checkbox-group"
+  }
 }

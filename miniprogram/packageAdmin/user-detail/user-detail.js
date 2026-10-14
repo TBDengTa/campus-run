@@ -107,6 +107,11 @@ Page({
     }
   },
 
+  // 权限组管理（增删改权限组）
+  goGroupManager() {
+    wx.navigateTo({ url: '/packageAdmin/permissions/groups' });
+  },
+
   pickRole(e) {
     this.setData({ 'draft.role': e.currentTarget.dataset.value });
   },

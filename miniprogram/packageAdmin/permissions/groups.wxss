@@ -1,0 +1,182 @@
+/* 管理端 · 权限组管理（白橙设计系统） */
+.pg-page {
+  padding-top: 16rpx;
+  padding-bottom: calc(32rpx + env(safe-area-inset-bottom));
+}
+
+.pg-card {
+  padding: 8rpx 24rpx;
+}
+
+.pg-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 16rpx;
+  padding: 22rpx 0;
+  border-bottom: 2rpx solid var(--tt-line);
+}
+
+.pg-row:last-child {
+  border-bottom: none;
+}
+
+.pg-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.pg-name {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10rpx;
+}
+
+.pg-name-text {
+  font-size: 28rpx;
+  font-weight: 500;
+  color: var(--tt-text-1);
+}
+
+.pg-meta {
+  margin-top: 6rpx;
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+.pg-perms {
+  margin-top: 6rpx;
+  font-size: 22rpx;
+  line-height: 32rpx;
+  color: var(--tt-text-2);
+  word-break: break-all;
+}
+
+.pg-desc {
+  margin-top: 6rpx;
+  font-size: 22rpx;
+  line-height: 32rpx;
+  color: var(--tt-text-3);
+}
+
+.pg-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12rpx;
+  flex-shrink: 0;
+}
+
+.pg-btn {
+  padding: 6rpx 20rpx;
+  border-radius: 999rpx;
+  font-size: 22rpx;
+  color: var(--tt-brand);
+  background: var(--tt-brand-soft);
+}
+
+.pg-btn.danger {
+  color: var(--td-error-color-6, #e5484d);
+  background: var(--td-error-color-1, #fdecee);
+}
+
+.pg-locked {
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+.pg-loading {
+  display: flex;
+  justify-content: center;
+  padding: 24rpx;
+}
+
+.pg-add {
+  margin: 8rpx 24rpx 0;
+}
+
+/* ===== 抽屉表单 ===== */
+.pg-sheet {
+  display: flex;
+  flex-direction: column;
+  max-height: 78vh;
+  background: var(--tt-card);
+  border-radius: 28rpx 28rpx 0 0;
+}
+
+.pg-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 28rpx 32rpx 20rpx;
+  border-bottom: 2rpx solid var(--tt-line);
+}
+
+.pg-sheet-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.pg-sheet-done {
+  font-size: 28rpx;
+  color: var(--tt-brand);
+}
+
+.pg-sheet-body {
+  flex: 1;
+  max-height: 58vh;
+  padding: 8rpx 32rpx 24rpx;
+  box-sizing: border-box;
+}
+
+.pg-sheet-foot {
+  padding: 16rpx 32rpx calc(24rpx + env(safe-area-inset-bottom));
+  border-top: 2rpx solid var(--tt-line);
+}
+
+.pg-field {
+  display: flex;
+  align-items: center;
+  min-height: 88rpx;
+  border-bottom: 2rpx solid var(--tt-line);
+}
+
+.pg-label {
+  width: 140rpx;
+  flex-shrink: 0;
+  font-size: 26rpx;
+  color: var(--tt-text-2);
+}
+
+.pg-input {
+  flex: 1;
+  font-size: 28rpx;
+  text-align: right;
+}
+
+.pg-ph {
+  color: var(--td-text-color-placeholder, rgba(0, 0, 0, 0.3));
+}
+
+.pg-perm-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24rpx 0 8rpx;
+}
+
+.pg-perm-count {
+  font-size: 22rpx;
+  color: var(--tt-brand);
+}
+
+.pg-perm-mod {
+  padding: 12rpx 0 4rpx;
+}
+
+.pg-perm-mod-title {
+  margin-bottom: 8rpx;
+  font-size: 24rpx;
+  color: var(--tt-text-3);
+}

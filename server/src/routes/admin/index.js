@@ -15,6 +15,9 @@ router.use('/content', requirePermission('content.view'), require('./content'));
 router.use('/config', requirePermission('config.view'), require('./config'));
 router.use('/upload', requirePermission('ad.manage'), require('./upload'));
 
+// 权限组管理（增删改，需 permission.manage）
+router.use('/permission-groups', requirePermission('permission.manage'), require('./permission-groups'));
+
 // 权限目录 + 权限组（管理用户权限者可用）
 router.get(
   '/permissions',
