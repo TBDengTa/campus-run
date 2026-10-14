@@ -41,6 +41,24 @@ function md(dateKey) {
   return `${Number(dateKey.slice(5, 7))}月${Number(dateKey.slice(8, 10))}日`;
 }
 
+// 页码条：页数少时全列，多时首尾 + 当前页附近，间隔用省略号（与用户明细分页同一语言）
+function buildPageItems(current, total) {
+  const out = [];
+  const push = (page, label) => out.push({ k: `${page}-${out.length}`, page, label: label || String(page) });
+  if (total <= 7) {
+    for (let i = 1; i <= total; i += 1) push(i);
+    return out;
+  }
+  push(1);
+  const start = Math.max(2, current - 1);
+  const end = Math.min(total - 1, current + 1);
+  if (start > 2) push(0, '…');
+  for (let i = start; i <= end; i += 1) push(i);
+  if (end < total - 1) push(0, '…');
+  push(total);
+  return out;
+}
+
 Page({
   data: {
     loading: true,
@@ -52,8 +70,12 @@ Page({
     weekStart: '',
     overview: null,
     classRank: null, // 本班在全校班级榜的名次（{ rank, total, avgSteps, members, top }）
+    topStudents: [], // 班内榜单前三（本周步数，/api/class/ranking）
+    nudgeCount: 0, // 今日未达标人数（底部操作条副文案）
     students: [],
     page: 1,
+    pagesTotal: 1,
+    pageItems: [],
     total: 0,
     hasMore: false,
     loadingMore: false,
@@ -79,11 +101,7 @@ Page({
     this.load().finally(() => wx.stopPullDownRefresh());
   },
 
-  onReachBottom() {
-    if (this.data.hasMore && !this.data.loadingMore) this.loadStudents(this.data.page + 1);
-  },
-
-  // 身份 + 概况，然后拉第一页名单
+  // 身份 + 概况 + 榜单，然后拉第一页名单
   async load() {
     try {
       await getApp().ensureLogin();
@@ -101,7 +119,7 @@ Page({
         className,
       });
       wx.setNavigationBarTitle({ title: `${className || '班级'} · 班级管理` });
-      await Promise.all([this.loadOverview(), this.loadStudents(1)]);
+      await Promise.all([this.loadOverview(), this.loadRanking(), this.loadStudents(1)]);
       this.setData({ loading: false });
     } catch (e) {
       this.setData({ loading: false });
@@ -122,6 +140,10 @@ Page({
         stepsTodayText: fmt.formatNumber(ov.stepsToday),
         totalStepsText: fmt.formatNumber(ov.totalSteps),
         classAvgStepsText: fmt.formatNumber(ov.classAvgSteps),
+        // 全校班级名次的展示字段：横条里用大号数字 + 「/ 总数」
+        rankNo: rank && rank.rank ? rank.rank : 0,
+        rankTotal: rank ? rank.total : 0,
+        rankAvgText: rank ? fmt.formatNumber(rank.avgSteps) : '',
         rankText: !rank
           ? ''
           : rank.rank
@@ -130,14 +152,41 @@ Page({
         weekRangeText: ov.weekStart ? `${md(ov.weekStart)} 起` : '',
       },
       classRank: rank,
+      nudgeCount: Math.max(0, (ov.studentCount || 0) - (ov.achievedToday || 0)),
     });
   },
 
-  // 学生名单（服务端分页：page 递增即追加）
+  // 班内榜单前三（本周步数）：只做展示，失败不影响页面主流程
+  async loadRanking() {
+    const className = this.data.className;
+    if (!className) return;
+    const medals = ['is-1', 'is-2', 'is-3'];
+    try {
+      const res = await auth.get('/api/class/ranking', { className });
+      const top = (res.students || [])
+        .filter((s) => Number(s.weekSteps) > 0)
+        .slice(0, 3)
+        .map((s, i) => ({
+          userId: s.userId,
+          name: s.name,
+          isClassOfficer: s.isClassOfficer,
+          achievedToday: s.achievedToday,
+          weekStepsText: fmt.formatNumber(s.weekSteps),
+          todayStepsText: fmt.formatNumber(s.todaySteps),
+          medal: medals[i] || '',
+        }));
+      this.setData({ topStudents: top });
+    } catch (e) {
+      this.setData({ topStudents: [] });
+    }
+  },
+
+  // 学生名单（服务端分页：翻到第几页就显示第几页，不做触底追加）
   async loadStudents(page) {
     const className = this.data.className;
     if (!className) return;
     const p = Math.max(1, page || 1);
+    const pageChanged = p !== this.data.page;
     this.setData({ loadingMore: p > 1 });
     try {
       const res = await auth.get('/api/class/students', {
@@ -155,26 +204,53 @@ Page({
         targetText: fmt.formatNumber(s.todayTarget),
         syncText: syncText(s.lastSyncAt),
       }));
+      const total = res.total || 0;
+      const pagesTotal = Math.max(1, Math.ceil(total / PAGE_SIZE));
       this.setData({
-        students: p > 1 ? [...this.data.students, ...rows] : rows,
+        students: rows,
         page: p,
-        total: res.total || 0,
+        pagesTotal,
+        pageItems: buildPageItems(p, pagesTotal),
+        total,
         hasMore: !!res.hasMore,
       });
     } catch (e) {
       wx.showToast({ title: e.message || '名单加载失败', icon: 'none' });
     } finally {
       this.setData({ loadingMore: false });
+      if (pageChanged) this.scrollToList();
     }
+  },
+
+  // 翻页后回到名单顶部（失败静默，不影响数据）
+  scrollToList() {
+    wx.pageScrollTo({ selector: '#clsList', duration: 200, fail: () => {} });
+  },
+
+  // 按钮翻页：上一页 / 指定页 / 下一页
+  goPage(e) {
+    const p = Number(e.currentTarget.dataset.page) || 0;
+    if (!p || p === this.data.page) return;
+    if (p < 1 || p > this.data.pagesTotal) return;
+    this.loadStudents(p);
+  },
+
+  prevPage() {
+    if (this.data.page > 1) this.loadStudents(this.data.page - 1);
+  },
+
+  nextPage() {
+    if (this.data.page < this.data.pagesTotal) this.loadStudents(this.data.page + 1);
   },
 
   // 切换班级（班主任可能有多个班）
   switchClass(e) {
     const className = e.currentTarget.dataset.class;
     if (!className || className === this.data.className) return;
-    this.setData({ className, students: [], overview: null, page: 1, total: 0, hasMore: false });
+    this.setData({ className, students: [], topStudents: [], overview: null, page: 1, pagesTotal: 1, pageItems: [], total: 0, hasMore: false });
     wx.setNavigationBarTitle({ title: `${className} · 班级管理` });
     this.loadOverview();
+    this.loadRanking();
     this.loadStudents(1);
   },
 
@@ -232,6 +308,7 @@ Page({
         no: i + 1,
         todayStepsText: fmt.formatNumber(s.todaySteps),
         targetText: fmt.formatNumber(s.todayTarget),
+        gapText: fmt.formatNumber(Math.max(0, (s.todayTarget || 0) - (s.todaySteps || 0))),
         syncText: syncText(s.lastSyncAt),
       }));
       const cn = this.data.className;

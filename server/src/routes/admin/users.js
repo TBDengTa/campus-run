@@ -382,20 +382,71 @@ router.put(
   })
 );
 
+// 众数取值：非空字符串里出现最多的那个（并列时取字典序最小的，保证多次调用结果稳定）
+function modeOf(values) {
+  const count = new Map();
+  for (const v of values || []) {
+    const t = String(v == null ? '' : v).trim();
+    if (!t) continue;
+    count.set(t, (count.get(t) || 0) + 1);
+  }
+  let best = '';
+  let bestN = -1;
+  for (const key of [...count.keys()].sort()) {
+    const n = count.get(key);
+    if (n > bestN) {
+      best = key;
+      bestN = n;
+    }
+  }
+  return best;
+}
+
+// 班级 → { className, grade, departmentName, schoolName }
+// 班级名的层级只到「年级后两位 + 专业」，院系/系部不在班名里，只能从该班学生数据上取：
+// 一次聚合按 className 分组（className 已有索引），院系/系部取众数（去掉空值，避免少数脏数据带偏）；
+// 年级优先按学号前 4 位（roster.gradeFromStudentId 同口径），学号推导不出再落到班名前缀（roster.gradeFromClassName）
+async function buildClassMeta() {
+  const groups = await User.aggregate([
+    { $match: { role: 'student', className: { $nin: [null, ''] } } },
+    {
+      $group: {
+        _id: '$className',
+        grades: { $addToSet: '$grade' },
+        sidYears: { $addToSet: { $substrCP: [{ $ifNull: ['$studentId', ''] }, 0, 4] } },
+        departments: { $addToSet: '$departmentName' },
+        schools: { $addToSet: '$schoolName' },
+      },
+    },
+  ]);
+  return groups.map((g) => ({
+    className: g._id,
+    grade:
+      modeOf((g.sidYears || []).map((y) => roster.gradeFromStudentId(y))) ||
+      modeOf(g.grades) ||
+      roster.gradeFromClassName(g._id),
+    departmentName: modeOf(g.departments),
+    schoolName: modeOf(g.schools),
+  }));
+}
+
 // 筛选可选项（院校/系部/专业/年级/班级）
 // 日/周目标不再返回目标步数：它们是「当日/当周是否达标」，选项由前端固定（已达标/未达标）
 // classes：班主任分配班级时的候选（在用的班级名，按「年级+专业」推导后的值），不新增班级列表接口
+// classMeta：每个班级的年级/院系/系部（班主任班级多选抽屉要按这三层筛选，班名里没有院系/系部），
+//            与 classes 一一对应、同序，不改动原有字段
 router.get(
   '/filters',
   requirePermission('user.view'),
   wrap(async (req, res) => {
-    const [schools, departments, specialties, studentIds, gradeValues, classes] = await Promise.all([
+    const [schools, departments, specialties, studentIds, gradeValues, classes, classMeta] = await Promise.all([
       User.distinct('schoolName', { schoolName: { $nin: [null, ''] } }),
       User.distinct('departmentName', { departmentName: { $nin: [null, ''] } }),
       User.distinct('specialty', { specialty: { $nin: [null, ''] } }),
       User.distinct('studentId', { studentId: { $exists: true, $nin: [null, ''] } }),
       User.distinct('grade', { grade: { $exists: true, $nin: [null, ''] } }),
       User.distinct('className', { className: { $nin: [null, ''] }, role: { $ne: 'teacher' } }),
+      buildClassMeta(),
     ]);
     // 年级：grade 字段优先，缺失的存量数据按学号前 4 位（入学年份）推导
     const grades = [
@@ -406,7 +457,17 @@ router.get(
         ].filter(Boolean)
       ),
     ].sort().reverse();
-    ok(res, { schools, departments, specialties, grades, classes: [...(classes || [])].sort() });
+    const sortedClasses = [...(classes || [])].sort();
+    const metaByClass = new Map((classMeta || []).map((m) => [m.className, m]));
+    ok(res, {
+      schools,
+      departments,
+      specialties,
+      grades,
+      classes: sortedClasses,
+      // 与 classes 同序，只保留有学生数据的班级（前端按 className 取用，取不到时降级为无副标题）
+      classMeta: sortedClasses.map((c) => metaByClass.get(c)).filter(Boolean),
+    });
   })
 );
 
