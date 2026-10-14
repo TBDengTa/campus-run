@@ -277,7 +277,7 @@ Page({
   },
 
   openRun(e) {
-    wx.navigateTo({ url: `/pages/run/detail?id=${e.currentTarget.dataset.id}` });
+    wx.navigateTo({ url: `/pages/run/detail?id=${e.currentTarget.dataset.id}&admin=1&uid=${this.data.id}` });
   },
 
   // 日/周记录 → 时段明细页（日：当天逐条；周：按天拆分）

@@ -12,13 +12,15 @@ Page({
   onLoad(options) {
     // 未登录 / 已退出 / 游客：统一跳登录页，不执行任何业务逻辑
     if (!getApp().requireLogin()) return;
+    // 管理端查看某个用户的记录：走管理端接口（用户端接口只允许看自己，会 404「记录不存在」）
+    this.adminUid = options.admin === '1' ? options.uid || '' : '';
     this.load(options.id);
   },
 
   async load(id) {
     try {
       await getApp().ensureLogin();
-      const record = await auth.get(`/api/run/detail/${id}`);
+      const record = await auth.get(this.adminUid ? `/api/admin/users/${this.adminUid}/runs/${id}` : `/api/run/detail/${id}`);
       const startTimeText = this.formatClock(record.startTime);
       const endTimeText = this.formatClock(record.endTime);
       this.setData({
@@ -36,6 +38,7 @@ Page({
           timeRangeText: startTimeText && endTimeText ? `${startTimeText} - ${endTimeText}` : '',
         },
       });
+      if (record.ownerName) wx.setNavigationBarTitle({ title: `${record.ownerName} 的运动` });
       if (record.source === 'gps' && record.routePoints && record.routePoints.length > 1) {
         const pts = record.routePoints;
         this.setData({

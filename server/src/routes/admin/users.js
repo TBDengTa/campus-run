@@ -723,6 +723,23 @@ function isoWeekRange(isoYear, isoWeek) {
   return { start: key(start), end: key(end) };
 }
 
+// 某条运动记录详情（管理端视角：可看任意用户的记录）
+// 用户端 /api/run/detail/:id 只按「当前登录用户」查，管理员点别人的记录会 404「记录不存在」
+router.get(
+  '/:id/runs/:runId',
+  wrap(async (req, res) => {
+    if (!require('mongoose').isValidObjectId(req.params.runId)) throw new ApiError(404, 404, '记录不存在');
+    const user = await User.findById(req.params.id).select('openid realName nickname account').lean();
+    if (!user) throw new ApiError(404, 404, '用户不存在');
+    const record = await RunRecord.findOne({ _id: req.params.runId, openid: user.openid }).lean();
+    if (!record) throw new ApiError(404, 404, '记录不存在');
+    ok(res, {
+      ...record,
+      ownerName: user.realName || user.nickname || user.account || '',
+    });
+  })
+);
+
 // 用户某一「日 / 周」的运动明细：type=day&date=YYYY-MM-DD 或 type=week&weekStart=YYYY-MM-DD(周一)
 // 返回汇总（步数/距离/时长/记录数）、达标判定、周视图按天拆分、以及每条记录
 router.get(

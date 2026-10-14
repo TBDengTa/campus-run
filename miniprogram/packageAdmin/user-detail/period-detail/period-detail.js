@@ -116,6 +116,7 @@ Page({
 
   openRun(e) {
     const id = e.currentTarget.dataset.id;
-    if (id) wx.navigateTo({ url: `/pages/run/detail?id=${id}` });
+    // 管理端看的是别人的记录：带 admin=1&uid，走管理端取数接口
+    if (id) wx.navigateTo({ url: `/pages/run/detail?id=${id}&admin=1&uid=${this.data.id}` });
   },
 });
