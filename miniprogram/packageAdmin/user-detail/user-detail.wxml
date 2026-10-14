@@ -414,10 +414,33 @@
         <t-icon name="close" size="32rpx" color="var(--tt-text-2)" />
       </view>
     </view>
-    <scroll-view scroll-y class="tt-sheet-body">
-      <view class="tt-sheet-label">选择班级（在用的班级名，来自用户名单）</view>
-      <t-checkbox-group value="{{classDraft}}" options="{{classOptions}}" bind:change="onClassDraftChange" />
-      <view class="tt-empty" wx:if="{{!classOptions.length}}">没有可选班级（请先导入学生名单）</view>
+    <view class="ud-cf">
+      <input
+        class="ud-cf-input"
+        value="{{classKeyword}}"
+        placeholder="搜索班级 / 专业"
+        placeholder-class="tt-sheet-ph"
+        bindinput="onClassKeyword"
+      />
+      <view class="ud-cf-row">
+        <picker class="ud-cf-pick" mode="selector" range="{{classSchoolRange}}" value="{{classSchoolIndex}}" bindchange="onClassSchool">
+          <view class="ud-cf-val">{{classSchool || '全部院系'}} <t-icon name="chevron-down" size="24rpx" color="var(--tt-text-3)" /></view>
+        </picker>
+        <picker class="ud-cf-pick" mode="selector" range="{{classDeptRange}}" value="{{classDeptIndex}}" bindchange="onClassDept">
+          <view class="ud-cf-val">{{classDept || '全部系部'}} <t-icon name="chevron-down" size="24rpx" color="var(--tt-text-3)" /></view>
+        </picker>
+        <picker class="ud-cf-pick" mode="selector" range="{{classGradeRange}}" value="{{classGradeIndex}}" bindchange="onClassGrade">
+          <view class="ud-cf-val">{{classGrade || '全部年级'}} <t-icon name="chevron-down" size="24rpx" color="var(--tt-text-3)" /></view>
+        </picker>
+      </view>
+      <view class="ud-cf-sum">
+        共 {{classFiltered.length}} / {{classMeta.length}} 个班 · 已选 {{classDraft.length}} 个
+        <text class="ud-cf-clear" wx:if="{{classKeyword || classSchool || classDept || classGrade}}" bind:tap="clearClassFilter">清空筛选</text>
+      </view>
+    </view>
+    <scroll-view scroll-y class="tt-sheet-body ud-class-scroll">
+      <t-checkbox-group value="{{classDraft}}" options="{{classFiltered}}" bind:change="onClassDraftChange" />
+      <view class="tt-empty" wx:if="{{!classFiltered.length}}">没有符合条件的班级（试试清空筛选）</view>
       <view class="tt-sheet-note">分配后该教师无需管理权限即可查看这些班级的学生数据（只读）；教师不参与运动记录与排名。</view>
     </scroll-view>
     <view class="tt-sheet-foot">

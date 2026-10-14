@@ -534,3 +534,61 @@
   justify-content: center;
   padding: 120rpx 0;
 }
+
+/* ===== 班主任班级抽屉：筛选条 + 可滚动列表（原来 scroll-view 无确定高度 → 滚不动） ===== */
+.ud-cf {
+  padding: 0 32rpx 16rpx;
+}
+
+.ud-cf-input {
+  height: 76rpx;
+  padding: 0 24rpx;
+  border-radius: 16rpx;
+  background: var(--td-bg-color-component, #f3f3f3);
+  font-size: 26rpx;
+}
+
+.ud-cf-row {
+  display: flex;
+  gap: 12rpx;
+  margin-top: 12rpx;
+}
+
+.ud-cf-pick {
+  flex: 1;
+  min-width: 0;
+}
+
+.ud-cf-val {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4rpx;
+  height: 68rpx;
+  padding: 0 12rpx;
+  border-radius: 16rpx;
+  background: var(--td-bg-color-component, #f3f3f3);
+  font-size: 24rpx;
+  color: var(--tt-text-2);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.ud-cf-sum {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin-top: 12rpx;
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+.ud-cf-clear {
+  margin-left: auto;
+  color: var(--tt-brand);
+}
+
+.ud-class-scroll {
+  max-height: 46vh;
+  height: 46vh;
+}

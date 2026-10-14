@@ -32,6 +32,15 @@ function buildPageItems(current, total) {
   return out;
 }
 
+// 班名前缀推年级：'25大数据与会计' → '2025'；'23级机电1班' → '2023'（与 roster 口径一致）
+function gradeOfClassName(name) {
+  const m = String(name || '').match(/^(\d{2,4})/);
+  if (!m) return '';
+  const n = Number(m[1]);
+  if (m[1].length === 4) return n >= 1900 && n <= 2099 ? String(n) : '';
+  return n >= 0 && n <= 99 ? String(2000 + n) : '';
+}
+
 Page({
   data: {
     id: '',
@@ -69,6 +78,18 @@ Page({
     isClassOfficer: false, // 学生：是否班委
     classSheetVisible: false,
     classOptions: [], // 班级候选（/api/admin/users/filters 的 classes → [{label,value}]）
+    classMeta: [], // 每班 { className, grade, departmentName, schoolName }
+    classFiltered: [], // 应用筛选后真正渲染的候选
+    classKeyword: '',
+    classSchool: '',
+    classDept: '',
+    classGrade: '',
+    classSchoolRange: ['全部院系'],
+    classDeptRange: ['全部系部'],
+    classGradeRange: ['全部年级'],
+    classSchoolIndex: 0,
+    classDeptIndex: 0,
+    classGradeIndex: 0,
     classDraft: [],
     classSaving: false,
     officerSaving: false,
@@ -414,13 +435,78 @@ Page({
     this.setData({ classSheetVisible: true, classDraft: [...(this.data.homeroomClasses || [])] });
     if (!this.data.classOptions.length) {
       try {
-        // 班级候选复用管理端筛选接口的 classes（在用的班级名，不新增班级列表接口）
+        // 班级候选复用管理端筛选接口：classes（在用班级名）+ classMeta（每班的年级/院系/系部，供抽屉筛选）
         const f = await auth.get('/api/admin/users/filters');
-        this.setData({ classOptions: (f.classes || []).map((c) => ({ label: c, value: c })) });
+        const meta = (f.classMeta || []).length
+          ? f.classMeta
+          : (f.classes || []).map((c) => ({ className: c, grade: gradeOfClassName(c), departmentName: '', schoolName: '' }));
+        const schools = [...new Set(meta.map((m) => m.schoolName).filter(Boolean))].sort();
+        const grades = [...new Set(meta.map((m) => m.grade).filter(Boolean))].sort().reverse();
+        this.setData({
+          classOptions: (f.classes || []).map((c) => ({ label: c, value: c })),
+          classMeta: meta,
+          classSchoolRange: ['全部院系', ...schools],
+          classGradeRange: ['全部年级', ...grades],
+        });
+        this.applyClassFilter();
       } catch (e) {
         wx.showToast({ title: e.message || '班级列表加载失败', icon: 'none' });
       }
     }
+  },
+
+  // 按 搜索 / 院系 / 系部 / 年级 过滤班级候选（系部候选随院系联动）
+  applyClassFilter() {
+    const { classMeta, classKeyword, classSchool, classDept, classGrade } = this.data;
+    const kw = String(classKeyword || '').trim();
+    const list = (classMeta || []).filter((m) => {
+      if (classSchool && m.schoolName !== classSchool) return false;
+      if (classDept && m.departmentName !== classDept) return false;
+      if (classGrade && m.grade !== classGrade) return false;
+      if (kw && !String(m.className).includes(kw)) return false;
+      return true;
+    });
+    const depts = [
+      ...new Set(
+        (classMeta || [])
+          .filter((m) => !classSchool || m.schoolName === classSchool)
+          .map((m) => m.departmentName)
+          .filter(Boolean)
+      ),
+    ].sort();
+    this.setData({
+      classFiltered: list.map((m) => ({ label: m.className, value: m.className })),
+      classDeptRange: ['全部系部', ...depts],
+    });
+  },
+
+  onClassKeyword(e) {
+    this.setData({ classKeyword: e.detail.value || '' }, () => this.applyClassFilter());
+  },
+
+  onClassSchool(e) {
+    const i = Number(e.detail.value) || 0;
+    this.setData(
+      { classSchoolIndex: i, classSchool: i ? this.data.classSchoolRange[i] : '', classDeptIndex: 0, classDept: '' },
+      () => this.applyClassFilter()
+    );
+  },
+
+  onClassDept(e) {
+    const i = Number(e.detail.value) || 0;
+    this.setData({ classDeptIndex: i, classDept: i ? this.data.classDeptRange[i] : '' }, () => this.applyClassFilter());
+  },
+
+  onClassGrade(e) {
+    const i = Number(e.detail.value) || 0;
+    this.setData({ classGradeIndex: i, classGrade: i ? this.data.classGradeRange[i] : '' }, () => this.applyClassFilter());
+  },
+
+  clearClassFilter() {
+    this.setData(
+      { classKeyword: '', classSchool: '', classDept: '', classGrade: '', classSchoolIndex: 0, classDeptIndex: 0, classGradeIndex: 0 },
+      () => this.applyClassFilter()
+    );
   },
 
   onClassSheetVisible(e) {
