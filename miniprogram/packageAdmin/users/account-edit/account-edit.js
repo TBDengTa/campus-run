@@ -24,6 +24,15 @@ Page({
     loading: false,
     genders: GENDERS,
     today: '',
+    // ===== 院校/系部/专业级联选择 =====
+    hasOrgTree: false,
+    orgTree: [],
+    schoolNames: [],
+    departmentNames: [],
+    specialtyNames: [],
+    schoolIndex: -1,
+    departmentIndex: -1,
+    specialtyIndex: -1,
   },
 
   onLoad(options) {
@@ -34,7 +43,22 @@ Page({
       today: `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`,
     });
     wx.setNavigationBarTitle({ title: options.id ? '编辑账户' : '创建账户' });
+    this.loadOrgTree();
     if (options.id) this.load();
+  },
+
+  async loadOrgTree() {
+    try {
+      await getApp().ensureLogin();
+      const tree = await auth.get('/api/org/tree');
+      this.setData({
+        hasOrgTree: tree.length > 0,
+        orgTree: tree,
+        schoolNames: tree.map((s) => s.name),
+      });
+    } catch (e) {
+      /* 组织树加载失败时降级为手填 */
+    }
   },
 
   async load() {
@@ -54,10 +78,75 @@ Page({
         className: user.className || '',
         loading: false,
       });
+      // 编辑模式：按已保存的名称回显级联选择索引
+      if (user.schoolName && this.data.orgTree.length) {
+        this.prefillOrg(user.schoolName, user.departmentName || '', user.specialty || '');
+      }
     } catch (e) {
       this.setData({ loading: false });
       wx.showToast({ title: e.message, icon: 'none' });
     }
+  },
+
+  // 编辑模式回显：按名称定位 院校/系部/专业 索引
+  prefillOrg(schoolName, departmentName, specialtyName) {
+    const si = this.data.orgTree.findIndex((s) => s.name === schoolName);
+    if (si < 0) return;
+    const school = this.data.orgTree[si];
+    const departments = (school.children || []).map((x) => x.name);
+    let di = departmentName ? departments.indexOf(departmentName) : -1;
+    let specialtyNames = [];
+    if (di >= 0) {
+      const dept = school.children[di];
+      specialtyNames = (dept.children || []).map((x) => x.name);
+    }
+    this.setData({
+      schoolIndex: si,
+      departmentNames,
+      departmentIndex: di,
+      specialtyNames,
+      specialtyIndex: specialtyName ? specialtyNames.indexOf(specialtyName) : -1,
+    });
+  },
+
+  // 院校选择 → 联动系部
+  onSchoolPick(e) {
+    const i = Number(e.detail.value);
+    const school = this.data.orgTree[i];
+    if (!school) return;
+    this.setData({
+      schoolIndex: i,
+      school: school.name,
+      departmentNames: (school.children || []).map((x) => x.name),
+      department: '',
+      departmentIndex: -1,
+      specialtyNames: [],
+      specialty: '',
+      specialtyIndex: -1,
+    });
+  },
+
+  // 系部选择 → 联动专业
+  onDepartmentPick(e) {
+    const i = Number(e.detail.value);
+    const school = this.data.orgTree[this.data.schoolIndex];
+    const dept = (school.children || [])[i];
+    if (!dept) return;
+    this.setData({
+      departmentIndex: i,
+      department: dept.name,
+      specialtyNames: (dept.children || []).map((x) => x.name),
+      specialty: '',
+      specialtyIndex: -1,
+    });
+  },
+
+  // 专业选择
+  onSpecialtyPick(e) {
+    const i = Number(e.detail.value);
+    const name = this.data.specialtyNames[i];
+    if (!name) return;
+    this.setData({ specialtyIndex: i, specialty: name });
   },
 
   pickRole(e) {

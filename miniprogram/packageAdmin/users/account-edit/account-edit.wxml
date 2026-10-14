@@ -50,17 +50,23 @@
     <view class="tt-card ae-form">
       <view class="ae-row">
         <text class="ae-label">院校</text>
-        <input class="ae-input" value="{{school}}" placeholder="如 北校区" placeholder-class="ae-ph" bindinput="input" data-field="school" />
+        <picker mode="selector" range="{{schoolNames}}" bindchange="onSchoolPick">
+          <view class="ae-picker {{school ? '' : 'ae-ph'}}">{{school || '选择院校'}}</view>
+        </picker>
       </view>
       <view class="ae-divider"></view>
       <view class="ae-row">
         <text class="ae-label">系部</text>
-        <input class="ae-input" value="{{department}}" placeholder="如 机电建工系" placeholder-class="ae-ph" bindinput="input" data-field="department" />
+        <picker mode="selector" range="{{departmentNames}}" bindchange="onDepartmentPick">
+          <view class="ae-picker {{department ? '' : 'ae-ph'}}">{{department || (schoolIndex < 0 ? '先选院校' : '选择系部')}}</view>
+        </picker>
       </view>
       <view class="ae-divider"></view>
-      <view class="ae-row">
+      <view class="ae-row" wx:if="{{specialtyNames.length}}">
         <text class="ae-label">专业</text>
-        <input class="ae-input" value="{{specialty}}" placeholder="如 大数据技术" placeholder-class="ae-ph" bindinput="input" data-field="specialty" />
+        <picker mode="selector" range="{{specialtyNames}}" bindchange="onSpecialtyPick">
+          <view class="ae-picker {{specialty ? '' : 'ae-ph'}}">{{specialty || '选择专业（可选）'}}</view>
+        </picker>
       </view>
       <view class="ae-divider"></view>
       <view class="ae-row">

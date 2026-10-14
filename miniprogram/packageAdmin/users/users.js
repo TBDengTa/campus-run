@@ -1,11 +1,11 @@
 const auth = require('../../utils/request');
 
 const BTN_STYLE = {
-  edit: 'background:#0052d9;color:#fff;font-size:24rpx;width:104rpx',
-  detail: 'background:#16a34a;color:#fff;font-size:24rpx;width:104rpx',
-  ban: 'background:#d54941;color:#fff;font-size:24rpx;width:104rpx',
-  unban: 'background:#16a34a;color:#fff;font-size:24rpx;width:104rpx',
-  del: 'background:#383838;color:#fff;font-size:24rpx;width:104rpx',
+  edit: 'background:#ff6b00;color:#fff;font-size:26rpx;width:120rpx;height:100%;display:flex;align-items:center;justify-content:center',
+  detail: 'background:#2f7cf6;color:#fff;font-size:26rpx;width:120rpx;height:100%;display:flex;align-items:center;justify-content:center',
+  ban: 'background:#d54941;color:#fff;font-size:26rpx;width:120rpx;height:100%;display:flex;align-items:center;justify-content:center',
+  unban: 'background:#16a34a;color:#fff;font-size:26rpx;width:120rpx;height:100%;display:flex;align-items:center;justify-content:center',
+  del: 'background:#383838;color:#fff;font-size:26rpx;width:120rpx;height:100%;display:flex;align-items:center;justify-content:center',
 };
 
 Page({
