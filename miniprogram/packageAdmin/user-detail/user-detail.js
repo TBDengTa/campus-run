@@ -28,11 +28,14 @@ Page({
     // ===== 考核与运动全景 =====
     rates: null,
     goal: null,
-    recordTab: 'daily', // daily 日记录 | weekly 周记录
-    dailyRecords: [],
-    weeklyRecords: [],
-    water: [],
-    badges: [],
+    recordTab: 'daily', // 最近运动 runs | 日记录 daily | 周记录 weekly | 饮水 water | 徽章 badges
+    // 运动明细：按 Tab 分页缓存（不再一次拉全量）
+    records: { runs: [], daily: [], weekly: [], water: [], badges: [] },
+    recordPage: 1,
+    recordShown: 0,
+    recordTotal: 0,
+    recordHasMore: false,
+    recordLoading: false,
     loginInfo: null,
     unbinding: false,
   },
@@ -109,24 +112,7 @@ Page({
               weeklyStepsText: fmt.formatNumber(goal.weekly && goal.weekly.steps),
             }
           : null,
-        dailyRecords: ((sportDetail && sportDetail.dailyRecords) || []).map((d) => ({
-          ...d,
-          dateText: dateText(d.date),
-          stepsText: fmt.formatNumber(d.steps),
-        })),
-        weeklyRecords: ((sportDetail && sportDetail.weeklyRecords) || []).map((w) => ({
-          ...w,
-          rangeText: `${w.weekStart.slice(5).replace('-', '.')} - ${w.weekEnd.slice(5).replace('-', '.')}`,
-          stepsText: fmt.formatNumber(w.steps),
-        })),
-        water: ((sportDetail && sportDetail.water) || []).map((w) => ({
-          ...w,
-          dateText: dateText(w.date),
-        })),
-        badges: ((sportDetail && sportDetail.badges) || []).map((b) => ({
-          ...b,
-          earnedText: fmtTime(b.earnedAt),
-        })),
+        // 明细列表改由 /:id/records 分页加载（见 loadRecords），这里不再接收全量
         loginInfo: loginInfo
           ? {
               ...loginInfo,
@@ -141,17 +127,83 @@ Page({
               })),
             }
           : null,
+        // 换用户时清空明细分页缓存，随后按当前 Tab 拉第一页
+        records: { runs: [], daily: [], weekly: [], water: [], badges: [] },
+        recordPage: 1,
+        recordShown: 0,
+        recordTotal: 0,
+        recordHasMore: false,
       });
+      this.loadRecords(this.data.recordTab, 1);
     } catch (e) {
       this.setData({ loading: false });
       wx.showToast({ title: e.message, icon: 'none' });
     }
   },
 
-  // 日/周记录切换
+  // 明细 Tab 切换：首次进入该 Tab 才拉第一页
   switchRecordTab(e) {
     const tab = e.currentTarget.dataset.tab;
-    if (tab && tab !== this.data.recordTab) this.setData({ recordTab: tab });
+    if (!tab || tab === this.data.recordTab) return;
+    this.setData({ recordTab: tab });
+    if (!((this.data.records || {})[tab] || []).length) this.loadRecords(tab, 1);
+  },
+
+  // 运动明细分页加载（type: runs|daily|weekly|water|badges）
+  async loadRecords(tab, page) {
+    const type = tab || this.data.recordTab;
+    if (this.data.recordLoading) return;
+    const p = Math.max(1, page || 1);
+    this.setData({ recordLoading: true });
+    try {
+      const res = await auth.get(`/api/admin/users/${this.data.id}/records`, { type, page: p, limit: 20 });
+      const list = ((res && res.list) || []).map((it) => this.fmtRecord(type, it));
+      const merged = p > 1 ? ((this.data.records || {})[type] || []).concat(list) : list;
+      this.setData({
+        records: { ...this.data.records, [type]: merged },
+        recordPage: p,
+        recordShown: merged.length,
+        recordTotal: (res && res.total) || merged.length,
+        recordHasMore: !!(res && res.hasMore),
+      });
+    } catch (e) {
+      wx.showToast({ title: e.message || '明细加载失败', icon: 'none' });
+    } finally {
+      this.setData({ recordLoading: false });
+    }
+  },
+
+  // 各类型明细的展示字段（与详情接口口径一致）
+  fmtRecord(type, it) {
+    if (type === 'runs') {
+      return {
+        ...it,
+        dateText: dateText(it.date),
+        distanceText: fmt.formatDistance(it.distance),
+        durationText: fmt.formatDuration(it.durationSeconds),
+        sourceText: it.source === 'gps' ? 'GPS 实跑' : '微信运动',
+      };
+    }
+    if (type === 'daily') return { ...it, dateText: dateText(it.date), stepsText: fmt.formatNumber(it.steps) };
+    if (type === 'weekly') {
+      return {
+        ...it,
+        rangeText: `${String(it.weekStart).slice(5).replace('-', '.')} - ${String(it.weekEnd).slice(5).replace('-', '.')}`,
+        stepsText: fmt.formatNumber(it.steps),
+      };
+    }
+    if (type === 'water') return { ...it, dateText: dateText(it.date) };
+    return { ...it, earnedText: fmtTime(it.earnedAt) };
+  },
+
+  loadMoreRecords() {
+    if (!this.data.recordHasMore || this.data.recordLoading) return;
+    this.loadRecords(this.data.recordTab, (this.data.recordPage || 1) + 1);
+  },
+
+  // 触底自动加载下一页
+  onReachBottom() {
+    this.loadMoreRecords();
   },
 
   // 解绑微信：二次确认后清除绑定（可被新微信重新绑定）

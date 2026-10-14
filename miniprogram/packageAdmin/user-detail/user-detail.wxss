@@ -338,6 +338,28 @@
   background: var(--td-success-color-1);
 }
 
+/* 明细分页脚 */
+.ud-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 72rpx;
+  padding: 12rpx 0 4rpx;
+}
+
+.ud-more-btn {
+  padding: 14rpx 40rpx;
+  border-radius: 999rpx;
+  background: var(--tt-brand-soft);
+  font-size: 24rpx;
+  color: var(--tt-brand);
+}
+
+.ud-more-done {
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
 /* ===== 7. 登录与绑定 ===== */
 .ud-sub-title {
   padding: 18rpx 0 6rpx;

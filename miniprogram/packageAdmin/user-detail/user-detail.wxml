@@ -164,7 +164,7 @@
 
     <!-- 6.1 最近运动 -->
     <block wx:if="{{recordTab === 'runs'}}">
-      <view class="tt-row ud-log" wx:for="{{sport.recentRuns}}" wx:key="_id" bind:tap="openRun" data-id="{{item._id}}">
+      <view class="tt-row ud-log" wx:for="{{records.runs}}" wx:key="_id" bind:tap="openRun" data-id="{{item._id}}">
         <view class="ud-log-icon">
           <t-icon name="{{item.source === 'gps' ? 'location' : 'logo-wechat-stroke'}}" size="30rpx" color="var(--tt-brand)" />
         </view>
@@ -175,12 +175,12 @@
         <text class="num-font ud-row-value">{{item.steps}} 步</text>
         <t-icon name="chevron-right" size="28rpx" color="var(--tt-text-3)" />
       </view>
-      <view class="tt-empty" wx:if="{{!sport.recentRuns.length}}">暂无运动记录</view>
+      <view class="tt-empty" wx:if="{{!records.runs.length && !recordLoading}}">暂无运动记录</view>
     </block>
 
-    <!-- 6.2 日记录（近 30 天） -->
+    <!-- 6.2 日记录 -->
     <block wx:elif="{{recordTab === 'daily'}}">
-      <view class="tt-row ud-log" wx:for="{{dailyRecords}}" wx:key="date">
+      <view class="tt-row ud-log" wx:for="{{records.daily}}" wx:key="date">
         <view class="flex-1">
           <view class="tt-row-title">{{item.dateText}}</view>
           <view class="tt-row-sub">{{item.recordCount}} 条 · {{item.distanceKm}} km</view>
@@ -188,12 +188,12 @@
         <text class="num-font ud-row-value">{{item.stepsText}} 步</text>
         <t-icon wx:if="{{item.achieved}}" name="check-circle" size="30rpx" color="var(--td-success-color-5)" />
       </view>
-      <view class="tt-empty" wx:if="{{!dailyRecords.length}}">近 30 天暂无记录</view>
+      <view class="tt-empty" wx:if="{{!records.daily.length && !recordLoading}}">暂无记录</view>
     </block>
 
-    <!-- 6.3 周记录（近 8 周） -->
+    <!-- 6.3 周记录 -->
     <block wx:elif="{{recordTab === 'weekly'}}">
-      <view class="tt-row ud-log" wx:for="{{weeklyRecords}}" wx:key="weekStart">
+      <view class="tt-row ud-log" wx:for="{{records.weekly}}" wx:key="weekStart">
         <view class="flex-1">
           <view class="tt-row-title">{{item.rangeText}}</view>
           <view class="tt-row-sub">活跃 {{item.activeDays}} 天</view>
@@ -201,24 +201,24 @@
         <text class="num-font ud-row-value">{{item.stepsText}} 步</text>
         <t-icon wx:if="{{item.achieved}}" name="check-circle" size="30rpx" color="var(--td-success-color-5)" />
       </view>
-      <view class="tt-empty" wx:if="{{!weeklyRecords.length}}">近 8 周暂无记录</view>
+      <view class="tt-empty" wx:if="{{!records.weekly.length && !recordLoading}}">暂无周记录</view>
     </block>
 
-    <!-- 6.4 饮水（近 14 天） -->
+    <!-- 6.4 饮水 -->
     <block wx:elif="{{recordTab === 'water'}}">
-      <view class="tt-row ud-log" wx:for="{{water}}" wx:key="date">
+      <view class="tt-row ud-log" wx:for="{{records.water}}" wx:key="date">
         <view class="flex-1">
           <view class="tt-row-title">{{item.dateText}}</view>
           <view class="tt-row-sub">{{item.total}} / {{item.target}} ml</view>
         </view>
         <text class="num-font ud-row-value">{{item.percent}}%</text>
       </view>
-      <view class="tt-empty" wx:if="{{!water.length}}">暂无饮水记录</view>
+      <view class="tt-empty" wx:if="{{!records.water.length && !recordLoading}}">暂无饮水记录</view>
     </block>
 
     <!-- 6.5 徽章 -->
     <block wx:else>
-      <view class="tt-row ud-log" wx:for="{{badges}}" wx:key="key">
+      <view class="tt-row ud-log" wx:for="{{records.badges}}" wx:key="key">
         <view class="ud-log-icon">
           <t-icon name="{{item.icon || 'star'}}" size="30rpx" color="{{item.tierColor || 'var(--tt-brand)'}}" />
         </view>
@@ -227,8 +227,15 @@
           <view class="tt-row-sub">{{item.earnedText}}</view>
         </view>
       </view>
-      <view class="tt-empty" wx:if="{{!badges.length}}">暂未获得徽章</view>
+      <view class="tt-empty" wx:if="{{!records.badges.length && !recordLoading}}">暂未获得徽章</view>
     </block>
+
+    <!-- 分页：触底自动加载 / 也可点「加载更多」 -->
+    <view class="ud-more">
+      <t-loading wx:if="{{recordLoading}}" theme="circular" size="36rpx" />
+      <view wx:elif="{{recordHasMore}}" class="ud-more-btn" bind:tap="loadMoreRecords">加载更多（{{recordShown}}/{{recordTotal}}）</view>
+      <text wx:elif="{{recordTotal}}" class="ud-more-done">已显示全部 {{recordTotal}} 条</text>
+    </view>
 
     <view class="ud-note" wx:if="{{recordTab === 'daily' || recordTab === 'weekly'}}">✓ 表示达标（步数 ≥ 生效目标）</view>
   </view>

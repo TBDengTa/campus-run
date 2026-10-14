@@ -506,7 +506,7 @@ router.get(
     const user = await User.findById(req.params.id).select('openid').lean();
     if (!user) throw new ApiError(404, 404, '用户不存在');
     const openid = user.openid || '';
-    const empty = { dailyRecords: [], weeklyRecords: [], rates: null, water: [], badges: [], earnedCount: 0, goal: null };
+    const empty = { rates: null, earnedCount: 0, goal: null };
     if (!openid) return ok(res, empty);
 
     const goalsSvc = require('../../services/goals');
@@ -571,20 +571,127 @@ router.get(
       weeklyTotal: weekRows.length,
     };
 
-    const dailyRecords = dayRows.slice(-30).reverse().map((d) => ({
-      date: d.date,
-      steps: d.steps,
-      distanceKm: ((d.distance || 0) / 1000).toFixed(2),
-      recordCount: d.recordCount,
-      achieved: d.achieved,
-    }));
-    const weeklyRecords = weekRows.slice(-8).reverse();
+    // 明细列表（日/周/饮水/徽章）改由 GET /:id/records 分页提供，这里只回达标率、徽章数与目标，
+    // 避免详情接口每次把全量明细拉给前端
+    const earnedCount = await UserBadge.countDocuments({ openid });
 
-    const water = (await WaterRecord.find({ openid }).sort({ date: -1 }).limit(14).select('date total target').lean()).map((w) => ({
-      ...w,
-      percent: w.target ? Math.min(100, Math.round((w.total / w.target) * 100)) : 0,
-    }));
+    ok(res, {
+      rates,
+      earnedCount,
+      goal: { planName: (goal && goal.planName) || '', daily: goal && goal.daily, weekly: goal && goal.weekly },
+    });
+  })
+);
 
+// 用户运动明细（分页）：type=runs 最近运动 / daily 日记录 / weekly 周记录 / water 饮水 / badges 徽章
+// 与详情接口同一套口径，但只取当前页，避免「一次加载全部」
+router.get(
+  '/:id/records',
+  wrap(async (req, res) => {
+    const user = await User.findById(req.params.id).select('openid').lean();
+    if (!user) throw new ApiError(404, 404, '用户不存在');
+    const openid = user.openid || '';
+    const type = ['runs', 'daily', 'weekly', 'water', 'badges'].indexOf(req.query.type) >= 0 ? req.query.type : 'runs';
+    const { page, limit, skip } = parsePagination(req.query, { page: 1, limit: 20 });
+    if (!openid) return ok(res, { type, list: [], total: 0, page, limit, hasMore: false });
+
+    const goalsSvc = require('../../services/goals');
+    const goal = await goalsSvc.getEffectiveGoal(openid);
+    const dailyGoal = (goal && goal.daily && goal.daily.steps) || 0;
+    const weeklyGoal = (goal && goal.weekly && goal.weekly.steps) || 0;
+
+    // ===== 最近运动：单条记录直接分页 =====
+    if (type === 'runs') {
+      const [list, total] = await Promise.all([
+        RunRecord.find({ openid })
+          .sort({ date: -1, createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .select('date source steps distance durationSeconds calories pace goalAchieved')
+          .lean(),
+        RunRecord.countDocuments({ openid }),
+      ]);
+      return ok(res, { type, list, total, page, limit, hasMore: skip + list.length < total });
+    }
+
+    // ===== 日记录：按日聚合后分页（Mongo 侧 skip/limit，不再拉全量到 Node） =====
+    if (type === 'daily') {
+      const groupStage = {
+        $group: {
+          _id: '$date',
+          steps: { $sum: '$steps' },
+          distance: { $sum: '$distance' },
+          recordCount: { $sum: 1 },
+          werunAchieved: { $max: { $cond: [{ $eq: ['$source', 'werun'] }, '$goalAchieved', false] } },
+        },
+      };
+      const [rows, countAgg] = await Promise.all([
+        RunRecord.aggregate([{ $match: { openid } }, groupStage, { $sort: { _id: -1 } }, { $skip: skip }, { $limit: limit }]),
+        RunRecord.aggregate([{ $match: { openid } }, groupStage, { $count: 'n' }]),
+      ]);
+      const list = rows.map((d) => ({
+        date: d._id,
+        steps: d.steps,
+        distanceKm: ((d.distance || 0) / 1000).toFixed(2),
+        recordCount: d.recordCount,
+        achieved: !!d.werunAchieved || (dailyGoal > 0 && d.steps >= dailyGoal),
+      }));
+      const total = countAgg[0]?.n || 0;
+      return ok(res, { type, list, total, page, limit, hasMore: skip + list.length < total });
+    }
+
+    // ===== 周记录：Mongo 侧按 ISO 周分组（周一起始），再分页；周起止在 Node 侧算出 =====
+    if (type === 'weekly') {
+      const weekStage = {
+        $group: {
+          _id: {
+            y: { $isoWeekYear: { $dateFromString: { dateString: '$date' } } },
+            w: { $isoWeek: { $dateFromString: { dateString: '$date' } } },
+          },
+          steps: { $sum: '$steps' },
+          distance: { $sum: '$distance' },
+          activeDays: { $sum: 1 },
+        },
+      };
+      const [rows, countAgg] = await Promise.all([
+        RunRecord.aggregate([
+          { $match: { openid } },
+          weekStage,
+          { $sort: { '_id.y': -1, '_id.w': -1 } },
+          { $skip: skip },
+          { $limit: limit },
+        ]),
+        RunRecord.aggregate([{ $match: { openid } }, weekStage, { $count: 'n' }]),
+      ]);
+      const list = rows.map((r) => {
+        const range = isoWeekRange(r._id.y, r._id.w);
+        return {
+          weekStart: range.start,
+          weekEnd: range.end,
+          steps: r.steps,
+          distance: r.distance,
+          activeDays: r.activeDays,
+          achieved: weeklyGoal > 0 && r.steps >= weeklyGoal,
+        };
+      });
+      const total = countAgg[0]?.n || 0;
+      return ok(res, { type, list, total, page, limit, hasMore: skip + list.length < total });
+    }
+
+    // ===== 饮水 =====
+    if (type === 'water') {
+      const [rows, total] = await Promise.all([
+        WaterRecord.find({ openid }).sort({ date: -1 }).skip(skip).limit(limit).select('date total target').lean(),
+        WaterRecord.countDocuments({ openid }),
+      ]);
+      const list = rows.map((w) => ({
+        ...w,
+        percent: w.target ? Math.min(100, Math.round((w.total / w.target) * 100)) : 0,
+      }));
+      return ok(res, { type, list, total, page, limit, hasMore: skip + list.length < total });
+    }
+
+    // ===== 徽章（按获得时间倒序分页） =====
     const [allBadges, earned] = await Promise.all([
       Badge.find({ enabled: true }).sort({ sort: 1 }).lean(),
       UserBadge.find({ openid }).lean(),
@@ -600,18 +707,21 @@ router.get(
         earnedAt: byKey.get(b.key).createdAt,
       }))
       .sort((a, b) => new Date(b.earnedAt) - new Date(a.earnedAt));
-
-    ok(res, {
-      dailyRecords,
-      weeklyRecords,
-      rates,
-      water,
-      badges,
-      earnedCount: badges.length,
-      goal: { planName: (goal && goal.planName) || '', daily: goal && goal.daily, weekly: goal && goal.weekly },
-    });
+    const list = badges.slice(skip, skip + limit);
+    ok(res, { type, list, total: badges.length, page, limit, hasMore: skip + list.length < badges.length });
   })
 );
+
+// ISO 周（周一为一周起始）→ { start, end } 日历键
+function isoWeekRange(isoYear, isoWeek) {
+  const jan4 = new Date(Date.UTC(isoYear, 0, 4));
+  const jan4Dow = (jan4.getUTCDay() + 6) % 7; // 周一=0
+  const week1Monday = new Date(jan4.getTime() - jan4Dow * 86400000);
+  const start = new Date(week1Monday.getTime() + (isoWeek - 1) * 7 * 86400000);
+  const end = new Date(start.getTime() + 6 * 86400000);
+  const key = (d) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+  return { start: key(start), end: key(end) };
+}
 
 // 解绑微信（需 user.manage）：清绑定字段 + 微信会话 + 记住我设备令牌；运动等业务数据保留
 router.post(
