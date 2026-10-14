@@ -449,13 +449,15 @@ Page({
     });
   },
 
+  // 单条运动详情：管理端走 /api/admin/users/:uid/runs/:runId；
+  // 班级域（班主任 / 班委）走 /api/class/student/:uid/run/:runId（成员资格校验、只读、隐藏「再跑一次」）
   openRun(e) {
-    // 班级视角只有只读汇总，单条运动详情需要管理端权限
-    if (this.data.classOnly) {
-      wx.showToast({ title: '班级视角仅查看汇总明细', icon: 'none' });
-      return;
-    }
-    wx.navigateTo({ url: `/pages/run/detail?id=${e.currentTarget.dataset.id}&admin=1&uid=${this.data.id}` });
+    const runId = e.currentTarget.dataset.id;
+    if (!runId) return;
+    const url = this.data.classOnly
+      ? `/pages/run/detail?id=${runId}&scope=class&uid=${this.data.id}&className=${encodeURIComponent(this.data.className)}`
+      : `/pages/run/detail?id=${runId}&admin=1&uid=${this.data.id}`;
+    wx.navigateTo({ url });
   },
 
   // 日/周记录 → 时段明细页（日：当天逐条；周：按天拆分）

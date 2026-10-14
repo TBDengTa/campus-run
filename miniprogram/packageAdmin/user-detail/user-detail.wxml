@@ -243,8 +243,8 @@
       <view class="ud-tab {{recordTab === 'runs' ? 'active' : ''}}" bind:tap="switchRecordTab" data-tab="runs">最近运动</view>
       <view class="ud-tab {{recordTab === 'daily' ? 'active' : ''}}" bind:tap="switchRecordTab" data-tab="daily">日记录</view>
       <view class="ud-tab {{recordTab === 'weekly' ? 'active' : ''}}" bind:tap="switchRecordTab" data-tab="weekly">周记录</view>
-      <view class="ud-tab {{recordTab === 'water' ? 'active' : ''}}" wx:if="{{!classOnly}}" bind:tap="switchRecordTab" data-tab="water">饮水</view>
-      <view class="ud-tab {{recordTab === 'badges' ? 'active' : ''}}" wx:if="{{!classOnly}}" bind:tap="switchRecordTab" data-tab="badges">徽章</view>
+      <view class="ud-tab {{recordTab === 'water' ? 'active' : ''}}" bind:tap="switchRecordTab" data-tab="water">饮水</view>
+      <view class="ud-tab {{recordTab === 'badges' ? 'active' : ''}}" bind:tap="switchRecordTab" data-tab="badges">徽章</view>
     </view>
 
     <!-- 6.1 最近运动 -->

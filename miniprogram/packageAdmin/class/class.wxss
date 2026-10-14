@@ -336,7 +336,7 @@
   color: var(--tt-brand-deep);
 }
 
-/* ===== 4. 搜索 + 一行可横滑的「筛选 | 排序」chips ===== */
+/* ===== 4. 搜索 + 可折叠筛选面板（与用户管理页同一套设计语言） ===== */
 .cls-head {
   margin: 0 var(--tt-gap) 16rpx;
 }
@@ -353,66 +353,138 @@
   width: 100%;
 }
 
-/* chips 行：白卡托住，可横滑，右侧固定「重置」（有筛选时才出现） */
-.cls-chips-bar {
-  display: flex;
-  align-items: center;
-  gap: 10rpx;
-  margin-top: 12rpx;
-  padding: 10rpx 12rpx 10rpx 16rpx;
-  border-radius: var(--tt-radius);
-  background: var(--tt-card);
-  box-shadow: var(--tt-card-shadow);
-}
-
-.cls-chips {
-  flex: 1;
-  min-width: 0;
+/* 工具行：筛选（带条件角标）/ 排序（显示当前排序） */
+.cls-tools {
   display: flex;
   align-items: center;
   gap: 12rpx;
-  white-space: nowrap;
+  margin-top: 12rpx;
 }
 
-.cls-chips .cls-chip {
-  flex-shrink: 0;
+.cls-tool {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 64rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6rpx;
+  border-radius: 16rpx;
+  font-size: 24rpx;
+  color: var(--tt-text-2);
+  background: var(--tt-card);
+  border: 2rpx solid var(--tt-line);
 }
 
-/* 管理端紧凑一档：chip 内边距 8/18、字号 22rpx */
-.tt-chip.cls-chip {
-  padding: 8rpx 18rpx;
-  font-size: 22rpx;
+.cls-tool:active {
+  opacity: 0.8;
 }
 
-.cls-chips-label {
-  flex-shrink: 0;
+.cls-tool.is-on {
+  color: var(--tt-brand);
+  background: var(--tt-brand-soft);
+  border-color: var(--tt-brand-soft-2);
+}
+
+.cls-tool-dot {
+  position: absolute;
+  top: -10rpx;
+  right: -6rpx;
+  min-width: 30rpx;
+  height: 30rpx;
+  padding: 0 8rpx;
+  box-sizing: border-box;
+  border-radius: 999rpx;
+  background: var(--tt-brand);
+  color: #fff;
   font-size: 20rpx;
+  line-height: 30rpx;
+  text-align: center;
+}
+
+/* 筛选面板（默认收起）：卡片左右外边距已由 .cls-head 提供，这里清零 */
+.tt-card.cls-panel {
+  margin: 12rpx 0 0;
+  padding: 16rpx 18rpx 14rpx;
+}
+
+.cls-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-bottom: 12rpx;
+}
+
+.cls-filter-label {
+  width: 52rpx;
+  flex-shrink: 0;
+  font-size: 22rpx;
   color: var(--tt-text-3);
 }
 
-/* 筛选 / 排序 之间的竖分隔 */
-.cls-chips-split {
-  width: 2rpx;
-  height: 26rpx;
-  flex-shrink: 0;
-  margin: 0 2rpx;
-  background: var(--tt-line);
+.cls-seg {
+  flex: 1;
+  min-width: 0;
 }
 
-.cls-chips-clear {
-  flex-shrink: 0;
+/* 公共分段控件在管理端压缩一档（与用户管理页同参数） */
+.tt-segment-item.cls-seg-item {
+  padding: 12rpx 0;
+  font-size: 25rpx;
+}
+
+.cls-panel-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+  margin-top: 12rpx;
+  padding-top: 12rpx;
+  border-top: 2rpx solid var(--tt-line);
+}
+
+.cls-panel-tip {
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+/* 清除筛选 / 已生效条件 */
+.cls-clear-chip {
   display: flex;
   align-items: center;
   gap: 4rpx;
-  padding: 8rpx 16rpx;
+  flex-shrink: 0;
+  padding: 8rpx 18rpx;
   border-radius: 999rpx;
   font-size: 22rpx;
   color: var(--tt-brand);
   background: var(--tt-brand-soft);
 }
 
-.cls-chips-clear:active {
-  opacity: 0.8;
+.cls-clear-chip.is-hidden {
+  visibility: hidden;
+}
+
+.cls-active-bar {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin: 0 var(--tt-gap) 16rpx;
+  padding: 10rpx 16rpx;
+  border-radius: 16rpx;
+  background: var(--tt-brand-soft);
+  border: 2rpx solid var(--tt-brand-soft-2);
+}
+
+.cls-active-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 22rpx;
+  color: var(--tt-brand-deep);
 }
 
 /* ===== 5. 学生名单：与用户管理列表同一套行卡片 ===== */

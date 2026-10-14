@@ -118,36 +118,68 @@
       </view>
     </view>
 
-    <!-- ===== 4. 名单工具：搜索 + 一行可横滑的「筛选 | 排序」chips（右侧固定重置） ===== -->
+    <!-- ===== 4. 名单工具：搜索 + 可折叠筛选面板（与用户管理页同一套设计） ===== -->
     <view class="cls-head">
       <view class="cls-search-card">
         <t-search shape="round" placeholder="搜索姓名 / 学号" value="{{keyword}}" bind:change="onSearch" bind:clear="onClearSearch" />
       </view>
 
-      <view class="cls-chips-bar">
-        <scroll-view scroll-x class="cls-chips" enable-flex>
-          <text class="cls-chips-label">筛选</text>
-          <view
-            class="tt-chip cls-chip {{achieved === item.key ? 'active' : ''}}"
-            wx:for="{{filters}}"
-            wx:key="label"
-            bind:tap="pickFilter"
-            data-key="{{item.key}}"
-          >{{item.label}}</view>
-          <view class="cls-chips-split"></view>
-          <text class="cls-chips-label">排序</text>
-          <view
-            class="tt-chip cls-chip {{sort === item.key ? 'active' : ''}}"
-            wx:for="{{sorts}}"
-            wx:key="key"
-            bind:tap="pickSort"
-            data-key="{{item.key}}"
-          >{{item.label}}</view>
-        </scroll-view>
-        <view class="cls-chips-clear" wx:if="{{hasFilter}}" bind:tap="clearFilters">
-          <t-icon name="close-circle-filled" size="26rpx" color="var(--tt-brand)" />
-          <text>重置</text>
+      <view class="cls-tools">
+        <view class="cls-tool {{showFilters ? 'is-on' : ''}}" bind:tap="toggleFilters">
+          <t-icon name="filter" size="28rpx" />
+          <text>筛选</text>
+          <text class="cls-tool-dot" wx:if="{{filterCount}}">{{filterCount}}</text>
         </view>
+        <view class="cls-tool {{sort !== 'today' ? 'is-on' : ''}}" bind:tap="toggleFilters">
+          <t-icon name="swap" size="28rpx" />
+          <text>排序 · {{sortLabel}}</text>
+        </view>
+      </view>
+
+      <!-- 筛选面板（默认收起，点「筛选 / 排序」展开） -->
+      <view class="tt-card cls-panel" wx:if="{{showFilters}}">
+        <view class="cls-filter-row">
+          <text class="cls-filter-label">达标</text>
+          <view class="tt-segment cls-seg">
+            <view
+              class="tt-segment-item cls-seg-item {{achieved === item.key ? 'active' : ''}}"
+              wx:for="{{filters}}"
+              wx:key="label"
+              bind:tap="pickFilter"
+              data-key="{{item.key}}"
+            >{{item.label}}</view>
+          </view>
+        </view>
+
+        <view class="cls-filter-row">
+          <text class="cls-filter-label">排序</text>
+          <view class="tt-segment cls-seg">
+            <view
+              class="tt-segment-item cls-seg-item {{sort === item.key ? 'active' : ''}}"
+              wx:for="{{sorts}}"
+              wx:key="key"
+              bind:tap="pickSort"
+              data-key="{{item.key}}"
+            >{{item.label}}</view>
+          </view>
+        </view>
+
+        <view class="cls-panel-foot">
+          <text class="cls-panel-tip">选择即时生效 · 当前 {{total}} 人</text>
+          <view class="cls-clear-chip {{hasFilter ? '' : 'is-hidden'}}" bind:tap="clearFilters">
+            <t-icon name="close-circle-filled" size="24rpx" />
+            <text>清除筛选</text>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 已生效条件（面板收起时也看得清当前筛选） -->
+    <view class="cls-active-bar" wx:if="{{hasFilter}}">
+      <text class="cls-active-text">{{filterSummary}}</text>
+      <view class="cls-clear-chip" bind:tap="clearFilters">
+        <t-icon name="close-circle-filled" size="24rpx" />
+        <text>清除</text>
       </view>
     </view>
 

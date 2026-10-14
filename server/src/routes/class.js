@@ -32,6 +32,9 @@ const { auth } = require('../middlewares/auth');
 const dates = require('../utils/dates');
 const User = require('../models/user');
 const RunRecord = require('../models/run-record');
+const WaterRecord = require('../models/water-record');
+const UserBadge = require('../models/user-badge');
+const Badge = require('../models/badge');
 const GoalConfig = require('../models/goal-config');
 const UserGoal = require('../models/user-goal');
 
@@ -87,7 +90,7 @@ function resolveScope(user, rawClassName) {
 async function loadScopedStudent(user, userId, rawClassName) {
   if (!mongoose.isValidObjectId(userId)) throw new ApiError(404, 404, '学生不存在');
   const target = await User.findById(userId)
-    .select('openid className role realName nickname account studentId')
+    .select('openid className role realName nickname account studentId privacy')
     .lean();
   if (!target) throw new ApiError(404, 404, '学生不存在');
   if (target.role === 'teacher') throw new ApiError(403, 403002, '教师账号不参与运动记录与排名');
@@ -557,16 +560,51 @@ router.get(
   })
 );
 
-// 某学生明细分页（只读）：type=runs 最近运动 / daily 日记录 / weekly 周记录，字段与
-// /api/admin/users/:id/records 的对应类型一致（班级监控只需要运动类，饮水/徽章不在此提供）
+// 某学生明细分页（只读）：type=runs 最近运动 / daily 日记录 / weekly 周记录 / water 饮水 / badges 徽章，
+// 字段与 /api/admin/users/:id/records 的对应类型完全一致（班委也能看饮水与徽章，只是没有任何写操作）
 router.get(
   '/student/:userId/records',
   wrap(async (req, res) => {
     const target = await loadScopedStudent(req.user, req.params.userId, req.query.className);
     const openid = target.openid || '';
-    const type = ['runs', 'daily', 'weekly'].includes(String(req.query.type)) ? String(req.query.type) : 'runs';
+    const type = ['runs', 'daily', 'weekly', 'water', 'badges'].includes(String(req.query.type))
+      ? String(req.query.type)
+      : 'runs';
     const { page, limit, skip } = parsePagination(req.query, { page: 1, limit: 20 });
     if (!openid) return ok(res, { type, list: [], total: 0, page, limit, hasMore: false });
+
+    // ===== 饮水 / 徽章：与管理端同字段（不需要目标值，提前返回）=====
+    if (type === 'water') {
+      const [rows, total] = await Promise.all([
+        WaterRecord.find({ openid }).sort({ date: -1 }).skip(skip).limit(limit).select('date total target').lean(),
+        WaterRecord.countDocuments({ openid }),
+      ]);
+      const list = rows.map((w) => ({
+        ...w,
+        percent: w.target ? Math.min(100, Math.round((w.total / w.target) * 100)) : 0,
+      }));
+      return ok(res, { type, list, total, page, limit, hasMore: skip + list.length < total });
+    }
+
+    if (type === 'badges') {
+      const [allBadges, earned] = await Promise.all([
+        Badge.find({ enabled: true }).sort({ sort: 1 }).lean(),
+        UserBadge.find({ openid }).lean(),
+      ]);
+      const byKey = new Map(earned.map((b) => [b.badgeKey, b]));
+      const badges = allBadges
+        .filter((b) => byKey.has(b.key))
+        .map((b) => ({
+          key: b.key,
+          name: b.name,
+          icon: b.icon,
+          tierColor: b.tierColor,
+          earnedAt: byKey.get(b.key).createdAt,
+        }))
+        .sort((a, b) => new Date(b.earnedAt) - new Date(a.earnedAt));
+      const list = badges.slice(skip, skip + limit);
+      return ok(res, { type, list, total: badges.length, page, limit, hasMore: skip + list.length < badges.length });
+    }
 
     const goalsSvc = require('../services/goals');
     const goal = await goalsSvc.getEffectiveGoal(openid);
@@ -652,6 +690,27 @@ router.get(
     });
     const total = countAgg[0]?.n || 0;
     ok(res, { type, list, total, page, limit, hasMore: skip + list.length < total });
+  })
+);
+
+// 某条运动记录详情（班级域只读，字段与 /api/admin/users/:id/runs/:runId 一致，含 ownerName）
+// 两道校验：① 目标学生必须属于「我可管的班级」（loadScopedStudent，与其它班级域接口同一套成员资格校验）；
+//           ② 该 runId 必须属于这名学生（RunRecord.findOne({_id, openid})），防止跨用户拿别人的记录
+router.get(
+  '/student/:userId/run/:runId',
+  wrap(async (req, res) => {
+    if (!mongoose.isValidObjectId(req.params.runId)) throw new ApiError(404, 404, '记录不存在');
+    const target = await loadScopedStudent(req.user, req.params.userId, req.query.className);
+    const record = await RunRecord.findOne({ _id: req.params.runId, openid: target.openid || '' }).lean();
+    if (!record) throw new ApiError(404, 404, '记录不存在');
+    // 班委是学生：姓名遮蔽口径与列表/榜单一致（班主任看真实姓名）
+    const { homeroom } = accessibleClasses(req.user);
+    const masked = !homeroom.includes(target.className);
+    const rawName = target.realName || target.nickname || target.account || '';
+    ok(res, {
+      ...record,
+      ownerName: masked && target.privacy && target.privacy.hideName ? maskName(rawName) : rawName,
+    });
   })
 );
 

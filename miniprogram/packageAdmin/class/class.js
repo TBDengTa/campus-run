@@ -82,7 +82,11 @@ Page({
     keyword: '',
     sort: 'today',
     achieved: '',
-    hasFilter: false, // 搜索 / 达标筛选 / 非默认排序任一为真 → chips 行右侧显示「重置」
+    hasFilter: false, // 搜索 / 达标筛选 / 非默认排序任一为真 → 显示已生效条件行
+    filterSummary: '', // 已生效条件摘要（如「今日未达标 · 按姓名排序」）
+    filterCount: 0, // 「筛选」按钮角标（达标筛选生效数）
+    sortLabel: '今日步数', // 「排序」按钮上的当前排序文案
+    showFilters: false, // 筛选面板默认收起（与用户管理页一致）
     sorts: SORTS,
     filters: FILTERS,
     // 督促抽屉
@@ -286,17 +290,34 @@ Page({
     this.loadStudents(1);
   },
 
-  // 「重置」：清空搜索 / 达标筛选，排序回到默认（今日步数）
+  // 「清除筛选」：清空搜索 / 达标筛选，排序回到默认（今日步数）
   clearFilters() {
     if (!this.data.hasFilter) return;
-    this.setData({ keyword: '', achieved: '', sort: 'today', hasFilter: false });
+    this.setData({ keyword: '', achieved: '', sort: 'today' });
+    this.syncFilterState();
     this.loadStudents(1);
   },
 
-  // chips 行右侧「重置」的显隐：搜索、达标筛选、非默认排序任一命中
+  // 筛选面板展开 / 收起（与用户管理页同一交互）
+  toggleFilters() {
+    this.setData({ showFilters: !this.data.showFilters });
+  },
+
+  // 已生效条件：摘要行文本 / 条件数角标 / 排序按钮文案
   syncFilterState() {
-    const hasFilter = !!(this.data.keyword || this.data.achieved || this.data.sort !== 'today');
-    if (hasFilter !== this.data.hasFilter) this.setData({ hasFilter });
+    const { keyword, achieved, sort, sorts } = this.data;
+    const sortLabel = ((sorts || []).find((s) => s.key === sort) || {}).label || '今日步数';
+    const parts = [];
+    if (keyword) parts.push(`搜索「${keyword}」`);
+    if (achieved === '0') parts.push('今日未达标');
+    if (achieved === '1') parts.push('今日已达标');
+    if (sort !== 'today') parts.push(`按${sortLabel}排序`);
+    this.setData({
+      hasFilter: parts.length > 0,
+      filterSummary: parts.join(' · '),
+      filterCount: achieved ? 1 : 0,
+      sortLabel,
+    });
   },
 
   // 学生详情：与管理端用户详情同一个页面，带 scope=class 走班级域（只读；有权限时数据与管理端一致）
