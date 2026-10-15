@@ -27,7 +27,25 @@ const TARGET_META = {
   rank: { label: '名次', hint: '填写名次 N：全校跑分总榜排名前 N 名即发放（例如 100 = 前 100 名）。' },
 };
 
-const EMPTY = {
+// 等级组级别的阈值后缀（阈值带单位提示，与管理端列表摘要同一套口径）
+const TARGET_UNIT = {
+  total_steps: ' 步',
+  single_steps: ' 步',
+  total_distance: ' 米',
+  single_distance: ' 米',
+  total_days: ' 天',
+  goal_days: ' 天',
+  streak_days: ' 天',
+  points: ' 分',
+  rank: ' 名',
+};
+
+const TIER_MIN_LEVELS = 2;
+const TIER_MAX_LEVELS = 8;
+// 组名（tierGroup）＝ 徽章 key 前缀来源，必须 ASCII：与 1.0 迁移的 hex key 同规格（后端也会 slug 化）
+const GROUP_RE = /^[a-z][a-z0-9_-]{1,31}$/;
+
+const EMPTY_SINGLE = {
   _id: '',
   key: '',
   name: '',
@@ -35,9 +53,6 @@ const EMPTY = {
   icon: '',
   type: 'total_steps',
   target: 1,
-  mode: 'single',
-  tierGroup: '',
-  tierLevel: 0,
   tierColor: '',
   sort: 0,
   enabled: true,
@@ -45,19 +60,70 @@ const EMPTY = {
 
 const metaOf = (type) => TARGET_META[type] || TARGET_META.total_steps;
 const labelOf = (type) => (TYPES.find((t) => t.value === type) || {}).label || type;
+const typeIndexOf = (type) => Math.max(0, TYPES.findIndex((t) => t.value === type));
+const fmtNum = (n) => Number(n || 0).toLocaleString('en-US');
+const unitOf = (type) => TARGET_UNIT[type] || '';
+
+// 阈值文案：跑分是「≥ N 分」、排名是「前 N 名」，其余是「N 天/步/米」
+function targetTextOf(type, target) {
+  const n = Number(target) || 0;
+  if (type === 'rank') return `前 ${fmtNum(n)} 名`;
+  return `${fmtNum(n)}${unitOf(type)}`;
+}
+
+// 级别摘要（管理端列表/表单副标题）：`Lv1 7 天 / Lv2 30 天 / Lv3 120 天`
+function tierSummaryOf(levels) {
+  return (levels || []).map((l) => `Lv${l.tierLevel} ${targetTextOf(l.type, l.target)}`).join(' / ');
+}
+
+// 新建等级组时给一个可读的组名草稿（可手改，必须唯一）
+function draftGroupName() {
+  return `tier_${Date.now().toString(36)}`;
+}
+
+// 新建组的一行级别草稿：tierLevel 只是行序展示，真正落库由服务端按行序重排
+function draftLevel(index, type) {
+  return {
+    key: '',
+    tierLevel: index + 1,
+    name: `Lv${index + 1} 徽章`,
+    target: '',
+    icon: '',
+    tierColor: '',
+    type,
+    targetText: '',
+  };
+}
 
 Page({
   data: {
     list: [],
+    singleCount: 0,
+    tierGroupCount: 0,
     types: TYPES,
-    typeIndex: 0,
-    typeLabel: TYPES[0].label,
-    targetLabel: metaOf('total_steps').label,
-    targetHint: metaOf('total_steps').hint,
     loading: false,
     saving: false,
     formVisible: false,
-    form: { ...EMPTY },
+    formMode: 'single',
+    // 独立徽章表单
+    form: { ...EMPTY_SINGLE },
+    typeIndex: 0,
+    targetLabel: metaOf('total_steps').label,
+    targetHint: metaOf('total_steps').hint,
+    // 等级组（组级）表单
+    groupForm: {
+      _id: '',
+      tierGroup: '',
+      type: 'total_steps',
+      description: '',
+      sort: 0,
+      enabled: true,
+    },
+    groupLocked: false,
+    groupTypeIndex: 0,
+    groupHint: metaOf('total_steps').hint,
+    groupSummary: '',
+    levelRows: [],
   },
 
   onShow() {
@@ -69,13 +135,7 @@ Page({
     try {
       await getApp().ensureLogin();
       const list = await auth.get('/api/admin/content/badges');
-      this.setData({
-        list: list.map((b) => ({
-          ...b,
-          mode: b.mode || (b.tierGroup ? 'tier' : 'single'),
-          typeLabel: labelOf(b.type),
-        })),
-      });
+      this.setData(this.buildRows(list || []));
     } catch (e) {
       wx.showToast({ title: e.message, icon: 'none' });
     } finally {
@@ -83,43 +143,204 @@ Page({
     }
   },
 
+  // 把「一枚徽章一条定义」的扁平列表聚合成管理端行：等级组一行 + 独立徽章各一行。
+  // 等级组按组内 Lv1 的 sort 参与排序；独立徽章按自身 sort —— 与用户端 pages/badges 同规则。
+  buildRows(list) {
+    const decorated = list.map((b) => {
+      const type = b.type;
+      const target = Number(b.target) || 0;
+      return {
+        ...b,
+        type,
+        target,
+        typeLabel: labelOf(type),
+        // 老数据可能没有 mode：按 tierGroup 兜底推一个（与后端 backfillBadgeModes 同规则）
+        mode: b.mode || (b.tierGroup ? 'tier' : 'single'),
+        targetText: targetTextOf(type, target),
+      };
+    });
+    const singles = [];
+    const groupMap = new Map();
+    decorated.forEach((b, i) => {
+      const group = String(b.tierGroup || '').trim();
+      if (b.mode !== 'single' && group) {
+        if (!groupMap.has(group)) groupMap.set(group, []);
+        groupMap.get(group).push({ ...b, seq: i });
+        return;
+      }
+      singles.push({ ...b, seq: i });
+    });
+
+    const rows = singles.map((b) => ({
+      kind: 'single',
+      id: `single:${b._id}`,
+      key: b.key,
+      name: b.name,
+      icon: b.icon || '',
+      typeLabel: b.typeLabel,
+      targetText: b.targetText,
+      enabled: b.enabled !== false,
+      mode: b.mode,
+      sort: Number(b.sort) || 0,
+      seq: b.seq,
+    }));
+
+    for (const [group, items] of groupMap) {
+      const levels = [...items].sort((a, b) => (Number(a.tierLevel) || 0) - (Number(b.tierLevel) || 0));
+      const enabledLevels = levels.filter((l) => l.enabled !== false).length;
+      const allEnabled = enabledLevels === levels.length;
+      rows.push({
+        kind: 'tier',
+        id: `tier:${group}`,
+        tierGroup: group,
+        name: group,
+        icon: (levels[0] && levels[0].icon) || '',
+        type: (levels[0] && levels[0].type) || 'total_steps',
+        typeLabel: (levels[0] && levels[0].typeLabel) || '',
+        levelCount: levels.length,
+        levelText: `${levels.length} 级`,
+        summary: tierSummaryOf(levels),
+        enabled: allEnabled,
+        enabledText: allEnabled ? '启用' : `部分停用（${enabledLevels}/${levels.length} 级启用）`,
+        enabledLevels,
+        // 等级组按组内 Lv1 的排序值参与混排
+        sort: Number(levels[0] && levels[0].sort) || 0,
+        seq: Number(levels[0] && levels[0].seq) || 0,
+        levels: levels.map((l) => ({
+          _id: l._id,
+          key: l.key,
+          name: l.name,
+          icon: l.icon || '',
+          type: l.type,
+          target: l.target,
+          targetText: l.targetText,
+          tierLevel: Number(l.tierLevel) || 0,
+          tierColor: l.tierColor || '',
+          enabled: l.enabled !== false,
+        })),
+      });
+    }
+
+    rows.sort((a, b) => a.sort - b.sort || a.seq - b.seq);
+    return {
+      list: rows,
+      singleCount: singles.length,
+      tierGroupCount: groupMap.size,
+    };
+  },
+
+  // ===== 抽屉：模式切换 =====
   openCreate() {
     this.setData({
       formVisible: true,
-      form: { ...EMPTY },
+      formMode: 'single',
+      form: { ...EMPTY_SINGLE },
       typeIndex: 0,
-      typeLabel: TYPES[0].label,
-      targetLabel: metaOf(EMPTY.type).label,
-      targetHint: metaOf(EMPTY.type).hint,
+      targetLabel: metaOf(EMPTY_SINGLE.type).label,
+      targetHint: metaOf(EMPTY_SINGLE.type).hint,
     });
   },
 
+  // 独立徽章行：只编辑自己那一条
   openEdit(e) {
-    const item = this.data.list.find((x) => x._id === e.currentTarget.dataset.id);
+    const item = this.data.list.find((x) => x.id === e.currentTarget.dataset.id && x.kind === 'single');
     if (!item) return;
-    const typeIndex = Math.max(0, TYPES.findIndex((t) => t.value === item.type));
-    const meta = metaOf(item.type);
     this.setData({
       formVisible: true,
-      typeIndex,
-      typeLabel: labelOf(item.type),
-      targetLabel: meta.label,
-      targetHint: meta.hint,
+      formMode: 'single',
+      typeIndex: typeIndexOf(item.type),
+      targetLabel: metaOf(item.type).label,
+      targetHint: metaOf(item.type).hint,
       form: {
-        ...EMPTY,
-        ...item,
-        // 老数据可能没有 mode：按 tierGroup 兜底推一个（与后端 backfillBadgeModes 同规则）
-        mode: item.mode || (item.tierGroup ? 'tier' : 'single'),
+        ...EMPTY_SINGLE,
+        _id: item._id,
         key: item.key || '',
+        name: item.name || '',
         description: item.description || '',
         icon: item.icon || '',
-        tierGroup: item.tierGroup || '',
-        tierLevel: Number(item.tierLevel) || 0,
-        tierColor: item.tierColor || '',
+        type: item.type,
         target: Number(item.target) || 0,
+        tierColor: '',
         sort: Number(item.sort) || 0,
         enabled: item.enabled !== false,
       },
+    });
+  },
+
+  // 等级组行：整组一起编辑（级别逐行编辑，一次提交）
+  openGroupEdit(e) {
+    const item = this.data.list.find((x) => x.id === e.currentTarget.dataset.id && x.kind === 'tier');
+    if (!item) return;
+    this.fillGroupForm(item.tierGroup, item.levels, true);
+  },
+
+  fillGroupForm(tierGroup, levels, locked) {
+    const type = (levels[0] && levels[0].type) || 'total_steps';
+    const rows = (levels || []).map((l, i) => ({
+      key: l.key || '',
+      tierLevel: Number(l.tierLevel) || i + 1,
+      name: l.name || '',
+      target: Number(l.target) || 0,
+      icon: l.icon || '',
+      tierColor: l.tierColor || '',
+      type,
+      targetText: targetTextOf(type, l.target),
+    }));
+    const first = levels[0] || {};
+    this.setData({
+      formVisible: true,
+      formMode: 'tier',
+      groupLocked: !!locked,
+      groupForm: {
+        _id: '',
+        tierGroup,
+        type,
+        description: first.description || '',
+        sort: Number(first.sort) || 0,
+        enabled: first.enabled !== false,
+      },
+      groupTypeIndex: typeIndexOf(type),
+      groupHint: metaOf(type).hint,
+      levelRows: rows,
+      groupSummary: tierSummaryOf(rows),
+    });
+  },
+
+  openGroupCreate() {
+    const type = 'goal_days';
+    const rows = [draftLevel(0, type), draftLevel(1, type)];
+    this.setData({
+      formVisible: true,
+      formMode: 'tier',
+      groupLocked: false,
+      groupForm: {
+        _id: '',
+        tierGroup: draftGroupName(),
+        type,
+        description: '',
+        sort: 0,
+        enabled: true,
+      },
+      groupTypeIndex: typeIndexOf(type),
+      groupHint: metaOf(type).hint,
+      levelRows: rows,
+      groupSummary: tierSummaryOf(rows),
+    });
+  },
+
+  onMode(e) {
+    const mode = e.currentTarget.dataset.mode;
+    if (mode === this.data.formMode) return;
+    if (mode === 'tier') {
+      this.openGroupCreate();
+      return;
+    }
+    this.setData({
+      formMode: 'single',
+      form: { ...EMPTY_SINGLE },
+      typeIndex: 0,
+      targetLabel: metaOf(EMPTY_SINGLE.type).label,
+      targetHint: metaOf(EMPTY_SINGLE.type).hint,
     });
   },
 
@@ -133,6 +354,7 @@ Page({
     this.setData({ formVisible: false });
   },
 
+  // ===== 独立徽章表单 =====
   onField(e) {
     this.setData({ [`form.${e.currentTarget.dataset.field}`]: e.detail.value });
   },
@@ -141,33 +363,91 @@ Page({
     const i = Number(e.detail.value);
     const type = TYPES[i].value;
     const meta = metaOf(type);
-    this.setData({ typeIndex: i, typeLabel: labelOf(type), targetLabel: meta.label, targetHint: meta.hint, 'form.type': type });
-  },
-
-  onMode(e) {
-    this.setData({ 'form.mode': e.currentTarget.dataset.mode });
+    this.setData({ typeIndex: i, targetLabel: meta.label, targetHint: meta.hint, 'form.type': type });
   },
 
   toggleEnabled(e) {
     this.setData({ 'form.enabled': e.detail.value });
   },
 
+  // ===== 等级组表单 =====
+  onGroupField(e) {
+    this.setData({ [`groupForm.${e.currentTarget.dataset.field}`]: e.detail.value });
+  },
+
+  onGroupType(e) {
+    const i = Number(e.detail.value);
+    const type = TYPES[i].value;
+    // 组内所有级别共用同一条件类型：换类型时整组同步
+    const levelRows = this.data.levelRows.map((r) => ({
+      ...r,
+      type,
+      targetText: targetTextOf(type, r.target),
+    }));
+    this.setData({
+      groupTypeIndex: i,
+      groupHint: metaOf(type).hint,
+      'groupForm.type': type,
+      levelRows,
+      groupSummary: tierSummaryOf(levelRows),
+    });
+  },
+
+  onGroupSwitch(e) {
+    this.setData({ 'groupForm.enabled': e.detail.value });
+  },
+
+  onLevelField(e) {
+    const i = Number(e.currentTarget.dataset.index);
+    const field = e.currentTarget.dataset.field;
+    const value = e.detail.value;
+    const rows = this.data.levelRows.map((r, idx) => {
+      if (idx !== i) return r;
+      const next = { ...r, [field]: value };
+      if (field === 'target') next.targetText = targetTextOf(next.type, value);
+      return next;
+    });
+    this.setData({ levelRows: rows, groupSummary: tierSummaryOf(rows) });
+  },
+
+  addLevel() {
+    const rows = [...this.data.levelRows];
+    if (rows.length >= TIER_MAX_LEVELS) {
+      wx.showToast({ title: `最多 ${TIER_MAX_LEVELS} 级`, icon: 'none' });
+      return;
+    }
+    const type = this.data.groupForm.type;
+    rows.push(draftLevel(rows.length, type));
+    this.setData({ levelRows: rows, groupSummary: tierSummaryOf(rows) });
+  },
+
+  removeLevel(e) {
+    const i = Number(e.currentTarget.dataset.index);
+    const rows = [...this.data.levelRows];
+    if (rows.length <= TIER_MIN_LEVELS) {
+      wx.showToast({ title: `至少保留 ${TIER_MIN_LEVELS} 级`, icon: 'none' });
+      return;
+    }
+    const removed = rows.splice(i, 1)[0];
+    // 行序即 tierLevel：删掉一行后重排，并提示后端会拒绝删除「已有用户获得」的级别
+    const next = rows.map((r, idx) => ({ ...r, tierLevel: idx + 1 }));
+    this.setData({ levelRows: next, groupSummary: tierSummaryOf(next) });
+    if (removed) wx.showToast({ title: `已移除 Lv${removed.tierLevel}（保存时生效）`, icon: 'none' });
+  },
+
+  // ===== 保存 =====
   async save() {
+    if (this.data.formMode === 'tier') return this.saveGroup();
+    return this.saveSingle();
+  },
+
+  async saveSingle() {
     const { form } = this.data;
     const key = String(form.key || '').trim();
     const name = String(form.name || '').trim();
     const target = Number(form.target);
     if (!key || !name || !target) {
       wx.showToast({ title: 'key / 名称 / 目标值必填', icon: 'none' });
-      return;
-    }
-    const isTier = form.mode === 'tier';
-    if (isTier && !String(form.tierGroup || '').trim()) {
-      wx.showToast({ title: '等级徽章必须填写阶梯组', icon: 'none' });
-      return;
-    }
-    if (isTier && !(Number(form.tierLevel) >= 1)) {
-      wx.showToast({ title: '等级徽章的等级必须 ≥ 1', icon: 'none' });
       return;
     }
     const payload = {
@@ -177,11 +457,11 @@ Page({
       icon: String(form.icon || ''),
       type: form.type,
       target,
-      mode: isTier ? 'tier' : 'single',
+      mode: 'single',
       // 独立徽章清空阶梯字段：mode=single + tierGroup 非空是脏数据（后端校验也拦）
-      tierGroup: isTier ? String(form.tierGroup || '').trim() : '',
-      tierLevel: isTier ? Number(form.tierLevel) || 1 : 0,
-      tierColor: String(form.tierColor || ''),
+      tierGroup: '',
+      tierLevel: 0,
+      tierColor: '',
       sort: Number(form.sort) || 0,
       enabled: form.enabled !== false,
     };
@@ -190,7 +470,7 @@ Page({
       if (form._id) await auth.put(`/api/admin/content/badges/${form._id}`, payload);
       else await auth.post('/api/admin/content/badges', payload);
       wx.showToast({ title: form._id ? '已保存' : '已创建', icon: 'success' });
-      this.setData({ formVisible: false, form: { ...EMPTY } });
+      this.setData({ formVisible: false, form: { ...EMPTY_SINGLE } });
       this.load();
     } catch (e) {
       wx.showToast({ title: e.message || '保存失败', icon: 'none' });
@@ -199,9 +479,75 @@ Page({
     }
   },
 
+  // 前端校验与后端同规则：组名格式/唯一、级别 ≥2 且 ≤8、阈值严格递增、级别名不重复、级别名与阈值必填
+  validateGroup() {
+    const g = this.data.groupForm;
+    const group = String(g.tierGroup || '').trim();
+    if (!group) return '请填写组名（tierGroup）';
+    if (!GROUP_RE.test(group)) return '组名只能是 2~32 位小写字母/数字/下划线，且以字母开头';
+    const rows = this.data.levelRows;
+    if (rows.length < TIER_MIN_LEVELS) return `等级徽章至少 ${TIER_MIN_LEVELS} 级`;
+    if (rows.length > TIER_MAX_LEVELS) return `等级徽章最多 ${TIER_MAX_LEVELS} 级`;
+    const names = new Set();
+    let prev = null;
+    for (let i = 0; i < rows.length; i += 1) {
+      const name = String(rows[i].name || '').trim();
+      const target = Number(rows[i].target);
+      if (!name) return `第 ${i + 1} 级缺少等级名`;
+      if (!Number.isFinite(target) || target <= 0) return `第 ${i + 1} 级「${name}」的目标值必须大于 0`;
+      if (prev != null && !(target > prev)) {
+        return `目标值必须随等级严格递增（Lv${i} 与 Lv${i + 1} 都是 ${target} 或更小）`;
+      }
+      prev = target;
+      const nk = name.replace(/\s+/g, '');
+      if (names.has(nk)) return `组内级别名重复：${name}`;
+      names.add(nk);
+    }
+    return '';
+  },
+
+  async saveGroup() {
+    const err = this.validateGroup();
+    if (err) {
+      wx.showToast({ title: err, icon: 'none' });
+      return;
+    }
+    const g = this.data.groupForm;
+    const group = String(g.tierGroup || '').trim();
+    const levels = this.data.levelRows.map((r, i) => ({
+      // key 交给服务端生成/沿用（编辑时回传原 key，保证历史获得记录不脱锚）
+      key: r.key || '',
+      tierLevel: i + 1,
+      name: String(r.name || '').trim(),
+      target: Number(r.target) || 0,
+      icon: String(r.icon || ''),
+      tierColor: String(r.tierColor || ''),
+    }));
+    const payload = {
+      tierGroup: group,
+      type: g.type,
+      description: String(g.description || ''),
+      sort: Number(g.sort) || 0,
+      enabled: g.enabled !== false,
+      levels,
+    };
+    this.setData({ saving: true });
+    try {
+      if (this.data.groupLocked) await auth.put(`/api/admin/content/badges/group/${encodeURIComponent(group)}`, payload);
+      else await auth.post('/api/admin/content/badges/group', payload);
+      wx.showToast({ title: this.data.groupLocked ? '已保存整组' : '已创建整组', icon: 'success' });
+      this.setData({ formVisible: false, levelRows: [] });
+      this.load();
+    } catch (e) {
+      wx.showToast({ title: e.message || '保存失败', icon: 'none' });
+    } finally {
+      this.setData({ saving: false });
+    }
+  },
+
+  // ===== 删除 =====
   remove(e) {
     const { id } = e.currentTarget.dataset;
-    const that = this;
     wx.showModal({
       title: '删除徽章',
       content: '用户已获得的该徽章记录将保留，确认删除？',
@@ -210,7 +556,27 @@ Page({
         try {
           await auth.del(`/api/admin/content/badges/${id}`);
           wx.showToast({ title: '已删除', icon: 'success' });
-          that.load();
+          this.load();
+        } catch (err) {
+          wx.showToast({ title: err.message, icon: 'none' });
+        }
+      },
+    });
+  },
+
+  // 整组删除：任一级已有用户获得会被服务端 409 拦下（这里只做一次确认，文案与服务端一致）
+  removeGroup(e) {
+    const item = this.data.list.find((x) => x.id === e.currentTarget.dataset.id && x.kind === 'tier');
+    if (!item) return;
+    wx.showModal({
+      title: '删除等级组',
+      content: `将删除「${item.tierGroup}」的 ${item.levelCount} 级定义。任一级已有用户获得时会被拒绝，确认删除？`,
+      success: async (res) => {
+        if (!res.confirm) return;
+        try {
+          await auth.del(`/api/admin/content/badges/group/${encodeURIComponent(item.tierGroup)}`);
+          wx.showToast({ title: '已删除整组', icon: 'success' });
+          this.load();
         } catch (err) {
           wx.showToast({ title: err.message, icon: 'none' });
         }

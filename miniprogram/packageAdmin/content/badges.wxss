@@ -48,6 +48,11 @@
   color: var(--tt-text-1);
 }
 
+/* 等级组的级别摘要：`Lv1 7 天 / Lv2 30 天 / Lv3 120 天`，长了折行不截断 */
+.badge-summary {
+  line-height: 36rpx;
+}
+
 .badge-actions {
   display: flex;
   flex-shrink: 0;
@@ -60,6 +65,7 @@
   color: var(--tt-brand);
   background: var(--tt-brand-soft);
   border-radius: 999rpx;
+  white-space: nowrap;
 }
 
 .badge-btn.danger {
@@ -80,11 +86,21 @@
 /* ===== 抽屉表单（骨架走 app.wxss 的 .tt-sheet*，这里只补页面私有类） =====
    关键：.tt-sheet-body 是 .tt-sheet（flex 列）的子项，默认 min-height:auto 会被表单内容
    撑成内容高度 → 抽屉被 max-height 裁切、表单滚不动、底部主按钮被顶出屏幕。
-   必须给**确定高度**（只写 min-height:0 不够，本仓库已在 class 抽屉 / 用户详情抽屉踩过两次）。 */
+   必须给**确定高度**（只写 min-height:0 不够，本仓库已在 class 抽屉 / 用户详情抽屉踩过两次）。
+   组级表单更长（级别编辑器），固定 52vh + 可滚。 */
 .badge-sheet .tt-sheet-body {
   flex: none;
   min-height: 0;
   height: 52vh;
+}
+
+/* 顶部模式切换（独立徽章 / 等级徽章组） */
+.badge-mode-pills {
+  margin-bottom: 8rpx;
+}
+
+.badge-label-top {
+  margin-top: 22rpx;
 }
 
 .badge-inline-label {
@@ -99,16 +115,11 @@
   margin-top: 12rpx;
 }
 
-/* 等级徽章的两个字段紧跟在药丸选择器之后 */
-.badge-field-tiertop {
-  margin-top: 16rpx;
-}
-
 .badge-req {
   color: var(--td-error-color-6);
 }
 
-/* 编辑态下 key 只读：视觉上明确「不可改」 */
+/* 编辑态下 key / 组名只读：视觉上明确「不可改」 */
 .badge-input-locked {
   color: var(--tt-text-3);
 }
@@ -125,6 +136,67 @@
   gap: 12rpx;
   font-size: 27rpx;
   color: var(--tt-text-1);
+}
+
+/* ===== 级别编辑器（一级一张小卡） ===== */
+.badge-level {
+  margin-top: 16rpx;
+  padding: 20rpx 22rpx 22rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-brand-soft);
+}
+
+.badge-level-head {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  margin-bottom: 14rpx;
+}
+
+.badge-level-lv {
+  font-size: 25rpx;
+  font-weight: 700;
+  color: var(--tt-brand);
+}
+
+.badge-level-target {
+  flex: 1;
+  min-width: 0;
+  font-size: 23rpx;
+  color: var(--tt-text-2);
+}
+
+.badge-level-del {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  padding: 8rpx 18rpx;
+  border-radius: 999rpx;
+  background: var(--tt-card);
+  font-size: 22rpx;
+  color: var(--td-error-color-6);
+}
+
+.badge-level-del:active {
+  opacity: 0.7;
+}
+
+.badge-level-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10rpx;
+  margin-top: 16rpx;
+  padding: 22rpx 0;
+  border-radius: var(--tt-radius-sm);
+  border: 2rpx dashed var(--tt-brand);
+  font-size: 26rpx;
+  color: var(--tt-brand);
+  background: var(--tt-card);
+}
+
+.badge-level-add:active {
+  opacity: 0.7;
 }
 
 .badge-switch-row {

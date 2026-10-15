@@ -1,20 +1,20 @@
 <view class="page tt-page badge-page">
   <view class="badge-head">
-    <text class="badge-head-text">共 {{list.length}} 枚徽章</text>
+    <text class="badge-head-text">共 {{list.length}} 行 · 等级组 {{tierGroupCount}} 组 / 独立徽章 {{singleCount}} 枚</text>
     <view class="tt-btn-right">
       <t-button theme="primary" size="small" bind:tap="openCreate">+ 新增徽章</t-button>
     </view>
   </view>
 
-  <!-- ===== 徽章列表 ===== -->
+  <!-- ===== 徽章列表（等级徽章按组一行 / 独立徽章各一行） ===== -->
   <view class="tt-section">
     <text>徽章列表</text>
-    <text class="tt-section-extra">条件达成自动发放</text>
+    <text class="tt-section-extra">等级徽章按组管理，独立徽章单条管理</text>
   </view>
 
   <view class="tt-card">
     <block wx:if="{{list.length}}">
-      <view class="tt-row badge-row" wx:for="{{list}}" wx:key="_id">
+      <view class="tt-row" wx:for="{{list}}" wx:key="id">
         <view class="badge-cap">
           <!-- 管理端列的是徽章定义本身（不是用户获得态），一律原色显示，不做灰度 -->
           <!-- icon 可能是图片 URL（file.tangbo.tech/...）或本地路径，只有图标名才走 t-icon -->
@@ -30,20 +30,29 @@
         <view class="flex-1">
           <view class="badge-row-title">
             <text class="badge-row-name">{{item.name}}</text>
-            <t-tag wx:if="{{!item.enabled}}" theme="default" variant="light" size="small">停用</t-tag>
+            <t-tag wx:if="{{!item.enabled}}" theme="default" variant="light" size="small">{{item.kind === 'tier' ? '部分停用' : '停用'}}</t-tag>
             <t-tag wx:else theme="success" variant="light" size="small">启用</t-tag>
-            <t-tag theme="primary" variant="light" size="small">{{item.typeLabel}}</t-tag>
+            <t-tag wx:if="{{item.kind === 'tier'}}" theme="primary" variant="light" size="small">等级组 · {{item.levelText}}</t-tag>
+            <t-tag wx:else theme="primary" variant="light" size="small">独立徽章</t-tag>
+            <t-tag theme="default" variant="light" size="small">{{item.typeLabel}}</t-tag>
           </view>
-          <view class="tt-row-sub">
-            <text wx:if="{{item.type === 'rank'}}">跑分排名 ≤ <text class="num-font tt-num-brand">{{item.target}}</text> 名</text>
-            <text wx:else>{{item.typeLabel}} ≥ <text class="num-font tt-num-brand">{{item.target}}</text></text>
-            <text wx:if="{{item.mode === 'tier'}}"> · {{item.tierGroup}} Lv{{item.tierLevel}}</text>
-            <text wx:else> · 独立徽章</text>
+          <!-- 等级组：级别阈值与名称摘要（如 Lv1 7 天 / Lv2 30 天 / Lv3 120 天） -->
+          <view class="tt-row-sub" wx:if="{{item.kind === 'tier'}}">
+            <text class="badge-summary">{{item.summary}}</text>
+          </view>
+          <view class="tt-row-sub" wx:else>
+            <text>{{item.targetText}}</text>
+            <text> · 独立徽章</text>
+          </view>
+          <view class="tt-row-sub" wx:if="{{item.kind === 'tier'}}">
+            <text>{{item.enabledText}}</text>
           </view>
         </view>
         <view class="badge-actions">
-          <view class="badge-btn" catch:tap="openEdit" data-id="{{item._id}}">编辑</view>
-          <view class="badge-btn danger" catch:tap="remove" data-id="{{item._id}}">删除</view>
+          <view wx:if="{{item.kind === 'tier'}}" class="badge-btn" catch:tap="openGroupEdit" data-id="{{item.id}}">编辑整组</view>
+          <view wx:else class="badge-btn" catch:tap="openEdit" data-id="{{item.id}}">编辑</view>
+          <view wx:if="{{item.kind === 'tier'}}" class="badge-btn danger" catch:tap="removeGroup" data-id="{{item.id}}">删除</view>
+          <view wx:else class="badge-btn danger" catch:tap="remove" data-id="{{item.id}}">删除</view>
         </view>
       </view>
     </block>
@@ -51,9 +60,10 @@
     <t-loading wx:if="{{loading}}" theme="circular" size="40rpx" class="badge-loading" />
   </view>
 
-  <view class="tt-footer">徽章 key 创建后不建议修改，历史记录依赖该值</view>
+  <view class="tt-footer">等级组一次定义整组、整组保存；徽章 key 创建后不建议修改，历史记录依赖该值</view>
 
-  <!-- ===== 新增 / 编辑（底部抽屉，骨架走 app.wxss 的 .tt-sheet*） ===== -->
+  <!-- ===== 新增 / 编辑（底部抽屉，骨架走 app.wxss 的 .tt-sheet*） =====
+       两种模式：独立徽章（一条定义）/ 等级徽章组（一次定义整组，级别行可增删） -->
   <t-popup visible="{{formVisible}}" placement="bottom" bind:visible-change="onFormVisible">
     <view class="tt-sheet badge-sheet">
       <view class="tt-sheet-grab"></view>
@@ -63,8 +73,10 @@
           <t-icon name="star" size="36rpx" color="var(--tt-brand)" />
         </view>
         <view class="tt-sheet-title">
-          {{form._id ? '编辑徽章' : '新增徽章'}}
-          <view class="tt-sheet-sub">{{typeLabel}} · 条件达成自动发放</view>
+          <block wx:if="{{formMode === 'tier'}}">{{groupLocked ? '编辑等级组' : '新增等级组'}}</block>
+          <block wx:else>{{form._id ? '编辑徽章' : '新增徽章'}}</block>
+          <view class="tt-sheet-sub" wx:if="{{formMode === 'tier'}}">{{groupSummary || '整组一次保存'}}</view>
+          <view class="tt-sheet-sub" wx:else>{{targetLabel}} · 条件达成自动发放</view>
         </view>
         <view class="tt-sheet-close" bind:tap="closeForm">
           <t-icon name="close" size="32rpx" color="var(--tt-text-2)" />
@@ -72,100 +84,208 @@
       </view>
 
       <scroll-view scroll-y class="tt-sheet-body">
-        <view class="tt-sheet-label">基本信息</view>
-        <view class="tt-sheet-field badge-field-gap">
-          <text class="badge-inline-label">Key <text class="badge-req">*</text></text>
-          <input
-            class="tt-sheet-input {{form._id ? 'badge-input-locked' : ''}}"
-            value="{{form.key}}"
-            placeholder="唯一英文标识，如 points_500"
-            placeholder-class="tt-sheet-ph"
-            disabled="{{!!form._id}}"
-            bindinput="onField"
-            data-field="key"
-          />
-        </view>
-        <view class="tt-sheet-field badge-field-gap">
-          <text class="badge-inline-label">名称 <text class="badge-req">*</text></text>
-          <input class="tt-sheet-input" value="{{form.name}}" placeholder="展示名称，如 跑分达人" placeholder-class="tt-sheet-ph" bindinput="onField" data-field="name" />
-        </view>
-        <view class="tt-sheet-field badge-field-gap">
-          <text class="badge-inline-label">描述</text>
-          <input
-            class="tt-sheet-input"
-            value="{{form.description}}"
-            placeholder="一句话说明获取方式"
-            placeholder-class="tt-sheet-ph"
-            bindinput="onField"
-            data-field="description"
-          />
-        </view>
-        <view class="tt-sheet-field badge-field-gap">
-          <text class="badge-inline-label">图标</text>
-          <input class="tt-sheet-input" value="{{form.icon}}" placeholder="图标名或图片 URL，留空用默认" placeholder-class="tt-sheet-ph" bindinput="onField" data-field="icon" />
+        <!-- 顶部药丸切换：独立徽章 / 等级徽章组 -->
+        <view class="tt-sheet-pills badge-mode-pills">
+          <view class="tt-sheet-pill {{formMode === 'single' ? 'active' : ''}}" bind:tap="onMode" data-mode="single">独立徽章</view>
+          <view class="tt-sheet-pill {{formMode === 'tier' ? 'active' : ''}}" bind:tap="onMode" data-mode="tier">等级徽章组</view>
         </view>
 
-        <view class="tt-sheet-label">达成条件</view>
-        <view class="tt-sheet-field badge-field-gap">
-          <text class="badge-inline-label">条件类型</text>
-          <picker class="badge-picker" range="{{types}}" range-key="label" value="{{typeIndex}}" bindchange="onType">
-            <view class="badge-picker-value">
-              <text>{{types[typeIndex].label}}</text>
-              <t-icon name="chevron-down" size="28rpx" color="var(--tt-text-3)" />
-            </view>
-          </picker>
-        </view>
-        <view class="tt-sheet-field badge-field-gap">
-          <text class="badge-inline-label">{{targetLabel}} <text class="badge-req">*</text></text>
-          <input class="tt-sheet-input" type="number" value="{{form.target}}" placeholder="达成阈值" placeholder-class="tt-sheet-ph" bindinput="onField" data-field="target" />
-        </view>
-        <view class="tt-sheet-note">{{targetHint}}</view>
-
-        <view class="tt-sheet-label">徽章形态</view>
-        <view class="tt-sheet-pills">
-          <view class="tt-sheet-pill {{form.mode === 'single' ? 'active' : ''}}" bind:tap="onMode" data-mode="single">独立徽章</view>
-          <view class="tt-sheet-pill {{form.mode === 'tier' ? 'active' : ''}}" bind:tap="onMode" data-mode="tier">等级徽章</view>
-        </view>
-        <block wx:if="{{form.mode === 'tier'}}">
-          <view class="tt-sheet-field badge-field-gap badge-field-tiertop">
-            <text class="badge-inline-label">阶梯组 <text class="badge-req">*</text></text>
+        <!-- ================= 模式一：独立徽章（一条定义） ================= -->
+        <block wx:if="{{formMode === 'single'}}">
+          <view class="tt-sheet-label badge-label-top">基本信息</view>
+          <view class="tt-sheet-field badge-field-gap">
+            <text class="badge-inline-label">Key <text class="badge-req">*</text></text>
             <input
-              class="tt-sheet-input"
-              value="{{form.tierGroup}}"
-              placeholder="同组才逐级解锁，如 达标里程"
+              class="tt-sheet-input {{form._id ? 'badge-input-locked' : ''}}"
+              value="{{form.key}}"
+              placeholder="唯一英文标识，如 points_500"
               placeholder-class="tt-sheet-ph"
+              disabled="{{!!form._id}}"
               bindinput="onField"
-              data-field="tierGroup"
+              data-field="key"
             />
           </view>
           <view class="tt-sheet-field badge-field-gap">
-            <text class="badge-inline-label">等级 <text class="badge-req">*</text></text>
-            <input class="tt-sheet-input" type="number" value="{{form.tierLevel}}" placeholder="≥ 1" placeholder-class="tt-sheet-ph" bindinput="onField" data-field="tierLevel" />
+            <text class="badge-inline-label">名称 <text class="badge-req">*</text></text>
+            <input class="tt-sheet-input" value="{{form.name}}" placeholder="展示名称，如 魅力新人" placeholder-class="tt-sheet-ph" bindinput="onField" data-field="name" />
           </view>
           <view class="tt-sheet-field badge-field-gap">
-            <text class="badge-inline-label">主题色</text>
-            <input class="tt-sheet-input" value="{{form.tierColor}}" placeholder="可选，如 #ff6b00" placeholder-class="tt-sheet-ph" bindinput="onField" data-field="tierColor" />
+            <text class="badge-inline-label">描述</text>
+            <input
+              class="tt-sheet-input"
+              value="{{form.description}}"
+              placeholder="一句话说明获取方式"
+              placeholder-class="tt-sheet-ph"
+              bindinput="onField"
+              data-field="description"
+            />
           </view>
-          <view class="tt-sheet-note">同一阶梯组内按等级从小到大逐级解锁，目标值应随等级递增（如 1000 / 3000 / 5000）。</view>
-        </block>
-        <view class="tt-sheet-note" wx:else>独立徽章一次达标即获得，不参与等级解锁。</view>
+          <view class="tt-sheet-field badge-field-gap">
+            <text class="badge-inline-label">图标</text>
+            <input class="tt-sheet-input" value="{{form.icon}}" placeholder="图标名或图片 URL，留空用默认" placeholder-class="tt-sheet-ph" bindinput="onField" data-field="icon" />
+          </view>
 
-        <view class="tt-sheet-label">其它</view>
-        <view class="tt-sheet-field badge-field-gap">
-          <text class="badge-inline-label">排序</text>
-          <input class="tt-sheet-input" type="number" value="{{form.sort}}" placeholder="数值小者靠前" placeholder-class="tt-sheet-ph" bindinput="onField" data-field="sort" />
-        </view>
-        <view class="badge-switch-row">
-          <view class="badge-switch-main">
-            <text class="badge-switch-title">启用</text>
-            <text class="badge-switch-desc">关闭后不再对新达成用户发放（已获得的不受影响）</text>
+          <view class="tt-sheet-label">达成条件</view>
+          <view class="tt-sheet-field badge-field-gap">
+            <text class="badge-inline-label">条件类型</text>
+            <picker class="badge-picker" range="{{types}}" range-key="label" value="{{typeIndex}}" bindchange="onType">
+              <view class="badge-picker-value">
+                <text>{{types[typeIndex].label}}</text>
+                <t-icon name="chevron-down" size="28rpx" color="var(--tt-text-3)" />
+              </view>
+            </picker>
           </view>
-          <t-switch value="{{form.enabled}}" bind:change="toggleEnabled" />
-        </view>
+          <view class="tt-sheet-field badge-field-gap">
+            <text class="badge-inline-label">{{targetLabel}} <text class="badge-req">*</text></text>
+            <input class="tt-sheet-input" type="number" value="{{form.target}}" placeholder="达成阈值" placeholder-class="tt-sheet-ph" bindinput="onField" data-field="target" />
+          </view>
+          <view class="tt-sheet-note">{{targetHint}}</view>
+          <view class="tt-sheet-note">独立徽章一次达标即获得，不参与等级解锁。</view>
+
+          <view class="tt-sheet-label">其它</view>
+          <view class="tt-sheet-field badge-field-gap">
+            <text class="badge-inline-label">排序</text>
+            <input class="tt-sheet-input" type="number" value="{{form.sort}}" placeholder="数值小者靠前" placeholder-class="tt-sheet-ph" bindinput="onField" data-field="sort" />
+          </view>
+          <view class="badge-switch-row">
+            <view class="badge-switch-main">
+              <text class="badge-switch-title">启用</text>
+              <text class="badge-switch-desc">关闭后不再对新达成用户发放（已获得的不受影响）</text>
+            </view>
+            <t-switch value="{{form.enabled}}" bind:change="toggleEnabled" />
+          </view>
+        </block>
+
+        <!-- ================= 模式二：等级徽章组（一次定义整组） ================= -->
+        <block wx:else>
+          <view class="tt-sheet-label badge-label-top">组信息</view>
+          <view class="tt-sheet-field badge-field-gap">
+            <text class="badge-inline-label">组名 <text class="badge-req">*</text></text>
+            <input
+              class="tt-sheet-input {{groupLocked ? 'badge-input-locked' : ''}}"
+              value="{{groupForm.tierGroup}}"
+              placeholder="唯一英文标识，如 tier_login"
+              placeholder-class="tt-sheet-ph"
+              disabled="{{groupLocked}}"
+              bindinput="onGroupField"
+              data-field="tierGroup"
+            />
+          </view>
+          <view class="tt-sheet-note">组名是整组的唯一标识（新建后可读、可改；编辑时不可改）。级别徽章 key 由服务端按组名生成。</view>
+          <view class="tt-sheet-field badge-field-gap">
+            <text class="badge-inline-label">条件类型</text>
+            <picker class="badge-picker" range="{{types}}" range-key="label" value="{{groupTypeIndex}}" bindchange="onGroupType">
+              <view class="badge-picker-value">
+                <text>{{types[groupTypeIndex].label}}</text>
+                <t-icon name="chevron-down" size="28rpx" color="var(--tt-text-3)" />
+              </view>
+            </picker>
+          </view>
+          <view class="tt-sheet-note">全组共用同一条件类型：{{groupHint}}</view>
+          <view class="tt-sheet-field badge-field-gap">
+            <text class="badge-inline-label">组描述</text>
+            <input
+              class="tt-sheet-input"
+              value="{{groupForm.description}}"
+              placeholder="整组共用的一句话说明"
+              placeholder-class="tt-sheet-ph"
+              bindinput="onGroupField"
+              data-field="description"
+            />
+          </view>
+
+          <view class="tt-sheet-label">级别（{{levelRows.length}} 级）</view>
+          <view class="badge-level" wx:for="{{levelRows}}" wx:key="tierLevel">
+            <view class="badge-level-head">
+              <text class="badge-level-lv">Lv{{index + 1}}</text>
+              <text class="badge-level-target">{{item.targetText}}</text>
+              <view class="badge-level-del" catch:tap="removeLevel" data-index="{{index}}">
+                <t-icon name="delete" size="28rpx" color="var(--td-error-color-6)" />
+                <text>移除</text>
+              </view>
+            </view>
+            <view class="tt-sheet-field">
+              <text class="badge-inline-label">等级名 <text class="badge-req">*</text></text>
+              <input
+                class="tt-sheet-input"
+                value="{{item.name}}"
+                placeholder="如 初级·运动达人"
+                placeholder-class="tt-sheet-ph"
+                bindinput="onLevelField"
+                data-index="{{index}}"
+                data-field="name"
+              />
+            </view>
+            <view class="tt-sheet-field badge-field-gap">
+              <text class="badge-inline-label">阈值 <text class="badge-req">*</text></text>
+              <input
+                class="tt-sheet-input"
+                type="number"
+                value="{{item.target}}"
+                placeholder="按条件类型填单位"
+                placeholder-class="tt-sheet-ph"
+                bindinput="onLevelField"
+                data-index="{{index}}"
+                data-field="target"
+              />
+            </view>
+            <view class="tt-sheet-field badge-field-gap">
+              <text class="badge-inline-label">图标</text>
+              <input
+                class="tt-sheet-input"
+                value="{{item.icon}}"
+                placeholder="图标名或图片 URL，可留空"
+                placeholder-class="tt-sheet-ph"
+                bindinput="onLevelField"
+                data-index="{{index}}"
+                data-field="icon"
+              />
+            </view>
+            <view class="tt-sheet-field badge-field-gap">
+              <text class="badge-inline-label">等级色</text>
+              <input
+                class="tt-sheet-input"
+                value="{{item.tierColor}}"
+                placeholder="可选，如 #CD7F32"
+                placeholder-class="tt-sheet-ph"
+                bindinput="onLevelField"
+                data-index="{{index}}"
+                data-field="tierColor"
+              />
+            </view>
+          </view>
+          <view class="badge-level-add" bind:tap="addLevel">
+            <t-icon name="add" size="30rpx" color="var(--tt-brand)" />
+            <text>增加一级（最多 8 级）</text>
+          </view>
+          <view class="tt-sheet-note">行序即等级（Lv1 起连续）；目标值必须随等级严格递增。移除已有用户获得的级别会被服务端拒绝。</view>
+
+          <view class="tt-sheet-label">其它</view>
+          <view class="tt-sheet-field badge-field-gap">
+            <text class="badge-inline-label">排序</text>
+            <input
+              class="tt-sheet-input"
+              type="number"
+              value="{{groupForm.sort}}"
+              placeholder="数值小者靠前"
+              placeholder-class="tt-sheet-ph"
+              bindinput="onGroupField"
+              data-field="sort"
+            />
+          </view>
+          <view class="badge-switch-row">
+            <view class="badge-switch-main">
+              <text class="badge-switch-title">启用（全组）</text>
+              <text class="badge-switch-desc">作用于组内全部级别；关闭后不再对新达成用户发放（已获得的不受影响）</text>
+            </view>
+            <t-switch value="{{groupForm.enabled}}" bind:change="onGroupSwitch" />
+          </view>
+        </block>
       </scroll-view>
 
       <view class="tt-sheet-foot">
-        <t-button theme="primary" block loading="{{saving}}" bind:tap="save">{{form._id ? '保存修改' : '创建徽章'}}</t-button>
+        <t-button wx:if="{{formMode === 'tier'}}" theme="primary" block loading="{{saving}}" bind:tap="save">{{groupLocked ? '保存整组' : '创建整组'}}</t-button>
+        <t-button wx:else theme="primary" block loading="{{saving}}" bind:tap="save">{{form._id ? '保存修改' : '创建徽章'}}</t-button>
       </view>
     </view>
   </t-popup>

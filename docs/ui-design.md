@@ -84,7 +84,7 @@ box-shadow: 0 12rpx 32rpx rgba(255, 107, 0, 0.24);
 > `.<页面私有sheet类> .tt-sheet-body { flex:none; min-height:0; max-height:46vh }`（底部有两个按钮的弹窗用 `42vh`）。
 > 用 `max-height` 而非固定 `height`：内容短时自适应、内容长时封顶可滚；只要 `head(61) + body(≤46vh) + foot(101) < 80vh`，主按钮就始终在屏内。
 > 已按此写法：`packageAdmin/permissions/groups`（`.pg-sheet`）、`packageAdmin/users/account-edit`（`.ae-sheet`）、`components/badge-award`（`.award-sheet`）；
-> 固定高度先例：`content/badges`、`class/class`（52vh），`pages/badges`、`pages/hub`、`user-detail`（46vh）。
+> 固定高度先例：`class/class`、`content/badges`（徽章组级表单，级别编辑器较长，52vh），`pages/badges`、`pages/hub`、`user-detail`（46vh）。
 
 ## 4. 底部导航（自定义 tabBar）
 
@@ -352,13 +352,22 @@ WebP q80 = 41.4KB（更小，但 `image` 组件 iOS 需 14+，目标环境实测
   内置组显示「系统维护」、不可编辑删除；删除失败（仍被账号使用）时把服务端文案原样提示。
   入口：账户编辑页「账户权限」标题右侧（用户详情页的权限管理区已移除，不再有此入口）。
   接口：`GET/POST /api/admin/permission-groups`、`PUT/DELETE /api/admin/permission-groups/:id`（需 `permission.manage`）。
-- **管理端 · 徽章管理 `packageAdmin/content/badges`**：列表（图标 + 名称 + 启用/条件类型标签 + `条件 ≥ 阈值 · 组 LvN`）
-  → 「+ 新增徽章」/ 行内「编辑 / 删除」→ **底部抽屉表单**（`.tt-sheet*` 公共骨架，与权限组/班级抽屉同款）：
-  `key`（编辑态只读）/名称/描述/图标/条件类型/目标值/形态 `single|tier`（药丸）+ `tierGroup`/`tierLevel`/`tierColor`（仅 `tier` 显示且必填）/排序/启用。
-  **抽屉 `scroll-view.tt-sheet-body` 必须给确定高度**（本页 `.badge-sheet .tt-sheet-body { flex:none; height:52vh }`）——
+- **管理端 · 徽章管理 `packageAdmin/content/badges`**：**以「组」为单位管理**（数据形态不变：仍是一枚徽章一条定义）。
+  列表 = 等级徽章按 `tierGroup` 聚合成一行（组名 + `等级组 · N 级` + 条件类型 + 级别摘要 `Lv1 7 天 / Lv2 30 天 / Lv3 120 天` + `启用` / `部分停用（n/N 级启用）`），
+  独立徽章（`mode==='single'`）各占一行（图标 + 名称 + 阈值 + `独立徽章`）；组按组内 `Lv1` 的 `sort` 参与混排、独立徽章按自身 `sort`（与用户端 `pages/badges` 同规则）。
+  行内操作：组 =「编辑整组 / 删除」，独立徽章 =「编辑 / 删除」。
+  → 「+ 新增徽章」→ **底部抽屉**（`.tt-sheet*` 公共骨架，与权限组/班级抽屉同款），**顶部药丸切换两种模式**：
+  ① **独立徽章**：`key`（编辑态只读）/名称/描述/图标/条件类型/目标值/排序/启用（提交 `mode='single'` 且 `tierGroup` 置空）；
+  ② **等级徽章组**：组名 `tierGroup`（新建时自动给可读草稿、可手改、必须唯一；编辑态只读，服务端也拒绝改）+ 全组共用条件类型（9 选 1）+
+  组描述 + **级别编辑器**（一行一级：等级名/阈值（带单位提示）/图标/等级色，可增删，**2~8 级**，行序即 `tierLevel`，阈值必须严格递增）+
+  排序 + 启用（作用于全组）；保存**整组一次提交**（前端不循环调单条接口）。
+  **抽屉 `scroll-view.tt-sheet-body` 必须给确定高度**（本页 `.badge-sheet .tt-sheet-body { flex:none; min-height:0; height:52vh }`）——
   只写 `min-height:0` 不够，权限组那种不写高度的老写法会让表单撑高、确定按钮被顶出屏幕。
   条件类型下拉含 9 项：7 类运动数据 + `points`（跑分达标，全历史累计跑分）/ `rank`（跑分排名前 N，全校跑分总榜名次）。
-  接口：`GET/POST /api/admin/content/badges`、`PUT/DELETE /api/admin/content/badges/:id`（需 `content.manage`）。
+  接口：`GET/POST /api/admin/content/badges`、`PUT/DELETE /api/admin/content/badges/:id`（单条，向后兼容）
+  + `GET /api/admin/content/badges/groups`、`POST /api/admin/content/badges/group`、`PUT/DELETE /api/admin/content/badges/group/:tierGroup`（整组，需 `content.manage`）：
+  一次写入整组（按 `tierGroup`+`tierLevel` upsert）、组内 `type` 必须一致、`tierLevel` 从 1 连续且唯一、`target` 随级别严格递增、级别名不重复、组名唯一；
+  **删除级别 / 整组时若已有用户获得（`user_badges` 引用该 `badgeKey`）→ 409 拒绝**，不静默删除用户已获得的徽章。
 - **管理端 · 用户详情 `packageAdmin/user-detail/user-detail`**：**权限管理区已移除**（角色/权限编辑只在账户编辑页）；
   编辑资料/重置密码/删除按钮按**当前登录者** effectivePermissions（`permission.manage`）显隐，不再调权限接口探测。
   区块顺序：Hero（绑定状态脱敏展示）→ 基本信息 → **考核与目标**（综合日/周达标率大数字 + 达标计数 + 当前目标）→
