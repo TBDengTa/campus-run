@@ -3,6 +3,7 @@
   "enablePullDownRefresh": true,
   "backgroundTextStyle": "dark",
   "usingComponents": {
-    "class-board": "/components/class-board/class-board"
+    "class-board": "/components/class-board/class-board",
+    "badge-award": "/components/badge-award/badge-award"
   }
 }

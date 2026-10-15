@@ -1,34 +1,41 @@
-/* 我的徽章：汇总卡 + 等级徽章分组卡（可展开）+ 独立徽章网格
+/* 我的徽章：压缩汇总条 + 3 列矩阵（大图，等级组一格 / 独立徽章各一格，不分区）+ 详情底部弹窗
    未获得 = 灰度 100% + 半透明（徽章图片自带配色，靠饱和度区分；opacity 是 filter 不支持时的兜底） */
 
-/* ===== 汇总 ===== */
+/* ===== 汇总（一行：已点亮 N/M + 进度条 + 百分比） ===== */
+.badge-sum {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding: 20rpx 24rpx;
+}
+
 .badge-sum-main {
   display: flex;
   align-items: baseline;
-  justify-content: center;
+  flex-shrink: 0;
+}
+
+.badge-sum-label {
+  margin-right: 8rpx;
+  font-size: 22rpx;
+  color: var(--tt-text-2);
 }
 
 .badge-sum-num {
-  font-size: 60rpx;
+  font-size: 38rpx;
   font-weight: 700;
-  line-height: 1.1;
+  line-height: 1;
   color: var(--tt-brand);
 }
 
 .badge-sum-total {
-  font-size: 32rpx;
+  font-size: 22rpx;
   color: var(--tt-text-3);
 }
 
-.badge-sum-label {
-  margin-left: 12rpx;
-  font-size: 26rpx;
-  color: var(--tt-text-2);
-}
-
 .badge-sum-track {
-  height: 16rpx;
-  margin-top: 26rpx;
+  flex: 1;
+  height: 10rpx;
   border-radius: 999rpx;
   background: var(--tt-line);
   overflow: hidden;
@@ -41,21 +48,14 @@
   transition: width 0.4s ease;
 }
 
-.badge-sum-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 14rpx;
-  font-size: 23rpx;
-  color: var(--tt-text-3);
-}
-
 .badge-sum-percent {
-  color: var(--tt-brand);
+  flex-shrink: 0;
+  font-size: 24rpx;
   font-weight: 700;
+  color: var(--tt-brand);
 }
 
-/* ===== 未获得：灰度 + 半透明（页面私有类，走设计系统令牌，不内联 style） ===== */
+/* ===== 未获得：灰度 + 半透明（沿用既有规则，不新增 filter 写法） ===== */
 .badge-icon.is-dim,
 .badge-icon-emoji.is-dim,
 .badge-level-icon.is-dim {
@@ -63,53 +63,40 @@
   opacity: 0.5;
 }
 
-/* ===== 网格（独立徽章） ===== */
+/* ===== 3 列矩阵 =====
+   可用宽 702rpx（750 - 左右各 24rpx）；格宽 (702 - 2×18) / 3 = 222rpx，
+   格内左右各 12rpx → 内容宽 198rpx，大图 176rpx 不会溢出。 */
 .badge-grid {
   display: flex;
   flex-wrap: wrap;
-  padding: 0 var(--tt-gap);
-  gap: var(--tt-gap);
+  gap: 18rpx;
+  padding: 16rpx var(--tt-gap) 0;
 }
 
 .badge-cell {
-  width: calc((100% - 48rpx) / 3);
+  width: calc((100% - 36rpx) / 3);
   box-sizing: border-box;
-  padding: 28rpx 16rpx 24rpx;
+  padding: 18rpx 12rpx 16rpx;
   border-radius: 24rpx;
   background: var(--tt-card);
   box-shadow: var(--tt-card-shadow);
   display: flex;
   flex-direction: column;
   align-items: center;
-  text-align: center;
 }
 
-.badge-cell.earned {
-  background: linear-gradient(180deg, var(--tt-brand-soft) 0%, var(--tt-card) 72%);
-  border: 2rpx solid var(--tt-brand-soft-2);
-}
-
-.badge-icon-wrap {
-  width: 96rpx;
-  height: 96rpx;
+.badge-cell-img {
+  width: 176rpx;
+  height: 176rpx;
   border-radius: 28rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--tt-brand-soft);
-  flex-shrink: 0;
-}
-
-.badge-cell:not(.earned) .badge-icon-wrap {
-  background: transparent;
-}
-
-.badge-icon {
-  width: 96rpx;
-  height: 96rpx;
-  font-size: 60rpx;
-  line-height: 96rpx;
+  font-size: 92rpx;
+  line-height: 176rpx;
   text-align: center;
+  background: var(--tt-brand-soft);
+}
+
+.badge-cell.is-dim .badge-cell-img {
+  background: transparent;
 }
 
 .badge-icon-emoji {
@@ -118,44 +105,116 @@
   justify-content: center;
 }
 
-.badge-name {
-  margin-top: 16rpx;
-  font-size: 26rpx;
+.badge-cell-name {
+  width: 100%;
+  margin-top: 14rpx;
+  font-size: 24rpx;
   font-weight: 600;
+  line-height: 32rpx;
+  text-align: center;
   color: var(--tt-text-1);
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  max-width: 100%;
-}
-
-.badge-cell:not(.earned) .badge-name {
-  color: var(--tt-text-2);
-}
-
-.badge-desc {
-  margin-top: 8rpx;
-  font-size: 20rpx;
-  line-height: 30rpx;
-  color: var(--tt-text-3);
   overflow: hidden;
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
 
-.badge-target {
-  margin-top: 12rpx;
-  font-size: 20rpx;
-  line-height: 28rpx;
-  color: var(--tt-text-3);
+.badge-cell.is-dim .badge-cell-name {
+  color: var(--tt-text-2);
 }
 
-/* 进度条宽度由 JS 算好（percentStyle），真实进度来自接口的 percent */
+.badge-cell-sub {
+  width: 100%;
+  margin-top: 6rpx;
+  font-size: 20rpx;
+  line-height: 28rpx;
+  text-align: center;
+  color: var(--tt-text-3);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* ===== 详情弹窗 ===== */
+/* 关键：.tt-sheet-body 是 flex 子项，只写 min-height:0 不会滚动，必须给确定高度
+   （仓库已验证：user-detail 的 .ud-class-scroll 46vh、class 抽屉 52vh）。
+   只在「等级组（内容长）」时套用固定高度，独立徽章弹窗仍按内容自适应。 */
+.badge-sheet.has-levels .tt-sheet-body {
+  flex: none;
+  min-height: 0;
+  height: 46vh;
+}
+
+.badge-detail-hero {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8rpx 0 0;
+}
+
+.badge-detail-img {
+  width: 160rpx;
+  height: 160rpx;
+  border-radius: 32rpx;
+  font-size: 96rpx;
+  line-height: 160rpx;
+  text-align: center;
+  background: var(--tt-brand-soft);
+}
+
+.badge-detail-name {
+  margin-top: 16rpx;
+  font-size: 32rpx;
+  font-weight: 700;
+  text-align: center;
+  color: var(--tt-text-1);
+}
+
+.badge-detail-desc {
+  margin-top: 10rpx;
+  font-size: 24rpx;
+  line-height: 34rpx;
+  text-align: center;
+  color: var(--tt-text-2);
+}
+
+.badge-detail-cond {
+  padding: 18rpx 22rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-brand-soft);
+  font-size: 26rpx;
+  line-height: 34rpx;
+  color: var(--tt-brand);
+}
+
+.badge-detail-progress {
+  padding: 18rpx 22rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--td-bg-color-component);
+}
+
+.badge-detail-progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+}
+
+.badge-detail-progress-text {
+  font-size: 24rpx;
+  color: var(--tt-text-2);
+}
+
+.badge-detail-progress-percent {
+  font-size: 26rpx;
+  font-weight: 700;
+  color: var(--tt-brand);
+}
+
 .badge-track {
   width: 100%;
-  height: 8rpx;
-  margin-top: 12rpx;
+  height: 10rpx;
+  margin-top: 14rpx;
   border-radius: 999rpx;
   background: var(--tt-line);
   overflow: hidden;
@@ -165,158 +224,16 @@
   width: 0;
   height: 100%;
   border-radius: 999rpx;
-  background: var(--tt-brand);
+  background: linear-gradient(90deg, #ff9a3d, var(--tt-brand));
   transition: width 0.4s ease;
 }
 
-/* 等级徽章：再差多少到下一级 */
-.badge-next {
-  margin-top: 8rpx;
-  font-size: 20rpx;
-  line-height: 28rpx;
-  color: var(--tt-brand);
-}
-
-.badge-mark {
-  display: flex;
-  align-items: center;
-  gap: 6rpx;
-  margin-top: 12rpx;
-  font-size: 20rpx;
-  font-weight: 600;
-  color: var(--tt-brand);
-}
-
-/* ===== 等级徽章分组卡 ===== */
-.badge-groups {
-  padding: 0 var(--tt-gap);
-  display: flex;
-  flex-direction: column;
-  gap: var(--tt-gap);
-}
-
-.badge-group {
-  padding: 26rpx 28rpx;
-  border-radius: var(--tt-radius);
-  background: var(--tt-card);
-  box-shadow: var(--tt-card-shadow);
-  border: 2rpx solid transparent;
-}
-
-.badge-group.is-dim {
-  border-color: var(--tt-line);
-}
-
-.badge-group-head {
-  display: flex;
-  align-items: center;
-  gap: 20rpx;
-}
-
-.badge-group-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.badge-group-name {
-  font-size: 30rpx;
-  font-weight: 600;
-  color: var(--tt-text-1);
-}
-
-.badge-group-sub {
-  display: flex;
-  align-items: center;
-  gap: 12rpx;
-  margin-top: 8rpx;
-}
-
-.badge-group-level {
-  padding: 2rpx 14rpx;
-  border-radius: 999rpx;
-  font-size: 22rpx;
-  font-weight: 600;
-  color: var(--tt-brand);
-  background: var(--tt-brand-soft);
-}
-
-.badge-group-badge {
-  font-size: 24rpx;
-  color: var(--tt-text-2);
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.badge-group-count {
-  margin-top: 8rpx;
-  font-size: 22rpx;
-  color: var(--tt-text-3);
-}
-
-.badge-group-count-num {
-  color: var(--tt-brand);
-  font-weight: 700;
-}
-
-/* 零获得：等级标签用中性灰，避免把未获得的 Lv1 呈现成「已点亮」的橙色标签 */
-.badge-group-level.is-dim {
-  color: var(--tt-text-2);
-  background: var(--tt-line);
-}
-
-/* 进度行：「当前 X / 目标 Y」+ 已达标时的「可点亮」提示 */
-.badge-progress-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12rpx;
-}
-
-.badge-progress-head .badge-target {
-  margin-top: 0;
-}
-
-.badge-reachable {
-  flex-shrink: 0;
-  padding: 2rpx 14rpx;
-  border-radius: 999rpx;
-  font-size: 20rpx;
-  font-weight: 600;
-  color: var(--tt-brand);
-  background: var(--tt-brand-soft);
-}
-
-.badge-track.is-reachable .badge-track-fill {
-  background: linear-gradient(90deg, #ff9a3d, var(--tt-brand));
-}
-
-.badge-group-chevron {
-  flex-shrink: 0;
-  width: 48rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.badge-group-progress {
-  margin-top: 22rpx;
-  padding-top: 20rpx;
-  border-top: 2rpx solid var(--tt-line);
-}
-
-/* ===== 展开：等级明细 ===== */
-.badge-levels {
-  margin-top: 20rpx;
-  padding-top: 8rpx;
-  border-top: 2rpx solid var(--tt-line);
-}
-
+/* ===== 详情弹窗：全部等级 ===== */
 .badge-level {
   display: flex;
   align-items: center;
   gap: 18rpx;
-  padding: 16rpx 16rpx;
+  padding: 14rpx 16rpx;
   border-radius: var(--tt-radius-sm);
 }
 
@@ -350,7 +267,14 @@
   color: var(--tt-text-1);
 }
 
+.badge-level-text {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .badge-level-tag {
+  flex-shrink: 0;
   padding: 2rpx 12rpx;
   border-radius: 999rpx;
   font-size: 20rpx;
@@ -374,6 +298,15 @@
   flex-shrink: 0;
   display: flex;
   align-items: center;
+}
+
+.badge-level-state-tag {
+  padding: 2rpx 12rpx;
+  border-radius: 999rpx;
+  font-size: 20rpx;
+  font-weight: 600;
+  color: var(--tt-brand);
+  background: var(--tt-brand-soft-2);
 }
 
 .badge-level-state-lock {

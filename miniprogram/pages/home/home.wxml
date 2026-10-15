@@ -290,4 +290,12 @@
   </view>
 
   <view class="tt-footer">{{isTeacher ? '愿您今天的每一件事都顺利' : '坚持每日运动，达成目标更健康'}}</view>
+
+  <!-- ===== 获得徽章弹窗（自定义，能看到徽章图片；会话内只弹一次，触发时机见 home.js checkBadges） ===== -->
+  <badge-award
+    visible="{{badgeAward.visible}}"
+    badges="{{badgeAward.badges}}"
+    bind:close="closeBadgeAward"
+    bind:go="goBadgesFromAward"
+  />
 </view>

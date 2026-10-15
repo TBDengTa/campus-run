@@ -154,6 +154,8 @@ Page({
     overview: null,
     top3: null, // 平均步数前三（本周日均）：个人 / 班级
     greetName: '', // 教师问候称呼（如「王老师」）
+    // 获得徽章弹窗（自定义组件，替代 wx.showModal —— 纯文字看不到徽章长什么样）
+    badgeAward: { visible: false, badges: [] },
   },
 
   onLoad() {
@@ -367,34 +369,24 @@ Page({
       const app = getApp();
       if (app.globalData.badgePopupShown) return;
       app.globalData.badgePopupShown = true;
-      this.showBadgeModal(newBadges);
+      this.showBadgeAward(newBadges);
     } catch (e) {
       // 失败静默：不阻塞首页其它数据（教师账号也会走到这里，接口直接返回空）
     }
   },
 
-  // 新徽章弹窗：多个时合并成一个弹窗 + 列表；含徽章名与等级名
-  showBadgeModal(newBadges) {
-    const lines = newBadges
-      .map((b) => {
-        const lv = Number(b.tierLevel) || 0;
-        const isTier = b.mode === 'tier' || lv > 0 || !!b.tierGroup;
-        const prefix = isTier && lv > 0 ? `升级到 Lv${lv} · ` : '';
-        const group = isTier && b.tierGroup ? `（${b.tierGroup}）` : '';
-        return `· ${prefix}${b.name}${group}`;
-      })
-      .slice(0, 6);
-    const rest = newBadges.length - lines.length;
-    if (rest > 0) lines.push(`· 还有 ${rest} 枚…`);
-    wx.showModal({
-      title: newBadges.length > 1 ? `获得 ${newBadges.length} 枚新徽章` : '获得新徽章',
-      content: lines.join('\n'),
-      confirmText: '去看看',
-      cancelText: '知道了',
-      success: (r) => {
-        if (r.confirm) wx.navigateTo({ url: '/pages/badges/badges' });
-      },
-    });
+  // 新徽章弹窗：自定义底部弹窗（能看见徽章图片），多枚时纵向列表
+  showBadgeAward(newBadges) {
+    this.setData({ badgeAward: { visible: true, badges: newBadges || [] } });
+  },
+
+  closeBadgeAward() {
+    this.setData({ badgeAward: { visible: false, badges: [] } });
+  },
+
+  goBadgesFromAward() {
+    this.closeBadgeAward();
+    wx.navigateTo({ url: '/pages/badges/badges' });
   },
 
   async loadOverview() {

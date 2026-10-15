@@ -9,6 +9,71 @@ const UNIT_MAP = {
   single_steps: '步',
 };
 
+// 距离类徽章的 target 单位是米，展示统一换成 km
+const DISTANCE_TYPES = ['total_distance', 'single_distance'];
+
+// 米 → km 文案（整数不带小数：5000 → 5，2500 → 2.5）
+function kmText(meters) {
+  const km = (Number(meters) || 0) / 1000;
+  return Number.isInteger(km) ? String(km) : km.toFixed(1);
+}
+
+// ===== 达成条件的中文文案（页面常量）=====
+// 后端只下发 type + target，人类可读文案在页面翻译，后端不改。
+// points / rank 是跑分体系的新数据源（后端由另一处实现），前端已就位：
+//   points → 累计跑分达标；rank → 跑分总榜排名（数值越小越好，读作「前 N 名」）
+const CONDITION_TEXT = {
+  goal_days: (n) => `累计达标天数 ≥ ${fmt.formatNumber(n)} 天`,
+  total_steps: (n) => `累计步数 ≥ ${fmt.formatNumber(n)}`,
+  streak_days: (n) => `连续打卡 ≥ ${fmt.formatNumber(n)} 天`,
+  single_steps: (n) => `单日步数 ≥ ${fmt.formatNumber(n)}`,
+  single_distance: (n) => `单次距离 ≥ ${kmText(n)} km`,
+  total_distance: (n) => `累计距离 ≥ ${kmText(n)} km`,
+  total_days: (n) => `累计打卡 ≥ ${fmt.formatNumber(n)} 天`,
+  points: (n) => `累计跑分 ≥ ${fmt.formatNumber(n)} 分`,
+  rank: (n) => `跑分排名前 ${fmt.formatNumber(n)} 名`,
+};
+
+const isDistance = (type) => DISTANCE_TYPES.includes(type);
+const unitOf = (type) => UNIT_MAP[type] || '天';
+
+// 阈值文案（详情弹窗里每一级的「达标线 ≥ X」）
+function targetTextOf(type, target) {
+  const n = Number(target) || 0;
+  if (isDistance(type)) return `${kmText(n)} km`;
+  if (type === 'points') return `${fmt.formatNumber(n)} 分`;
+  if (type === 'rank') return `前 ${fmt.formatNumber(n)} 名`;
+  return `${fmt.formatNumber(n)}${unitOf(type)}`;
+}
+
+
+// 达成条件文案（未知 type 走通用兜底，不会出现空白）
+function conditionOf(type, target) {
+  const n = Number(target) || 0;
+  const fn = CONDITION_TEXT[type];
+  return fn ? fn(n) : `达到目标 ${targetTextOf(type, n)}`;
+}
+
+// 「当前 X / 目标 Y」进度文案（按 type 给单位：跑分/排名/距离/步数/天数）
+function progressPairText(progress, goal, type) {
+  const p = Number(progress) || 0;
+  const g = Number(goal) || 0;
+  if (isDistance(type)) return `当前 ${kmText(p)} / 目标 ${kmText(g)} km`;
+  if (type === 'points') return `当前 ${fmt.formatNumber(p)} / 目标 ${fmt.formatNumber(g)} 分`;
+  if (type === 'rank') return `当前第 ${fmt.formatNumber(p)} 名 / 目标前 ${fmt.formatNumber(g)} 名`;
+  return `当前 ${fmt.formatNumber(p)} / 目标 ${fmt.formatNumber(g)}${unitOf(type)}`;
+}
+
+// 矩阵格子的一行小字（更短）：跑分/排名等新类型同样给对单位
+function compactProgressText(progress, target, type) {
+  const p = Number(progress) || 0;
+  const t = Number(target) || 0;
+  if (isDistance(type)) return `${kmText(p)}/${kmText(t)} km`;
+  if (type === 'points') return `${fmt.formatNumber(p)}/${fmt.formatNumber(t)} 分`;
+  if (type === 'rank') return `第${fmt.formatNumber(p)}/前${fmt.formatNumber(t)}`;
+  return `${fmt.formatNumber(p)}/${fmt.formatNumber(t)}${unitOf(type)}`;
+}
+
 // 进度条宽度：统一在这里算好，WXML 里不写内联 style
 function widthOf(percent) {
   const p = Math.max(0, Math.min(100, Number(percent) || 0));
@@ -18,16 +83,14 @@ function widthOf(percent) {
 Page({
   data: {
     loading: true,
-    list: [], // 独立徽章（含 tierGroup 为空的）
-    groups: [], // 等级徽章：一组一张卡
-    expanded: {}, // { [group]: true } 展开态
+    // 混排后的列表行：等级组压成一行（kind='tier'）+ 独立徽章各占一行（kind='single'）
+    rows: [],
     earnedCount: 0,
     total: 0,
     percent: 0,
     percentStyle: 'width:0%',
-    // 独立徽章分组自身的计数（**不是**全站 total，见 load() 里的注释）
-    singleEarned: 0,
-    singleTotal: 0,
+    // 详情底部弹窗（点击列表行打开）
+    sheet: { visible: false, levels: [] },
   },
 
   onShow() {
@@ -36,15 +99,64 @@ Page({
     this.load();
   },
 
-  // 点击等级徽章卡：展开 / 收起该组全部等级明细
-  toggleGroup(e) {
-    const { group } = e.currentTarget.dataset;
-    if (!group) return;
-    this.setData({ [`expanded.${group}`]: !this.data.expanded[group] });
+  // 点击列表行：底部弹窗看详情（不再内联展开）
+  openDetail(e) {
+    const { id } = e.currentTarget.dataset;
+    const row = (this.data.rows || []).find((r) => r.id === id);
+    if (!row) return;
+    this.setData({ sheet: this.buildSheet(row) });
+  },
+
+  closeDetail() {
+    this.setData({ 'sheet.visible': false });
+  },
+
+  // 点遮罩 / 下滑关闭时同步状态（t-popup 既有行为）
+  onSheetVisibleChange(e) {
+    const visible = !!(e.detail && e.detail.visible);
+    if (visible !== this.data.sheet.visible) this.setData({ 'sheet.visible': visible });
+  },
+
+  // 详情弹窗数据：等级组列出该组全部等级（标出「当前等级」「下一目标」），独立徽章只列自身
+  buildSheet(row) {
+    const isTier = row.kind === 'tier';
+    const levels = isTier
+      ? (row.levels || []).map((l) => {
+          const lv = Number(l.tierLevel) || 0;
+          const isCurrent = !!row.anyEarned && lv === row.currentLevel;
+          const isNext = !isCurrent && lv > 0 && lv === row.nextTierLevel;
+          return {
+            key: l.key,
+            levelText: `Lv${lv}`,
+            name: l.name,
+            icon: l.icon || '',
+            earned: !!l.earned,
+            targetLine: `达标线 ≥ ${targetTextOf(l.type, l.target)}`,
+            state: isCurrent ? '当前等级' : isNext ? '下一目标' : '',
+          };
+        })
+      : [];
+    return {
+      visible: true,
+      id: row.id,
+      kind: row.kind,
+      name: row.name,
+      icon: row.icon || '',
+      dim: !!row.dim,
+      badgeName: row.badgeName || row.name,
+      tag: row.tag || '',
+      tagDim: !!row.tagDim,
+      description: row.description || '',
+      conditionText: row.conditionText || '',
+      progressText: row.progressText || '',
+      percentText: `${Number(row.percent) || 0}%`,
+      percentStyle: row.percentStyle || 'width:0%',
+      levels,
+    };
   },
 
   // 登录后按需检测：先让服务端评估「当前登录用户是否达成」并幂等补发，再拉列表。
-  // 顺序不能反过来——否则会出现「进度条满格但 0 已获得」的假象（用户截图里的问题 1）。
+  // 顺序不能反过来——否则会出现「进度条满格但 0 已获得」的假象。
   // 接口幂等，失败一律静默：不阻塞列表展示。
   async checkBadges() {
     try {
@@ -62,17 +174,15 @@ Page({
       const total = Number(data.total) || 0;
       const earnedCount = Number(data.earnedCount) || 0;
       const percent = total > 0 ? Math.max(0, Math.min(100, Math.round((earnedCount / total) * 100))) : 0;
-      const unitOf = (type) => UNIT_MAP[type] || '天';
 
       // 仅补充展示用字段，接口数据原样保留（progress / nextTarget / percent 来自服务端）
       const list = (data.list || []).map((b) => ({
         ...b,
-        targetText: `${fmt.formatNumber(b.target)}${unitOf(b.type)}`,
-        nextText: b.nextTarget ? `${fmt.formatNumber(b.nextTarget)}${unitOf(b.type)}` : '',
         percentStyle: widthOf(b.percent),
+        conditionText: conditionOf(b.type, b.target),
       }));
 
-      // 等级徽章按 tierGroup 分组；独立徽章（无 tierGroup）保持单卡
+      // 等级徽章（tierGroup 非空）按组压成一行；其余各占一行
       const singles = [];
       const groupMap = new Map();
       for (const b of list) {
@@ -86,30 +196,56 @@ Page({
         groupMap.get(group).push(b);
       }
 
-      const groups = [];
+      const sortOf = (b) => Number(b.sort) || 0;
+      const rows = [];
+
+      for (const b of singles) {
+        const earned = !!b.earned;
+        rows.push({
+          kind: 'single',
+          id: `single:${b.key}`,
+          key: b.key,
+          name: b.name,
+          icon: b.icon || '',
+          dim: !earned,
+          earned,
+          tag: earned ? '已获得' : '未获得',
+          tagDim: !earned,
+          // 格子小字（一行）：已获得看达成条件，未获得看「当前/目标」紧凑进度
+          sub: earned ? b.conditionText : compactProgressText(b.progress, b.target, b.type),
+          badgeName: b.name,
+          description: b.description || '',
+          conditionText: b.conditionText,
+          progressText: progressPairText(b.progress, b.target, b.type),
+          percent: Math.max(0, Math.min(100, Number(b.percent) || 0)),
+          percentStyle: b.percentStyle,
+          levels: [],
+          anyEarned: false,
+          currentLevel: 0,
+          nextTierLevel: 0,
+          sort: sortOf(b),
+        });
+      }
+
       for (const [group, items] of groupMap) {
-        const levels = [...items].sort(
-          (a, b) => (Number(a.tierLevel) || 0) - (Number(b.tierLevel) || 0)
-        );
+        const levels = [...items].sort((a, b) => (Number(a.tierLevel) || 0) - (Number(b.tierLevel) || 0));
         const minLevel = Number(levels[0] && levels[0].tierLevel) || 1;
         const earnedLevels = levels.filter((l) => l.earned);
         const anyEarned = earnedLevels.length > 0;
-        // 卡面优先级：当前最高已获得等级 → 一级都没获得时显示**最低级**（Lv1）作为下一目标
+        // 行面优先级：当前最高已获得等级 → 一级都没获得时显示最低级（Lv1）作为下一目标
         const current = anyEarned
           ? earnedLevels[earnedLevels.length - 1]
           : levels.find((l) => (Number(l.tierLevel) || 0) === minLevel) || levels[0];
         const currentLevel = Math.max(1, Number(current.tierLevel) || 1);
-        // 下一级：已获得的找当前等级之上最近的一级；一级都没获得时目标就是最低级（Lv1），
-        // 此时 next === current，文案走「下一目标 Lv1 · 徽章名」，「当前 X / 目标 Y」里的 Y 就是 Lv1 的达标线。
+        // 下一级：已获得的找当前等级之上最近的一级；一级都没获得时目标就是最低级（Lv1）
         const next = anyEarned
           ? levels.find((l) => (Number(l.tierLevel) || 0) > currentLevel)
           : current;
+        const nextTierLevel = next ? Math.max(1, Number(next.tierLevel) || currentLevel) : 0;
         const progress = Math.max(0, Number(current.progress) || 0);
         // 进度基线：已获得则从当前等级阈值起算（Lv2 → Lv3 之间）；未获得从 0 起算。
-        // 但 1.0 迁移过来的等级行是「历史发放」——用户当前的累计值可能已经低于现阈值
+        // 但 1.0 迁移过来的等级行是「历史发放」——用户当前累计值可能已低于现阈值
         // （记录被清理/口径变化），这时不能把基线压到当前值，否则进度条会显示成空槽。
-        // 处理：真实进度低于阈值时，槽位「底」仍取阈值（已达成部分的视觉基线），
-        // 槽位「顶」是下一级阈值；一级都没获得时基线必须是 0（进度条要反映真实进度）。
         const floor = anyEarned ? Number(current.target) || 0 : 0;
         const baseline = Math.min(floor, progress);
         const goal = next ? Number(next.target) || 0 : 0;
@@ -118,67 +254,65 @@ Page({
           groupPercent = Math.round(((progress - baseline) / (goal - baseline)) * 100);
         }
         groupPercent = Math.max(0, Math.min(100, groupPercent));
-        const unit = unitOf(current.type);
-        // 兜底：progress 已达标但这一行还没发放（老数据；正常走过 /api/badges/check 后不会出现）。
-        // 此时不能只给一条满格进度条 + 「未获得」，必须明确提示「可点亮」。
+        // 兜底：progress 已达标但这一行还没发放（老数据；正常走过 /api/badges/check 后不会出现）
         const reachable = !!next && goal > 0 && progress >= goal;
-        const nextLevelText = next ? `Lv${Number(next.tierLevel) || currentLevel}` : '';
-        // 卡面语义（问题 3）：一级都没获得时，Lv1 是**下一目标**而不是「当前等级」——
-        // 否则会出现「Lv1 = 当前等级」和「下一级 Lv1」自相矛盾。
-        // 等级徽章的 name 本身就带等级含义（初级·运动达人），所以拼成「下一目标 Lv1 · 初级·运动达人」。
-        const levelTag = anyEarned ? `Lv${currentLevel}` : '未获得';
-        const badgeName = anyEarned
-          ? current.name
-          : `下一目标 ${nextLevelText} · ${current.name}`;
-        // 「当前 X / 目标 Y」——X 为累计进度，Y 为下一级阈值（已满级时为当前级阈值）
-        const progressText = `当前 ${fmt.formatNumber(progress)} / 目标 ${fmt.formatNumber(goal || baseline)}${unit}`;
+        const progressText = progressPairText(progress, goal || baseline, current.type);
+        const tag = anyEarned ? `Lv${currentLevel}/${levels.length}` : '未获得';
+        // 格子小字（一行）：等级组显示当前最高等级 LvN/总数（已达标未发放时提示可点亮）；
+        // 一级都没有时显示「未获得 · Lv1」
+        const sub = anyEarned ? (reachable ? `${tag} · 可点亮` : tag) : `未获得 · Lv${minLevel}`;
 
-        groups.push({
+        rows.push({
+          kind: 'tier',
+          id: `tier:${group}`,
           group,
-          current,
-          next,
-          levels: levels.map((l) => ({
-            ...l,
-            levelText: `Lv${Number(l.tierLevel) || 0}`,
-          })),
-          earnedLevels: earnedLevels.length,
-          totalLevels: levels.length,
+          name: group,
+          icon: current.icon || '',
+          dim: !anyEarned,
           anyEarned,
-          cardDim: !anyEarned, // 一级都没获得：卡面灰度
-          levelTag,
-          badgeName,
+          currentLevel,
+          nextTierLevel,
+          tag,
+          tagDim: !anyEarned,
+          sub,
+          badgeName: current.name,
+          description: current.description || '',
+          conditionText: conditionOf(current.type, current.target),
           progressText,
-          // 已达标未发放 → 「可点亮」；否则给下一级目标文案
-          nextText: reachable
-            ? next
-              ? `下一级 ${nextLevelText} · ${next.name} · 达成即点亮`
-              : '已是最高等级 🎉'
-            : next
-            ? `下一级 ${nextLevelText} · ${next.name} · ${fmt.formatNumber(goal)}${unit}`
-            : '已是最高等级 🎉',
-          reachable,
           percent: groupPercent,
           percentStyle: widthOf(groupPercent),
+          levels: levels.map((l) => ({
+            key: l.key,
+            name: l.name,
+            icon: l.icon || '',
+            earned: !!l.earned,
+            tierLevel: Number(l.tierLevel) || 0,
+            type: l.type,
+            target: l.target,
+          })),
+          // 等级组按组内最低等级的排序值参与混排（沿用现有 sort 字段）
+          sort: sortOf(levels[0]),
         });
       }
-      // 卡片顺序按组内最低等级的排序值，与徽章页原来的排序一致
-      groups.sort(
-        (a, b) => (Number(a.levels[0] && a.levels[0].sort) || 0) - (Number(b.levels[0] && b.levels[0].sort) || 0)
-      );
+
+      // 混排：统一按 sort 升序；sort 相同时保持接口返回的原始顺序
+      const seq = new Map(list.map((b, i) => [b.key, i]));
+      const seqOf = (r) => {
+        if (r.kind === 'tier') {
+          const first = (r.levels[0] && r.levels[0].key) || '';
+          return seq.has(first) ? seq.get(first) : 0;
+        }
+        return seq.has(r.key) ? seq.get(r.key) : 0;
+      };
+      rows.sort((a, b) => a.sort - b.sort || seqOf(a) - seqOf(b));
 
       this.setData({
         loading: false,
-        list: singles,
-        groups,
+        rows,
         earnedCount,
         total,
         percent,
         percentStyle: widthOf(percent),
-        // 独立徽章分组的计数 = 该组内已获得 / 该组总数。
-        // 之前这里用的是全站 earnedCount/total（含等级徽章），于是刚上线只有 1 枚独立徽章时
-        // 会显示成「0/10 已获得」，与上面等级分组的「已点亮 0/3 级」自相矛盾。
-        singleEarned: singles.filter((b) => b.earned).length,
-        singleTotal: singles.length,
       });
     } catch (e) {
       this.setData({ loading: false });

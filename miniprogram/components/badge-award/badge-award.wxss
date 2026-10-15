@@ -1,0 +1,63 @@
+/* 获得徽章弹窗（骨架复用 app.wxss 的 .tt-sheet*，这里只补徽章列表与底部按钮的私有样式） */
+
+.award-item {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding: 18rpx 20rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-brand-soft);
+}
+
+.award-item + .award-item {
+  margin-top: 14rpx;
+}
+
+/* 本次获得的徽章：100% 原色，不加 grayscale/opacity */
+.award-img {
+  width: 96rpx;
+  height: 96rpx;
+  flex-shrink: 0;
+  border-radius: 24rpx;
+  background: var(--tt-card);
+}
+
+.award-img-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.award-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.award-name {
+  font-size: 28rpx;
+  font-weight: 700;
+  color: var(--tt-text-1);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.award-sub {
+  margin-top: 6rpx;
+  font-size: 23rpx;
+  line-height: 32rpx;
+  color: var(--tt-brand);
+}
+
+.award-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.award-later {
+  padding: 14rpx 0;
+  text-align: center;
+  font-size: 26rpx;
+  color: var(--tt-text-3);
+}

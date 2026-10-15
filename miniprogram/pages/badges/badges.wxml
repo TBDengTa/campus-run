@@ -1,150 +1,41 @@
 <view class="page tt-page">
-  <!-- ===== 汇总 ===== -->
+  <!-- ===== 汇总（压缩成一行：已点亮 N/M + 进度条 + 百分比） ===== -->
   <view class="tt-card badge-sum">
     <view class="badge-sum-main">
+      <text class="badge-sum-label">已点亮</text>
       <text class="badge-sum-num num-font">{{earnedCount}}</text>
       <text class="badge-sum-total num-font">/{{total}}</text>
-      <text class="badge-sum-label">枚徽章已点亮</text>
     </view>
     <view class="badge-sum-track">
       <view class="badge-sum-fill" style="{{percentStyle}}"></view>
     </view>
-    <view class="badge-sum-foot">
-      <text>收集进度</text>
-      <text class="num-font badge-sum-percent">{{percent}}%</text>
+    <text class="badge-sum-percent num-font">{{percent}}%</text>
+  </view>
+
+  <!-- ===== 3 列矩阵：等级徽章按组一格 + 独立徽章各一格，混排不分区（点击开底部弹窗） ===== -->
+  <view class="badge-grid" wx:if="{{rows.length}}">
+    <view
+      class="badge-cell {{item.dim ? 'is-dim' : ''}}"
+      wx:for="{{rows}}"
+      wx:key="id"
+      bind:tap="openDetail"
+      data-id="{{item.id}}"
+    >
+      <!-- 大图；未获得走既有 .badge-icon.is-dim 灰度规则（不新增 filter 写法） -->
+      <image
+        wx:if="{{item.icon}}"
+        class="badge-icon badge-cell-img {{item.dim ? 'is-dim' : ''}}"
+        src="{{item.icon}}"
+        mode="aspectFit"
+        lazy-load
+      />
+      <view wx:else class="badge-icon-emoji badge-cell-img {{item.dim ? 'is-dim' : ''}}">{{item.dim ? '🔒' : '🏅'}}</view>
+      <view class="badge-cell-name">{{item.name}}</view>
+      <view class="badge-cell-sub">{{item.sub}}</view>
     </view>
   </view>
 
-  <!-- ===== 等级徽章：一组一张卡（当前等级 + 到下一级的进度，点击展开明细） ===== -->
-  <block wx:if="{{groups.length}}">
-    <view class="tt-section">
-      <text>等级徽章</text>
-      <text class="tt-section-extra">点击卡片查看全部等级</text>
-    </view>
-
-    <view class="badge-groups">
-      <view
-        class="badge-group {{item.cardDim ? 'is-dim' : ''}}"
-        wx:for="{{groups}}"
-        wx:key="group"
-        bind:tap="toggleGroup"
-        data-group="{{item.group}}"
-      >
-        <view class="badge-group-head">
-          <view class="badge-icon-wrap">
-            <!-- 未获得：灰度 + 半透明（图片自带配色，靠饱和度区分） -->
-            <image
-              wx:if="{{item.current.icon}}"
-              class="badge-icon {{item.cardDim ? 'is-dim' : ''}}"
-              src="{{item.current.icon}}"
-              mode="aspectFit"
-              lazy-load
-            />
-            <view wx:else class="badge-icon badge-icon-emoji {{item.cardDim ? 'is-dim' : ''}}">{{item.cardDim ? '🔒' : '🏅'}}</view>
-          </view>
-          <view class="badge-group-info">
-            <view class="badge-group-name">{{item.group}}</view>
-            <view class="badge-group-sub">
-              <!-- 零获得：「未获得 · 下一目标 Lv1 · 初级·运动达人」；已有获得：「LvN · 当前等级名」 -->
-              <text class="badge-group-level {{item.anyEarned ? '' : 'is-dim'}}">{{item.levelTag}}</text>
-              <text class="badge-group-badge">{{item.badgeName}}</text>
-            </view>
-            <view class="badge-group-count">
-              已点亮 <text class="num-font badge-group-count-num">{{item.earnedLevels}}</text>/{{item.totalLevels}} 级
-            </view>
-          </view>
-          <view class="badge-group-chevron">
-            <t-icon
-              name="{{expanded[item.group] ? 'chevron-up' : 'chevron-down'}}"
-              size="36rpx"
-              color="var(--tt-text-3)"
-            />
-          </view>
-        </view>
-
-        <view class="badge-group-progress">
-          <view class="badge-progress-head">
-            <text class="badge-target">{{item.progressText}}</text>
-            <text class="badge-reachable" wx:if="{{item.reachable}}">可点亮</text>
-          </view>
-          <view class="badge-track {{item.reachable ? 'is-reachable' : ''}}">
-            <view class="badge-track-fill" style="{{item.percentStyle}}"></view>
-          </view>
-          <view class="badge-next">{{item.nextText}}</view>
-        </view>
-
-        <!-- 展开：该组全部等级明细（已获得彩色 / 未获得灰度） -->
-        <view class="badge-levels" wx:if="{{expanded[item.group]}}">
-          <view
-            class="badge-level {{l.earned ? 'earned' : 'is-dim'}}"
-            wx:for="{{item.levels}}"
-            wx:for-item="l"
-            wx:key="key"
-          >
-            <image
-              wx:if="{{l.icon}}"
-              class="badge-level-icon {{l.earned ? '' : 'is-dim'}}"
-              src="{{l.icon}}"
-              mode="aspectFit"
-              lazy-load
-            />
-            <view wx:else class="badge-level-icon badge-icon-emoji {{l.earned ? '' : 'is-dim'}}">{{l.earned ? '🏅' : '🔒'}}</view>
-            <view class="badge-level-main">
-              <view class="badge-level-name">
-                <text class="badge-level-tag">{{l.levelText}}</text>
-                <text>{{l.name}}</text>
-              </view>
-              <view class="badge-level-sub">达标线 ≥ {{l.targetText}}</view>
-            </view>
-            <view class="badge-level-state">
-              <t-icon wx:if="{{l.earned}}" name="check-circle-filled" size="32rpx" color="var(--tt-brand)" />
-              <text wx:else class="badge-level-state-lock">未获得</text>
-            </view>
-          </view>
-        </view>
-      </view>
-    </view>
-  </block>
-
-  <!-- ===== 独立徽章：保持单卡网格 ===== -->
-  <block wx:if="{{list.length}}">
-    <view class="tt-section">
-      <text>独立徽章</text>
-      <!-- 该组自身的计数（singleEarned/singleTotal），不是全站 earnedCount/total -->
-      <text class="tt-section-extra">{{singleEarned}}/{{singleTotal}} 已获得</text>
-    </view>
-
-    <view class="badge-grid">
-      <view class="badge-cell {{item.earned ? 'earned' : ''}}" wx:for="{{list}}" wx:key="key">
-        <view class="badge-icon-wrap">
-          <!-- 已获得 = 图片原样（不加任何 filter）；未获得 = 灰度 + 半透明 -->
-          <image
-            wx:if="{{item.icon}}"
-            class="badge-icon {{item.earned ? '' : 'is-dim'}}"
-            src="{{item.icon}}"
-            mode="aspectFit"
-            lazy-load
-          />
-          <view wx:else class="badge-icon badge-icon-emoji {{item.earned ? '' : 'is-dim'}}">{{item.earned ? '🏅' : '🔒'}}</view>
-        </view>
-        <view class="badge-name">{{item.name}}</view>
-        <view class="badge-desc">{{item.description}}</view>
-        <block wx:if="{{!item.earned}}">
-          <view class="badge-target">当前 {{item.progress}} / 目标 {{item.targetText}}</view>
-          <view class="badge-track">
-            <view class="badge-track-fill" style="{{item.percentStyle}}"></view>
-          </view>
-          <view class="badge-next" wx:if="{{item.nextText}}">下一级 {{item.nextText}}</view>
-        </block>
-        <view class="badge-mark" wx:else>
-          <t-icon name="check-circle-filled" size="24rpx" color="var(--tt-brand)" />
-          <text>已获得</text>
-        </view>
-      </view>
-    </view>
-  </block>
-
-  <view class="tt-card badge-empty-card" wx:if="{{!loading && !list.length && !groups.length}}">
+  <view class="tt-card badge-empty-card" wx:if="{{!loading && !rows.length}}">
     <view class="tt-empty">暂无徽章，去跑一跑点亮第一枚吧</view>
   </view>
 
@@ -153,4 +44,91 @@
   </view>
 
   <view class="tt-footer">每日坚持运动，徽章会自动点亮</view>
+
+  <!-- ===== 详情弹窗（底部抽屉，骨架复用 app.wxss 的 .tt-sheet*）===== -->
+  <t-popup visible="{{sheet.visible}}" placement="bottom" bind:visible-change="onSheetVisibleChange">
+    <view class="tt-sheet badge-sheet {{sheet.levels.length ? 'has-levels' : ''}}">
+      <view class="tt-sheet-grab"></view>
+
+      <view class="tt-sheet-head">
+        <view class="tt-sheet-icon">
+          <t-icon name="certificate" size="36rpx" color="var(--tt-brand)" />
+        </view>
+        <view class="tt-sheet-title">
+          {{sheet.name}}
+          <view class="tt-sheet-sub">{{sheet.tag}}</view>
+        </view>
+        <view class="tt-sheet-close" bind:tap="closeDetail">
+          <t-icon name="close" size="32rpx" color="var(--tt-text-2)" />
+        </view>
+      </view>
+
+      <!-- 滚动区：等级组内容很长，必须给确定高度才能滚动（见 badges.wxss .badge-sheet.has-levels） -->
+      <scroll-view scroll-y class="tt-sheet-body" wx:if="{{sheet.visible}}">
+        <!-- 大图 + 名称 -->
+        <view class="badge-detail-hero">
+          <image
+            wx:if="{{sheet.icon}}"
+            class="badge-icon badge-detail-img {{sheet.dim ? 'is-dim' : ''}}"
+            src="{{sheet.icon}}"
+            mode="aspectFit"
+          />
+          <view wx:else class="badge-icon-emoji badge-detail-img {{sheet.dim ? 'is-dim' : ''}}">{{sheet.dim ? '🔒' : '🏅'}}</view>
+        </view>
+        <view class="badge-detail-name">{{sheet.badgeName}}</view>
+
+        <!-- description 为空则不显示该行 -->
+        <view class="badge-detail-desc" wx:if="{{sheet.description}}">{{sheet.description}}</view>
+
+        <view class="tt-sheet-label">达成条件</view>
+        <view class="badge-detail-cond">{{sheet.conditionText}}</view>
+
+        <view class="tt-sheet-label">我的进度</view>
+        <view class="badge-detail-progress">
+          <view class="badge-detail-progress-head">
+            <text class="badge-detail-progress-text">{{sheet.progressText}}</text>
+            <text class="badge-detail-progress-percent num-font">{{sheet.percentText}}</text>
+          </view>
+          <view class="badge-track">
+            <view class="badge-track-fill" style="{{sheet.percentStyle}}"></view>
+          </view>
+        </view>
+
+        <!-- 等级组：列出该组全部等级（已获得原色 / 未获得灰度），标出当前等级 -->
+        <block wx:if="{{sheet.levels.length}}">
+          <view class="tt-sheet-label">全部等级</view>
+          <view
+            class="badge-level {{item.earned ? 'earned' : 'is-dim'}}"
+            wx:for="{{sheet.levels}}"
+            wx:key="key"
+          >
+            <image
+              wx:if="{{item.icon}}"
+              class="badge-level-icon {{item.earned ? '' : 'is-dim'}}"
+              src="{{item.icon}}"
+              mode="aspectFit"
+              lazy-load
+            />
+            <view wx:else class="badge-level-icon badge-icon-emoji {{item.earned ? '' : 'is-dim'}}">{{item.earned ? '🏅' : '🔒'}}</view>
+            <view class="badge-level-main">
+              <view class="badge-level-name">
+                <text class="badge-level-tag">{{item.levelText}}</text>
+                <text class="badge-level-text">{{item.name}}</text>
+              </view>
+              <view class="badge-level-sub">{{item.targetLine}}</view>
+            </view>
+            <view class="badge-level-state">
+              <text wx:if="{{item.state}}" class="badge-level-state-tag">{{item.state}}</text>
+              <t-icon wx:elif="{{item.earned}}" name="check-circle-filled" size="32rpx" color="var(--tt-brand)" />
+              <text wx:else class="badge-level-state-lock">未获得</text>
+            </view>
+          </view>
+        </block>
+      </scroll-view>
+
+      <view class="tt-sheet-foot">
+        <t-button theme="primary" block bind:tap="closeDetail">知道了</t-button>
+      </view>
+    </view>
+  </t-popup>
 </view>
