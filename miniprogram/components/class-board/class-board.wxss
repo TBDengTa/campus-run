@@ -70,10 +70,10 @@
 }
 
 /* ===== 多班：横向滑动切换班级 =====
-   高度由 JS 实测「最高的一张卡」后写在内联 style 上；量不到时用下面的兜底高度 ——
-   兜底值按「三项概况 + 达标进度 + 前三名(3 行) + 管理入口」的最大高度留足，宁可高一点也不要裁内容。 */
+   高度**只由 JS 按当前可见卡实测后写在内联 style 上**（内联高度 = 当前卡高 + 2rpx 取整余量）。
+   这里刻意**不写 min-height**：<swiper> 不会自动撑高，一旦给它一个下限，
+   切到较矮的班时容器仍被撑住 → 卡片下方留出一大片白色空白（就是这次报的 bug）。 */
 .cb-swiper {
-  min-height: 620rpx;
   overflow: hidden;
 }
 
@@ -81,14 +81,24 @@
   height: 100%;
 }
 
+/* swiper-item 只做「一屏一张卡」的容器：不加 padding / margin / 背景，避免叠加多余空间 */
 .cb-swiper-item {
   display: flex;
   flex-direction: column;
 }
 
+/* 卡片的 padding 由 .cb-card（.tt-card）负责，面板只做纵向排布；margin 必须为 0，
+   否则卡片外边距会和 swiper 内联高度叠出一段空白 */
 .cb-panel {
   display: flex;
   flex-direction: column;
+  margin: 0;
+  padding: 0;
+}
+
+/* swiper 内的卡片：外边距置 0（.tt-card 自带左右/下边距，在 swiper 里会与高度测量叠加） */
+.cb-swiper .cb-card {
+  margin: 0;
 }
 
 /* 班级指示器（多班才渲染）：圆点 + 「第 n/N 个班」 */

@@ -24,6 +24,10 @@ const fmt = require('../../utils/format');
 
 // 班级管理页与日/周明细页都在 app.json 的 packageAdmin 分包里登记（跳转写全路径）
 
+// 多班 swiper 高度量不到时的兜底（rpx）：贴近真实卡片「概况 + 达标 + 前三名 3 行 + 管理入口」的高度，
+// 只用于几何未就绪的极端情况。注意**不要**把它写成 .cb-swiper 的 min-height —— 那会顶掉更小的实测值、变回白区。
+const CONSERVATIVE_HEIGHT_RPX = 660;
+
 Component({
   properties: {
     title: { type: String, value: '我的班级' },
@@ -109,19 +113,24 @@ Component({
           c.canNudge = homeroomClasses.includes(c.className);
         });
         const payload = this.viewOf(cards, currentIndex);
-        this.setData({
-          currentCard: payload,
-          cards,
-          classes,
-          currentIndex,
-          swipeIndex: currentIndex,
-          multi: classes.length > 1,
-          show: true,
-          loading: false,
-          role: mine.role,
-        });
-        this.updateIndicator();
-        this.measureHeight();
+        this.setData(
+          {
+            currentCard: payload,
+            cards,
+            classes,
+            currentIndex,
+            swipeIndex: currentIndex,
+            multi: classes.length > 1,
+            show: true,
+            loading: false,
+            role: mine.role,
+          },
+          () => {
+            // 首帧渲染完成后才量高度：此时卡片内容已渲染、swiper-item 有真实几何
+            this.updateIndicator();
+            this.measureHeight();
+          }
+        );
         this.triggerEvent('ready', { role: mine.role, className, overview: payload.overview });
       } catch (e) {
         // 无班级身份 / 接口不可用：整块不渲染，不打扰页面（首页无需额外容错）
@@ -185,43 +194,71 @@ Component({
       const indicatorText = total > 1 ? `${i + 1}/${total}` : '';
       if (indicatorText !== this.data.indicatorText) this.setData({ indicatorText });
     },
-    // swiper 高度取「最高的一张卡」：卡片内容高度不一致时，矮的卡不会把内容裁掉
-    // 量不到（真机几何还没就绪等）就保持 0，用 CSS 的兜底高度；每次滑动结束后补量一次，
-    // 切到的班比当前高度更高时自动把高度顶上去
-    measureHeight() {
-      if (!this.data.multi) {
+    // ===== swiper 高度：只取**当前可见那张卡**的实测高度 =====
+    // 为什么不是「所有卡里最高的那张」：<swiper> 是固定高度容器，取最高值的话，切到较矮的
+    // 那一班时容器不变、卡片下方就留出一大片白色空白（用户报的 bug）。所以：
+    //   · 每次切换后按当前卡实测重设高度（切换会平滑跟随，不留白）；
+    //   · 内联高度优先，WXSS 里**不能再给 .cb-swiper 写 min-height** —— min-height 会顶掉
+    //     更小的实测值，效果与「取最高」一样（容器比卡片高 → 白区）；
+    //   · 量不到（首帧 / 无 cards / 视图未就绪）才退回 CONSERVATIVE_HEIGHT_RPX 兜底。
+    measureHeight(done) {
+      if (!this.data.multi || !(this.data.cards || []).length) {
         if (this.data.swipeHeight) this.setData({ swipeHeight: 0 });
+        if (typeof done === 'function') done();
         return;
       }
+      const finish = () => {
+        if (typeof done === 'function') done();
+      };
+      const apply = (rects) => {
+        const list = (rects || []).filter((r) => r && r.height > 0);
+        if (!list.length) {
+          // 量不到（含自动化/真机几何未就绪）：用贴近真实卡片的兜底值，不用明显偏大的值
+          if (!this.data.swipeHeight) this.setData({ swipeHeight: CONSERVATIVE_HEIGHT_RPX });
+          finish();
+          return;
+        }
+        // px → rpx：设备 rpx 定义就是 750 / 屏宽（750 是设计稿基准宽，与机型无关）
+        const px2rpx = 750 / 375;
+        // 取最高的一条：切换动画中两张卡同时可见时，容器不能低于其中较高者（否则会裁内容）；
+        // 稳定态下 .cb-card 只有可见的那一张（单班卡在 swiper 之外），所以这就是「当前卡高」
+        const max = list.reduce((m, r) => Math.max(m, r.height), 0);
+        // +2rpx 只吸收 px→rpx 的取整差，不留可见白区
+        const h = Math.round(max * px2rpx) + 2;
+        if (h !== this.data.swipeHeight) this.setData({ swipeHeight: h });
+        finish();
+      };
       this.createSelectorQuery()
-        .selectAll('.cb-card')
+        // 优先只量可见的那一个 swiper-item（组件内选择器写 `>>>` 才能进 swiper-item 内部）
+        .selectAll('.cb-swiper-item >>> .cb-card')
         .boundingClientRect((rects) => {
-          const list = rects || [];
-          if (!list.length) return; // 量不到：保持当前值（首次为 0 → CSS 兜底）
-          const max = list.reduce((m, r) => Math.max(m, (r && r.height) || 0), 0);
-          if (!max) return;
-          const px2rpx = 750 / (wx.getWindowInfo ? wx.getWindowInfo().windowWidth : 375);
-          const h = Math.round(max * px2rpx);
-          // 只往大了调：矮的班被量到时不要把高度收回去（swiper 高度不会低于最高的一张卡）
-          if (h > this.data.swipeHeight) this.setData({ swipeHeight: h });
+          if (rects && rects.length) {
+            apply(rects);
+            return;
+          }
+          // 兜底：`>>>` 在个别基础库版本下取不到跨组件节点时，退回普通选择器
+          //（此时会把所有卡都量到 → 等价于「取最高」，最坏只是高度偏大、内容不会被裁）
+          this.createSelectorQuery().selectAll('.cb-card').boundingClientRect(apply).exec();
         })
         .exec();
     },
 
     // 滑动切换班级：只更新镜像 / 指示器 / swipeIndex，不回写 currentIndex（见 data.swipeIndex 说明）
+    // 切换后按新卡重设 swiper 高度（setData 回调里量，确保量到的是新卡的几何）
     onSwipeChange(e) {
       const index = Number(e.detail.current) || 0;
-      this.setData({ swipeIndex: index, currentCard: this.viewOf(this.data.cards, index) });
-      this.updateIndicator(index);
+      this.setData({ swipeIndex: index, currentCard: this.viewOf(this.data.cards, index) }, () => {
+        this.updateIndicator(index);
+        this.measureHeight();
+      });
       this.triggerEvent('classchange', { className: this.data.classes[index] || '', index });
     },
 
-    // 滑动动画结束：补量一次高度（避免某张卡比当前高度更高被裁）
+    // 滑动动画结束：再量一次（动画期间两张卡同时可见，这里量到的是稳定态）
     onSwipeSettled(e) {
       const index = Number(e.detail.current) || 0;
       if (index !== this.data.swipeIndex) {
-        this.setData({ swipeIndex: index, currentCard: this.viewOf(this.data.cards, index) });
-        this.updateIndicator(index);
+        this.setData({ swipeIndex: index, currentCard: this.viewOf(this.data.cards, index) }, () => this.updateIndicator(index));
       }
       this.measureHeight();
     },
@@ -230,12 +267,17 @@ Component({
     goClass(e) {
       const index = Number(e.currentTarget.dataset.index);
       if (!(index >= 0) || index === this.data.swipeIndex) return;
-      this.setData({
-        currentIndex: index,
-        swipeIndex: index,
-        currentCard: this.viewOf(this.data.cards, index),
-      });
-      this.updateIndicator(index);
+      this.setData(
+        {
+          currentIndex: index,
+          swipeIndex: index,
+          currentCard: this.viewOf(this.data.cards, index),
+        },
+        () => {
+          this.updateIndicator(index);
+          this.measureHeight();
+        }
+      );
       this.triggerEvent('classchange', { className: this.data.classes[index] || '', index });
     },
 
@@ -246,15 +288,19 @@ Component({
       try {
         const cards = await Promise.all(classes.map((cn) => this.buildCard(cn)));
         const index = Math.min(this.data.swipeIndex, cards.length - 1);
-        this.setData({
-          cards,
-          currentIndex: index,
-          swipeIndex: index,
-          currentCard: this.viewOf(cards, index),
-          loading: false,
-        });
-        this.updateIndicator();
-        this.measureHeight();
+        this.setData(
+          {
+            cards,
+            currentIndex: index,
+            swipeIndex: index,
+            currentCard: this.viewOf(cards, index),
+            loading: false,
+          },
+          () => {
+            this.updateIndicator();
+            this.measureHeight();
+          }
+        );
       } catch (e) {
         this.setData({ loading: false });
       }
