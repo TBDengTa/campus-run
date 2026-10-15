@@ -62,8 +62,26 @@
 }
 
 /* ===== 数据卡 ===== */
+.reward-card {
+  padding: 26rpx 20rpx 22rpx;
+}
+
+/* 四列数值（步数/距离/千卡/时长）：比公共 40rpx 收小一档，四列不挤 */
 .reward-num {
+  font-size: 34rpx;
   color: var(--tt-brand);
+}
+
+.reward-note {
+  margin-top: 20rpx;
+  text-align: center;
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+/* 四列数值行（步数/距离/千卡/时长）：上下留一点呼吸感 */
+.reward-stat-row {
+  padding: 6rpx 0;
 }
 
 .reward-quota {
@@ -128,8 +146,14 @@
   color: var(--tt-text-3);
 }
 
-/* ===== 刚刚获得 ===== */
+/* ===== 刚刚获得（四项） ===== */
 .reward-gain {
+  display: flex;
+  flex-direction: column;
+  gap: 20rpx;
+}
+
+.reward-gain-head {
   display: flex;
   align-items: center;
   gap: 24rpx;
@@ -145,28 +169,21 @@
   flex: 1;
 }
 
-.reward-gain-steps {
-  display: flex;
-  align-items: baseline;
-  gap: 8rpx;
-}
-
-.reward-gain-num {
-  font-size: 56rpx;
-  font-weight: 700;
-  line-height: 1.1;
-  color: var(--tt-brand);
-}
-
-.reward-gain-unit {
-  font-size: 26rpx;
-  color: var(--tt-text-2);
+.reward-gain-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
 }
 
 .reward-gain-sub {
   margin-top: 8rpx;
   font-size: 23rpx;
   color: var(--tt-text-3);
+}
+
+.reward-gain-stats {
+  padding-top: 20rpx;
+  border-top: 2rpx solid var(--tt-line);
 }
 
 /* ===== 新徽章 ===== */

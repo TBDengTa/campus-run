@@ -7,6 +7,8 @@ const rewardVideoRecordSchema = new mongoose.Schema(
     date: { type: String, required: true },
     watchCount: { type: Number, default: 0 },
     stepsEarned: { type: Number, default: 0 },
+    // 客户端每次观看生成的 watchId（幂等凭据）：同一个 watchId 重复上报只入账一次
+    watchIds: { type: [String], default: [] },
   },
   { timestamps: true }
 );

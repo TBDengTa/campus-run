@@ -4,6 +4,7 @@ const GoalConfig = require('../models/goal-config');
 const wechat = require('./wechat');
 const anticheat = require('./anticheat');
 const badgesSvc = require('./badges');
+const rewardVideoSvc = require('./reward-video');
 const { todayKey } = require('../utils/dates');
 
 function withPace(doc) {
@@ -99,8 +100,9 @@ async function saveGpsRun(user, { date, distance, durationSeconds, calories, sta
   return { record: withPace(doc) };
 }
 
-// 激励视频上报：校验每日上限 → 发步数 → 记录
-async function reportRewardVideo(user) {
+// 激励视频上报：校验每日上限 → 按配置一次性入账四项（步数/距离/卡路里/时长）→ 记录
+// 幂等：客户端每次观看生成一个 watchId，同一个 watchId 重复提交只入账一次（返回上一次结果）
+async function reportRewardVideo(user, { watchId } = {}) {
   if (isTeacher(user)) return { error: TEACHER_BLOCK_MESSAGE };
 
   const config = await GoalConfig.getSingleton();
@@ -109,39 +111,81 @@ async function reportRewardVideo(user) {
   }
   const date = todayKey();
   const limit = config.rewardVideo.dailyLimit;
+  // 每次入账的四项：以 goal_config.rewardVideo 为唯一真源；距离/卡路里/时长未单独配置时
+  // 按既有的步数换算（wechat.estimateFromSteps）派生（见 services/reward-video.js）
+  const per = rewardVideoSvc.resolvePerWatch(config.rewardVideo);
+  const nonce = String(watchId || '').trim().slice(0, 64);
+
   let rec = await RewardVideoRecord.findOne({ openid: user.openid, date });
   if (!rec) {
-    rec = await RewardVideoRecord.create({ openid: user.openid, date, watchCount: 0, stepsEarned: 0 });
+    rec = await RewardVideoRecord.create({ openid: user.openid, date, watchCount: 0, stepsEarned: 0, watchIds: [] });
+  }
+  // 同一次观看重复上报（网络重试/重复点击）：不再入账、不再消耗次数，原样返回上一次结果
+  if (nonce && (rec.watchIds || []).includes(nonce)) {
+    return {
+      watchCount: rec.watchCount,
+      stepsEarned: rec.stepsEarned,
+      awarded: per,
+      remaining: Math.max(0, limit - rec.watchCount),
+      limit,
+      duplicated: true,
+    };
   }
   if (rec.watchCount >= limit) {
     return { error: `今日观看已达上限（${limit} 次）`, limit, watchCount: rec.watchCount, stepsEarned: rec.stepsEarned };
   }
-  rec.watchCount += 1;
-  rec.stepsEarned += config.rewardVideo.stepsPerWatch;
-  await rec.save();
 
-  // 北斗记录：激励视频奖励的步数单列一种记录类型（source='beidou'），不混进微信运动记录，
-  // 这样下一次微信同步不会把奖励步数覆盖掉
-  const per = config.rewardVideo.stepsPerWatch;
-  const estPer = wechat.estimateFromSteps(per);
+  // 原子领取：以 watchCount 作版本号做一次 CAS，并发/重放都不会重复计数或重复入账
+  const claimed = await RewardVideoRecord.findOneAndUpdate(
+    {
+      _id: rec._id,
+      watchCount: rec.watchCount,
+      ...(nonce ? { watchIds: { $ne: nonce } } : {}),
+    },
+    {
+      $inc: { watchCount: 1, stepsEarned: per.steps },
+      ...(nonce ? { $push: { watchIds: { $each: [nonce], $slice: -50 } } } : {}),
+    },
+    { new: true }
+  );
+  if (!claimed) {
+    const latest = await RewardVideoRecord.findOne({ openid: user.openid, date });
+    if (nonce && latest && (latest.watchIds || []).includes(nonce)) {
+      return {
+        watchCount: latest.watchCount,
+        stepsEarned: latest.stepsEarned,
+        awarded: per,
+        remaining: Math.max(0, limit - latest.watchCount),
+        limit,
+        duplicated: true,
+      };
+    }
+    return { error: '上报过于频繁，请稍后重试' };
+  }
+
+  // 北斗记录：一次观看的四项奖励合并进当日同一条 source='beidou' 记录
+  // （单列一种来源，不混进微信运动记录，这样下一次微信同步不会把奖励数据覆盖掉）。
+  // 记录页 / 排行榜 / 跑分 / 徽章 / 首页统计都是聚合 run_records，
+  // 因此四项与既有统计口径完全一致，不存在「页面看得见、统计看不见」。
   await RunRecord.findOneAndUpdate(
     { openid: user.openid, date, source: 'beidou' },
     {
       $inc: {
-        steps: per,
-        distance: estPer.distance,
-        calories: estPer.calories,
-        durationSeconds: estPer.durationSeconds,
+        steps: per.steps,
+        distance: per.distance,
+        calories: per.calories,
+        durationSeconds: per.durationSeconds,
       },
       $setOnInsert: { openid: user.openid, date, source: 'beidou' },
     },
     { upsert: true }
   );
   return {
-    watchCount: rec.watchCount,
-    stepsEarned: rec.stepsEarned,
-    stepsAwarded: config.rewardVideo.stepsPerWatch,
-    remaining: Math.max(0, limit - rec.watchCount),
+    watchCount: claimed.watchCount,
+    stepsEarned: claimed.stepsEarned,
+    awarded: per,
+    stepsAwarded: per.steps, // 兼容老客户端字段
+    remaining: Math.max(0, limit - claimed.watchCount),
     limit,
   };
 }

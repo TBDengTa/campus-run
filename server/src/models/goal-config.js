@@ -41,6 +41,15 @@ const goalConfigSchema = new mongoose.Schema(
     rewardVideo: {
       dailyLimit: { type: Number, default: 10 }, // 每日观看上限
       stepsPerWatch: { type: Number, default: 1000 }, // 每次奖励步数
+      // 每次奖励的另外三项：null = 未配置，按 stepsPerWatch 走
+      // services/wechat.js::estimateFromSteps（0.7 米/步、0.04 千卡/步、0.5 秒/步）派生。
+      // 单位与全库口径一致：距离米、时长秒；解析统一走 services/reward-video.js::resolvePerWatch
+      distancePerWatch: { type: Number, default: null }, // 米，允许一位小数
+      caloriesPerWatch: { type: Number, default: null }, // 千卡
+      durationPerWatch: { type: Number, default: null }, // 秒
+      // 激励视频广告位 ID（客户端公开标识，非密钥）：空 = 用户端用代码里的默认广告位。
+      // 由管理端「北斗运动」配置下发，用户端从 /api/reward-video/today 读取。
+      adUnitId: { type: String, default: '' },
       enabled: { type: Boolean, default: true },
     },
   },

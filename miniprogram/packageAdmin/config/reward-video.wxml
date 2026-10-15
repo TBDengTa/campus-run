@@ -1,14 +1,14 @@
 <view class="page tt-page cfg-page" wx:if="{{config}}">
   <view class="tt-section">
-    <text>北斗运动（激励视频赚步数）</text>
-    <text class="tt-section-extra">观看广告换取步数</text>
+    <text>北斗运动（激励视频）</text>
+    <text class="tt-section-extra">看完广告四项一起入账</text>
   </view>
 
   <view class="tt-card cfg-card">
     <view class="cfg-fitem cfg-fitem-switch">
       <view class="cfg-flabel-col">
         <text class="cfg-switch-label">启用</text>
-        <text class="cfg-fdesc">关闭后用户端隐藏赚步数入口</text>
+        <text class="cfg-fdesc">关闭后用户端隐藏北斗运动入口</text>
       </view>
       <t-switch value="{{config.rewardVideo.enabled}}" bind:change="onReward" data-field="enabled" />
     </view>
@@ -17,9 +17,92 @@
       <text class="cfg-flabel">每日观看上限（次）</text>
       <input class="cfg-input" type="number" value="{{config.rewardVideo.dailyLimit}}" bindinput="onReward" data-field="dailyLimit" />
     </view>
+  </view>
+
+  <view class="tt-section">
+    <text>每次观看奖励</text>
+    <text class="tt-section-extra">四项同时写入当日运动记录</text>
+  </view>
+
+  <view class="tt-card cfg-card">
     <view class="cfg-fitem">
-      <text class="cfg-flabel">每次奖励步数</text>
+      <view class="rv-flabel">
+        <text class="rv-flabel-title">步数（步）</text>
+        <text class="cfg-fdesc">整数 ≥ 0</text>
+      </view>
       <input class="cfg-input" type="number" value="{{config.rewardVideo.stepsPerWatch}}" bindinput="onReward" data-field="stepsPerWatch" />
+    </view>
+
+    <view class="cfg-fitem">
+      <view class="rv-flabel">
+        <text class="rv-flabel-title">距离（米）</text>
+        <text class="cfg-fdesc">留空按步数换算 · 当前生效 {{config.rewardVideoEffective.distance}} 米</text>
+      </view>
+      <input
+        class="cfg-input"
+        type="digit"
+        value="{{config.rewardVideo.distancePerWatch}}"
+        placeholder="按步数换算"
+        bindinput="onReward"
+        data-field="distancePerWatch"
+      />
+    </view>
+
+    <view class="cfg-fitem">
+      <view class="rv-flabel">
+        <text class="rv-flabel-title">卡路里（千卡）</text>
+        <text class="cfg-fdesc">留空按步数换算 · 当前生效 {{config.rewardVideoEffective.calories}} 千卡</text>
+      </view>
+      <input
+        class="cfg-input"
+        type="number"
+        value="{{config.rewardVideo.caloriesPerWatch}}"
+        placeholder="按步数换算"
+        bindinput="onReward"
+        data-field="caloriesPerWatch"
+      />
+    </view>
+
+    <view class="cfg-fitem">
+      <view class="rv-flabel">
+        <text class="rv-flabel-title">时长（秒）</text>
+        <text class="cfg-fdesc">留空按步数换算 · 当前生效 {{config.rewardVideoEffective.durationSeconds}} 秒</text>
+      </view>
+      <input
+        class="cfg-input"
+        type="number"
+        value="{{config.rewardVideo.durationPerWatch}}"
+        placeholder="按步数换算"
+        bindinput="onReward"
+        data-field="durationPerWatch"
+      />
+    </view>
+
+    <view class="rv-fnote">
+      距离/卡路里/时长留空时，按项目既有的「步数 → 距离/卡路里/时长」换算（0.7 米/步、0.04 千卡/步、0.5 秒/步）派生；
+      填写后即以填写值为准。用户端展示与实际入账都取这里的生效值。
+    </view>
+  </view>
+
+  <view class="tt-section">
+    <text>广告位</text>
+    <text class="tt-section-extra">客户端公开标识，可留空</text>
+  </view>
+
+  <view class="tt-card cfg-card">
+    <view class="cfg-fitem">
+      <view class="rv-flabel">
+        <text class="rv-flabel-title">激励视频广告位 ID</text>
+        <text class="cfg-fdesc">留空用客户端内置默认广告位</text>
+      </view>
+      <input
+        class="cfg-input"
+        type="text"
+        value="{{config.rewardVideo.adUnitId}}"
+        placeholder="默认广告位"
+        bindinput="onRewardText"
+        data-field="adUnitId"
+      />
     </view>
   </view>
 
@@ -27,5 +110,5 @@
     <t-button theme="primary" block loading="{{saving}}" bind:tap="save">保存配置</t-button>
   </view>
 
-  <view class="tt-footer">配置修改后立即对用户端生效</view>
+  <view class="tt-footer">配置修改后立即对用户端生效（含每次可获得与入账值）</view>
 </view>

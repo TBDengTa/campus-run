@@ -3,6 +3,7 @@ const { wrap, ok } = require('../../utils/response');
 const { requirePermission } = require('../../middlewares/admin');
 const GoalConfig = require('../../models/goal-config');
 const pointsSvc = require('../../services/points');
+const rewardVideoSvc = require('../../services/reward-video');
 
 const router = express.Router();
 
@@ -47,6 +48,9 @@ router.get(
             weeklyExtraPercent: pointsSvc.normalizeConfig(out.points).weeklyExtraPercent,
           }
         : null;
+    // 北斗运动四项奖励的**生效值**：距离/卡路里/时长未单独配置（null）时按步数换算派生，
+    // derived 标记告诉管理端哪几项正在走派生（页面会在输入框下给出提示，避免误解为已配置）
+    out.rewardVideoEffective = rewardVideoSvc.resolvePerWatch(out.rewardVideo);
     ok(res, out);
   })
 );
@@ -66,8 +70,14 @@ router.put(
     }
     if (rewardVideo) {
       doc.rewardVideo.enabled = rewardVideo.enabled !== false;
-      if (rewardVideo.dailyLimit != null) doc.rewardVideo.dailyLimit = Number(rewardVideo.dailyLimit);
-      if (rewardVideo.stepsPerWatch != null) doc.rewardVideo.stepsPerWatch = Number(rewardVideo.stepsPerWatch);
+      // 四项奖励（步数/距离米/卡路里/时长秒）：只处理显式回传的键，越界一律夹紧，
+      // 显式 null/空串 = 回到「按步数换算」（services/reward-video.js）
+      const per = rewardVideoSvc.normalizePerWatchInput(rewardVideo);
+      for (const key of Object.keys(per)) doc.rewardVideo[key] = per[key];
+      // 广告位 ID（客户端公开标识，可留空 = 用用户端代码里的默认广告位）
+      if (rewardVideo.adUnitId !== undefined) {
+        doc.rewardVideo.adUnitId = String(rewardVideo.adUnitId || '').trim().slice(0, 64);
+      }
     }
     // 跑分设置（config/points 子页只回传本组，未提供的键不动）
     if (points) {
@@ -104,6 +114,7 @@ router.put(
     await doc.save();
     const out = typeof doc.toObject === 'function' ? doc.toObject() : doc;
     out.pointsLegacy = null; // 保存即完成迁移：不再提示旧字段换算
+    out.rewardVideoEffective = rewardVideoSvc.resolvePerWatch(out.rewardVideo);
     ok(res, out);
   })
 );

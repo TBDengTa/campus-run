@@ -4,25 +4,58 @@
     <view class="reward-hero-body">
       <view class="reward-hero-top">
         <text class="reward-hero-label">北斗运动</text>
-        <text class="reward-hero-chip">每次 +{{stepsPerWatch}} 步</text>
+        <text class="reward-hero-chip">每次 +{{perWatch.steps}} 步</text>
       </view>
       <view class="reward-hero-main">
         <t-icon name="play-circle" size="52rpx" color="#ffffff" />
-        <text class="reward-hero-tip">{{enabled ? '开启北斗运动，步数立即到账' : '活动暂未开启，敬请期待'}}</text>
+        <text class="reward-hero-tip">{{enabled ? '看完视频，步数 · 距离 · 卡路里 · 时长四项一起到账' : '活动暂未开启，敬请期待'}}</text>
       </view>
     </view>
   </view>
 
-  <!-- ===== 数据卡 ===== -->
-  <view class="tt-card">
-    <view class="tt-stat-row">
+  <!-- ===== 每次观看可获得（四项） ===== -->
+  <view class="tt-section">每次观看可获得<text class="tt-section-extra">四项同时入账</text></view>
+  <view class="tt-card reward-card">
+    <view class="tt-stat-row reward-stat-row">
       <view class="tt-stat">
-        <view class="tt-stat-value num-font reward-num">{{stepsEarned}}</view>
-        <view class="tt-stat-label">今日已得步数</view>
+        <view class="tt-stat-value num-font reward-num">{{perWatch.steps}}</view>
+        <view class="tt-stat-label">步数</view>
       </view>
       <view class="tt-stat">
-        <view class="tt-stat-value num-font reward-num">{{remaining}}</view>
-        <view class="tt-stat-label">剩余观看次数</view>
+        <view class="tt-stat-value num-font reward-num">{{perWatchDistanceText}}</view>
+        <view class="tt-stat-label">距离</view>
+      </view>
+      <view class="tt-stat">
+        <view class="tt-stat-value num-font reward-num">{{perWatch.calories}}</view>
+        <view class="tt-stat-label">千卡</view>
+      </view>
+      <view class="tt-stat">
+        <view class="tt-stat-value num-font reward-num">{{perWatchDurationText}}</view>
+        <view class="tt-stat-label">时长</view>
+      </view>
+    </view>
+    <view class="reward-note">奖励写入当日运动记录，记录页 / 排行榜 / 跑分 / 徽章同步生效</view>
+  </view>
+
+  <!-- ===== 今日已入账（四项） ===== -->
+  <view class="tt-section">今日已入账<text class="tt-section-extra">{{watchCount}}/{{limit}} 次</text></view>
+  <view class="tt-card reward-card">
+    <view class="tt-stat-row reward-stat-row">
+      <view class="tt-stat">
+        <view class="tt-stat-value num-font reward-num">{{earnedStepsText}}</view>
+        <view class="tt-stat-label">步数</view>
+      </view>
+      <view class="tt-stat">
+        <view class="tt-stat-value num-font reward-num">{{earnedDistanceText}}</view>
+        <view class="tt-stat-label">距离</view>
+      </view>
+      <view class="tt-stat">
+        <view class="tt-stat-value num-font reward-num">{{earnedCaloriesText}}</view>
+        <view class="tt-stat-label">千卡</view>
+      </view>
+      <view class="tt-stat">
+        <view class="tt-stat-value num-font reward-num">{{earnedDurationText}}</view>
+        <view class="tt-stat-label">时长</view>
       </view>
     </view>
 
@@ -35,14 +68,14 @@
         <view class="reward-quota-fill" style="width: {{limit > 0 ? (watchCount * 100 / limit) : 0}}%"></view>
       </view>
       <view class="reward-quota-foot">
-        <text>每日最多 {{limit}} 次 · 每次 +{{stepsPerWatch}} 步</text>
+        <text>剩余 {{remaining}} 次 · 每次 +{{perWatch.steps}} 步 / {{perWatchDistanceText}} / {{perWatch.calories}} 千卡 / {{perWatchDurationText}}</text>
       </view>
     </view>
   </view>
 
   <!-- ===== 主行动按钮 ===== -->
   <view
-    class="tt-pill-btn primary reward-action {{(!enabled || remaining <= 0) ? 'disabled' : ''}}"
+    class="tt-pill-btn primary reward-action {{(!enabled || remaining <= 0 || watching) ? 'disabled' : ''}}"
     bind:tap="watch"
   >
     <t-icon
@@ -50,23 +83,41 @@
       size="36rpx"
       color="#ffffff"
     />
-    <text>{{!enabled ? '活动暂未开启' : (remaining > 0 ? '开启北斗运动领步数' : '今日已用完')}}</text>
+    <text>{{watching ? '广告播放中…' : (!enabled ? '活动暂未开启' : (remaining > 0 ? '开启北斗运动领奖励' : '今日已用完'))}}</text>
   </view>
   <view class="reward-action-note" wx:if="{{!enabled}}">活动暂未开启，请稍后再来</view>
   <view class="reward-action-note" wx:elif="{{remaining <= 0}}">今日 {{limit}} 次额度已用完，明天 0 点重置</view>
+  <view class="reward-action-note" wx:elif="{{watching}}">请完整看完广告，中途关闭不会入账</view>
 
-  <!-- ===== 刚刚获得 ===== -->
+  <!-- ===== 刚刚获得（四项） ===== -->
   <view class="tt-section" wx:if="{{rewarded}}">刚刚获得</view>
   <view class="tt-card reward-gain" wx:if="{{rewarded}}">
-    <view class="tt-chip-icon reward-gain-icon">
-      <t-icon name="check-circle" size="44rpx" color="var(--tt-brand)" />
-    </view>
-    <view class="reward-gain-body">
-      <view class="reward-gain-steps">
-        <text class="num-font reward-gain-num">+{{rewarded.steps}}</text>
-        <text class="reward-gain-unit">步</text>
+    <view class="reward-gain-head">
+      <view class="tt-chip-icon reward-gain-icon">
+        <t-icon name="check-circle" size="44rpx" color="var(--tt-brand)" />
       </view>
-      <view class="reward-gain-sub">已计入今日步数记录</view>
+      <view class="reward-gain-body">
+        <view class="reward-gain-title">四项奖励已入账</view>
+        <view class="reward-gain-sub">步数 · 距离 · 卡路里 · 时长 已计入今日运动记录</view>
+      </view>
+    </view>
+    <view class="tt-stat-row reward-stat-row reward-gain-stats">
+      <view class="tt-stat">
+        <view class="tt-stat-value num-font reward-num">+{{rewarded.steps}}</view>
+        <view class="tt-stat-label">步数</view>
+      </view>
+      <view class="tt-stat">
+        <view class="tt-stat-value num-font reward-num">+{{rewarded.distanceText}}</view>
+        <view class="tt-stat-label">距离</view>
+      </view>
+      <view class="tt-stat">
+        <view class="tt-stat-value num-font reward-num">+{{rewarded.calories}}</view>
+        <view class="tt-stat-label">千卡</view>
+      </view>
+      <view class="tt-stat">
+        <view class="tt-stat-value num-font reward-num">+{{rewarded.durationText}}</view>
+        <view class="tt-stat-label">时长</view>
+      </view>
     </view>
   </view>
 
@@ -101,7 +152,7 @@
       </view>
       <view class="flex-1">
         <view class="tt-row-title">开启北斗运动</view>
-        <view class="tt-row-sub">每日最多 {{limit}} 次，每次 +{{stepsPerWatch}} 步</view>
+        <view class="tt-row-sub">每日最多 {{limit}} 次，每次 +{{perWatch.steps}} 步 / {{perWatchDistanceText}} / {{perWatch.calories}} 千卡 / {{perWatchDurationText}}</view>
       </view>
     </view>
     <view class="tt-row reward-rule">
@@ -110,7 +161,7 @@
       </view>
       <view class="flex-1">
         <view class="tt-row-title">实时到账</view>
-        <view class="tt-row-sub">步数计入当日打卡记录，可查看记录页</view>
+        <view class="tt-row-sub">步数、距离、卡路里、时长一次写入当日记录，可查看记录页</view>
       </view>
     </view>
     <view class="tt-row reward-rule">
@@ -124,5 +175,5 @@
     </view>
   </view>
 
-  <view class="tt-footer">步数将计入今日微信运动步数记录</view>
+  <view class="tt-footer">奖励计入当日运动记录，与微信运动步数一并展示</view>
 </view>

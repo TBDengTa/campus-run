@@ -1,1 +1,24 @@
 @import "config.wxss";
+
+/* 北斗运动配置页私有：两行标签（标题 + 说明）与底部说明块 */
+.rv-flabel {
+  flex-shrink: 0;
+  width: 300rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 4rpx;
+}
+
+.rv-flabel-title {
+  font-size: 27rpx;
+  color: var(--tt-text-2);
+}
+
+.rv-fnote {
+  margin-top: 20rpx;
+  padding-top: 20rpx;
+  border-top: 2rpx solid var(--tt-line);
+  font-size: 22rpx;
+  line-height: 1.6;
+  color: var(--tt-text-3);
+}
