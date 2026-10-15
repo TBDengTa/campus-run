@@ -1,10 +1,11 @@
-/* 鐝骇绠＄悊锛堢彮涓讳换 / 鐝锛夛細鎵嬫満绔揣鍑戠増寮?   鑺傚锛氶《閮ㄧ暀鐧?16rpx銆佸崱鐗囬棿璺?16rpx銆佸崱鍐?20~22rpx銆佽鍐?16rpx锛涢厤鑹?鍦嗚/闃村奖鍙敤 --tt-* 涓?--td-* 浠ょ墝 */
+/* 班级管理（班主任 / 班委）：手机端紧凑版式
+   节奏：顶部留白 16rpx、卡片间距 16rpx、卡内 20~22rpx、行内 16rpx；配色/圆角/阴影只用 --tt-* 与 --td-* 令牌 */
 .cls-page {
   padding-top: 16rpx;
   padding-bottom: calc(40rpx + env(safe-area-inset-bottom));
 }
 
-/* 鐝富浠伙細搴曢儴鍥哄畾鎿嶄綔鏉★紝姝ｆ枃棰勭暀鍑虹┖闂?*/
+/* 班主任：底部固定操作条，正文预留出空间 */
 .cls-page.has-footbar {
   padding-bottom: calc(210rpx + env(safe-area-inset-bottom));
 }
@@ -14,7 +15,7 @@
   font-size: 28rpx;
 }
 
-/* ===== 鏃犺韩浠界┖鐘舵€?===== */
+/* ===== 无身份空状态 ===== */
 .tt-card.cls-blank {
   margin-top: 100rpx;
   display: flex;
@@ -43,7 +44,7 @@
   margin-top: 32rpx;
 }
 
-/* ===== 1. 椤堕儴韬唤鍗?===== */
+/* ===== 1. 顶部身份卡 ===== */
 .tt-hero.cls-hero {
   padding: 26rpx 28rpx 24rpx;
   border-radius: 32rpx;
@@ -110,7 +111,7 @@
   opacity: 0.85;
 }
 
-/* ===== 2. 姒傚喌鍥涙牸 ===== */
+/* ===== 2. 概况四格 ===== */
 .tt-card.cls-overview {
   padding: 12rpx 22rpx 18rpx;
   margin-bottom: 16rpx;
@@ -169,13 +170,13 @@
   color: var(--tt-text-3);
 }
 
-/* ===== 3. 鎺掑悕鍗?===== */
+/* ===== 3. 排名卡 ===== */
 .tt-card.cls-rank {
   padding: 18rpx 20rpx;
   margin-bottom: 16rpx;
 }
 
-/* 鍏ㄦ牎鐝骇鍚嶆锛氭暣鏉″搧鐗屾祬搴曟í鏉?*/
+/* 全校班级名次：整条品牌浅底横条 */
 .cls-rankbar {
   display: flex;
   align-items: center;
@@ -238,7 +239,7 @@
   color: var(--tt-text-3);
 }
 
-/* 鐝唴鍓嶄笁锛氬鐗岃壊鍚嶆寰芥爣 */
+/* 班内前三：奖牌色名次徽标 */
 .cls-top {
   display: flex;
   align-items: center;
@@ -311,7 +312,7 @@
   flex-shrink: 0;
 }
 
-/* 鐝鏍囩 */
+/* 班委标签 */
 .cls-officer {
   flex-shrink: 0;
   padding: 2rpx 12rpx;
@@ -321,7 +322,7 @@
   background: var(--tt-brand-soft-2);
 }
 
-/* 娴呰壊鎻愮ず鏉★細浠呮煡鐪嬭瑙掔殑銆屽彲鍋氫粈涔堛€?*/
+/* 浅色提示条：仅查看视角的「可做什么」 */
 .cls-tip {
   display: flex;
   align-items: center;
@@ -335,7 +336,7 @@
   color: var(--tt-brand-deep);
 }
 
-/* ===== 4. 鎼滅储 + 鍙姌鍙犵瓫閫夐潰鏉匡紙涓庣敤鎴风鐞嗛〉鍚屼竴濂楄璁¤瑷€锛?===== */
+/* ===== 4. 搜索 + 可折叠筛选面板（与用户管理页同一套设计语言） ===== */
 .cls-head {
   margin: 0 var(--tt-gap) 16rpx;
 }
@@ -352,7 +353,7 @@
   width: 100%;
 }
 
-/* 宸ュ叿琛岋細绛涢€夛紙甯︽潯浠惰鏍囷級/ 鎺掑簭锛堟樉绀哄綋鍓嶆帓搴忥級 */
+/* 工具行：筛选（带条件角标）/ 排序（显示当前排序） */
 .cls-tools {
   display: flex;
   align-items: center;
@@ -402,7 +403,7 @@
   text-align: center;
 }
 
-/* 绛涢€夐潰鏉匡紙榛樿鏀惰捣锛夛細鍗＄墖宸﹀彸澶栬竟璺濆凡鐢?.cls-head 鎻愪緵锛岃繖閲屾竻闆?*/
+/* 筛选面板（默认收起）：卡片左右外边距已由 .cls-head 提供，这里清零 */
 .tt-card.cls-panel {
   margin: 12rpx 0 0;
   padding: 16rpx 18rpx 14rpx;
@@ -427,7 +428,7 @@
   min-width: 0;
 }
 
-/* 鍏叡鍒嗘鎺т欢鍦ㄧ鐞嗙鍘嬬缉涓€妗ｏ紙涓庣敤鎴风鐞嗛〉鍚屽弬鏁帮級 */
+/* 公共分段控件在管理端压缩一档（与用户管理页同参数） */
 .tt-segment-item.cls-seg-item {
   padding: 12rpx 0;
   font-size: 25rpx;
@@ -448,7 +449,7 @@
   color: var(--tt-text-3);
 }
 
-/* 娓呴櫎绛涢€?/ 宸茬敓鏁堟潯浠?*/
+/* 清除筛选 / 已生效条件 */
 .cls-clear-chip {
   display: flex;
   align-items: center;
@@ -486,7 +487,7 @@
   color: var(--tt-brand-deep);
 }
 
-/* ===== 5. 瀛︾敓鍚嶅崟锛氫笌鐢ㄦ埛绠＄悊鍒楄〃鍚屼竴濂楄鍗＄墖 ===== */
+/* ===== 5. 学生名单：与用户管理列表同一套行卡片 ===== */
 .cls-list {
   margin: 0 var(--tt-gap);
 }
@@ -495,7 +496,7 @@
   margin-top: 12rpx;
 }
 
-/* 琛屽崱鐗囷細涓€琛屼竴浜猴紝鐙珛鐧藉崱锛堜笉鍙?.tt-card锛岄伩鍏嶄簩娆″唴缂╋級 */
+/* 行卡片：一行一人，独立白卡（不叠 .tt-card，避免二次内缩） */
 .cls-row {
   display: flex;
   align-items: center;
@@ -527,7 +528,7 @@
   background: var(--tt-brand-soft-2);
 }
 
-/* 鏈夊井淇″ご鍍忕敤鍥剧墖锛堜笌鐢ㄦ埛绠＄悊鍒楄〃鍚屽昂瀵?鍦嗚锛夛紱娌℃湁鎵嶅洖閫€濮撳悕棣栧瓧 */
+/* 有微信头像用图片（与用户管理列表同尺寸/圆角）；没有才回退姓名首字 */
 .cls-avatar-img {
   width: 100%;
   height: 100%;
@@ -596,7 +597,7 @@
   text-overflow: ellipsis;
 }
 
-/* 鍙充晶鏁板€煎垪锛氫粖鏃ユ鏁?+ 鍗曚綅锛屼笅闈㈡槸 chevron */
+/* 右侧数值列：今日步数 + 单位，下面是 chevron */
 .cls-row-right {
   flex-shrink: 0;
   display: flex;
@@ -629,20 +630,20 @@
   color: var(--tt-text-3);
 }
 
-/* 鎶藉眽鍚嶅崟閲岀殑鏁板€煎己璋冭壊 */
+/* 抽屉名单里的数值强调色 */
 .cls-row-v {
   font-size: 24rpx;
   font-weight: 600;
   color: var(--tt-brand);
 }
 
-/* 鍒嗛〉鍗＄墖锛堝悕鍗曡宸插悇鑷垚鍗★紝鍒嗛〉鍗曠嫭涓€寮狅級 */
+/* 分页卡片（名单行已各自成卡，分页单独一张） */
 .tt-card.cls-pager-card {
   margin: 4rpx 0 0;
   padding: 6rpx 20rpx 12rpx;
 }
 
-/* 鎸夐挳寮忓垎椤碉細涓婁竴椤?/ 椤电爜 / 涓嬩竴椤碉紙涓嶅仛瑙﹀簳鍔犺浇锛?*/
+/* 按钮式分页：上一页 / 页码 / 下一页（不做触底加载） */
 .cls-pager {
   display: flex;
   align-items: center;
@@ -703,7 +704,7 @@
   padding: 120rpx 0;
 }
 
-/* ===== 鐝富浠伙細搴曢儴鍥哄畾鎿嶄綔鏉★紙娌跨敤 .tt-sheet-foot 鐨勬煍鎬ф姇褰变笌瀹夊叏鍖猴級 ===== */
+/* ===== 班主任：底部固定操作条（沿用 .tt-sheet-foot 的柔性投影与安全区） ===== */
 .cls-footbar {
   position: fixed;
   left: 0;
@@ -738,8 +739,10 @@
   flex-shrink: 0;
 }
 
-/* ===== 鐫ｄ績鎶藉眽 ===== */
-/* 鍏抽敭锛?tt-sheet-body 鏄?flex 瀛愰」锛岄粯璁?min-height:auto 浼氳闀垮悕鍗曪紙鍑犲崄浜猴級鎾戝埌鍐呭楂樺害锛?   缁撴灉鏄娊灞夎 max-height 瑁佸垏銆佸悕鍗曟棤娉曟粴鍔ㄣ€佸簳閮ㄣ€屽鍒跺悕鍗曘€嶈鎺ㄥ嚭灞忓箷銆?   杩欓噷缁欏畠涓€涓?*纭畾楂樺害**锛坒lex: none + 52vh锛夛紝婊氬姩鎵嬫劅涓庣敤鎴疯鎯呯殑鐝骇鎶藉眽涓€鑷淬€?*/
+/* ===== 督促抽屉 ===== */
+/* 关键：.tt-sheet-body 是 flex 子项，默认 min-height:auto 会被长名单（几十人）撑到内容高度，
+   结果是抽屉被 max-height 裁切、名单无法滚动、底部「复制名单」被推出屏幕。
+   这里给它一个确定高度（flex: none + 52vh），滚动手感与用户详情的班级抽屉一致。 */
 .cls-sheet .tt-sheet-body {
   flex: none;
   min-height: 0;
