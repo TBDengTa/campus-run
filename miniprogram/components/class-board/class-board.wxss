@@ -3,11 +3,11 @@
   margin-bottom: var(--tt-gap);
 }
 
-/* 卡片高度：固定值 256px(=512rpx)（产品指定），由 WXML 内联 --cb-card-h 提供
+/* 卡片高度：固定值 236px(=472rpx)（产品指定），由 WXML 内联 --cb-card-h 提供
    （= JS 的 FALLBACK_HEIGHT_RPX，两处一起改；已关闭运行时测量，不会再被实测值覆盖）。
    上下 padding 从 20/18 收到 16/14（紧凑化）。 */
 .cb-card {
-  --cb-card-h: 512rpx;
+  --cb-card-h: 472rpx;
   padding: 16rpx 24rpx 14rpx;
 }
 
