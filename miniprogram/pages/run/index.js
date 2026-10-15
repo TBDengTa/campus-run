@@ -28,6 +28,8 @@ Page({
     saving: false,
     locationReady: false,
     isTeacher: false,
+    // 保存记录后获得的徽章（自定义带图弹窗，替代把徽章名拼进 wx.showModal 的纯文字写法）
+    badgeAward: { visible: false, badges: [] },
   },
 
   onLoad() {
@@ -262,19 +264,16 @@ Page({
       });
       wx.hideLoading();
       if (!this.startTime) this.startTime = Date.now() - this.seconds * 1000;
+      // 保存接口（POST /api/run/gps）已返回本次新获得的徽章，无需额外调 /api/badges/check
       const badges = result.newBadges || [];
-      wx.showModal({
-        title: '已保存',
-        content: `${this.data.distanceText} km · ${this.data.durationText}${badges.length ? `，获得「${badges.map((b) => b.name).join('」「')}」徽章！` : ''}`,
-        confirmText: '查看记录',
-        cancelText: '返回',
-        success: (r) => {
-          if (r.confirm) {
-            wx.navigateTo({ url: `/pages/run/detail?id=${result.record._id}` });
-          }
-          this.reset();
-        },
-      });
+      const recordId = (result.record && result.record._id) || '';
+      // 有徽章 → 先弹带图徽章弹窗（badge-award，与首页同一套组件）；
+      // 关掉它之后继续原来的「已保存」框，保留「查看记录」入口
+      if (this.showBadgeAward(badges)) {
+        this.pendingSave = { recordId };
+        return;
+      }
+      this.showSavedModal(recordId);
     } catch (e) {
       wx.hideLoading();
       if (e.code === 403001) {
@@ -313,5 +312,49 @@ Page({
     this.applyState('idle');
     this.updateStats();
     this.initLocation();
+  },
+
+  // ===== 获得徽章弹窗（与首页 pages/home 用同一个 badge-award 组件） =====
+  // 返回 true 表示带图弹窗已展示（随后由 closeBadgeAward 接回「已保存」框）。
+  showBadgeAward(newBadges) {
+    const list = newBadges || [];
+    if (!list.length) return false;
+    // 教师账号不参与运动记录，也就不会弹徽章
+    if (this.data.isTeacher) return false;
+    // 同一次会话只弹一次（与首页 checkBadges 共用一个标记：首页弹过这里也不再弹）
+    const app = getApp();
+    if (app.globalData.badgePopupShown) return false;
+    app.globalData.badgePopupShown = true;
+    this.setData({ badgeAward: { visible: true, badges: list } });
+    return true;
+  },
+
+  // 保存成功提示（保留原来的「查看记录」入口；徽章名已交给带图弹窗，不再拼进文案）
+  showSavedModal(recordId) {
+    wx.showModal({
+      title: '已保存',
+      content: `${this.data.distanceText} km · ${this.data.durationText}`,
+      confirmText: '查看记录',
+      cancelText: '返回',
+      success: (r) => {
+        if (r.confirm && recordId) wx.navigateTo({ url: `/pages/run/detail?id=${recordId}` });
+        this.reset();
+      },
+    });
+  },
+
+  // 知道了 / 下滑 / 点遮罩：关掉徽章弹窗后接着弹「已保存」框
+  closeBadgeAward() {
+    const pending = this.pendingSave;
+    this.pendingSave = null;
+    this.setData({ badgeAward: { visible: false, badges: [] } });
+    if (pending) this.showSavedModal(pending.recordId);
+  },
+
+  // 去看我的徽章：只关弹窗并跳转，不再追加「已保存」框（否则会盖在徽章页上）
+  goBadgesFromAward() {
+    this.pendingSave = null;
+    this.setData({ badgeAward: { visible: false, badges: [] } });
+    wx.navigateTo({ url: '/pages/badges/badges' });
   },
 });

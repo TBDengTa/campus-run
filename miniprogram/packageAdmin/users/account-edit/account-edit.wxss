@@ -58,7 +58,24 @@
   color: var(--tt-brand, #ff6b00);
 }
 
-/* ===== 权限：点击行 + 多选抽屉（抽屉骨架走 app.wxss 的 .tt-sheet*） ===== */
+/* ===== 权限：点击行 + 多选抽屉（抽屉骨架走 app.wxss 的 .tt-sheet*） =====
+   抽屉内的 <scroll-view> 必须拿到「确定的 CSS 高度」才真的能滚动（与权限组页同一写法）：
+   「独立权限」按模块分组有十几个模块上百个 checkbox，只写 min-height:0 时 body 被裁到 1432px→
+   实测 scrollTop 恒为 0（滚不动）、底部「完成」按钮 top 1638 出屏；
+   改用 flex:none + min-height:0 + max-height:46vh 后 body 封顶可滚、按钮回到屏内。
+   「选择权限组」内容短，max-height 不生效即自适应（不留空白），内容变长同样受保护。 */
+.ae-sheet {
+  display: flex;
+  flex-direction: column;
+  max-height: 80vh;
+}
+
+.ae-sheet .tt-sheet-body {
+  flex: none;
+  min-height: 0;
+  max-height: 46vh;
+}
+
 .ae-pick-row {
   display: flex;
   align-items: center;

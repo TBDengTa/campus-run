@@ -136,7 +136,7 @@
 
     <!-- 权限组多选 -->
     <t-popup visible="{{groupPickerVisible}}" placement="bottom" bind:visible-change="onGroupPickerVisible">
-      <view class="tt-sheet">
+      <view class="tt-sheet ae-sheet">
         <view class="tt-sheet-grab"></view>
         <view class="tt-sheet-head">
           <view class="tt-sheet-icon">
@@ -161,7 +161,7 @@
 
     <!-- 独立权限多选（按模块分组） -->
     <t-popup visible="{{permPickerVisible}}" placement="bottom" bind:visible-change="onPermPickerVisible">
-      <view class="tt-sheet">
+      <view class="tt-sheet ae-sheet">
         <view class="tt-sheet-grab"></view>
         <view class="tt-sheet-head">
           <view class="tt-sheet-icon">

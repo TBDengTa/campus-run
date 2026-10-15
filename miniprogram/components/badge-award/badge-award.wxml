@@ -1,6 +1,6 @@
 <!-- 获得徽章弹窗：徽章图片（原色）+ 名称 + 等级信息 —— 必须有图，否则用户不知道徽章长什么样 -->
 <t-popup visible="{{visible}}" placement="bottom" bind:visible-change="onVisibleChange">
-  <view class="tt-sheet">
+  <view class="tt-sheet award-sheet">
     <view class="tt-sheet-grab"></view>
 
     <view class="tt-sheet-head">

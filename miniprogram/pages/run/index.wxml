@@ -93,4 +93,12 @@
       </view>
     </view>
   </block>
+
+  <!-- ===== 保存记录后获得徽章（带图弹窗，与首页同一套组件；纯文字 showModal 看不到徽章长什么样） ===== -->
+  <badge-award
+    visible="{{badgeAward.visible}}"
+    badges="{{badgeAward.badges}}"
+    bind:close="closeBadgeAward"
+    bind:go="goBadgesFromAward"
+  />
 </view>

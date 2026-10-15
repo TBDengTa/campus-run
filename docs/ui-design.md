@@ -75,6 +75,16 @@ box-shadow: 0 12rpx 32rpx rgba(255, 107, 0, 0.24);
 > **抽屉统一用 `.tt-sheet*`**（不要再在页面里各写一套 `.xx-sheet`）：限制账号功能、权限多选、权限组表单都已改用它。
 > 自定义组件里要用这些公共类，必须在组件 json 声明 `"styleIsolation": "apply-shared"`——app.wxss 的 class 默认不进组件内部
 > （TDesign 组件也是这么声明的）；参考 `components/ban-sheet`。
+>
+> **抽屉滚动区必须给「确定高度」**（本仓库已踩过多次：权限组表单、账户编辑权限多选、获得徽章弹窗都中过招）：
+> `<scroll-view class="tt-sheet-body">` 只有拿到**确定的 CSS 高度**才真的能滚动。实测（automator 真实视口几何 + `scroll-view.scrollTop` 回读，视口高 834）：
+> 只写 `min-height:0`、或 `flex:1 1 auto + min-height:0`，body 会被 `.tt-sheet` 的 `max-height:80vh` 裁住（不再顶出屏幕），
+> 但 `scrollTop` 恒为 0（**滚不动**）、底部主按钮仍在屏外；统一写法是
+> `.<页面私有sheet类> { display:flex; flex-direction:column; max-height:80vh }` +
+> `.<页面私有sheet类> .tt-sheet-body { flex:none; min-height:0; max-height:46vh }`（底部有两个按钮的弹窗用 `42vh`）。
+> 用 `max-height` 而非固定 `height`：内容短时自适应、内容长时封顶可滚；只要 `head(61) + body(≤46vh) + foot(101) < 80vh`，主按钮就始终在屏内。
+> 已按此写法：`packageAdmin/permissions/groups`（`.pg-sheet`）、`packageAdmin/users/account-edit`（`.ae-sheet`）、`components/badge-award`（`.award-sheet`）；
+> 固定高度先例：`content/badges`、`class/class`（52vh），`pages/badges`、`pages/hub`、`user-detail`（46vh）。
 
 ## 4. 底部导航（自定义 tabBar）
 
@@ -375,6 +385,11 @@ WebP q80 = 41.4KB（更小，但 `image` 组件 iOS 需 14+，目标环境实测
   右下角品牌色 FAB 上传；分页 `onReachBottom`。权限 `file.view`（删除/上传需 `file.manage`）。
 - **记录三页 `pages/records/day`｜`records/week`｜`pages/run/detail`**：只有一套语言 —— 概要卡（无独立 hero）+ `.tt-section` 分区 + 30rpx 数值 / 20rpx 标签。
   week 的 7 天为**7 列柱状图**（替代 7 行横条）；detail 主视觉压成窄条（步数 56rpx）、核心数据 4 列（配速并入）、地图 340rpx。
+- **跑步 `pages/run/index`**：保存成功（`POST /api/run/gps` 返回 `record` + `newBadges`）时，
+  **有 `newBadges` 就先弹 `components/badge-award` 带图弹窗**（与首页 `pages/home` 同一个组件、同一份用法），
+  不再把徽章名拼进 `wx.showModal`；关掉弹窗后接回原来的「已保存」框（文案只留 `里程 · 时长`，保留「查看记录」入口）。
+  没有新徽章 / 教师账号 / 本次会话已弹过 → 直接走「已保存」框；点「查看我的徽章」跳徽章页，不再追加「已保存」框。
+  会话去重与首页共用 `app.globalData.badgePopupShown`。
 - **我的 `pages/profile`**：5 组 —— 用户卡（`.tt-hero`）→ 学籍信息（**只读，学生不可自改**）→ 累计数据（教师隐藏）→ 运动与健康 → 账号与帮助 → 管理功能（仅 `isAdmin`）→ 退出登录。
   头像选择后**先上传服务器**（`POST /api/upload/avatar`，限 2MB，旧头像自动清理）再保存资料——微信临时路径其他设备不可见，禁止直接把 `e.detail.avatarUrl` 存进 `User.avatarUrl`。
   菜单行图标底色统一 `var(--tt-brand-soft)`、图形统一 `var(--tt-brand)`；字号固定 5 级（36/28/26/24/22rpx）；副文案只出现在需要解释的管理行。

@@ -95,7 +95,29 @@
   margin: 8rpx 24rpx 0;
 }
 
-/* ===== 抽屉表单（骨架走 app.wxss 的 .tt-sheet*） ===== */
+/* ===== 抽屉表单（骨架走 app.wxss 的 .tt-sheet*） =====
+   关键：抽屉里的 <scroll-view> 必须拿到「确定的 CSS 高度」才真的能滚动。
+   .tt-sheet-body 是 .tt-sheet（flex 列）的子项，默认 min-height:auto 会被「按模块分组的权限多选」
+   （十几个模块、上百个 checkbox）撑成内容高度 → 抽屉被 .tt-sheet 的 max-height:80vh 裁切、
+   表单滚不动、底部「创建/保存」按钮被顶出屏幕（实测 body 1615px、按钮 top 1821、scrollTop 恒 0）。
+   实测结论（automator 几何 + scrollTop 回读）：
+     · 只写 min-height:0          → body 被裁到 492px，但 scrollTop 仍 0→0（滚不动）
+     · flex:1 1 auto + min-height:0 → 同上，仍滚不动
+     · flex:none + min-height:0 + max-height:46vh → body 383.6px、scrollTop 0→400 ✅
+   取 max-height 而非固定 height：内容短时自适应（不留空白），内容长时封顶可滚；
+   head(61) + body(≤46vh) + foot(101) 恒小于 .tt-sheet 的 max-height:80vh，主按钮始终在屏内。 */
+.pg-sheet {
+  display: flex;
+  flex-direction: column;
+  max-height: 80vh;
+}
+
+.pg-sheet .tt-sheet-body {
+  flex: none;
+  min-height: 0;
+  max-height: 46vh;
+}
+
 .pg-field-gap + .pg-field-gap {
   margin-top: 12rpx;
 }

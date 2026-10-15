@@ -1,4 +1,7 @@
 {
   "navigationBarTitleText": "跑步",
-  "disableScroll": true
+  "disableScroll": true,
+  "usingComponents": {
+    "badge-award": "/components/badge-award/badge-award"
+  }
 }

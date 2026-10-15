@@ -1,5 +1,21 @@
 /* 获得徽章弹窗（骨架复用 app.wxss 的 .tt-sheet*，这里只补徽章列表与底部按钮的私有样式） */
 
+/* 一次可能同时获得多枚（首次保存常常一次点亮好几枚）：列表必须能滚、底部按钮必须在屏内。
+   实测（10 枚徽章）：不给确定高度时 body 高 833px、底部按钮 top 1039 被顶出 834 的视口、scrollTop 恒 0；
+   给 max-height 后 body 封顶可滚、按钮回到屏内（head 61 + body ≤42vh + foot 139 恒小于 .tt-sheet 的 80vh）。
+   用 max-height 而非固定 height：只获得 1 枚时弹窗仍按内容自适应，不留大片空白。 */
+.award-sheet {
+  display: flex;
+  flex-direction: column;
+  max-height: 80vh;
+}
+
+.award-sheet .tt-sheet-body {
+  flex: none;
+  min-height: 0;
+  max-height: 42vh;
+}
+
 .award-item {
   display: flex;
   align-items: center;

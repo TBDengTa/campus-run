@@ -33,7 +33,7 @@
 
   <!-- ===== 新增 / 编辑（底部抽屉 + 权限多选） ===== -->
   <t-popup visible="{{formVisible}}" placement="bottom" bind:visible-change="onFormVisible">
-    <view class="tt-sheet">
+    <view class="tt-sheet pg-sheet">
       <view class="tt-sheet-grab"></view>
       <view class="tt-sheet-head">
         <view class="tt-sheet-icon">
