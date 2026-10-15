@@ -1,28 +1,29 @@
 <!-- 本班数据概况卡：有班级身份才渲染（班主任 / 班委）
-     多班（班主任被分配了多个班）时，卡片主体可左右滑动切换班级：
-     头部（班级名 / 身份 / 全校名次 / 第 n/N 个班）在 swiper 之外固定不动，只有下面的班级卡片滑动。
-     单班时 multi=false → 不渲染 swiper、不显示任何滑动控件（与改造前完全一致）。 -->
+     多班（班主任被分配了多个班）时，卡片可左右滑动切换班级：
+     头部（班级名 / 身份 / 第 n/N / 全校名次 + 班级日均）在 swiper 之外固定不动，只有下面的卡片滑动。
+     单班时 multi=false → 不渲染 swiper、不显示任何滑动控件。
+     高度：首屏量一次当前可见卡的真实高度后冻结（详见 class-board.js::measureOnce），
+     卡片与 swiper 用同一个值 → 卡片高 ≡ 容器高、无内部空白、切换班级高度不变。 -->
 <view class="cb-wrap" wx:if="{{show}}">
   <view class="tt-section">
     <text>{{title}}</text>
     <text class="tt-section-extra" wx:if="{{showManage}}" bind:tap="goManage">班级管理 ›</text>
   </view>
 
-  <!-- 卡片高度：首屏量一次当前可见卡的真实高度后**冻结**（量不到用兜底常量）；单班/多班同一个值，
-       且卡片与 swiper 用同一表达式 → 卡片高 ≡ 容器高、无内部空白、切换班级高度不变 -->
   <view class="tt-card cb-card" style="--cb-card-h: {{cardHeight}}rpx">
-    <!-- 固定头部：当前选中班级 + 身份 + 全校名次（滑动时不动；数据取 currentCard 镜像） -->
+    <!-- ① 班名 + ② 身份胶囊 + ③ 第 n/N + ④ 全校名次（「班级日均 · N 人」并到名次右侧，省掉一整行） -->
     <view class="cb-head">
       <view class="cb-head-main">
         <text class="cb-class">{{currentCard.className}}</text>
         <text class="cb-role {{currentCard.canNudge ? 'is-homeroom' : 'is-officer'}}">{{currentCard.canNudge ? '班主任' : '班委 · 仅查看'}}</text>
         <text class="cb-count" wx:if="{{multi}}">{{swipeIndex + 1}}/{{classes.length}}</text>
       </view>
-      <text class="cb-rank" wx:if="{{currentCard.rankText}}">{{currentCard.rankText}}</text>
+      <text class="cb-rank" wx:if="{{currentCard.rankText}}">
+        {{currentCard.rankText}}<text class="cb-rank-sub" wx:if="{{currentCard.classRank}}"> · 日均 {{currentCard.classRank.avgSteps}} 步（{{currentCard.classRank.members}} 人）</text>
+      </text>
     </view>
-    <view class="cb-rank-sub" wx:if="{{currentCard.classRank}}">全校班级榜 · 班级日均 {{currentCard.classRank.avgSteps}} 步（{{currentCard.classRank.members}} 人）</view>
 
-    <!-- 单班：直接渲染，不用 swiper（卡片高度同样是固定值 → 与多班视觉一致） -->
+    <!-- 单班：直接把五段内容渲染出来 -->
     <block wx:if="{{!multi}}">
       <view class="tt-stat-row cb-stats">
         <view class="tt-stat">
@@ -40,37 +41,37 @@
       </view>
 
       <view class="cb-goal">
-        <view class="cb-goal-top">
+        <view class="cb-goal-line">
           <text>今日达标 {{currentCard.overview.rateText}} 人</text>
+          <text class="cb-goal-sub">本周达标率 {{currentCard.overview.weeklyRate}}%<text wx:if="{{currentCard.overview.pointsEnabled}}"> · 本班跑分 {{currentCard.overview.pointsWeek}}</text></text>
           <text class="num-font cb-goal-rate">{{currentCard.overview.dailyRate}}%</text>
         </view>
         <view class="cb-bar">
           <view class="cb-bar-in" style="width:{{currentCard.overview.dailyRate}}%"></view>
         </view>
-        <view class="cb-goal-sub">
-          本周达标率 {{currentCard.overview.weeklyRate}}%<text wx:if="{{currentCard.overview.pointsEnabled}}"> · 本班跑分 {{currentCard.overview.pointsWeek}}</text>
-        </view>
       </view>
 
       <view class="cb-top3">
-        <view class="cb-top3-head">
-          <text class="cb-top3-title">本班前三名</text>
+        <view class="cb-top3-title">
+          <text>本班前三名</text>
           <text class="cb-top3-tip">本周步数</text>
         </view>
-        <view
-          class="cb-top3-row"
-          wx:for="{{currentCard.top}}"
-          wx:key="userId"
-          bind:tap="openStudent"
-          data-id="{{item.userId}}"
-          data-name="{{item.name}}"
-        >
-          <text class="cb-top3-no">{{item.rank}}</text>
-          <text class="cb-top3-name">{{item.name}}</text>
-          <text class="cb-tag-officer" wx:if="{{item.isClassOfficer}}">班委</text>
-          <text class="num-font cb-top3-steps">{{item.stepsText}}</text>
+        <view class="cb-top3-grid">
+          <view
+            class="cb-top3-row"
+            wx:for="{{currentCard.top}}"
+            wx:key="userId"
+            bind:tap="openStudent"
+            data-id="{{item.userId}}"
+            data-name="{{item.name}}"
+          >
+            <text class="cb-top3-no">{{item.rank}}</text>
+            <text class="cb-top3-name">{{item.name}}</text>
+            <text class="cb-tag-officer" wx:if="{{item.isClassOfficer}}">班委</text>
+            <text class="num-font cb-top3-steps">{{item.stepsText}}</text>
+          </view>
+          <view class="tt-empty cb-top3-empty" wx:if="{{!currentCard.top.length && !loading}}">本周还没有运动记录</view>
         </view>
-        <view class="tt-empty" wx:if="{{!currentCard.top.length && !loading}}">本周还没有运动记录</view>
       </view>
 
       <view class="cb-manage" wx:if="{{showManage}}" bind:tap="goManage">
@@ -81,7 +82,7 @@
       <view class="cb-note" wx:else>班委仅查看：本班数据与排名，无操作权限</view>
     </block>
 
-    <!-- 多班：横向滑动切换班级；每个面板是完整的一张班级卡（高度固定，切换时高度不变） -->
+    <!-- 多班：横向滑动切换班级；每个面板是同一套内容的紧凑卡，高度由 cardHeight 固定 -->
     <block wx:else>
       <view class="cb-swiper" style="height: {{cardHeight}}rpx">
         <swiper
@@ -110,38 +111,38 @@
               </view>
 
               <view class="cb-goal">
-                <view class="cb-goal-top">
+                <view class="cb-goal-line">
                   <text>今日达标 {{item.overview.rateText}} 人</text>
+                  <text class="cb-goal-sub">本周达标率 {{item.overview.weeklyRate}}%<text wx:if="{{item.overview.pointsEnabled}}"> · 本班跑分 {{item.overview.pointsWeek}}</text></text>
                   <text class="num-font cb-goal-rate">{{item.overview.dailyRate}}%</text>
                 </view>
                 <view class="cb-bar">
                   <view class="cb-bar-in" style="width:{{item.overview.dailyRate}}%"></view>
                 </view>
-                <view class="cb-goal-sub">
-                  本周达标率 {{item.overview.weeklyRate}}%<text wx:if="{{item.overview.pointsEnabled}}"> · 本班跑分 {{item.overview.pointsWeek}}</text>
-                </view>
               </view>
 
               <view class="cb-top3">
-                <view class="cb-top3-head">
-                  <text class="cb-top3-title">本班前三名</text>
+                <view class="cb-top3-title">
+                  <text>本班前三名</text>
                   <text class="cb-top3-tip">本周步数</text>
                 </view>
-                <view
-                  class="cb-top3-row"
-                  wx:for="{{item.top}}"
-                  wx:for-item="stu"
-                  wx:key="userId"
-                  bind:tap="openStudent"
-                  data-id="{{stu.userId}}"
-                  data-name="{{stu.name}}"
-                >
-                  <text class="cb-top3-no">{{stu.rank}}</text>
-                  <text class="cb-top3-name">{{stu.name}}</text>
-                  <text class="cb-tag-officer" wx:if="{{stu.isClassOfficer}}">班委</text>
-                  <text class="num-font cb-top3-steps">{{stu.stepsText}}</text>
+                <view class="cb-top3-grid">
+                  <view
+                    class="cb-top3-row"
+                    wx:for="{{item.top}}"
+                    wx:for-item="stu"
+                    wx:key="userId"
+                    bind:tap="openStudent"
+                    data-id="{{stu.userId}}"
+                    data-name="{{stu.name}}"
+                  >
+                    <text class="cb-top3-no">{{stu.rank}}</text>
+                    <text class="cb-top3-name">{{stu.name}}</text>
+                    <text class="cb-tag-officer" wx:if="{{stu.isClassOfficer}}">班委</text>
+                    <text class="num-font cb-top3-steps">{{stu.stepsText}}</text>
+                  </view>
+                  <view class="tt-empty cb-top3-empty" wx:if="{{!item.top.length && !loading}}">本周还没有运动记录</view>
                 </view>
-                <view class="tt-empty" wx:if="{{!item.top.length && !loading}}">本周还没有运动记录</view>
               </view>
 
               <view class="cb-manage" wx:if="{{showManage}}" bind:tap="goManage">
