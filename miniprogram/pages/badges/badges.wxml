@@ -45,8 +45,9 @@
           <view class="badge-group-info">
             <view class="badge-group-name">{{item.group}}</view>
             <view class="badge-group-sub">
-              <text class="badge-group-level">Lv{{item.current.tierLevel}}</text>
-              <text class="badge-group-badge">{{item.current.name}}</text>
+              <!-- 零获得：「未获得 · 下一目标 Lv1 · 初级·运动达人」；已有获得：「LvN · 当前等级名」 -->
+              <text class="badge-group-level {{item.anyEarned ? '' : 'is-dim'}}">{{item.levelTag}}</text>
+              <text class="badge-group-badge">{{item.badgeName}}</text>
             </view>
             <view class="badge-group-count">
               已点亮 <text class="num-font badge-group-count-num">{{item.earnedLevels}}</text>/{{item.totalLevels}} 级
@@ -62,8 +63,11 @@
         </view>
 
         <view class="badge-group-progress">
-          <view class="badge-target">{{item.progressText}}</view>
-          <view class="badge-track">
+          <view class="badge-progress-head">
+            <text class="badge-target">{{item.progressText}}</text>
+            <text class="badge-reachable" wx:if="{{item.reachable}}">可点亮</text>
+          </view>
+          <view class="badge-track {{item.reachable ? 'is-reachable' : ''}}">
             <view class="badge-track-fill" style="{{item.percentStyle}}"></view>
           </view>
           <view class="badge-next">{{item.nextText}}</view>
@@ -106,7 +110,8 @@
   <block wx:if="{{list.length}}">
     <view class="tt-section">
       <text>独立徽章</text>
-      <text class="tt-section-extra">{{earnedCount}}/{{total}} 已获得</text>
+      <!-- 该组自身的计数（singleEarned/singleTotal），不是全站 earnedCount/total -->
+      <text class="tt-section-extra">{{singleEarned}}/{{singleTotal}} 已获得</text>
     </view>
 
     <view class="badge-grid">

@@ -300,6 +300,8 @@ Page({
         this.loadOverview();
         this.loadTop3();
       }
+      // 徽章按需检测（学生端；教师端不展示徽章，直接跳过）
+      if (!isTeacher) this.checkBadges();
     } catch (e) {
       if (e.code === 403001) {
         wx.navigateTo({ url: '/pages/banned/banned' });
@@ -336,6 +338,63 @@ Page({
     if (!max) return;
     const adHeight = Math.max(120, Math.min(420, max));
     if (adHeight !== this.data.adHeight) this.setData({ adHeight });
+  },
+
+  // ===== 徽章按需检测（客户端触发，驱动首页弹窗）=====
+  // 为什么不做服务端全量补发：1500+ 用户逐人聚合会把数据库打爆；改为用户登录后由客户端提交
+  // 一次「检测我是否达成」，服务端只评估当前登录用户并幂等补发。
+  // 幂等 + 会话内去重双保险：接口第二次返回空 newBadges；本会话弹过一次就不再弹。
+  async checkBadges() {
+    const app = getApp();
+    // 同一会话内的并发去重：refresh() 的多个调用方（onShow / 下拉刷新）可能同时触发
+    const inflight = app.globalData.badgeCheck;
+    if (inflight) return inflight;
+    const task = this.runBadgeCheck();
+    app.globalData.badgeCheck = task;
+    try {
+      await task;
+    } finally {
+      app.globalData.badgeCheck = null;
+    }
+  },
+
+  async runBadgeCheck() {
+    try {
+      const res = await auth.post('/api/badges/check');
+      const newBadges = (res && res.newBadges) || [];
+      if (!newBadges.length) return;
+      // 会话内只弹一次（接口幂等已保证第二次为空，这层是防重复调用的兜底）
+      const app = getApp();
+      if (app.globalData.badgePopupShown) return;
+      app.globalData.badgePopupShown = true;
+      this.showBadgeModal(newBadges);
+    } catch (e) {
+      // 失败静默：不阻塞首页其它数据（教师账号也会走到这里，接口直接返回空）
+    }
+  },
+
+  // 新徽章弹窗：多个时合并成一个弹窗 + 列表；含徽章名与等级名
+  showBadgeModal(newBadges) {
+    const lines = newBadges
+      .map((b) => {
+        const lv = Number(b.tierLevel) || 0;
+        const isTier = b.mode === 'tier' || lv > 0 || !!b.tierGroup;
+        const prefix = isTier && lv > 0 ? `升级到 Lv${lv} · ` : '';
+        const group = isTier && b.tierGroup ? `（${b.tierGroup}）` : '';
+        return `· ${prefix}${b.name}${group}`;
+      })
+      .slice(0, 6);
+    const rest = newBadges.length - lines.length;
+    if (rest > 0) lines.push(`· 还有 ${rest} 枚…`);
+    wx.showModal({
+      title: newBadges.length > 1 ? `获得 ${newBadges.length} 枚新徽章` : '获得新徽章',
+      content: lines.join('\n'),
+      confirmText: '去看看',
+      cancelText: '知道了',
+      success: (r) => {
+        if (r.confirm) wx.navigateTo({ url: '/pages/badges/badges' });
+      },
+    });
   },
 
   async loadOverview() {

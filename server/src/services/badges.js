@@ -137,12 +137,14 @@ function buildNextTargets(badges) {
   return nextTargets;
 }
 
-// 检查并授予徽章，返回新获得的徽章列表
-async function evaluateBadges(openid) {
+// 检查并授予徽章，返回**本次真正新发放**的徽章列表（幂等：已获得的不重发，重复调用第二次为空）
+//   preloaded：可选，调用方已经查好的 { badges, earned, stats }，避免同一次请求里重复聚合
+//   （按需检测接口要同时产出 newBadges 与 earnedCount，复用这三份数据就只有 3 次查询）
+async function evaluateBadges(openid, preloaded) {
   const [badges, earned, stats] = await Promise.all([
-    Badge.find({ enabled: true }).sort({ sort: 1 }).lean(),
-    UserBadge.find({ openid }).distinct('badgeKey'),
-    aggregateUser(openid),
+    preloaded && preloaded.badges ? preloaded.badges : Badge.find({ enabled: true }).sort({ sort: 1 }).lean(),
+    preloaded && preloaded.earned ? preloaded.earned : UserBadge.find({ openid }).distinct('badgeKey'),
+    preloaded && preloaded.stats ? preloaded.stats : aggregateUser(openid),
   ]);
   const earnedSet = new Set(earned);
   const newBadges = [];
@@ -152,12 +154,15 @@ async function evaluateBadges(openid) {
     if (typeof value === 'number' && value >= badge.target) {
       // 等级徽章（mode='tier'）落库时记下所在等级；独立徽章固定 0
       const level = badge.mode === 'tier' ? Number(badge.tierLevel) || 0 : 0;
-      await UserBadge.updateOne(
+      // $setOnInsert + upsert 本身幂等，但并发下可能已被别的请求插入——
+      // 只有真正插入了新行才计入 newBadges，保证「第二次调用 newBadges 为空」。
+      const r = await UserBadge.updateOne(
         { openid, badgeKey: badge.key },
         { $setOnInsert: { openid, badgeKey: badge.key, level } },
         { upsert: true }
       );
-      newBadges.push(badge);
+      const inserted = !!(r && (r.upsertedCount || r.upsertedId));
+      if (inserted) newBadges.push(badge);
     }
   }
   return newBadges;

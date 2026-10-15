@@ -259,6 +259,38 @@
   font-weight: 700;
 }
 
+/* 零获得：等级标签用中性灰，避免把未获得的 Lv1 呈现成「已点亮」的橙色标签 */
+.badge-group-level.is-dim {
+  color: var(--tt-text-2);
+  background: var(--tt-line);
+}
+
+/* 进度行：「当前 X / 目标 Y」+ 已达标时的「可点亮」提示 */
+.badge-progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+}
+
+.badge-progress-head .badge-target {
+  margin-top: 0;
+}
+
+.badge-reachable {
+  flex-shrink: 0;
+  padding: 2rpx 14rpx;
+  border-radius: 999rpx;
+  font-size: 20rpx;
+  font-weight: 600;
+  color: var(--tt-brand);
+  background: var(--tt-brand-soft);
+}
+
+.badge-track.is-reachable .badge-track-fill {
+  background: linear-gradient(90deg, #ff9a3d, var(--tt-brand));
+}
+
 .badge-group-chevron {
   flex-shrink: 0;
   width: 48rpx;

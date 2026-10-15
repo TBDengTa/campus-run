@@ -25,6 +25,9 @@ Page({
     total: 0,
     percent: 0,
     percentStyle: 'width:0%',
+    // 独立徽章分组自身的计数（**不是**全站 total，见 load() 里的注释）
+    singleEarned: 0,
+    singleTotal: 0,
   },
 
   onShow() {
@@ -40,9 +43,21 @@ Page({
     this.setData({ [`expanded.${group}`]: !this.data.expanded[group] });
   },
 
+  // 登录后按需检测：先让服务端评估「当前登录用户是否达成」并幂等补发，再拉列表。
+  // 顺序不能反过来——否则会出现「进度条满格但 0 已获得」的假象（用户截图里的问题 1）。
+  // 接口幂等，失败一律静默：不阻塞列表展示。
+  async checkBadges() {
+    try {
+      await auth.post('/api/badges/check');
+    } catch (e) {
+      // 静默：教师账号 / 网络异常都不影响列表
+    }
+  },
+
   async load() {
     try {
       await getApp().ensureLogin();
+      await this.checkBadges();
       const data = await auth.get('/api/badges');
       const total = Number(data.total) || 0;
       const earnedCount = Number(data.earnedCount) || 0;
@@ -79,13 +94,13 @@ Page({
         const minLevel = Number(levels[0] && levels[0].tierLevel) || 1;
         const earnedLevels = levels.filter((l) => l.earned);
         const anyEarned = earnedLevels.length > 0;
-        // 卡面优先级：当前最高已获得等级 → 一级都没获得时显示**最低级**（Lv1）
+        // 卡面优先级：当前最高已获得等级 → 一级都没获得时显示**最低级**（Lv1）作为下一目标
         const current = anyEarned
           ? earnedLevels[earnedLevels.length - 1]
           : levels.find((l) => (Number(l.tierLevel) || 0) === minLevel) || levels[0];
         const currentLevel = Math.max(1, Number(current.tierLevel) || 1);
         // 下一级：已获得的找当前等级之上最近的一级；一级都没获得时目标就是最低级（Lv1），
-        // 此时 current 也是 Lv1（卡面灰度显示），所以 next === current，文案即「到 Lv1 的进度」
+        // 此时 next === current，文案走「下一目标 Lv1 · 徽章名」，「当前 X / 目标 Y」里的 Y 就是 Lv1 的达标线。
         const next = anyEarned
           ? levels.find((l) => (Number(l.tierLevel) || 0) > currentLevel)
           : current;
@@ -104,6 +119,19 @@ Page({
         }
         groupPercent = Math.max(0, Math.min(100, groupPercent));
         const unit = unitOf(current.type);
+        // 兜底：progress 已达标但这一行还没发放（老数据；正常走过 /api/badges/check 后不会出现）。
+        // 此时不能只给一条满格进度条 + 「未获得」，必须明确提示「可点亮」。
+        const reachable = !!next && goal > 0 && progress >= goal;
+        const nextLevelText = next ? `Lv${Number(next.tierLevel) || currentLevel}` : '';
+        // 卡面语义（问题 3）：一级都没获得时，Lv1 是**下一目标**而不是「当前等级」——
+        // 否则会出现「Lv1 = 当前等级」和「下一级 Lv1」自相矛盾。
+        // 等级徽章的 name 本身就带等级含义（初级·运动达人），所以拼成「下一目标 Lv1 · 初级·运动达人」。
+        const levelTag = anyEarned ? `Lv${currentLevel}` : '未获得';
+        const badgeName = anyEarned
+          ? current.name
+          : `下一目标 ${nextLevelText} · ${current.name}`;
+        // 「当前 X / 目标 Y」——X 为累计进度，Y 为下一级阈值（已满级时为当前级阈值）
+        const progressText = `当前 ${fmt.formatNumber(progress)} / 目标 ${fmt.formatNumber(goal || baseline)}${unit}`;
 
         groups.push({
           group,
@@ -117,9 +145,18 @@ Page({
           totalLevels: levels.length,
           anyEarned,
           cardDim: !anyEarned, // 一级都没获得：卡面灰度
-          // 「当前 X / 目标 Y」——X 为累计进度，Y 为下一级阈值（已满级时为当前级阈值）
-          progressText: `当前 ${fmt.formatNumber(progress)} / 目标 ${fmt.formatNumber(next ? goal : baseline)}${unit}`,
-          nextText: next ? `下一级 ${next.name} · ${fmt.formatNumber(goal)}${unit}` : '已是最高等级 🎉',
+          levelTag,
+          badgeName,
+          progressText,
+          // 已达标未发放 → 「可点亮」；否则给下一级目标文案
+          nextText: reachable
+            ? next
+              ? `下一级 ${nextLevelText} · ${next.name} · 达成即点亮`
+              : '已是最高等级 🎉'
+            : next
+            ? `下一级 ${nextLevelText} · ${next.name} · ${fmt.formatNumber(goal)}${unit}`
+            : '已是最高等级 🎉',
+          reachable,
           percent: groupPercent,
           percentStyle: widthOf(groupPercent),
         });
@@ -137,6 +174,11 @@ Page({
         total,
         percent,
         percentStyle: widthOf(percent),
+        // 独立徽章分组的计数 = 该组内已获得 / 该组总数。
+        // 之前这里用的是全站 earnedCount/total（含等级徽章），于是刚上线只有 1 枚独立徽章时
+        // 会显示成「0/10 已获得」，与上面等级分组的「已点亮 0/3 级」自相矛盾。
+        singleEarned: singles.filter((b) => b.earned).length,
+        singleTotal: singles.length,
       });
     } catch (e) {
       this.setData({ loading: false });
