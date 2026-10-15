@@ -1,9 +1,9 @@
 <view class="page home-page">
   <!-- ===== 顶部插画头 =====
-       放了 assets/home/hero.png → 按图片本身比例铺满宽度显示，不再叠加文字；
-       未放图 → 回退到 CSS 插画（渐变天空 + 云朵 + 草地 + 跑道）+ 标题文案 -->
+       放了 assets/home/hero.webp（或旧名 hero.png）→ 按图片本身比例铺满宽度显示，不再叠加文字；
+       未放图 / 设备不支持 WebP（iOS 14 以下）/ 图片解码失败 → 回退到 CSS 插画（渐变天空 + 云朵 + 草地 + 跑道）+ 标题文案 -->
   <view class="sky {{heroImage ? 'sky-has-image' : ''}}">
-    <image wx:if="{{heroImage}}" class="sky-img" src="{{heroImage}}" mode="widthFix" />
+    <image wx:if="{{heroImage}}" class="sky-img" src="{{heroImage}}" mode="widthFix" bind:error="onHeroError" />
     <block wx:else>
       <view class="sky-cloud cloud-1"></view>
       <view class="sky-cloud cloud-2"></view>

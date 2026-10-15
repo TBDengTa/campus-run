@@ -1,11 +1,15 @@
 const auth = require('../../utils/request');
 const fmt = require('../../utils/format');
 
-// ===== 可选插画素材：把 PNG 放到下列路径即可自动启用（未放置时回退到 CSS 插画）=====
-//   顶部场景图：miniprogram/assets/home/hero.png（宽高比约 2.87:1，例如 1500×523；
-//   图内已含「唐唐快跑」标题与标语，放图后页面不再叠加文字，高度按图片比例自适应）
-//   4 个入口插画：miniprogram/assets/home/entry-water.png / entry-plan.png / entry-badge.png / entry-body.png（建议 120×120）
-const HERO_IMAGE = 'assets/home/hero.png';
+// ===== 可选插画素材：把图片放到下列路径即可自动启用（未放置时回退到 CSS 插画）=====
+//   顶部场景图：miniprogram/assets/home/hero.webp（宽高比约 2.87:1，例如 1500×523；
+//   图内已含「唐唐快跑」标题与标语，放图后页面不再叠加文字，高度按图片比例自适应。
+//   WebP 体积约为同图 PNG 的 1/8：1500×523 的 hero 用 PNG 要 321KB，WebP(q80) 只要 41KB）
+//   4 个入口插画：miniprogram/assets/home/entry-water.png / entry-plan.png / entry-badge.png / entry-body.png（建议 240×240）
+//   入口小图保持 PNG：这类扁平小图 PNG 已经比 WebP 更小（WebP 无损/有损反而大 3%~40%），换格式没有收益
+const HERO_IMAGE_WEBP = 'assets/home/hero.webp';
+// 旧的 PNG 名称只在“设备不支持 WebP 且该文件确实存在”时才会被用到；当前仓库不保留该副本（为省主包体积）
+const HERO_IMAGE_PNG = 'assets/home/hero.png';
 const ENTRY_IMAGES = {
   water: 'assets/home/entry-water.png',
   plan: 'assets/home/entry-plan.png',
@@ -23,8 +27,47 @@ function assetExists(p) {
   }
 }
 
+// 版本号比较：a > b 返回 1，a < b 返回 -1，相等返回 0
+function compareVersion(a, b) {
+  const va = String(a).split('.');
+  const vb = String(b).split('.');
+  const len = Math.max(va.length, vb.length);
+  for (let i = 0; i < len; i++) {
+    const na = parseInt(va[i] || '0', 10) || 0;
+    const nb = parseInt(vb[i] || '0', 10) || 0;
+    if (na > nb) return 1;
+    if (na < nb) return -1;
+  }
+  return 0;
+}
+
+// 当前设备能否解码 WebP：iOS < 14 与 Android < 4 的 image 组件不支持（微信官方文档 image 组件说明）
+// 不支持的设备直接走 CSS 插画兜底（.sky 的渐变天空 + 云朵 + 草地 + 跑道），不走 PNG 以减少包体积
+function canDecodeWebp() {
+  try {
+    const info = wx.getSystemInfoSync() || {};
+    const platform = String(info.platform || '').toLowerCase();
+    const sys = String(info.system || '').replace(/[^0-9.]/g, '');
+    if (platform === 'ios') return compareVersion(sys, '14') >= 0;
+    if (platform === 'android') return compareVersion(sys, '4') >= 0;
+    // devtools / 其它平台（PC 微信等）：按支持处理，探测不到就交给 onHeroError 兜底
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+// 顶部场景图：优先 WebP，其次旧名 hero.png（若存在），都没有则返回空串（WXML 回退 CSS 插画）
+function resolveHero() {
+  const candidates = canDecodeWebp() ? [HERO_IMAGE_WEBP, HERO_IMAGE_PNG] : [HERO_IMAGE_PNG];
+  for (const p of candidates) {
+    if (assetExists(p)) return `/${p}`;
+  }
+  return '';
+}
+
 function resolveAssets() {
-  const hero = assetExists(HERO_IMAGE) ? `/${HERO_IMAGE}` : '';
+  const hero = resolveHero();
   const entries = {};
   for (const key of Object.keys(ENTRY_IMAGES)) {
     entries[key] = assetExists(ENTRY_IMAGES[key]) ? `/${ENTRY_IMAGES[key]}` : '';
@@ -170,6 +213,11 @@ Page({
     if (typeof this.getTabBar !== 'function') return;
     const bar = this.getTabBar();
     if (bar && typeof bar.setActive === 'function') bar.setActive('/pages/home/home');
+  },
+
+  // 顶部插画解码失败（极少数不支持 WebP 的机型）：清空素材位，自动回退到 CSS 插画
+  onHeroError() {
+    if (this.data.heroImage) this.setData({ heroImage: '' });
   },
 
   onPullDownRefresh() {

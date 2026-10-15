@@ -1,6 +1,35 @@
 const auth = require('../../utils/request');
 const fmt = require('../../utils/format');
 
+// ===== 可选插画素材：把 PNG 放到下列路径即可自动启用（未放置时回退到矢量图标）=====
+//   实现与首页「插画素材位」完全一致（见 docs/ui-design.md 第 8 节）：
+//   4 个入口插画：miniprogram/assets/profile/entry-body.png / entry-plan.png / entry-water.png / entry-badge.png（建议 240×240）
+//   这些是扁平小图，PNG 比 WebP 更小（实测 WebP 反而大 3%~40%），所以统一用 PNG，不做格式切换
+const ENTRY_IMAGES = {
+  body: 'assets/profile/entry-body.png',
+  plan: 'assets/profile/entry-plan.png',
+  water: 'assets/profile/entry-water.png',
+  badge: 'assets/profile/entry-badge.png',
+};
+
+// 判断代码包内文件是否存在（不存在则用矢量图标兜底）
+function assetExists(p) {
+  try {
+    wx.getFileSystemManager().accessSync(p);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function resolveAssets() {
+  const entries = {};
+  for (const key of Object.keys(ENTRY_IMAGES)) {
+    entries[key] = assetExists(ENTRY_IMAGES[key]) ? `/${ENTRY_IMAGES[key]}` : '';
+  }
+  return { entries };
+}
+
 // 年级展示：优先用名单里的 grade；没有则按学号前 4 位（19xx/20xx）推导；都没有返回 —
 function gradeTextOf(user) {
   const raw = String((user && user.grade) || '').replace(/级$/, '').trim();
@@ -40,6 +69,8 @@ Page({
     user: null,
     enroll: enrollOf(null),
     heroMeta: '',
+    // 插画素材（自动探测）：有图用图片，没图回退 t-icon
+    entryImages: { body: '', plan: '', water: '', badge: '' },
     stats: null,
     monitor: null,
     isAdmin: false,
@@ -50,6 +81,11 @@ Page({
     // 跑分（学生端展示，来自 /api/points/me；教师或未开启时为 null）
     points: null,
     devMode: !!auth.env.DEV_LOGIN, // 本地测试登录：登录的是 dev_* 账号，不是真实学籍
+  },
+
+  onLoad() {
+    // 插画素材位：与首页同样在页面加载时探测一次（有图用图，没图回退 t-icon）
+    this.setData({ entryImages: resolveAssets().entries });
   },
 
   onShow() {

@@ -123,13 +123,15 @@
     <view class="points-note">完成日/周目标得分，超出目标每 {{points.perStep}} 步再加 {{points.perStepScore}} 分</view>
   </block>
 
-  <!-- ===== 运动与健康（教师不参与运动记录，整块隐藏） ===== -->
+  <!-- ===== 运动与健康（教师不参与运动记录，整块隐藏） =====
+       放了 assets/profile/entry-*.png → 自动替换为插画图标；未放置 → 回退到 t-icon（与首页同款素材位） -->
   <block wx:if="{{!isTeacher}}">
   <view class="tt-section">运动与健康</view>
   <view class="tt-card menu-card">
     <!-- 身体数据：图标改为「仪表/数据」语义（heart 是健康，容易与目标计划混淆） -->
     <view class="tt-row menu-row" bind:tap="go" data-url="/pages/body-data/body-data">
-      <view class="menu-icon">
+      <image wx:if="{{entryImages.body}}" class="menu-img" src="{{entryImages.body}}" mode="aspectFit" />
+      <view wx:else class="menu-icon">
         <t-icon name="chart" size="36rpx" color="var(--tt-brand)" />
       </view>
       <text class="menu-label">身体数据</text>
@@ -138,7 +140,8 @@
     </view>
     <!-- 目标计划：与身体数据拆开（原来是「身体数据 / 目标计划」一项，用户反馈不对） -->
     <view class="tt-row menu-row" bind:tap="go" data-url="/pages/goal-plan/goal-plan">
-      <view class="menu-icon">
+      <image wx:if="{{entryImages.plan}}" class="menu-img" src="{{entryImages.plan}}" mode="aspectFit" />
+      <view wx:else class="menu-icon">
         <t-icon name="flag" size="36rpx" color="var(--tt-brand)" />
       </view>
       <text class="menu-label">目标计划</text>
@@ -146,7 +149,8 @@
       <t-icon name="chevron-right" size="32rpx" color="var(--tt-text-3)" />
     </view>
     <view class="tt-row menu-row" bind:tap="go" data-url="/pages/water/water">
-      <view class="menu-icon">
+      <image wx:if="{{entryImages.water}}" class="menu-img" src="{{entryImages.water}}" mode="aspectFit" />
+      <view wx:else class="menu-icon">
         <t-icon name="drink" size="36rpx" color="var(--tt-brand)" />
       </view>
       <text class="menu-label">喝水打卡</text>
@@ -154,7 +158,8 @@
     </view>
     <!-- 「看视频赚步数」入口已隐藏：改为连点上方「累计数据」卡片 5 次进入（北斗运动） -->
     <view class="tt-row menu-row" wx:if="{{!isTeacher}}" bind:tap="go" data-url="/pages/badges/badges">
-      <view class="menu-icon">
+      <image wx:if="{{entryImages.badge}}" class="menu-img" src="{{entryImages.badge}}" mode="aspectFit" />
+      <view wx:else class="menu-icon">
         <t-icon name="star" size="36rpx" color="var(--tt-brand)" />
       </view>
       <text class="menu-label">我的徽章</text>

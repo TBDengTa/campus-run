@@ -252,6 +252,13 @@
   background: var(--tt-brand-soft);
 }
 
+/* 插画素材位：放了 assets/profile/entry-*.png 时替换上面的图标容器（尺寸一致，不改变行高） */
+.menu-img {
+  width: 68rpx;
+  height: 68rpx;
+  flex-shrink: 0;
+}
+
 .menu-label {
   flex: 1;
   font-size: 28rpx;
