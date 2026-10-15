@@ -3,16 +3,16 @@
   margin-bottom: var(--tt-gap);
 }
 
-/* 卡片高度：固定值，由 WXML 内联 --cb-card-h 提供（= JS 里的 CARD_HEIGHT_RPX 686rpx + 安全网增量），
-   这里只给一个与 JS 常量一致的自兜底默认值（WXSS 读不到 JS 常量，两处一起改）。
-   单班与多班都用它 → 两种模式卡片高度一致、首帧即最终高度。 */
+/* 卡片高度：固定值，由 WXML 内联 --cb-card-h 提供（= JS 的 FALLBACK_HEIGHT_RPX，
+   或首屏量到并冻结的真实卡高）；这里只给一个与 JS 常量一致的自兜底默认值（WXSS 读不到 JS 常量，两处一起改）。
+   上下 padding 从 20/18 收到 16/14（紧凑化）。 */
 .cb-card {
-  --cb-card-h: 686rpx;
-  padding: 20rpx 24rpx 18rpx;
+  --cb-card-h: 560rpx;
+  padding: 16rpx 24rpx 14rpx;
 }
 
-/* 单班（不渲染 swiper）时卡片吃固定高度：直接给这个固定值，不做内容测量，
-   所以「卡片高 = swiper 高」恒成立，卡片下方不会出现任何多余白区。 */
+/* 单班（不渲染 swiper）时卡片同样吃这个高度 → 与多班视觉一致；
+   高度是「量到并冻结」的值，不做内容测量，所以卡片高 ≡ 容器高、下方不会出现多余白区。 */
 .cb-wrap > .cb-card {
   min-height: var(--cb-card-h);
 }
@@ -67,23 +67,28 @@
 }
 
 .cb-rank-sub {
-  margin-top: 6rpx;
+  margin-top: 2rpx;
   font-size: 20rpx;
   color: var(--tt-text-3);
 }
 
-/* ===== 三项概况 ===== */
+/* ===== 三项概况（紧凑：上下留白与数值字号都收过） ===== */
 .cb-stats {
-  margin-top: 14rpx;
-  padding: 10rpx 0 6rpx;
+  margin-top: 8rpx;
+  padding: 6rpx 0 2rpx;
   border-top: 2rpx solid var(--tt-line);
 }
 
+/* 概况数值：公共 .tt-stat-value 是 40rpx，卡片里收到 36rpx（标签沿用公共 24rpx） */
+.cb-stats .tt-stat-value {
+  font-size: 36rpx;
+}
+
 /* ===== 多班：横向滑动切换班级 =====
-   高度 = **固定常量**（WXML 内联 style 给 .cb-swiper，值 = --cb-card-h = 686rpx + 安全网增量），
-   与卡片高度是同一个表达式 → 卡片高 ≡ swiper 高，卡片下方零白区。
-   这里刻意**不写任何 min-height / 动态测量**：<swiper> 不会自动撑高，给它下限或按「最高卡」设高度，
-   都会让容器高于卡片、在卡片下方留出白色空白（就是产品报的 bug）。 */
+   高度 = **固定值**（WXML 内联 style 给 .cb-swiper，与 .cb-card 的 --cb-card-h 是同一个表达式）
+   → 卡片高 ≡ swiper 高，卡片下方零白区。
+   这个值由 JS 在首屏量一次当前可见卡的真实高度后冻结（量不到才用 FALLBACK_HEIGHT_RPX），
+   这里刻意**不写 min-height**：<swiper> 不会自动撑高，给它下限就是「容器比卡片高」→ 卡片下方留白。 */
 .cb-swiper {
   overflow: hidden;
 }
@@ -152,9 +157,9 @@
   background: var(--td-bg-color-component);
 }
 
-/* ===== 达标进度 ===== */
+/* ===== 达标进度（紧凑：块间距与进度条上下 margin 收紧） ===== */
 .cb-goal {
-  margin-top: 8rpx;
+  margin-top: 4rpx;
 }
 
 .cb-goal-top {
@@ -173,7 +178,7 @@
 
 .cb-bar {
   height: 10rpx;
-  margin: 10rpx 0 8rpx;
+  margin: 6rpx 0 4rpx;
   border-radius: 999rpx;
   background: var(--td-bg-color-component);
   overflow: hidden;
@@ -190,10 +195,10 @@
   color: var(--tt-text-3);
 }
 
-/* ===== 本班前三名 ===== */
+/* ===== 本班前三名（紧凑：块间距收紧、行高 60rpx → 52rpx） ===== */
 .cb-top3 {
-  margin-top: 16rpx;
-  padding-top: 12rpx;
+  margin-top: 10rpx;
+  padding-top: 8rpx;
   border-top: 2rpx solid var(--tt-line);
 }
 
@@ -215,11 +220,12 @@
   color: var(--tt-text-3);
 }
 
+/* 行高 60rpx → 52rpx（上下 padding 各收 4rpx） */
 .cb-top3-row {
   display: flex;
   align-items: center;
-  gap: 12rpx;
-  padding: 12rpx 0;
+  gap: 10rpx;
+  padding: 8rpx 0;
   border-bottom: 2rpx solid var(--tt-line);
 }
 
@@ -253,7 +259,7 @@
 .cb-top3-name {
   flex: 1;
   min-width: 0;
-  font-size: 26rpx;
+  font-size: 25rpx;
   color: var(--tt-text-1);
   overflow: hidden;
   white-space: nowrap;
@@ -271,18 +277,18 @@
 
 .cb-top3-steps {
   flex-shrink: 0;
-  font-size: 26rpx;
+  font-size: 25rpx;
   font-weight: 600;
   color: var(--tt-brand);
 }
 
-/* ===== 入口 ===== */
+/* ===== 入口（紧凑：88rpx → 76rpx，margin-top / padding 都收） ===== */
 .cb-manage {
   display: flex;
   align-items: center;
   gap: 10rpx;
-  margin-top: 16rpx;
-  padding: 18rpx 20rpx;
+  margin-top: 10rpx;
+  padding: 14rpx 18rpx;
   border-radius: var(--tt-radius-sm);
   background: var(--tt-brand-soft);
   font-size: 26rpx;
@@ -299,12 +305,13 @@
   color: var(--tt-text-3);
 }
 
+/* 班委的「仅查看」说明条（与 .cb-manage 同量级压缩） */
 .cb-note {
-  margin-top: 14rpx;
-  padding: 12rpx 16rpx;
+  margin-top: 10rpx;
+  padding: 10rpx 14rpx;
   border-radius: var(--tt-radius-sm);
   background: var(--td-bg-color-component);
   font-size: 21rpx;
-  line-height: 32rpx;
+  line-height: 30rpx;
   color: var(--tt-text-3);
 }

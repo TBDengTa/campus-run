@@ -15,8 +15,8 @@
 //   多班时卡片可左右滑动切换，**切到哪一班就显示哪一班的数据**：
 //   · 每个班都用 /api/class/overview + /api/class/ranking（带 className）单独拉一份，一次全拉好，
 //     滑动是纯 CSS/手势切换、不再发请求（也不会出现「卡片换了但数字还是上一个班」）；
-//   · 班级切换用原生 <swiper>（手势跟手 + 回弹吸附），高度 = 固定常量 CARD_HEIGHT_RPX
-//     （不动态测量，切换班级高度零变化），卡片本身不滚动（页面滚动条在 swiper 上照常滑动）；
+//   · 班级切换用原生 <swiper>（手势跟手 + 回弹吸附），高度 = 首屏量到并冻结的 cardHeight
+//     （切换班级不测量、不变高矮），卡片本身不滚动（页面滚动条在 swiper 上照常滑动）；
 //   · 头部（班级名 / 身份胶囊 / 全校名次 / 「第 n/N 个班」）在 swiper 之外，是固定不滑的，
 //     所以数字指示器不会跟着卡片滑走。
 const auth = require('../../utils/request');
@@ -24,14 +24,21 @@ const fmt = require('../../utils/format');
 
 // 班级管理页与日/周明细页都在 app.json 的 packageAdmin 分包里登记（跳转写全路径）
 
-// ===== 卡片固定高度（产品口径）=====
-// 前三名恒为 3 行（每个班都超过 3 人），所以卡片内容高度本来就是常量，不动态测量、不跟随当前卡：
-//   20 (padding-top) + 42 (班名 30rpx×1.4) + 34 (名次副行 6 + 20×1.4) + 120 (三项概况)
-//   + 97 (达标块) + 57 (前三名标题) + 3×60 (三行) + 88 (管理入口) + 18 (padding-bottom) = 686rpx
-// 单班 / 多班共用这一个值：多班时 = <swiper> 高度（内联 style），单班时 = 卡片 min-height，
-// 两种模式视觉一致，首帧就是最终高度（不会先 0 再跳），切换班级高度完全不变。
-// WXSS 里通过 --cb-card-h 使用同一数值（WXSS 读不到 JS 常量，改这个值要两处同步）。
-const CARD_HEIGHT_RPX = 686;
+// ===== 卡片高度（产品口径：固定高度 + 只量一次就冻结）=====
+// 高度不是「按 wxss 估一个常量」（上一版估成 686rpx，明显高于真实内容 → 卡片下方留白），而是：
+//   ① 首屏数据 setData 回调 + wx.nextTick 之后，用 createSelectorQuery 量一次**当前可见的 .cb-card**
+//      的真实高度，换算成 rpx 后作为**所有班级共用**的 cardHeight；
+//   ② 之后切换班级**不再测量、不再变化**（高度恒定：切到哪班都是同一个高度）；
+//   ③ 量到之前先用下面的兜底常量（避免「先大后小」跳动），量到后一次性替换。
+// 兜底常量 FALLBACK_HEIGHT_RPX 按紧凑版 class-board.wxss 逐段核算（rpx，注：行高按 ≈1.15 估）：
+//   16 (padding-top) + 34 (班名 30×1.15) + 25 (名次副行 2 + 20×1.15) + 104 (三项概况 8+6+2 + 值 41 + 8 + 标签 28)
+//   + 78 (达标块 4 + 顶行 35 + 条 6+10+4 + 副行 24) + 48 (前三名标题 10+8+27)
+//   + 3×52 (三行) + 76 (管理入口 10 + 52+14) + 14 (padding-bottom) ≈ 551rpx
+// 取 560rpx：比满卡内容高约 9rpx（略高而不是略矮，避免首帧裁到内容），量到真实值后一次性替换。
+const FALLBACK_HEIGHT_RPX = 560;
+
+// 第一次量到异常值（0 / 明显超出屏幕）时，延迟这么久再量一次；仍失败就用兜底常量
+const MEASURE_RETRY_MS = 120;
 
 Component({
   properties: {
@@ -74,13 +81,13 @@ Component({
     //（真机上表现为滑不过去）；所以头部摆动的是这个镜像对象 —— 模板里 swiper 的 current 只由
     //「点圆点」等显式操作推进，手势滑动只更新镜像与指示器。
     currentCard: null,
-    // 卡片固定高度（rpx）：多班时是 <swiper> 的内联高度，单班时由 WXSS 的
-    // --cb-card-h / min-height 生效（两处用同一个值）；首帧就是这个值，不会先 0 再跳。
-    cardHeight: CARD_HEIGHT_RPX,
-    // 安全网：仅当实测内容**超过**固定高度时才补的额外高度（只增不减）。
-    // 正常情况恒为 0 → 卡片高 = swiper 高、零白区；极小概率的超高内容（超长班级名换行等）才 >0，
-    // 且卡片与 swiper 一起长高（下面模板同一表达式），不会出现「容器比卡片高」的白区。
-    cardExtra: 0,
+    // 卡片高度（rpx）：首屏量到真实卡高之前 = 兜底常量，量到后一次性替换并冻结；
+    // 多班时它是 <swiper> 的内联高度，单班时由 WXSS 的 --cb-card-h / min-height 生效（同一个值）。
+    cardHeight: FALLBACK_HEIGHT_RPX,
+    // 是否已经量到并冻结高度（冻结后切换班级/刷新都不再改高度）
+    heightLocked: false,
+    // 量高度的重试计数（第一次量到异常值 -> 延迟再量一次）
+    measureRetry: 0,
   },
 
   lifetimes: {
@@ -136,9 +143,11 @@ Component({
             role: mine.role,
           },
           () => {
-            // 首帧渲染完成后才过安全网（正常情况恒定高度、不 setData，首帧就是最终高度）
             this.updateIndicator();
-            this.checkOverflow();
+            // 首屏渲染完成后（再等一个 nextTick，保证 swiper-item 内的卡片几何已就绪）量一次并冻结
+            const measure = () => this.measureOnce();
+            if (typeof wx.nextTick === 'function') wx.nextTick(measure);
+            else setTimeout(measure, 0);
           }
         );
         this.triggerEvent('ready', { role: mine.role, className, overview: payload.overview });
@@ -204,27 +213,49 @@ Component({
       const indicatorText = total > 1 ? `${i + 1}/${total}` : '';
       if (indicatorText !== this.data.indicatorText) this.setData({ indicatorText });
     },
-    // ===== 安全网：仅当内容真的超过固定高度时才把高度调大（只增不减）=====
-    // 高度本身**不是**动态测出来的：它就是常量 CARD_HEIGHT_RPX（前三名恒 3 行 → 内容高度是常量）。
-    // 这里只兜一种极小概率的情况：班级名过长换行、名字特别长导致某一行撑高等，
-    // 使某张卡的自然高度 > 常量。此时把「卡片 + swiper」一起按差值长高（模板里是同一个表达式），
-    // 所以永远不会出现「容器比卡片高」的白区；正常情况 cardExtra 恒为 0、高度零变化。
-    // 只在数据装载/刷新后跑一次，**切换班级不跑**（切换时高度必须逐像素一致）。
-    checkOverflow() {
-      if (!this.data.multi || !(this.data.cards || []).length) return;
+    // ===== 只量一次就冻结的高度测量 =====
+    // 在首屏 setData 回调 + wx.nextTick 之后量**当前可见的 .cb-card** 的真实高度：
+    //   · 量到合理值（> 0 且不超过屏幕高度）→ 取整成 rpx 作为所有班级共用的 cardHeight，然后**冻结**；
+    //   · 量到异常值（0 / 空数组 / 明显超出屏幕）→ 丢弃本次结果，保留兜底常量，延迟 120ms 再量一次；
+    //     重试仍失败就保持兜底常量（不猜、不阻塞渲染）。
+    // 注意 `.cb-card` 全屏只有两张：swiper 之外的「单班卡」与 swiper 内每个面板里的卡。
+    // 多班时先取**可见**的那张（swiper-item 内的 `.cb-card`，需要 `>>>` 穿透组件），
+    // 取不到再退回第一个 `.cb-card`（即单班卡 / 第 1 张）—— 两者高度一致，不影响结论。
+    measureOnce() {
+      if (this.data.heightLocked) return;
       const self = this;
       this.createSelectorQuery()
-        .selectAll('.cb-card')
+        .selectAll('.cb-swiper-item >>> .cb-card')
         .boundingClientRect(function (rects) {
-          const list = (rects || []).filter((r) => r && r.height > 0);
-          if (!list.length) return; // 量不到：保持固定高度（不猜、不用兜底值）
-          // px → rpx：rpx 的定义就是 750 / 屏宽（750 是设计稿基准宽，与机型无关）
-          const px2rpx = 750 / 375;
-          const max = list.reduce((m, r) => Math.max(m, r.height), 0);
-          const need = Math.round(max * px2rpx) - CARD_HEIGHT_RPX;
-          if (need > self.data.cardExtra) self.setData({ cardExtra: need });
+          if (rects && rects.length) {
+            self.applyMeasured(rects);
+            return;
+          }
+          self.createSelectorQuery()
+            .selectAll('.cb-card')
+            .boundingClientRect(function (all) {
+              self.applyMeasured(all);
+            })
+            .exec();
         })
         .exec();
+    },
+
+    applyMeasured(rects) {
+      const list = (rects || []).filter((r) => r && r.height > 0);
+      // px → rpx：rpx 的定义就是 750 / 屏宽（750 是设计稿基准宽，与机型无关）
+      const px2rpx = 750 / 375;
+      const h = list.length ? Math.round(Math.max(...list.map((r) => r.height)) * px2rpx) : 0;
+      // 异常值判断：0 或明显超出屏幕（> 屏高 rpx）都丢弃
+      if (!h || (wx.getWindowInfo && h > wx.getWindowInfo().windowHeight * px2rpx)) {
+        if (this.data.measureRetry < 1) {
+          this.setData({ measureRetry: this.data.measureRetry + 1 });
+          setTimeout(() => this.measureOnce(), MEASURE_RETRY_MS);
+        }
+        return;
+      }
+      // 量到就冻结：所有班级共用这个高度（= 卡片真实内容高度），之后不再测量、不再变化
+      this.setData({ cardHeight: h, heightLocked: true });
     },
 
     // 滑动切换班级：只更新镜像 / 指示器 / swipeIndex，不回写 currentIndex（见 data.swipeIndex 说明）
@@ -275,8 +306,10 @@ Component({
           },
           () => {
             this.updateIndicator();
-            // 数据变了才重新过一遍安全网（切换班级时不跑，高度必须恒定）
-            this.checkOverflow();
+            // 高度已冻结则不再测量（切换班级/刷新都不改变高度）；只有首屏没量到成功时才补量
+            const measure = () => this.measureOnce();
+            if (typeof wx.nextTick === 'function') wx.nextTick(measure);
+            else setTimeout(measure, 0);
           }
         );
       } catch (e) {

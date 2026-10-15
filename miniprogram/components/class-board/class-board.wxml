@@ -8,8 +8,9 @@
     <text class="tt-section-extra" wx:if="{{showManage}}" bind:tap="goManage">班级管理 ›</text>
   </view>
 
-  <!-- 卡片高度是固定常量（cardHeight + 安全网 cardExtra）：单班与多班同一个值、首帧即最终高度 -->
-  <view class="tt-card cb-card" style="--cb-card-h: {{cardHeight + cardExtra}}rpx">
+  <!-- 卡片高度：首屏量一次当前可见卡的真实高度后**冻结**（量不到用兜底常量）；单班/多班同一个值，
+       且卡片与 swiper 用同一表达式 → 卡片高 ≡ 容器高、无内部空白、切换班级高度不变 -->
+  <view class="tt-card cb-card" style="--cb-card-h: {{cardHeight}}rpx">
     <!-- 固定头部：当前选中班级 + 身份 + 全校名次（滑动时不动；数据取 currentCard 镜像） -->
     <view class="cb-head">
       <view class="cb-head-main">
@@ -82,7 +83,7 @@
 
     <!-- 多班：横向滑动切换班级；每个面板是完整的一张班级卡（高度固定，切换时高度不变） -->
     <block wx:else>
-      <view class="cb-swiper" style="height: {{cardHeight + cardExtra}}rpx">
+      <view class="cb-swiper" style="height: {{cardHeight}}rpx">
         <swiper
           class="cb-swiper-box"
           current="{{currentIndex}}"

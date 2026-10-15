@@ -394,13 +394,17 @@ WebP q80 = 41.4KB（更小，但 `image` 组件 iOS 需 14+，目标环境实测
   每个班各拉一份 `/api/class/overview` + `/api/class/ranking`（带 `className`），滑动是纯手势切换、不再发请求
   —— 切到哪班就显示哪班的数字，不会出现「卡片换了数字没换」；班级名 / 身份胶囊 / 全校名次 / 「n/N」在 swiper 之外固定不滑，
   卡片底部另有圆点 + `n/N` 指示器（可点选）。
-  **高度是固定常量，不做动态测量**（前三名恒 3 行 → 内容高度本来就是常量）：JS `CARD_HEIGHT_RPX = 686rpx`
-  （20+42+34+120+97+57+3×60+88+18），WXSS 用同一个值作 `.cb-card` 的 `--cb-card-h` + `min-height`；
-  多班时 `.cb-swiper` 的内联 `height` 与卡片内联 `--cb-card-h` 是**同一个表达式**（`cardHeight + cardExtra`）
-  → 卡片高 ≡ swiper 高，**卡片下方零白区、首帧即最终高度、切换班级高度零变化**。
-  `cardExtra` 是只增不减的安全网（仅在实测内容真的超过常量、如超长班级名换行时才补差值），正常恒为 0；
-  绝不给 `.cb-swiper` 写 `min-height`、绝不用「所有卡取最高」——两者都会让容器高于卡片、在卡片下方留白（已踩过）。
-  单班时 `multi:false` → **不渲染 swiper、不显示任何滑动控件**，卡片同样吃固定高度（两种模式视觉一致）。
+  **高度：首屏量一次当前可见卡的真实高度后冻结**（不再用「按 wxss 估的固定常量」——估高了会在卡片下方留白）：
+  `load`/`reload` 的 `setData` 回调 + `wx.nextTick` 后，用 `createSelectorQuery()` 量
+  `.cb-swiper-item >>> .cb-card`（取不到退回第一个 `.cb-card`）的 `boundingClientRect().height`，
+  换算成 rpx 存进 `cardHeight` 并置 `heightLocked:true`；**之后切换班级不再测量、不再变化**（高度恒定）。
+  量到 0 / 明显超出屏幕就丢弃本次结果、保留兜底常量 `FALLBACK_HEIGHT_RPX = 560rpx`，`setTimeout` 120ms 重试一次，仍失败就用兜底值。
+  `.cb-card` 的内联 `--cb-card-h` 与 `.cb-swiper` 的内联 `height` 是**同一个值**（单班则由 `min-height: var(--cb-card-h)` 生效）
+  → 卡片高 ≡ 容器高、**卡片下方零白区、切换班级高度零变化、单班多班视觉一致**。
+  绝不给 `.cb-swiper` 写 `min-height`、绝不用「所有卡取最高」——两者都会让容器高于卡片（已踩过两次）。
+  **卡片按紧凑口径排版**（同样信息更矮约 16%，3 行满卡 716rpx → 603rpx）：前三名行 60→52rpx、管理入口 88→76rpx、
+  卡片上下 padding 20/18→16/14、`.cb-stats`/`.cb-goal`/`.cb-top3` 的 margin+padding 各收 4~6rpx、概况数值 40→36rpx。
+  单班时 `multi:false` → **不渲染 swiper、不显示任何滑动控件**（同一高度口径）。
 - **跑分：首页/我的/记录/排行统一口径**：数字用 `.num-font` + `--tt-brand`，文案为「今日/本周/累计跑分」；
   首页在「今日目标」卡内用浅色三格（`.today-points`），我的页面用独立卡（`.points-card`）；
   **教师账号不参与跑分**（相关块整体隐藏，不是显示 0）。
