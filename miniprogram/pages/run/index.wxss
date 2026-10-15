@@ -90,17 +90,24 @@
    靠右侧的**透明**侧边块：不在 .sheet 内部，只做定位与尺寸占位 ——
    无背景 / 无阴影 / 无圆角 / 无内边距，广告由微信模板自绘（自带「广告」标识）。
    垂直位置：bottom 由 measureAd() 实测（锚在面板上沿之上 20rpx）→ 不遮开始按钮/数据区；
-   水平位置：固定右侧 24rpx，宽度收窄到 320rpx → 不再横向铺开在地图中间；
-   尺寸：宽度与 min-height 由内联 style 给出（常量在 index.js 头部，样式无需跟着改）。
-   官方口径：「无广告展示时 ad-custom 不占高度」，所以占位高度由本容器兜住，填充前后不跳动 */
+   水平位置：right 24rpx = 面板（.sheet 也是 right:24rpx）的右内沿，与面板右边界对齐；
+   尺寸：未加载/无填充时下面两行是兜底（占位高 200rpx，避免大片空白 + 加载前后不跳动），
+   bindload 后由 fitAdToContent() 量的实测宽高覆盖 → 容器边界紧贴广告内容，右侧/下方不留空白。
+   官方口径：「无广告展示时 ad-custom 不占高度」，所以占位高度由本容器兜住 */
 .run-ad {
   position: fixed;
   right: 24rpx;
   bottom: 480rpx; /* 首帧兜底（实测值由内联 style 覆盖）：必然高于面板上沿 */
   width: 320rpx; /* 首帧兜底，与 index.js 的 AD_BOX_WIDTH_RPX 一致 */
-  min-height: 260rpx; /* 同 AD_BOX_MIN_HEIGHT_RPX */
+  min-height: 200rpx; /* 首帧兜底，与 AD_BOX_MIN_HEIGHT_RPX 一致 */
   background: transparent;
+  overflow: hidden; /* 透明容器：即使广告比容器略宽也不让内容溢出容器边界 */
   z-index: 20;
+}
+
+/* 容器宽 = 广告宽（官方口径：外层容器宽度决定广告宽度），高度按模板等比自适应 */
+.run-ad-ad {
+  width: 100%;
 }
 
 .stats {

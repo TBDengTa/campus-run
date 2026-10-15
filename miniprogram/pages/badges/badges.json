@@ -1,3 +1,6 @@
 {
-  "navigationBarTitleText": "我的徽章"
+  "navigationBarTitleText": "我的徽章",
+  "usingComponents": {
+    "ad-banner": "/components/ad-banner/ad-banner"
+  }
 }

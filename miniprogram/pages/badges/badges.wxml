@@ -43,6 +43,12 @@
     <t-loading theme="circular" size="48rpx" text="加载中…" />
   </view>
 
+  <!-- ===== 流量主横幅（原生模板 ad-custom）=====
+       位置：3 列矩阵**之后**、页脚之前（不在网格中间，也不挡任何 .badge-cell 的点击）。
+       教师不可见：show-ad="{{showAd}}"，showAd 只有 /api/auth/me 角色确认为学生才置真；
+       容器自带占位高度（加载中/无填充不跳动），加载成功后由组件收紧到实测尺寸。 -->
+  <ad-banner unit-id="adunit-09dddc560022022c" show-ad="{{showAd}}" />
+
   <view class="tt-footer">每日坚持运动，徽章会自动点亮</view>
 
   <!-- ===== 详情弹窗（底部抽屉，骨架复用 app.wxss 的 .tt-sheet*）===== -->

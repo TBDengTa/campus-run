@@ -275,14 +275,18 @@ WebP q80 = 41.4KB（更小，但 `image` 组件 iOS 需 14+，目标环境实测
   - 视觉与首页一致：右上角 `.ad-card-flag`「广告」标识、`aspectFit` 不裁切、高度按图片比例换算（限幅 120~420rpx）。
   - 曝光/点击上报与首页同一套（`POST /api/ads/:id/pv|click`）；教师账号拿到空数组，整块不出现。
   - 素材解码失败（如老 iOS 不支持 WebP）自动摘掉该条，不留空白卡。
-- **流量主广告位（三处，教师账号一律不可见）**：unit-id 是客户端公开标识，可以进仓库；服务端地址/密钥/AppSecret 绝不进被跟踪文件。
+- **流量主广告位（三处 + 通用横幅四处，教师账号一律不可见）**：unit-id 是客户端公开标识，可以进仓库；服务端地址/密钥/AppSecret 绝不进被跟踪文件。
   | 页面 | 形态 | unit-id | 位置 |
   |---|---|---|---|
   | 北斗运动 `pages/reward` | 插屏（JS 实例） | `adunit-773c53ab76db1155` | 无节点：模块级全局单例，**进入页面（首屏数据加载完成后）展示 1 次** |
   | 我的 `pages/profile` | 原生模板（横版 `ad-custom`） | `adunit-eeb7b18e406d94b1` | 「我的信息」卡与「累计数据」卡之间的夹缝（**不在**连点 5 次彩蛋那张卡内部） |
-  | 跑步 `pages/run/index` | 原生模板（格子 `ad-custom`） | `adunit-8b909cca0be100b5` | **`.sheet` 之外**：靠右侧的**透明**侧边块（`position: fixed; right: 24rpx`，尺寸由 `AD_BOX_*` 常量给），`bottom` 由 `measureAd()` 实测锚定在面板上沿之上 → 数据区/按钮零位移 |
-  - **教师闸门是两道**：`isTeacher` 之外还有 `showAd`（只有 `/api/auth/me` 确认角色是学生后才置真）——
+  | 跑步 `pages/run/index` | 原生模板（格子 `ad-custom`） | `adunit-8b909cca0be100b5` | **`.sheet` 之外**：靠右侧的**透明**侧边块（`position: fixed; right: 24rpx`，尺寸两态见 §8.2），`bottom` 由 `measureAd()` 实测锚定在面板上沿之上 → 数据区/按钮零位移 |
+  | 徽章 / 目标计划 / 身体数据 / 饮水管理 | 原生模板（横版 `ad-custom`） | 见下方通用横幅表 | 通用组件 `components/ad-banner/ad-banner`，一行接入 |
+  - **教师闸门是两道**：`isTeacher` 之外还有 `showAd`（只有确认角色是学生后才置真）——
     首帧 `isTeacher` 还是默认 `false`，只用 `!isTeacher` 会让教师先渲染出广告节点、产生一次曝光。
+    角色确认统一走 `app.js::applyAdGate(page)`（在 `await ensureLogin()` 之后调用）：
+    优先用内存里已确认的 `globalData.userInfo.role`，拿不到就按需查一次 `/api/auth/me`
+    （`this._roleProbe` 缓存，每次启动最多一次）；接口不可用则保持 `showAd: false`（宁可不展示）。
   - **北斗运动页教师「进不去」是刻意的三道拦截**（教师不参与运动记录，本页只对学生开放）：
     ① 入口：我的页「累计数据」连点 5 次（`profile.js::onStatsTap`）判定教师 → 只 toast「教师账号不参与运动记录」，**不 navigateTo**；
     ② 页面 `onLoad`：用本地缓存角色（`auth.getUser().role`）判定 → `blocked=true` 且转出，**首帧不闪内容**；
@@ -292,23 +296,50 @@ WebP q80 = 41.4KB（更小，但 `image` 组件 iOS 需 14+，目标环境实测
   - **插屏节流**（常量在 `pages/reward/reward.js` 头部）：`INTERSTITIAL_SESSION_MAX = 3`（本次运行最多 3 次）、
     **每次进入最多 1 次**（`onShow` 重入不重复弹）、`show()` 失败 catch 静默**且不占额度**；
     计数器是模块级（跨页面重进累计），回调 `onLoad/onError/onClose` 只注册一次。
-  - 两个 `ad-custom` 容器都给了 `min-height` 占位（我的页 240rpx、跑步页 260rpx）：**官方口径「无广告展示时 `ad-custom` 不占高度」**，
+  - `ad-custom` 容器都给了 `min-height` 占位（我的页 240rpx、跑步页 200rpx、通用横幅 `ad-banner` 200rpx）：
+    **官方口径「无广告展示时 `ad-custom` 不占高度」**，
     所以占位高度必须由父容器给，加载中 / 无填充时也占住高度，不发生布局跳动；
+    跑步页与 `ad-banner` 还会在 `bindload` 后按实测尺寸收紧（不留「容器比广告大」的空框，见 §8.2）；
     广告由微信模板自绘并自带「广告」标识，页面不再额外加标识。
+- **通用流量主横幅 `components/ad-banner/ad-banner`（徽章 / 目标计划 / 身体数据 / 饮水管理 四处）**：
+  四个页面共用「占位高度 + 加载后贴合实际尺寸 + 事件只记日志」这一份实现，页面里只放一行
+  `<ad-banner unit-id="adunit-…" show-ad="{{showAd}}" />`（json 里注册 `ad-banner`）。
+  | 页面 | unit-id | 插入位置 |
+  |---|---|---|
+  | 徽章 `pages/badges` | `adunit-09dddc560022022c` | 3 列矩阵**之后**、页脚之前（不插在网格中间，不挡卡片点击） |
+  | 目标计划 `pages/goal-plan` | `adunit-431307a81dc3d26a` | 候选计划列表之后、身体数据提示之前（不遮「应用此计划」按钮） |
+  | 身体数据 `pages/body-data` | `adunit-e21e9b1b1c5f690d` | 录入表单与「保存并匹配目标计划」按钮之后、目标计划入口卡之前 |
+  | 饮水管理 `pages/water/water`（学生端打卡页） | `adunit-d3c555674f1c360c` | 下滑内容区最末（历史记录 / 目标构成之后）、页脚之前 |
+  - **占位高度统一**：`ad-banner.js` 的 `MIN_HEIGHT_RPX = 200`（容器 `min-height`），
+    加载中 / 无填充 / 关闭后都占住这 200rpx，不出现大片空白也不跳动；`bindload` 后查一次自己渲染出来的
+    真实高度，把容器收紧成实测高度（消掉「容器比广告高」的透明空框），`binderror` 退回占位。
+    横幅宽度保持卡片宽 100%（容器自带左右 `var(--tt-gap)` 留白），只收紧高度。
+  - **教师两道闸门**：`show-ad` 由页面给，页面 `data` 里先写 `isTeacher: false, showAd: false`，
+    在 `await getApp().ensureLogin()` 之后调 `getApp().applyAdGate(this)`——
+    只有拿到 `userInfo.role` 且不是 `teacher` 才把 `showAd` 置真（角色未知同样 false）。
+    首帧 `isTeacher` 默认 false，只用 `!isTeacher` 会让教师先闪出一条广告，所以必须两道。
 
 ### 8.2 跑步页格子广告的落位（侧边透明块）
 
-- **形态**：`.run-ad` 在 `.sheet` **之外**，`position: fixed` + `right: 24rpx`（靠右侧），**透明**——
+- **形态**：`.run-ad` 在 `.sheet` **之外**，`position: fixed` + `right: 24rpx`（= 面板 `.sheet` 的
+  `right: 24rpx` 内沿，与面板右边界对齐），**透明**——
   无背景 / 无阴影 / 无圆角 / 无内边距，只做定位与尺寸占位（广告由微信模板自绘并自带「广告」标识）。
 - **尺寸（外层容器决定广告宽高）**：官方口径是「外层容器宽度 = 广告宽度，内部 `ad-custom` 固定 `width:100%`、
   高度按模板等比自适应」，且「**无广告展示时 `ad-custom` 不占高度**」→ 占位高度必须由外层给。
-  常量在 `pages/run/index.js` 头部：`AD_BOX_WIDTH_RPX = 320`、`AD_BOX_MIN_HEIGHT_RPX = 260`（只改这两个即可）。
-  宽度取 320rpx（375px 机型 ≈ 160px；320px 窄屏 ≈ 150px）＝面板宽 702rpx 的 46%，偏保守（宁可稍宽也不留不填充的窄条）。
+  **两态**（这是「缝隙」的根因与修法）：
+  ① 加载前 / 无填充 / `bindclose` 后：兜底宽 `AD_BOX_WIDTH_RPX = 320` + 占位高 `AD_BOX_MIN_HEIGHT_RPX = 200`
+  （只改这两个常量即可）——320rpx（375px 机型 ≈ 160px；320px 窄屏 ≈ 150px）＝面板宽 702rpx 的 46%，
+  占位高从 260 收到 200，避免无填充时留一大块透明空白；
+  ② `bindload` 之后：`fitAdToContent()` 用 `wx.createSelectorQuery()` 量 `.run-ad-ad`（ad-custom）
+  实际渲染宽高（px→rpx），把内联 `style` 换成 `width:实测w;height:实测h`（`height` 顶掉 `min-height`）——
+  容器边界 = 广告内容边界，**广告右侧 / 下方不再露出「比广告大的透明空框」**；
+  宽度量到异常值（< 80 或 > 500rpx）就丢弃、继续用 320rpx 兜底，高度量到 < 20rpx 也丢弃（保留占位）。
 - **锚定**：`bottom = 窗口高 − 面板内控制区（`.ctrls`）顶部 + 20rpx`，再用
-  `min(winH − 200rpx − 占位高)` 封顶（保证块 `top ≥ 200rpx`，不压顶部状态胶囊；小屏 / 待机态面板较高时
+  `min(winH − 200rpx − 当前广告块高)` 封顶（保证块 `top ≥ 200rpx`，不压顶部状态胶囊；小屏 / 待机态面板较高时
   会把块往下压到面板上沿，最多压住面板顶部约 84rpx 的圆角留白，仍在数据区之上），下限 240rpx。
   由 `pages/run/index.js::measureAd()` 用 `wx.createSelectorQuery` 实测后写进内联 `style`
-  （`onReady` / `onResize` / 每次状态切换 `setData` 回调里复测；角色未知或教师时直接跳过）。
+  （`onReady` / `onResize` / 每次状态切换 `setData` 回调里复测；`fitAdToContent()` 量到新尺寸后再复测一次；
+  角色未知或教师时直接跳过）。
   面板是 `bottom` 锚定，面板内元素到屏幕底部的距离与广告无关 → **数据区与按钮位移 0**。
 - **为什么不做顶部固定条**：顶部 24rpx 已被状态胶囊 + 定位重试胶囊占用，顶部条会与之打架；
   面板上沿到状态条之间是纯地图区，块放这里**不遮挡**开始按钮 / 数据区 / 地图关键信息。

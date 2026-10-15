@@ -1,0 +1,17 @@
+/* ===== 通用流量主横幅（徽章 / 目标计划 / 身体数据 / 饮水管理 共用）=====
+   和卡片广告位（components/ad-card）同一视觉语言：白底卡片 + 统一圆角 + 页面左右留白。
+   占位高度统一在 ad-banner.js 的 MIN_HEIGHT_RPX（200rpx）；bindload 后由内联 style
+   收紧成实测宽高（去掉多余空白），所以这里只给「未实测前」的兜底尺寸。 */
+.ad-banner {
+  position: relative;
+  margin: 0 var(--tt-gap) var(--tt-gap);
+  box-sizing: border-box;
+  border-radius: var(--tt-radius);
+  overflow: hidden;
+  background: var(--tt-card);
+  box-shadow: var(--tt-card-shadow);
+}
+
+.ad-banner-ad {
+  width: 100%;
+}

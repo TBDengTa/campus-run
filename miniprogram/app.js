@@ -73,6 +73,49 @@ App({
     return data.userInfo;
   },
 
+  // 流量主广告（ad-custom）的**第二道闸门**：必须在 `await ensureLogin()` 之后调用。
+  // 用法（页面 data 里先声明 `isTeacher: false, showAd: false`）：
+  //   await getApp().ensureLogin();
+  //   getApp().applyAdGate(this);
+  // 为什么两道：首帧 `isTeacher` 还是默认 false，只用 `!isTeacher` 会让教师账号先渲染出
+  // 广告节点、产生一次曝光；`showAd` 只有**确认角色是学生**之后才为真。
+  // 角色来源：优先用内存里已确认的 userInfo（/api/auth/me 或 login 写过）；
+  // 拿不到就按需查一次 /api/auth/me（每次启动最多一次，成功即缓存）——
+  // 这样「本地缓存的旧角色」不会让教师闪一条广告；接口不可用则保持 false（宁可不展示）。
+  applyAdGate(page) {
+    if (!page || typeof page.setData !== 'function') return false;
+    const cached = this.globalData.userInfo || auth.getUser() || null;
+    if (cached && cached.role) return this._setAdGate(page, cached.role);
+    if (auth.isLoggedOut() || !auth.isBound()) return false;
+    if (!this._roleProbe) {
+      this._roleProbe = auth
+        .get('/api/auth/me')
+        .then((user) => {
+          if (user && user.role) {
+            this.globalData.userInfo = user;
+            auth.setUser(user);
+          }
+          return (user && user.role) || '';
+        })
+        .catch(() => '');
+    }
+    const probe = this._roleProbe;
+    probe.then((role) => {
+      if (role) this._setAdGate(page, role);
+    });
+    return false;
+  },
+
+  // 把闸门结果写回页面 data（值与当前一致时不 setData，避免无意义渲染）
+  _setAdGate(page, role) {
+    const isTeacher = role === 'teacher';
+    const showAd = !!role && !isTeacher;
+    if (page.data.isTeacher !== isTeacher || page.data.showAd !== showAd) {
+      page.setData({ isTeacher, showAd });
+    }
+    return showAd;
+  },
+
   // 刷新用户信息
   async refreshUser() {
     const user = await auth.get('/api/auth/me');

@@ -131,6 +131,13 @@
     </view>
   </view>
 
+  <!-- ===== 流量主横幅（原生模板 ad-custom）=====
+       位置：候选计划列表**之后**、身体数据提示/加载态之前 —— 不遮任何「应用此计划」按钮，
+       也不插在计划卡之间（避免看起来像某张计划卡的一部分）。
+       教师不可见：show-ad="{{showAd}}"，showAd 只有 /api/auth/me 角色确认为学生才置真；
+       容器自带占位高度（加载中/无填充不跳动），加载成功后由组件收紧到实测尺寸。 -->
+  <ad-banner unit-id="adunit-431307a81dc3d26a" show-ad="{{showAd}}" />
+
   <!-- 身体数据缺失提示：此时只按「强度 + 性别」粗略匹配 -->
   <view class="tt-card gp-hint" wx:if="{{needBodyData && !loading}}" bind:tap="goBodyData">
     <t-icon name="info-circle" size="32rpx" color="var(--tt-brand)" />

@@ -89,6 +89,9 @@ Page({
     total: 0,
     percent: 0,
     percentStyle: 'width:0%',
+    // 流量主横幅（ad-banner）闸门：首帧都是 false（不渲染），load() 里 ensureLogin 之后才置真
+    isTeacher: false,
+    showAd: false,
     // 详情底部弹窗（点击列表行打开）
     sheet: { visible: false, levels: [] },
   },
@@ -169,6 +172,8 @@ Page({
   async load() {
     try {
       await getApp().ensureLogin();
+      // 流量主横幅（ad-banner）的两道闸门：角色已确认是学生才渲染，教师整块不进 DOM
+      getApp().applyAdGate(this);
       await this.checkBadges();
       const data = await auth.get('/api/badges');
       const total = Number(data.total) || 0;

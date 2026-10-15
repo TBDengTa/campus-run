@@ -85,6 +85,9 @@ Page({
     bmiTip: NO_BMI_TIP,
     planSummary: NO_PLAN_SUMMARY,
     submitting: false,
+    // 流量主横幅（ad-banner）闸门：首帧都是 false（不渲染），load() 里 ensureLogin 之后才置真
+    isTeacher: false,
+    showAd: false,
   },
 
   onLoad(options) {
@@ -98,6 +101,8 @@ Page({
   async load() {
     try {
       await getApp().ensureLogin();
+      // 流量主横幅（ad-banner）的两道闸门：角色已确认是学生才渲染，教师整块不进 DOM
+      getApp().applyAdGate(this);
       // 注意：/api/goal/body-data 返回 { bodyData, currentPlan, planName, autoMatched, effective }，身体数据在 bodyData 内
       const [res, myPlan] = await Promise.all([
         auth.get('/api/goal/body-data'),

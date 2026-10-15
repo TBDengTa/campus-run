@@ -56,6 +56,9 @@ Page({
     logs: [],
     history: [],
     historyOk: 0, // 近 N 天达标天数
+    // 流量主横幅（ad-banner）闸门：首帧都是 false（不渲染），load() 里 ensureLogin 之后才置真
+    isTeacher: false,
+    showAd: false,
   },
 
   onShow() {
@@ -67,6 +70,8 @@ Page({
   async load() {
     try {
       await getApp().ensureLogin();
+      // 流量主横幅（ad-banner）的两道闸门：角色已确认是学生才渲染，教师整块不进 DOM
+      getApp().applyAdGate(this);
       const [today, history] = await Promise.all([
         auth.get('/api/water/today'),
         auth.get('/api/water/history', { limit: 14 }).catch(() => ({ list: [] })),

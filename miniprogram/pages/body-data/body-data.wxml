@@ -154,5 +154,12 @@
     <t-icon name="chevron-right" size="34rpx" color="var(--tt-text-3)" />
   </view>
 
+  <!-- ===== 流量主横幅（原生模板 ad-custom）=====
+       位置：录入表单之后、「我的目标计划」入口卡之前 —— 不遮表单输入框、不遮保存按钮，
+       也不会被页面最底部的页脚挤成窄条；保存按钮与入口卡之间本来就有一段自然留白，放这里不打断操作流。
+       教师不可见：show-ad="{{showAd}}"，showAd 只有角色确认为学生才置真（app.js::applyAdGate）；
+       容器自带占位高度（加载中/无填充不跳动），加载成功后由组件收紧到实测尺寸。 -->
+  <ad-banner unit-id="adunit-e21e9b1b1c5f690d" show-ad="{{showAd}}" />
+
   <view class="tt-footer">BMI 与计划仅供健康参考，运动请量力而行</view>
 </view>

@@ -20,9 +20,16 @@ function haversine(lat1, lng1, lat2, lng2) {
 // 这里做成「靠右侧的透明侧边块」：不再铺满地图，也不再自带白底/阴影/圆角/内边距。
 //   · 宽 320rpx（375px 机型 ≈ 160px，320px 窄屏 ≈ 150px）：官方没给最小宽度，具体模板各异；
 //     取「面板宽（702rpx）的 46%」的保守值，宁可稍宽也不留不填充的窄条（越小越可能不填充/字挤）。
-//   · 占位高 260rpx：格子模板常见比例，填充后由容器自身高度撑开，占位只在加载中/无填充时兜底。
+//     这只是**占位/兜底**宽度：bindload 后会用 ad-custom 实测渲染宽（px→rpx）覆盖它，
+//     让容器与广告内容边界一致（写死宽度比广告宽时会看到广告右侧一条空白）。
+//   · 占位高 200rpx（与 components/ad-banner 的 MIN_HEIGHT_RPX 同口径）：
+//     官方「无广告展示时 ad-custom 不占高度」→ 占位只在加载中/无填充时兜底；
+//     **bindload 之后会把 min-height 收掉、换成实测高度**，避免「占位比广告高」在广告下方留一条透明空白。
 const AD_BOX_WIDTH_RPX = 320;
-const AD_BOX_MIN_HEIGHT_RPX = 260;
+const AD_BOX_MIN_HEIGHT_RPX = 200;
+// 实测收紧时的边界：宽度量到异常值（0 / 极大）就不采用，继续用上面的兜底
+const AD_BOX_WIDTH_MIN_RPX = 80;
+const AD_BOX_WIDTH_MAX_RPX = 500;
 Page({
   data: {
     state: 'idle', // idle | running | paused | finished
@@ -45,7 +52,7 @@ Page({
     showAd: false,
     // 侧边透明广告块的定位与尺寸（内联 style）：
     //   bottom = 窗口高 − 面板内控制区(.ctrls)顶部 + 间距（measureAd() 实测，锚在面板上沿之上）
-    //   宽度/占位高度来自文件头两个常量（容器必须自带尺寸：ad-custom 无填充时不占高度）
+    //   尺寸：未加载/无填充 = 兜底宽 + 占位高；bindload 后 = ad-custom 实测宽高（writeAdStyle()）
     adStyle: '',
 
     // 保存记录后获得的徽章（自定义带图弹窗，替代把徽章名拼进 wx.showModal 的纯文字写法）
@@ -104,14 +111,55 @@ Page({
         //      只有小屏 + 待机态（面板较高）才需要把块往下压到面板上沿；此时块会略微压住
         //      面板顶部约 80~170rpx 的圆角/留白，但仍在数据区之上，按钮零位移）
         // 故取 min(锚定值, winH − 200 − 占位高)，再兜一个下限 240rpx
+        const boxH = this._adFitH || AD_BOX_MIN_HEIGHT_RPX;
         let bottom = Math.round(winH - ctrlsTop + 20);
-        bottom = Math.min(bottom, Math.round(winH - 200 - AD_BOX_MIN_HEIGHT_RPX));
+        bottom = Math.min(bottom, Math.round(winH - 200 - boxH));
         bottom = Math.max(240, bottom);
-        const adStyle = `bottom:${bottom}rpx;width:${AD_BOX_WIDTH_RPX}rpx;min-height:${AD_BOX_MIN_HEIGHT_RPX}rpx;`;
-        if (adStyle !== this._adStyle) {
-          this._adStyle = adStyle;
-          this.setData({ adStyle });
-        }
+        this._adBottom = bottom;
+        this.writeAdStyle();
+      })
+      .exec();
+  },
+
+  // 写广告块的内联样式：位置（bottom）+ 尺寸。
+  // 尺寸有两态：
+  //   · 广告未加载/无填充 → 兜底宽 320rpx + 占位高 200rpx（避免出现大片空白，也避免跳动）
+  //   · 广告 bindload 之后 → 用 ad-custom 实测渲染宽高（fitAdToContent() 写进 _adFitW/_adFitH），
+  //     把占位收掉：容器边界 = 广告内容边界，广告下方不再留「比广告高的透明占位」
+  writeAdStyle() {
+    if (this.data.isTeacher) return;
+    const w = this._adFitW || AD_BOX_WIDTH_RPX;
+    const h = this._adFitH;
+    const size = h ? `width:${w}rpx;height:${h}rpx;` : `width:${w}rpx;min-height:${AD_BOX_MIN_HEIGHT_RPX}rpx;`;
+    const adStyle = `bottom:${this._adBottom || 480}rpx;${size}`;
+    if (adStyle !== this._adStyle) {
+      this._adStyle = adStyle;
+      this.setData({ adStyle });
+    }
+  },
+
+  // 广告加载成功（bindload）→ 查一次 ad-custom 实际渲染尺寸，把容器收紧到「紧贴广告」。
+  // 这一步解决用户截图的「缝隙」：写死的 320×260 比广告实际渲染大时，
+  // 广告右侧/下方会露出容器的透明空白。量的到就用实测值，量不到继续用兜底（不跳动）。
+  fitAdToContent() {
+    if (this.data.isTeacher || this._adFitting || !wx.createSelectorQuery) return;
+    const info = (wx.getWindowInfo && wx.getWindowInfo()) || (wx.getSystemInfoSync && wx.getSystemInfoSync()) || null;
+    const vw = (info && info.windowWidth) || 375;
+    this._adFitting = true;
+    wx.createSelectorQuery()
+      .in(this)
+      .select('.run-ad-ad')
+      .boundingClientRect((rect) => {
+        this._adFitting = false;
+        if (!rect) return;
+        const pw = Math.round((rect.width * 750) / vw);
+        const ph = Math.round((rect.height * 750) / vw);
+        if (ph >= 20) this._adFitH = ph;
+        // 宽度量到异常值（0 / 极小 / 比容器还宽）就不采用，继续用兜底宽
+        if (pw >= AD_BOX_WIDTH_MIN_RPX && pw <= AD_BOX_WIDTH_MAX_RPX) this._adFitW = pw;
+        this.writeAdStyle();
+        // 尺寸变了 → 上沿位置跟着变，重算一次 bottom（保证块 top ≥ 200rpx 的约束仍然成立）
+        this.measureAd();
       })
       .exec();
   },
@@ -142,11 +190,14 @@ Page({
     } catch (e) {
       // 未配置后端时忽略，按学生处理
     }
-    const user = (getApp().globalData && getApp().globalData.userInfo) || {};
-    const isTeacher = user.role === 'teacher';
-    // 角色已知（userInfo.role 存在）且为学生，才允许渲染广告位：教师 / 角色未知都不渲染
-    this.setData({ isTeacher, showAd: !!user.role && !isTeacher });
+    const app = getApp();
+    const user = (app.globalData && app.globalData.userInfo) || null;
+    const isTeacher = !!(user && user.role === 'teacher');
     this._roleKnown = true; // 角色已确认 → 之后 measureAd() 才被放行（教师路径永远不放行）
+    this.setData({ isTeacher, showAd: !!(user && user.role) && !isTeacher });
+    // 角色还没拿到（首启时 globalData.userInfo 为空）→ 走统一的按需角色查询（每次启动最多一次，
+    // 内部就是 /api/auth/me）；拿到后再写一次闸门，避免「本地缓存的旧角色」放行教师广告
+    if (!user || !user.role) app.applyAdGate(this);
     return isTeacher;
   },
 
@@ -386,10 +437,14 @@ Page({
     this.initLocation();
   },
 
-  // ===== 原生模板广告（ad-custom）事件：仅日志，无任何副作用 =====
-  // 广告加载失败（无填充、开发者工具无广告等）时跑步流程、定位、保存全部照常。
-  adLoad() {
-    console.log('[run] 原生模板广告加载成功');
+  // ===== 原生模板广告（ad-custom）事件：仅日志 + 加载成功后收紧容器尺寸，无其它副作用 =====
+  // 广告加载失败（无填充、开发者工具无广告等）时跑步流程、定位、保存全部照常；
+  // 容器退回占位尺寸（不出现大片空白，也不因为广告消失而跳动）。
+  adLoad(e) {
+    console.log('[run] 原生模板广告加载成功', e && e.detail);
+    // 加载成功 → 量一次 ad-custom 实际渲染宽高，把容器从「兜底 320×200」收紧到贴合广告，
+    // 消掉广告右侧/下方露出的容器透明空白（用户反馈的「缝隙」）
+    this.fitAdToContent();
   },
 
   adError(e) {
@@ -397,6 +452,10 @@ Page({
   },
 
   adClose() {
+    // 用户关掉广告后平台会收回 ad-custom 的高度 → 回到占位尺寸，避免面板上方出现空洞/跳动
+    this._adFitW = 0;
+    this._adFitH = 0;
+    this.writeAdStyle();
     console.log('[run] 原生模板广告已关闭');
   },
 

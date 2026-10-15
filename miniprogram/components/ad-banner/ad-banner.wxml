@@ -1,0 +1,13 @@
+<!-- 通用流量主横幅（原生模板 ad-custom）
+     showAd 由父页面给：只有「不是教师 且 角色已确认为学生」才渲染，教师整块不进 DOM。
+     容器自带占位高度（加载前 / 无填充不跳动），bindload 后由 ad-banner.js 收紧到实测尺寸；
+     广告由微信模板自绘并自带「广告」标识，这里不再额外加标识。 -->
+<view class="ad-banner" wx:if="{{showAd}}" style="{{adStyle}}">
+  <ad-custom
+    class="ad-banner-ad"
+    unit-id="{{unitId}}"
+    bindload="onLoad"
+    binderror="onError"
+    bindclose="onClose"
+  ></ad-custom>
+</view>

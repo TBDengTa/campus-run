@@ -126,6 +126,9 @@ Page({
     aiResult: null, // { bmi, bmiLevelText, plan, reasons }
     applyingPlanId: '',
     loading: true,
+    // 流量主横幅（ad-banner）闸门：首帧都是 false（不渲染），load() 里 ensureLogin 之后才置真
+    isTeacher: false,
+    showAd: false,
   },
 
   onShow() {
@@ -137,6 +140,8 @@ Page({
   async load() {
     try {
       await getApp().ensureLogin();
+      // 流量主横幅（ad-banner）的两道闸门：角色已确认是学生才渲染，教师整块不进 DOM
+      getApp().applyAdGate(this);
       const [effective, plans, bodyResp] = await Promise.all([
         auth.get('/api/goal/effective'),
         auth.get('/api/goal/plans').catch(() => []),
