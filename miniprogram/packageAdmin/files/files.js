@@ -2,10 +2,12 @@ const auth = require('../../utils/request');
 const fmt = require('../../utils/format');
 
 const PAGE_SIZE = 24;
+// 用途（与 server/src/models/file-object.js 的 CATEGORIES 一一对应）
 const CATS = [
   { key: '', label: '全部' },
   { key: 'avatar', label: '头像' },
   { key: 'ad', label: '广告' },
+  { key: 'badge', label: '徽章' },
   { key: 'other', label: '其他' },
 ];
 
@@ -13,6 +15,7 @@ Page({
   data: {
     list: [],
     cats: [],
+    statCats: [],
     activeCat: '',
     total: 0,
     totalSizeText: '0 B',
@@ -81,13 +84,16 @@ Page({
       if (activeCat) query.category = activeCat;
       const res = await auth.get('/api/admin/files', query);
       const list = res.list.map((x) => this.decorate(x));
+      // 筛选条需要「全部」；统计网格放不下 5 项，且「全部」= 总览卡右上角的总数，故不重复计入
       const cats = CATS.map((c) => ({
         ...c,
         count: c.key === '' ? res.stats.byCategory.all : res.stats.byCategory[c.key] || 0,
       }));
+      const statCats = cats.filter((c) => c.key !== '');
       this.setData({
         list: reset ? list : this.data.list.concat(list),
         cats,
+        statCats,
         total: res.total,
         totalSizeText: fmt.formatSize(res.stats.totalSize),
         finished: list.length < PAGE_SIZE,

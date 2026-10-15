@@ -1,7 +1,8 @@
 const mongoose = require('mongoose');
 
 // 上传文件元数据（磁盘文件在 server/uploads，这里记录用途与归属，支撑文件管理）
-const CATEGORIES = ['avatar', 'ad', 'other'];
+// category 就是文件管理里的「用途/分类」：avatar 用户头像 / ad 广告素材 / badge 徽章图标 / other 其它
+const CATEGORIES = ['avatar', 'ad', 'badge', 'other'];
 
 const fileObjectSchema = new mongoose.Schema(
   {

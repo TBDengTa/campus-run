@@ -8,6 +8,23 @@
   padding: 28rpx 0;
 }
 
+/* 用途共 4 项（头像/广告/徽章/其他）：2 列网格比 4 列等分更易读 */
+.files-stat-grid {
+  display: flex;
+  flex-wrap: wrap;
+  row-gap: 24rpx;
+}
+
+.files-stat-item {
+  width: 50%;
+  box-sizing: border-box;
+  text-align: center;
+}
+
+.files-stat-item:nth-child(odd) {
+  border-right: 2rpx solid var(--tt-line);
+}
+
 /* ===== 分类筛选 ===== */
 .files-cats {
   display: flex;

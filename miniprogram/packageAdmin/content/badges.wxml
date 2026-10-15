@@ -122,7 +122,29 @@
           </view>
           <view class="tt-sheet-field badge-field-gap">
             <text class="badge-inline-label">图标</text>
-            <input class="tt-sheet-input" value="{{form.icon}}" placeholder="图标名或图片 URL，留空用默认" placeholder-class="tt-sheet-ph" bindinput="onField" data-field="icon" />
+            <input
+              class="tt-sheet-input"
+              value="{{form.icon}}"
+              placeholder="可直接上传，或手填图标名/图片 URL"
+              placeholder-class="tt-sheet-ph"
+              bindinput="onField"
+              data-field="icon"
+              data-url="1"
+            />
+          </view>
+          <view class="badge-icon-row">
+            <image wx:if="{{form.iconUrl}}" class="badge-icon-thumb" src="{{form.iconUrl}}" mode="aspectFit" />
+            <view wx:else class="badge-icon-thumb badge-icon-ph"><t-icon name="image-add" size="38rpx" color="var(--tt-brand)" /></view>
+            <view class="badge-icon-acts">
+              <view class="badge-icon-btn" bind:tap="onIconUpload" data-scope="single">
+                <t-icon name="upload" size="26rpx" color="var(--tt-brand)" />
+                <text>上传图片</text>
+              </view>
+              <view class="badge-icon-btn" bind:tap="onIconPick" data-scope="single">
+                <t-icon name="folder-open" size="26rpx" color="var(--tt-brand)" />
+                <text>从文件管理选择</text>
+              </view>
+            </view>
           </view>
 
           <view class="tt-sheet-label">达成条件</view>
@@ -234,12 +256,31 @@
               <input
                 class="tt-sheet-input"
                 value="{{item.icon}}"
-                placeholder="图标名或图片 URL，可留空"
+                placeholder="可直接上传，或手填图标名/图片 URL"
                 placeholder-class="tt-sheet-ph"
                 bindinput="onLevelField"
                 data-index="{{index}}"
                 data-field="icon"
               />
+            </view>
+            <view class="badge-icon-row">
+              <image
+                wx:if="{{item.icon && (item.icon.indexOf('http') === 0 || item.icon.indexOf('/') === 0)}}"
+                class="badge-icon-thumb"
+                src="{{item.icon}}"
+                mode="aspectFit"
+              />
+              <view wx:else class="badge-icon-thumb badge-icon-ph"><t-icon name="image-add" size="38rpx" color="var(--tt-brand)" /></view>
+              <view class="badge-icon-acts">
+                <view class="badge-icon-btn" bind:tap="onIconUpload" data-scope="level" data-index="{{index}}">
+                  <t-icon name="upload" size="26rpx" color="var(--tt-brand)" />
+                  <text>上传图片</text>
+                </view>
+                <view class="badge-icon-btn" bind:tap="onIconPick" data-scope="level" data-index="{{index}}">
+                  <t-icon name="folder-open" size="26rpx" color="var(--tt-brand)" />
+                  <text>从文件管理选择</text>
+                </view>
+              </view>
             </view>
             <view class="tt-sheet-field badge-field-gap">
               <text class="badge-inline-label">等级色</text>
@@ -286,6 +327,45 @@
       <view class="tt-sheet-foot">
         <t-button wx:if="{{formMode === 'tier'}}" theme="primary" block loading="{{saving}}" bind:tap="save">{{groupLocked ? '保存整组' : '创建整组'}}</t-button>
         <t-button wx:else theme="primary" block loading="{{saving}}" bind:tap="save">{{form._id ? '保存修改' : '创建徽章'}}</t-button>
+      </view>
+    </view>
+  </t-popup>
+
+  <!-- ===== 从文件管理选择图标（用途 = 徽章）=====
+       与表单抽屉同款 .tt-sheet* 骨架；滚动区按 ui-design §3 给确定高度（flex:none; min-height:0; max-height:46vh），
+       否则 scroll-view 滚不动、内容会把抽屉顶出屏幕。
+       z-index 必须高于表单抽屉（t-popup 默认 11500），否则选图层会被压在表单下面点不到 -->
+  <t-popup visible="{{iconVisible}}" placement="bottom" z-index="{{12000}}" bind:visible-change="onIconVisible">
+    <view class="tt-sheet badge-icon-sheet">
+      <view class="tt-sheet-grab"></view>
+      <view class="tt-sheet-head">
+        <view class="tt-sheet-icon">
+          <t-icon name="image" size="36rpx" color="var(--tt-brand)" />
+        </view>
+        <view class="tt-sheet-title">
+          选择图标
+          <view class="tt-sheet-sub">文件管理中「用途 = 徽章」的图片，最近 120 张</view>
+        </view>
+        <view class="tt-sheet-close" bind:tap="closeIconPicker">
+          <t-icon name="close" size="32rpx" color="var(--tt-text-2)" />
+        </view>
+      </view>
+
+      <scroll-view scroll-y class="tt-sheet-body">
+        <t-loading wx:if="{{iconLoading}}" theme="circular" size="40rpx" class="badge-loading" />
+        <view class="tt-empty" wx:elif="{{!iconList.length}}">
+          还没有徽章用途的图片，点下面「去文件管理上传」后回来选
+        </view>
+        <view class="badge-icon-grid" wx:else>
+          <view class="badge-icon-cell" wx:for="{{iconList}}" wx:key="id" bind:tap="chooseIcon" data-url="{{item.url}}">
+            <image class="badge-icon-cell-img" src="{{item.url}}" mode="aspectFit" lazy-load />
+            <text class="badge-icon-cell-name">{{item.name}}</text>
+          </view>
+        </view>
+      </scroll-view>
+
+      <view class="tt-sheet-foot">
+        <t-button theme="default" variant="outline" block bind:tap="gotoFiles">去文件管理上传</t-button>
       </view>
     </view>
   </t-popup>

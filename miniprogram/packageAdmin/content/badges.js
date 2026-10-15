@@ -51,6 +51,7 @@ const EMPTY_SINGLE = {
   name: '',
   description: '',
   icon: '',
+  iconUrl: '', // 仅用于抽屉里的缩略图预览（图标名没有图片可显示）
   type: 'total_steps',
   target: 1,
   tierColor: '',
@@ -124,6 +125,12 @@ Page({
     groupHint: metaOf('total_steps').hint,
     groupSummary: '',
     levelRows: [],
+    // 图标：从文件管理（用途 = badge）挑选的弹层
+    iconVisible: false,
+    iconLoading: false,
+    iconList: [],
+    iconTarget: { scope: 'single', index: -1 },
+    iconBusy: false,
   },
 
   onShow() {
@@ -258,6 +265,7 @@ Page({
         name: item.name || '',
         description: item.description || '',
         icon: item.icon || '',
+        iconUrl: this.isImageIcon(item.icon) ? item.icon : '',
         type: item.type,
         target: Number(item.target) || 0,
         tierColor: '',
@@ -356,7 +364,15 @@ Page({
 
   // ===== 独立徽章表单 =====
   onField(e) {
-    this.setData({ [`form.${e.currentTarget.dataset.field}`]: e.detail.value });
+    const field = e.currentTarget.dataset.field;
+    const value = e.detail.value;
+    // 图标行同时带 data-field="icon" 与 data-url="1"：手填也要刷新预览 ——
+    // 是图片地址才写 iconUrl，图标名/清空都要把 iconUrl 置空，否则占位 <image src="star"> 会裂图
+    if (e.currentTarget.dataset.url) {
+      this.setData({ 'form.icon': value, 'form.iconUrl': this.isImageIcon(value) ? value : '' });
+      return;
+    }
+    this.setData({ [`form.${field}`]: value });
   },
 
   onType(e) {
@@ -408,6 +424,104 @@ Page({
       return next;
     });
     this.setData({ levelRows: rows, groupSummary: tierSummaryOf(rows) });
+  },
+
+  // ===== 图标：缩略图 + 上传 / 从文件管理选择（独立徽章与「等级组每一级」共用同一套） =====
+  // 是否按图片渲染：与列表页同口径 —— http(s) 开头或 / 开头的绝对/根路径才算图片，其余当图标名交给 t-icon
+  isImageIcon(icon) {
+    const s = String(icon || '');
+    return s.indexOf('http') === 0 || s.indexOf('/') === 0;
+  },
+
+  // 把选中的图标 URL / 图标名写回目标字段；target 由 data-scope / data-index 决定
+  applyIcon(target, value) {
+    if (!target || target.scope === 'level') {
+      const i = Number(target && target.index);
+      if (!(i >= 0)) return;
+      const rows = this.data.levelRows.map((r, idx) => (idx === i ? { ...r, icon: value } : r));
+      if (!rows.length) return;
+      // 直接 setData 完整数组而不是 `levelRows[i].icon` 路径：saveGroup 读的是 data.levelRows，
+      // 路径写法万一没落进 data 就会出现「缩略图已变、保存还是旧值」。
+      this.setData({ levelRows: rows, groupSummary: tierSummaryOf(rows) });
+      return;
+    }
+    // 缩略图预览字段同样挂在 form 下（WXML 读 form.iconUrl）
+    this.setData({ 'form.icon': value, 'form.iconUrl': this.isImageIcon(value) ? value : '' });
+  },
+
+  onIconUpload(e) {
+    const { scope, index } = e.currentTarget.dataset;
+    this.materializeIcon({ scope: scope || 'single', index: Number(index) });
+  },
+
+  onIconPick(e) {
+    const { scope, index } = e.currentTarget.dataset;
+    this.materializeIcon({ scope: scope || 'single', index: Number(index) });
+  },
+
+  // 上传走项目既有链路：utils/request.js::auth.uploadFile → POST /api/admin/upload（multer 落盘 + files 集合），
+  // 不新增上传服务、不写死域名；用途固定传 badge，服务端按用途鉴权（需 content.manage 或 file.manage/*）
+  async materializeIcon(target) {
+    if (this.data.iconBusy) return;
+    const res = await wx.chooseMedia({ count: 1, mediaType: ['image'] }).catch(() => null);
+    if (!res || !res.tempFiles || !res.tempFiles.length) return;
+    this.setData({ iconBusy: true });
+    wx.showLoading({ title: '上传中…', mask: true });
+    try {
+      const data = await auth.uploadFile(res.tempFiles[0].tempFilePath, { formData: { category: 'badge' } });
+      if (!data || !data.url) throw new Error('上传未返回图片地址');
+      this.applyIcon(target, data.url);
+      wx.showToast({ title: '已上传', icon: 'success' });
+    } catch (err) {
+      // 失败要可读：服务端 403 会带「无权限（上传徽章图标需要 content.manage）」这类文案，原样透出
+      wx.showToast({ title: (err && err.message) || '上传失败，请重试', icon: 'none' });
+    } finally {
+      wx.hideLoading();
+      this.setData({ iconBusy: false });
+    }
+  },
+
+  // 从文件管理里挑：数据来自 GET /api/admin/content/badge-icons（content.view，最近 120 个 badge 用途文件）
+  async openIconPicker(e) {
+    const { scope, index } = e.currentTarget.dataset;
+    this.setData({ iconVisible: true, iconTarget: { scope: scope || 'single', index: Number(index) } });
+    await this.loadIcons();
+  },
+
+  async loadIcons() {
+    this.setData({ iconLoading: true });
+    try {
+      const list = await auth.get('/api/admin/content/badge-icons');
+      this.setData({ iconList: list || [] });
+    } catch (err) {
+      this.setData({ iconList: [] });
+      wx.showToast({ title: (err && err.message) || '读取徽章图片失败', icon: 'none' });
+    } finally {
+      this.setData({ iconLoading: false });
+    }
+  },
+
+  onIconVisible(e) {
+    this.setData({ iconVisible: !!(e.detail && e.detail.visible) });
+  },
+
+  closeIconPicker() {
+    this.setData({ iconVisible: false });
+  },
+
+  // 只选不删：删除仍归文件管理（file.manage），避免「能选但删不掉 / 越权删」的不一致
+  chooseIcon(e) {
+    const url = e.currentTarget.dataset.url;
+    if (!url) return;
+    this.applyIcon(this.data.iconTarget, url);
+    this.setData({ iconVisible: false });
+    wx.showToast({ title: '已使用该图片', icon: 'success' });
+  },
+
+  // 去文件管理上传 / 整理徽章用途的图片（该页需要 file 权限，无权限时服务端会拦）
+  gotoFiles() {
+    this.setData({ iconVisible: false });
+    wx.navigateTo({ url: '/packageAdmin/files/files' });
   },
 
   addLevel() {

@@ -7,6 +7,7 @@ const Holiday = require('../../models/holiday');
 const Organization = require('../../models/organization');
 const Badge = require('../../models/badge');
 const UserBadge = require('../../models/user-badge');
+const FileObject = require('../../models/file-object');
 
 const router = express.Router();
 
@@ -370,6 +371,32 @@ router.delete(
     }
     await Badge.deleteMany({ _id: { $in: rows.map((row) => row._id) } });
     ok(res, { success: true, tierGroup, deleted: rows.length });
+  })
+);
+
+// ===== 徽章图标：从文件管理（用途 = badge）里挑最近上传的一批 =====
+// 只读、只返回徽章表单需要的字段（不含 uploader 等归属信息）。挂载级已是 content.view，
+// 因此「只用徽章管理」的管理员也能选图，无需把 file.view 扩大给他；删除仍归文件管理（file.manage）。
+const BADGE_ICON_LIMIT = 120;
+
+router.get(
+  '/badge-icons',
+  wrap(async (req, res) => {
+    const rows = await FileObject.find({ category: 'badge' })
+      .sort({ createdAt: -1 })
+      .limit(BADGE_ICON_LIMIT)
+      .select('url originalName size createdAt')
+      .lean();
+    ok(
+      res,
+      rows.map((r) => ({
+        id: String(r._id),
+        url: r.url,
+        name: r.originalName || '',
+        size: Number(r.size) || 0,
+        createdAt: r.createdAt,
+      }))
+    );
   })
 );
 
