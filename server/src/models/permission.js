@@ -16,6 +16,9 @@ permissionSchema.statics.DEFAULT_CATALOG = [
   { key: 'user.view', name: '查看用户', module: '用户', sort: 10 },
   { key: 'user.manage', name: '封禁/解封用户', module: '用户', sort: 11 },
   { key: 'user.import', name: '导入学生名单', module: '用户', sort: 12 },
+  // 徽章管理（发放 / 回收）：与 content.manage（徽章定义维护）分离——
+  // 定义维护是「改规则」，发放回收是「改某个用户的获得记录」，可由不同角色持有
+  { key: 'badge.manage', name: '发放与回收徽章', module: '用户', sort: 13 },
   { key: 'appeal.view', name: '查看申诉', module: '申诉', sort: 20 },
   { key: 'appeal.review', name: '审核申诉', module: '申诉', sort: 21 },
   { key: 'ad.view', name: '查看广告数据', module: '广告', sort: 30 },

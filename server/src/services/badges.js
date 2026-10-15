@@ -292,6 +292,36 @@ async function evaluateBadges(openid, preloaded) {
   return newBadges;
 }
 
+// ===== 撤销（回收）=====
+// 产品口径（已确认）：**撤销 = 删除 user_badges 记录**，不加 revoked 字段；用户以后再次满足条件
+// 会由 evaluateBadges 重新发放（唯一索引 {openid,badgeKey} + $setOnInsert，天然可再获得）。
+// 触发源：反作弊判定成立 / 封禁（services/anticheat.js::restrict）、管理端手工回收。
+// 幂等：deleteMany 命中 0 行也返回成功（不是错误）。
+async function revokeBadgesFor(openid, { reason = '', badgeKey = '' } = {}) {
+  if (!openid) return { deleted: 0 };
+  const filter = badgeKey ? { openid, badgeKey: String(badgeKey) } : { openid };
+  const r = await UserBadge.deleteMany(filter);
+  const deleted = (r && (r.deletedCount != null ? r.deletedCount : r.n)) || 0;
+  const what = badgeKey ? `徽章 ${badgeKey}` : '全部徽章';
+  if (deleted) {
+    console.log(`[badges] 已撤销 ${openid} 的${what} ${deleted} 条${reason ? `（${reason}）` : ''}`);
+  }
+  return { deleted };
+}
+
+// 手工发放（管理端，需 badge.manage）：与 evaluateBadges 同一套落库方式，因此完全幂等
+// （重复发放不报错、不重复插入；返回 true 表示本次真的新增了一行）
+async function grantBadge(openid, badge) {
+  if (!openid || !badge) return false;
+  const level = badge.mode === 'tier' ? Number(badge.tierLevel) || 0 : 0;
+  const r = await UserBadge.updateOne(
+    { openid, badgeKey: badge.key },
+    { $setOnInsert: { openid, badgeKey: badge.key, level } },
+    { upsert: true }
+  );
+  return !!(r && (r.upsertedCount || r.upsertedId));
+}
+
 // 刷新用户汇总缓存（只要步数/距离/天数，不付跑分聚合的成本）
 async function refreshUserStats(user) {
   const stats = await aggregateUser(user.openid, { withPoints: false });
@@ -365,6 +395,8 @@ module.exports = {
   buildNextTargets,
   progressOf,
   evaluateBadges,
+  revokeBadgesFor,
+  grantBadge,
   rankOf,
   getRankIndex,
   peekRankIndex,

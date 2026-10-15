@@ -1,6 +1,7 @@
 const GoalConfig = require('../models/goal-config');
 const BanRecord = require('../models/ban-record');
 const User = require('../models/user');
+const badgesSvc = require('./badges');
 
 // ===== 限制的作用域 =====
 //   login 限制登录（整账号，走 user.status + bannedUntil）
@@ -107,6 +108,17 @@ async function restrict({ user, scope, reason, days = 0, operator = 'system', es
     bannedUntil: until,
     operator,
   });
+  // ===== 徽章撤销（产品口径）=====
+  // 撤销触发源只有两处：① 反作弊判定成立（checkStepJump / checkPace）；② 封禁（人工 manualBan 与申诉外的限制）。
+  // 两者都收敛到本函数，所以在这里删一次即可 —— **只在判定成立时执行**（restrict 不会被正常用户触发），
+  // 正常的 evaluateBadges 评估不会走到这里，绝不会误删普通用户的徽章。
+  // 语义：删除记录（不加 revoked 字段），解封/到期**不自动恢复**；用户以后再次满足条件会自然重新获得。
+  // 幂等：deleteMany 命中 0 行也成功。清理失败绝不能影响「限制生效」这一主流程 → 只记日志。
+  try {
+    await badgesSvc.revokeBadgesFor(user.openid, { reason: `限制${scopeText(finalScope)}：${finalReason}` });
+  } catch (e) {
+    console.warn(`[anticheat] 撤销徽章失败（不影响限制生效）openid=${user.openid}: ${e.message}`);
+  }
   return { scope: finalScope, until, escalated };
 }
 
@@ -114,6 +126,9 @@ async function restrict({ user, scope, reason, days = 0, operator = 'system', es
  * 解除限制
  * @param {Object} p
  * @param {String} p.scope  login | sync | gps | all
+ *
+ * 注意（产品口径）：解封 / 限制到期**不恢复徽章** —— 撤销是删除记录，没有「恢复」动作；
+ * 用户下次满足条件时由 evaluateBadges 重新发放（见 revokeBadgesFor 注释）。
  */
 async function lift({ user, scope = 'all', operator, reason = '解封' }) {
   const now = new Date();

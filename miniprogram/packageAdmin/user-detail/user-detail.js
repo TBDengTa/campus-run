@@ -41,6 +41,107 @@ function gradeOfClassName(name) {
   return n >= 0 && n <= 99 ? String(2000 + n) : '';
 }
 
+// ===== 徽章发放抽屉：定义 → 抽屉行 =====
+// 条件类型中文（与 services/badges.js 的达成条件一一对应，仅用于抽屉副标题展示）
+const BADGE_TYPE_TEXT = {
+  total_steps: '累计步数',
+  total_distance: '累计距离',
+  total_days: '累计打卡',
+  goal_days: '达标天数',
+  single_steps: '单日步数',
+  single_distance: '单次距离',
+  streak_days: '连续打卡',
+  points: '累计跑分',
+  rank: '跑分总榜',
+};
+
+// 徽章定义 → 可读的达成条件（如「累计步数 · 100,000 步」「跑分总榜 · 前 100 名」）
+function badgeDesc(def) {
+  const label = BADGE_TYPE_TEXT[def.type] || '';
+  const target = fmt.formatNumber(def.target || 0);
+  if (!label) return def.description || '';
+  if (def.type === 'rank') return `${label} · 前 ${target} 名`;
+  if (def.type === 'total_distance' || def.type === 'single_distance') return `${label} · ${target} 米`;
+  if (def.type === 'total_days' || def.type === 'goal_days' || def.type === 'streak_days') return `${label} · ${target} 天`;
+  if (def.type === 'points') return `${label} · ${target} 分`;
+  return `${label} · ${target} 步`;
+}
+
+// 定义列表 → 抽屉行：独立徽章一行；等级徽章（同 tierGroup）折叠成一组，组内按 tierLevel 排级别
+//   prevItems 用于保留「上一轮哪些组是展开的」（发放后刷新数据不收起已展开的组）
+function buildBadgeItems(definitions, prevItems) {
+  const expanded = {};
+  (prevItems || []).forEach((it) => {
+    if (it.kind === 'group') expanded[it.tierGroup] = !!it.expanded;
+  });
+  const singles = [];
+  const groups = new Map();
+  for (const d of definitions || []) {
+    const g = String(d.tierGroup || '').trim();
+    if (g) {
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g).push(d);
+    } else {
+      singles.push(d);
+    }
+  }
+  const entries = [];
+  singles.forEach((d) => {
+    entries.push({
+      sort: Number(d.sort) || 0,
+      item: {
+        k: `s:${d.key}`,
+        kind: 'single',
+        key: d.key,
+        name: d.name,
+        icon: d.icon || '',
+        tierColor: d.tierColor || '',
+        desc: badgeDesc(d),
+        earned: !!d.earned,
+      },
+    });
+  });
+  groups.forEach((list, g) => {
+    const levels = [...list].sort((a, b) => (Number(a.tierLevel) || 0) - (Number(b.tierLevel) || 0));
+    const rows = levels.map((d) => ({
+      key: d.key,
+      name: d.name,
+      icon: d.icon || '',
+      tierColor: d.tierColor || '',
+      desc: `Lv${Number(d.tierLevel) || 0} · ${badgeDesc(d)}`,
+      earned: !!d.earned,
+    }));
+    entries.push({
+      sort: Math.min(...levels.map((d) => Number(d.sort) || 0)),
+      item: {
+        k: `g:${g}`,
+        kind: 'group',
+        tierGroup: g,
+        name: g,
+        desc: badgeDesc(levels[0]),
+        levelCount: rows.length,
+        earnedCount: rows.filter((r) => r.earned).length,
+        expanded: !!expanded[g],
+        levels: rows,
+      },
+    });
+  });
+  entries.sort((a, b) => a.sort - b.sort);
+  return entries.map((e) => e.item);
+}
+
+// 在抽屉行里按 badgeKey 找目标（独立徽章直接命中；等级徽章命中组内某一级）
+function findBadgeItem(items, key) {
+  for (const it of items || []) {
+    if (it.kind === 'single' && it.key === key) return it;
+    if (it.kind === 'group') {
+      const hit = (it.levels || []).find((lv) => lv.key === key);
+      if (hit) return hit;
+    }
+  }
+  return null;
+}
+
 Page({
   data: {
     id: '',
@@ -60,6 +161,8 @@ Page({
     // 当前登录者权限：编辑资料/重置密码/删除账户需 permission.manage，解绑微信需 user.manage
     canManagePerms: false,
     canManageUser: false,
+    // 徽章发放 / 回收需 badge.manage（服务端 requirePermission('badge.manage') 同步拦，前端只控显隐）
+    canManageBadges: false,
     // 当前生效的限制（限制登录 / 限制微信同步 / 限制 GPS）
     restrictions: [],
     // 「限制账号功能」抽屉
@@ -102,6 +205,11 @@ Page({
     classDraft: [],
     classSaving: false,
     officerSaving: false,
+    // ===== 徽章发放抽屉（需 badge.manage）=====
+    badgeSheetVisible: false,
+    badgeSheetLoading: false,
+    badgeItems: [], // [{ kind:'single'|'group', ... }]（等级组可展开选级别）
+    badgeGranting: '', // 正在发放的 badgeKey（防连点）
   },
 
   onLoad(options) {
@@ -125,6 +233,8 @@ Page({
         canManageUser: me.includes('*') || me.includes('user.manage'),
         // 班级身份（班主任班级 / 班委）在本页分配，需 user.manage
         canManageClass: me.includes('*') || me.includes('user.manage'),
+        // 徽章发放 / 回收：独立权限项 badge.manage（不与 content.manage 复用）
+        canManageBadges: me.includes('*') || me.includes('badge.manage'),
       });
       // 班级域打开时：先按管理端权限取资料（有权限 → 与管理面板完全一致）；
       // 无权限（403）才降级为班级域只读数据，绝不绕过服务端权限
@@ -277,6 +387,10 @@ Page({
       canManagePerms: false,
       canManageUser: false,
       canManageClass: false,
+      // 班委/班主任的班级只读视角绝不渲染徽章发放与回收入口（服务端也会按 badge.manage 拦）
+      canManageBadges: false,
+      badgeSheetVisible: false,
+      badgeItems: [],
       bans: [],
       restrictions: [],
       loginInfo: null,
@@ -699,6 +813,109 @@ Page({
     } finally {
       this.setData({ officerSaving: false });
     }
+  },
+
+  // ===== 徽章：手工发放 / 回收（需 badge.manage；服务端 requirePermission 同步拦）=====
+  // 打开发放抽屉（先拉「全部启用中的定义 + 已获得」，再渲染）
+  openBadgeSheet() {
+    if (!this.data.canManageBadges) {
+      wx.showToast({ title: '需要「发放与回收徽章」权限', icon: 'none' });
+      return;
+    }
+    this.setData({ badgeSheetVisible: true });
+    this.loadBadgeSheet();
+  },
+
+  closeBadgeSheet() {
+    this.setData({ badgeSheetVisible: false });
+  },
+
+  onBadgeSheetVisible(e) {
+    this.setData({ badgeSheetVisible: !!(e.detail && e.detail.visible) });
+  },
+
+  // 拉徽章定义与已获得列表 → 组装抽屉（等级组按组折叠，保留上一轮展开状态）
+  async loadBadgeSheet() {
+    this.setData({ badgeSheetLoading: true });
+    try {
+      const r = await auth.get(`/api/admin/users/${this.data.id}/badges`);
+      this.applyBadgeCount((r && r.list) || []);
+      this.setData({ badgeItems: buildBadgeItems((r && r.definitions) || [], this.data.badgeItems) });
+    } catch (e) {
+      wx.showToast({ title: e.message || '徽章加载失败', icon: 'none' });
+    } finally {
+      this.setData({ badgeSheetLoading: false });
+    }
+  },
+
+  // 等级组展开 / 收起
+  toggleBadgeGroup(e) {
+    const group = e.currentTarget.dataset.group;
+    if (!group) return;
+    this.setData({
+      badgeItems: (this.data.badgeItems || []).map((it) =>
+        it.kind === 'group' && it.tierGroup === group ? { ...it, expanded: !it.expanded } : it
+      ),
+    });
+  },
+
+  // 发放（幂等：重复发放不会重复记录，服务端返回 granted=false）
+  async grantBadge(e) {
+    const { key, name } = e.currentTarget.dataset;
+    if (!key || this.data.badgeGranting) return;
+    const hit = findBadgeItem(this.data.badgeItems, key);
+    if (hit && hit.earned) {
+      wx.showToast({ title: `「${name || key}」已获得`, icon: 'none' });
+      return;
+    }
+    this.setData({ badgeGranting: key });
+    try {
+      const r = await auth.post(`/api/admin/users/${this.data.id}/badges`, { badgeKey: key });
+      wx.showToast({ title: r && r.granted ? `已发放「${name || key}」` : `「${name || key}」已获得`, icon: 'none' });
+      this.applyBadgeCount((r && r.list) || []);
+      await this.loadBadgeSheet();
+    } catch (err) {
+      wx.showToast({ title: err.message || '发放失败', icon: 'none' });
+    } finally {
+      this.setData({ badgeGranting: '' });
+    }
+  },
+
+  // 回收（删除获得记录）：必须二次确认，文案写清「再次满足条件会自动重新获得」
+  revokeBadge(e) {
+    const { key, name } = e.currentTarget.dataset;
+    if (!key) return;
+    const that = this;
+    wx.showModal({
+      title: '回收徽章',
+      content: `确认回收「${name || key}」？回收 = 删除该获得记录，回收后用户再次满足条件会自动重新获得（解封/到期不会自动恢复）。`,
+      confirmText: '回收',
+      confirmColor: '#e5484d',
+      success: async (res) => {
+        if (!res.confirm) return;
+        try {
+          const r = await auth.del(`/api/admin/users/${that.data.id}/badges/${encodeURIComponent(key)}`);
+          wx.showToast({ title: r && r.revoked ? '已回收' : '该用户未获得此徽章', icon: 'none' });
+          that.applyBadgeCount((r && r.list) || []);
+          if (that.data.badgeSheetVisible) await that.loadBadgeSheet();
+        } catch (err) {
+          wx.showToast({ title: err.message || '回收失败', icon: 'none' });
+        }
+      },
+    });
+  },
+
+  // 发放 / 回收后的本地同步：身份卡与「徽章」计数更新，徽章 Tab 的已获得快照失效
+  // （正在看徽章 Tab 时立即重拉；否则切回该 Tab 时再拉，避免打乱当前 Tab 的分页状态）
+  applyBadgeCount(list) {
+    const count = Array.isArray(list) ? list.length : null;
+    const patch = { records: { ...this.data.records, badges: [] } };
+    if (count != null) {
+      patch.recordTotals = { ...this.data.recordTotals, badges: count };
+      if (this.data.sport) patch['sport.badgeCount'] = count;
+    }
+    this.setData(patch);
+    if (this.data.recordTab === 'badges') this.loadRecords('badges', 1);
   },
 
   // 重置登录密码：恢复为初始密码（学号/身份证后8），需 permission.manage
