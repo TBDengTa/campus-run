@@ -88,6 +88,7 @@
     <block wx:if="{{list.length}}">
       <view class="tt-row badge-row" wx:for="{{list}}" wx:key="_id">
         <view class="badge-cap">
+          <!-- 管理端列的是徽章定义本身（不是用户获得态），一律原色显示，不做灰度 -->
           <!-- icon 可能是图片 URL（file.tangbo.tech/...）或本地路径，只有图标名才走 t-icon -->
           <image
             wx:if="{{item.icon && (item.icon.indexOf('http') === 0 || item.icon.indexOf('/') === 0)}}"

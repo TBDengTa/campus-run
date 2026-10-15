@@ -405,7 +405,15 @@ Page({
       };
     }
     if (type === 'water') return { ...it, dateText: dateText(it.date) };
-    return { ...it, earnedText: fmtTime(it.earnedAt) };
+    // 徽章：管理端这个 Tab 只返回「已获得」的行，所以图标一律原色（不做灰度）；
+    // 等级徽章补上「达标里程 · Lv2」上下文，独立徽章保持原样
+    const lv = Number(it.level) || Number(it.tierLevel) || 0;
+    const group = String(it.tierGroup || '').trim();
+    const groupText = group ? `${group} · Lv${lv}` : '';
+    return {
+      ...it,
+      earnedText: groupText ? `${groupText} · ${fmtTime(it.earnedAt)}` : fmtTime(it.earnedAt),
+    };
   },
 
   // 按钮翻页：上一页 / 指定页 / 下一页

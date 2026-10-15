@@ -889,13 +889,22 @@ router.get(
     const byKey = new Map(earned.map((b) => [b.badgeKey, b]));
     const badges = allBadges
       .filter((b) => byKey.has(b.key))
-      .map((b) => ({
-        key: b.key,
-        name: b.name,
-        icon: b.icon,
-        tierColor: b.tierColor,
-        earnedAt: byKey.get(b.key).createdAt,
-      }))
+      .map((b) => {
+        const row = byKey.get(b.key);
+        return {
+          key: b.key,
+          name: b.name,
+          icon: b.icon,
+          tierColor: b.tierColor,
+          earnedAt: row.createdAt,
+          // 展示用：本行记录时的等级（存量已由 scripts/backfill-badge-level.js 回填）+ 阶梯组，
+          // 等级徽章在管理端也带上「达标里程 · Lv2」这类上下文，避免同名组看不出级别
+          level: Number(row.level) || 0,
+          tierGroup: b.tierGroup || '',
+          tierLevel: Number(b.tierLevel) || 0,
+          mode: b.mode || '',
+        };
+      })
       .sort((a, b) => new Date(b.earnedAt) - new Date(a.earnedAt));
     const list = badges.slice(skip, skip + limit);
     ok(res, { type, list, total: badges.length, page, limit, hasMore: skip + list.length < badges.length });

@@ -175,13 +175,18 @@ async function refreshUserStats(user) {
 }
 
 // ===== 启动期播种（幂等）=====
-// 全新部署不再 0 徽章：缺失的默认徽章按 key 补建；已存在的一律不动，
-// 绝不覆盖运营改过的 name/icon/target/enabled 等字段（badges.key 有唯一索引）。
+// 播种只服务于「全新部署」：库里已有任何徽章定义时整体跳过。
+// 原因：现网徽章用旧 hex key（badges.key='6a27...'）+ 图片 URL，而 DEFAULT_BADGES 是语义 key
+// （first_run/steps_100k…）。若按 key 逐条补建，会把语义 key 的僵尸定义混进库里，
+// 徽章页出现双份、图标缺失；清理见 scripts/dedupe-badge-definitions.js。
+// 已存在的一律不动，绝不覆盖运营改过的 name/icon/target/enabled 等字段。
 async function seedBadges() {
+  const existing = await Badge.estimatedDocumentCount();
+  if (existing > 0) {
+    return { created: 0, keys: [], total: DEFAULT_BADGES.length, skipped: true, existing };
+  }
   const created = [];
   for (const def of DEFAULT_BADGES) {
-    const existing = await Badge.findOne({ key: def.key }).select('_id').lean();
-    if (existing) continue;
     await Badge.create({
       ...def,
       icon: def.icon || '',
@@ -193,10 +198,11 @@ async function seedBadges() {
     });
     created.push(def.key);
   }
+  // 日志只在真正插入时输出
   if (created.length) {
     console.log(`[badges] 默认徽章播种完成：新增 ${created.length} 枚（${created.join(', ')}）`);
   }
-  return { created: created.length, keys: created, total: DEFAULT_BADGES.length };
+  return { created: created.length, keys: created, total: DEFAULT_BADGES.length, skipped: false, existing: 0 };
 }
 
 // ===== 旧数据回填（幂等）=====

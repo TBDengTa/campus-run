@@ -321,6 +321,7 @@
     <block wx:else>
       <view class="tt-row ud-log" wx:for="{{records.badges}}" wx:key="key">
         <view class="ud-log-icon">
+          <!-- 管理端徽章 Tab 只列「已获得」的行 → 一律原色（不加 grayscale/opacity） -->
           <!-- 徽章 icon 可能是图片 URL（file.tangbo.tech/...）或本地路径，只有图标名才走 t-icon -->
           <image
             wx:if="{{item.icon && (item.icon.indexOf('http') === 0 || item.icon.indexOf('/') === 0)}}"

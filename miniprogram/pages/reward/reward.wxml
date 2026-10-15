@@ -76,8 +76,9 @@
       <text>解锁新徽章</text>
     </view>
     <view class="reward-badges-list">
+      <!-- 这里的徽章都是本次「新获得」的 → 100% 饱和度原图，不加 grayscale/opacity（未获得态只在徽章页/管理端出现） -->
       <view class="reward-badge-chip" wx:for="{{rewarded.badges}}" wx:key="key">
-        <!-- icon 为图片 URL / 本地路径时用 image，图标名才走 t-icon -->
+        <!-- icon 为图片 URL / 本地路径时用 image（原色直出），图标名才走 t-icon -->
         <image
           wx:if="{{item.icon && (item.icon.indexOf('http') === 0 || item.icon.indexOf('/') === 0)}}"
           class="reward-badge-img"

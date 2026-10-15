@@ -384,7 +384,8 @@
   background: var(--tt-brand-soft);
 }
 
-/* 图片型徽章图标（icon 存的是 URL 时用；尺寸与图标型保持一致） */
+/* 图片型徽章图标（icon 存的是 URL 时用；尺寸与图标型保持一致）
+   管理端徽章 Tab 只列已获得的行 → 原色显示；未获得的灰度态在徽章页 / 徽章定义里用 */
 .ud-badge-icon {
   width: 44rpx;
   height: 44rpx;

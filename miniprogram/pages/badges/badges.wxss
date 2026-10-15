@@ -1,4 +1,5 @@
-/* 我的徽章：汇总卡 + 徽章网格（已获得橙色高亮 / 未获得灰度） */
+/* 我的徽章：汇总卡 + 等级徽章分组卡（可展开）+ 独立徽章网格
+   未获得 = 灰度 100% + 半透明（徽章图片自带配色，靠饱和度区分；opacity 是 filter 不支持时的兜底） */
 
 /* ===== 汇总 ===== */
 .badge-sum-main {
@@ -54,7 +55,15 @@
   font-weight: 700;
 }
 
-/* ===== 网格 ===== */
+/* ===== 未获得：灰度 + 半透明（页面私有类，走设计系统令牌，不内联 style） ===== */
+.badge-icon.is-dim,
+.badge-icon-emoji.is-dim,
+.badge-level-icon.is-dim {
+  filter: grayscale(100%);
+  opacity: 0.5;
+}
+
+/* ===== 网格（独立徽章） ===== */
 .badge-grid {
   display: flex;
   flex-wrap: wrap;
@@ -88,6 +97,7 @@
   align-items: center;
   justify-content: center;
   background: var(--tt-brand-soft);
+  flex-shrink: 0;
 }
 
 .badge-cell:not(.earned) .badge-icon-wrap {
@@ -102,9 +112,10 @@
   text-align: center;
 }
 
-.badge-cell:not(.earned) .badge-icon {
-  filter: grayscale(1);
-  opacity: 0.45;
+.badge-icon-emoji {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .badge-name {
@@ -140,7 +151,7 @@
   color: var(--tt-text-3);
 }
 
-/* 未获得：真实进度来自接口的 percent（progress/nextTarget 同源） */
+/* 进度条宽度由 JS 算好（percentStyle），真实进度来自接口的 percent */
 .badge-track {
   width: 100%;
   height: 8rpx;
@@ -174,6 +185,168 @@
   font-size: 20rpx;
   font-weight: 600;
   color: var(--tt-brand);
+}
+
+/* ===== 等级徽章分组卡 ===== */
+.badge-groups {
+  padding: 0 var(--tt-gap);
+  display: flex;
+  flex-direction: column;
+  gap: var(--tt-gap);
+}
+
+.badge-group {
+  padding: 26rpx 28rpx;
+  border-radius: var(--tt-radius);
+  background: var(--tt-card);
+  box-shadow: var(--tt-card-shadow);
+  border: 2rpx solid transparent;
+}
+
+.badge-group.is-dim {
+  border-color: var(--tt-line);
+}
+
+.badge-group-head {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+}
+
+.badge-group-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.badge-group-name {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.badge-group-sub {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-top: 8rpx;
+}
+
+.badge-group-level {
+  padding: 2rpx 14rpx;
+  border-radius: 999rpx;
+  font-size: 22rpx;
+  font-weight: 600;
+  color: var(--tt-brand);
+  background: var(--tt-brand-soft);
+}
+
+.badge-group-badge {
+  font-size: 24rpx;
+  color: var(--tt-text-2);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.badge-group-count {
+  margin-top: 8rpx;
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+.badge-group-count-num {
+  color: var(--tt-brand);
+  font-weight: 700;
+}
+
+.badge-group-chevron {
+  flex-shrink: 0;
+  width: 48rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.badge-group-progress {
+  margin-top: 22rpx;
+  padding-top: 20rpx;
+  border-top: 2rpx solid var(--tt-line);
+}
+
+/* ===== 展开：等级明细 ===== */
+.badge-levels {
+  margin-top: 20rpx;
+  padding-top: 8rpx;
+  border-top: 2rpx solid var(--tt-line);
+}
+
+.badge-level {
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+  padding: 16rpx 16rpx;
+  border-radius: var(--tt-radius-sm);
+}
+
+.badge-level.earned {
+  background: var(--tt-brand-soft);
+}
+
+.badge-level + .badge-level {
+  margin-top: 8rpx;
+}
+
+.badge-level-icon {
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 20rpx;
+  flex-shrink: 0;
+  background: var(--tt-brand-soft);
+}
+
+.badge-level-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.badge-level-name {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  font-size: 26rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.badge-level-tag {
+  padding: 2rpx 12rpx;
+  border-radius: 999rpx;
+  font-size: 20rpx;
+  font-weight: 600;
+  color: var(--tt-text-3);
+  background: var(--tt-line);
+}
+
+.badge-level.earned .badge-level-tag {
+  color: var(--tt-brand);
+  background: var(--tt-brand-soft-2);
+}
+
+.badge-level-sub {
+  margin-top: 6rpx;
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+.badge-level-state {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.badge-level-state-lock {
+  font-size: 22rpx;
+  color: var(--tt-text-3);
 }
 
 /* ===== 状态 ===== */

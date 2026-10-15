@@ -23,7 +23,7 @@ async function main() {
   const { seedAdSlots } = require('./services/ads');
   await seedAdSlots();
 
-  // 徽章地基（幂等）：补齐缺失的默认徽章定义（全新部署不再 0 徽章），
+  // 徽章地基（幂等）：库里已有任何徽章定义时播种整体跳过（只服务全新部署），
   // 并把旧数据里「有 tierGroup 但没有 mode」的定义回填为 mode='tier'；均不覆盖运营已改字段
   const { seedBadges, backfillBadgeModes } = require('./services/badges');
   await backfillBadgeModes();
