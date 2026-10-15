@@ -126,10 +126,13 @@ Page({
               total: fmt.formatNumber(p.total || 0),
               dailyGoal: p.config.dailyGoal,
               weeklyGoal: p.config.weeklyGoal,
-              // 日超出档位按「个人目标的百分比」算（perStep 已弃用，不再展示步数口径）
+              // 日/周超出档位都按「个人目标的百分比」算（perStep 已完全弃用，不再展示步数口径）
               extraPercent: p.config.extraPercent,
+              weeklyExtraPercent: p.config.weeklyExtraPercent,
               perStepScore: p.config.perStepScore,
               dailyExtraCap: p.config.dailyExtraCap,
+              // 周上限 0 = 不封顶（文案在 JS 里拼好，避免 WXML 里写长表达式）
+              weeklyCapText: p.config.weeklyExtraCap > 0 ? `（单周上限 ${p.config.weeklyExtraCap} 分）` : '（不封顶）',
             };
           }
         } catch (e) {

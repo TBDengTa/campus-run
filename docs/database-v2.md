@@ -57,8 +57,11 @@
 
 ### goal_config（单例）
 全局默认目标（daily/weekly 的 steps/distance/calories）、反作弊阈值 `anticheat`、激励视频规则 `rewardVideo`、
-跑分规则 `points`（`dailyGoal` / `weeklyGoal` / `extraPercent`（日超出档位 = 个人目标的百分比，默认 10，1~100）/
-`perStepScore` / `dailyExtraCap`；`perStep` 已弃用，仅周公式还在用）。
+跑分规则 `points`（`dailyGoal` / `weeklyGoal` /
+`extraPercent`（日超出档位 = 个人日目标的百分比，默认 10，1~100）/
+`weeklyExtraPercent`（周超出档位 = 个人周目标的百分比，默认 10，1~100）/
+`perStepScore` / `dailyExtraCap`（单日上限）/ `weeklyExtraCap`（单周上限，**0 = 不封顶**，默认 0）；
+`perStep`（固定步数档位）**已完全弃用**：日、周公式都不再读取，字段仅为兼容存量配置而保留）。
 （分时段目标 `graded` 已废弃移除；默认目标的管理入口在「运动考核」模块 `/api/admin/assessment/defaults`，
 跑分设置入口在「系统配置 → 跑分设置」`packageAdmin/config/points`；跑分按当前配置实时计算、不落库快照。）
 

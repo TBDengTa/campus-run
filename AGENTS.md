@@ -90,17 +90,24 @@
 
 ## 跑分（积分体系）
 - 配置在单例 `goal_config.points`（系统配置 → 跑分设置）：完成日目标得分、完成周目标得分、
-  超出日目标后「**每再多达成个人目标的 `extraPercent`%（默认 10，范围 1~100）加 `perStepScore` 分**」
-  （`dailyExtraCap` 可设单日上限，**上限只封顶超出部分，不封顶达标基础分**）。
-- **日超出档位按「个人目标的百分比」算**（`max(1, 目标 × extraPercent / 100)` 步一档），不是固定步数：
-  日目标 6000 与 15000 的人边际收益按目标成比例。`perStep`（固定步数档位）**已弃用**——
-  日公式不再读取，仅**周公式**仍在用（周公式刻意未改，历史回归基线不变）；
-  老配置缺失 `extraPercent` 时按默认 10 生效，管理端「跑分设置」会显式提示与旧口径等价的百分比
-  （`perStep ÷ 全局日目标`），不做静默变更。
+  超出日目标后「**每再多达成个人日目标的 `extraPercent`%（默认 10，范围 1~100）加 `perStepScore` 分**」、
+  超出周目标后「**每再多达成个人周目标的 `weeklyExtraPercent`%（默认 10，范围 1~100）加 `perStepScore` 分**」
+  （`dailyExtraCap` 单日上限、`weeklyExtraCap` 单周上限，**上限只封顶超出部分，不封顶达标基础分**；
+  `weeklyExtraCap` **0 = 不封顶**（默认，与改造前的周口径一致），注意它与 `dailyExtraCap` 的 0（超出不加分）语义不同）。
+- **日/周超出档位都按「个人目标的百分比」算**（`max(1, 目标 × 百分比 / 100)` 步一档），不是固定步数：
+  档位随个人目标等比放大（周目标 15000 → 1500 步一档、40000 → 4000 步一档），相对努力等值。
+  `perStep`（固定步数档位）**已完全弃用**——日、周公式都不再读取，字段仍保留以兼容存量配置
+  （schema 与 normalizeConfig 保留该字段，管理端「跑分设置」只展示「已完全弃用」说明、不再提供输入框）；
+  老配置缺失百分比字段时按默认 10 生效，管理端会显式提示与旧口径等价的百分比
+  （日 `perStep ÷ 全局日目标`、周 `perStep ÷ 全局周目标`），不做静默变更。
 - 计算**统一走 `server/src/services/points.js`**，禁止在路由或页面里各写一套公式；
-  达标口径与 `services/goals.js::getEffectiveGoal` 一致，周为 **ISO 周一**起始。
+  JS 纯函数（`pointsForDay` / `pointsForWeek`）与聚合表达式（`dailyPointsExpr` / `weeklyPointsExpr`，
+  以及 `dailyStagePrefix` / `weeklyStagePrefix` 里的目标注入与 `$lookup`）**必须逐例一致**——
+  历史踩坑点：`$lookup.localField` 必须用 `$group` 之后的路径、全局目标必须用 `$literal` 在 `$group` 之后注入、
+  cap 只能作用在「超出部分」上。达标口径与 `services/goals.js::getEffectiveGoal` 一致，周为 **ISO 周一**起始。
 - 展示位置：排行榜（支持 `metric=points`）、记录页日/周行、管理端用户详情与日周明细页、首页与我的页面。
-- 跑分按**当前配置口径实时计算**（不落库快照），因此调配置会连带影响历史数值——刻意如此（学校统一衡量标准）。
+- 跑分按**当前配置口径实时计算**（不落库快照），因此调配置会连带影响历史数值——刻意如此（学校统一衡量标准）；
+  周档位从固定 1000 步改成百分比后历史周分值同样按新口径重算（新旧基线对照见 `services/points.js` 文件头）。
 
 ## 迁移
 - 旧库（1.0）只读；任何迁移通过 `server/scripts/migrate-v1-to-v2.js`，先 `--dry-run` 再正式执行。
