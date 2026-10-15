@@ -142,14 +142,12 @@ Page({
     pointsTotal: '',
     pointsEnabled: false,
     banned: false,
-    isAdmin: false,
     syncing: false,
     // ===== 角色权限 =====
     role: 'student',
     roleText: '学生',
     isTeacher: false,
     isManager: false,
-    perms: [],
     mgrEntries: [],
     overview: null,
     top3: null, // 平均步数前三（本周日均）：个人 / 班级
@@ -237,31 +235,19 @@ Page({
         { key: 'config', perm: 'config.view', icon: 'setting', label: '系统配置', url: '/packageAdmin/config/config', bg: 'var(--td-brand-color-light)', color: 'var(--td-brand-color)' },
       ];
       const mgrEntries = allEntries.filter((e) => perms.includes('*') || perms.includes(e.perm));
-      // 末尾固定追加「管理中枢」（分类列出全部管理操作，含权限不足时看不到的项也会在里面解释）
-      if (isManager || perms.length) {
-        mgrEntries.push({
-          key: 'hub',
-          perm: '',
-          icon: 'dashboard',
-          label: '管理中枢',
-          url: '/pages/hub/hub',
-          bg: 'var(--tt-brand-soft)',
-          color: 'var(--tt-brand)',
-        });
-      }
+      // 注：这里不再追加「管理中枢」宫格（产品要求）—— 底部导航的「管理」项（自定义 tabBar，按权限渲染）
+      // 与学生管理员/教师管理员都能用，管理面板里的快捷操作只保留具体的管理子模块入口。
       const isTeacher = user.role === 'teacher';
       // 教师问候称呼：名字里已含「老师」就不再重复拼接
       const rawName = user.realName || user.nickname || user.account || '';
       const greetName = !rawName ? '老师' : /老师/.test(rawName) ? rawName : `${rawName}老师`;
       this.setData({
         isManager,
-        perms,
         mgrEntries,
         canViewAds: perms.includes('*') || perms.includes('ad.view'),
         role: user.role || 'student',
         roleText: isTeacher ? '教师' : '学生',
         isTeacher,
-        isAdmin: isManager,
         greetName,
         greetText: greetByHour(),
       });
