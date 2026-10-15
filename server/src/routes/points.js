@@ -7,10 +7,11 @@ const router = express.Router();
 router.use(auth);
 
 // GET /api/points/me —— 我的跑分（用户端）
-// 返回：{ total, today, week, config: { enabled, dailyGoal, weeklyGoal, perStep, perStepScore, dailyExtraCap } }
+// 返回：{ total, today, week, config: { enabled, dailyGoal, weeklyGoal, extraPercent, perStep, perStepScore, dailyExtraCap } }
 //   total = 全历史跑分（各日跑分之和 + 各达标周的一次性周分）
 //   today = 今日跑分（达标基础分 + 超出加分，封顶 dailyExtraCap）
 //   week  = 本周（周一起）跑分
+//   config.extraPercent = 日超出档位（个人目标的百分比）；config.perStep 已弃用（仅周公式仍用）
 // 口径与排行榜 metric=points / 管理端日周记录完全一致（见 services/points.js 文件头注释）
 router.get(
   '/me',

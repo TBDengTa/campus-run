@@ -120,7 +120,7 @@
         <text class="points-l">累计</text>
       </view>
     </view>
-    <view class="points-note">完成日/周目标得分，超出目标每 {{points.perStep}} 步再加 {{points.perStepScore}} 分</view>
+    <view class="points-note">完成日/周目标得分；超出日目标后，每再多达成个人目标的 {{points.extraPercent}}% 加 {{points.perStepScore}} 分（单日上限 {{points.dailyExtraCap}} 分）</view>
   </block>
 
   <!-- ===== 运动与健康（教师不参与运动记录，整块隐藏） =====

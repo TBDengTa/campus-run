@@ -7,15 +7,33 @@
  *
  *   日跑分(S) = 达标基础分 + 超出加分，其中
  *     达标基础分 = S >= G ? C.dailyGoal : 0
- *     超出加分   = min( floor( max(0, S - G) / C.perStep ) * C.perStepScore , C.dailyExtraCap )
- *                  （C.perStep <= 0 时超出加分记 0；**上限只封顶超出加分，不封顶基础分**）
+ *     档位步数   = max(1, G * C.extraPercent / 100)   ← **按「个人目标的百分比」算，不再是固定步数**
+ *     超出加分   = min( floor( max(0, S - G) / 档位步数 ) * C.perStepScore , C.dailyExtraCap )
+ *                  （C.perStepScore <= 0 时超出加分记 0；**上限只封顶超出加分，不封顶基础分**）
  *   周跑分(S) = 同理，用「周目标」与「本周（周一起的 ISO 周 / 自然周）步数」：
  *     达标基础分 = S >= G周 ? C.weeklyGoal : 0
  *     超出加分   = floor( max(0, S - G周) / C.perStep ) * C.perStepScore，**不设上限**
+ *                  （**周公式本次未改**：仍用固定步数 C.perStep，见下方「perStep 已弃用」）
  *   G <= 0（目标缺失）时一律记 0（不能把「0 目标」当成「已达标」白送基础分）；
  *   C.enabled === false 时一律记 0（关闭跑分体系）；C.perStepScore === 0 时只有基础分。
- *   取值示例（默认配置）：970/5000 → 0；5000/5000 → 5；6688/5000 → 5+1=6；14350/5000 → 5+min(9,10)=14；
- *   20000/5000 → 5+min(15,10)=15（封顶）；7658/25000（周）→ 0；43097/25000（周）→ 20+18=38。
+ *
+ * ===== 日超出档位改为 extraPercent（本次改造）=====
+ * 产品口径：目标是个性化的，旧的固定步数档位（perStep，线上为 1000 步）对日目标 6000 步和 15000 步的人
+ * 边际收益完全相同，不合理 → 改为「超出日目标后，每再多达成『个人目标 × extraPercent%』的步数，
+ * 得 perStepScore 分」。默认 extraPercent = 10（即每达成个人目标的 10% 一档）。
+ *   perStep **已弃用**：日公式不再读取它；仅周公式仍在使用（周公式本次刻意不改，回归基线不变）。
+ *   兼容老配置（只有 perStep、没有 extraPercent）：读取时 extraPercent 记默认 10（等价于把旧 perStep
+ *   视作「约等于目标的一个百分比」），**不做静默变更** —— 管理端「跑分设置」会显式提示换算结果
+ *   （旧 perStep 占全局日目标的百分比 = 与旧口径等价的 extraPercent），管理员可一键改回或改成别的值。
+ *   注意：跑分按当前配置实时计算、不落库快照，所以日超出档位从固定步数改成百分比后，
+ *   **历史日分值会随新口径重算**（这是 AGENTS.md 里刻意的设计）；周分值不受影响。
+ *
+ *   取值示例（默认配置 C = {dailyGoal:5, extraPercent:10, perStepScore:1, dailyExtraCap:10}）：
+ *     G=5000（档位 500 步）：4700 → 0；5000 → 5；5001 → 5；5500 → 5+1=6；9999 → 5+9=14；
+ *                            10000 → 5+min(10,10)=15；20000 → 5+min(30,10)=15（封顶）
+ *     G=6000（档位 600 步）：6000 → 5；6600 → 5+1=6；12000 → 5+min(10,10)=15
+ *     G=15000（档位 1500 步）：15000 → 5；16500 → 5+1=6；30000 → 5+min(10,10)=15
+ *   周（G周=25000，perStep=1000，周公式不变）：7658 → 0；25000 → 20；26000 → 20+1=21；43097 → 20+18=38。
  *
  * ===== 口径一致性 =====
  * - 日/周目标与「达标判定」完全同源（getEffectiveGoal），所以
@@ -42,10 +60,17 @@ const DEFAULT_POINTS = {
   enabled: true,
   dailyGoal: 5,
   weeklyGoal: 20,
+  // 日超出档位：个人目标的百分比（默认 10 = 每再多达成『目标的 10%』得 perStepScore 分）
+  extraPercent: 10,
+  // 【已弃用】固定步数档位：日公式已改用 extraPercent；此处保留供周公式使用（周公式本次不改）
   perStep: 1000,
   perStepScore: 1,
   dailyExtraCap: 10,
 };
+
+// extraPercent 的合法区间（管理端做同样的整数校验）
+const EXTRA_PERCENT_MIN = 1;
+const EXTRA_PERCENT_MAX = 100;
 
 // 班级榜聚合的候选用户上限（与 routes/ranking.js 的 SCAN_LIMIT 同量级）
 const MAX_USERS = 5000;
@@ -53,6 +78,31 @@ const MAX_USERS = 5000;
 const LIMIT_PER_USER = 4000;
 
 // ===== 配置 =====
+
+// 是否为「有值」的数字（null / undefined / '' 一律视为缺失，不能当成 0）
+function hasNumber(v) {
+  return v != null && v !== '' && Number.isFinite(Number(v));
+}
+
+// 日超出档位百分比：显式配置优先（夹到 1~100）；缺失时取默认 10。
+// 老配置（只有已弃用的 perStep）走的就是这条默认路径 —— 行为等价于「旧 perStep ≈ 目标的一个百分比」，
+// 具体换算结果由管理端提示（见 routes/admin/config.js 的 pointsLegacy），避免静默变更。
+// 不做 perStep 反推的原因：perStep 是绝对步数，无法同时等价于「6000 步目标」和「15000 步目标」的人，
+// 而那正是本次要修的问题本身。
+function resolveExtraPercent(p) {
+  if (!hasNumber(p && p.extraPercent)) return DEFAULT_POINTS.extraPercent;
+  const n = Math.round(Number(p.extraPercent));
+  return Math.min(EXTRA_PERCENT_MAX, Math.max(EXTRA_PERCENT_MIN, n));
+}
+
+// 管理端「已弃用」提示用：旧 perStep 步相当于全局日目标的百分之多少
+// （即：若要与改造前的日跑分完全一致，extraPercent 应填这个值）。无法换算时返回 null。
+function legacyExtraPercent(perStep, globalDailySteps) {
+  if (!hasNumber(perStep) || Number(perStep) <= 0) return null;
+  if (!hasNumber(globalDailySteps) || Number(globalDailySteps) <= 0) return null;
+  const pct = Math.round((Number(perStep) / Number(globalDailySteps)) * 100);
+  return Math.min(EXTRA_PERCENT_MAX, Math.max(EXTRA_PERCENT_MIN, pct));
+}
 
 // 归一化跑分配置：任何字段缺失/非法都退回默认值（老配置文档没有 points 子文档时同样成立）
 function normalizeConfig(raw) {
@@ -66,6 +116,8 @@ function normalizeConfig(raw) {
     enabled: p.enabled !== false,
     dailyGoal: num(p.dailyGoal, DEFAULT_POINTS.dailyGoal, 0, 1000),
     weeklyGoal: num(p.weeklyGoal, DEFAULT_POINTS.weeklyGoal, 0, 5000),
+    extraPercent: resolveExtraPercent(p),
+    // 【已弃用】日公式不再读取 perStep；保留它是为了让周公式（本次未改）仍可配置
     perStep: num(p.perStep, DEFAULT_POINTS.perStep, 1, 1000000),
     perStepScore: num(p.perStepScore, DEFAULT_POINTS.perStepScore, 0, 1000),
     dailyExtraCap: num(p.dailyExtraCap, DEFAULT_POINTS.dailyExtraCap, 0, 1000),
@@ -82,8 +134,8 @@ async function getPointsConfig() {
 async function loadEffective(opts = {}) {
   if (opts.config && opts.config.__globalDaily != null) return opts.config;
   const doc = await GoalConfig.getSingleton();
-  const pts = normalizeConfig(opts.config || doc.points);
   const num = (v) => (Number.isFinite(Number(v)) ? Math.max(0, Math.round(Number(v))) : 0);
+  const pts = normalizeConfig(opts.config || doc.points);
   return { ...pts, __globalDaily: num(doc.daily && doc.daily.steps), __globalWeekly: num(doc.weekly && doc.weekly.steps) };
 }
 
@@ -94,6 +146,7 @@ function publicConfig(config) {
     enabled: c.enabled,
     dailyGoal: c.dailyGoal,
     weeklyGoal: c.weeklyGoal,
+    extraPercent: c.extraPercent,
     perStep: c.perStep,
     perStepScore: c.perStepScore,
     dailyExtraCap: c.dailyExtraCap,
@@ -101,6 +154,13 @@ function publicConfig(config) {
 }
 
 // ===== 纯函数公式（Node 侧与 Mongo 侧表达式必须保持一致，改动请同步 THE_*_EXPR）=====
+
+// 日超出档位步数 = max(1, 目标 × extraPercent%)。
+// 与 Mongo 侧 dailyUnitExpr 严格等价：都是 (goal * percent) / 100 这一串 IEEE754 双精度运算，
+// 不做四舍五入（保证两边在「差值刚好等于小数档位」时也逐例一致）。
+function dailyUnit(goalSteps, extraPercent) {
+  return Math.max(1, (goalSteps * extraPercent) / 100);
+}
 
 // 日跑分（单日步数 → 分数）：达标基础分 + min(超出加分, 日上限)
 function pointsForDay({ steps, goalSteps, config }) {
@@ -110,12 +170,16 @@ function pointsForDay({ steps, goalSteps, config }) {
   const g = Math.max(0, Math.round(Number(goalSteps) || 0));
   if (g <= 0) return 0;
   const base = s >= g ? c.dailyGoal : 0;
-  const extra = c.perStep > 0 ? Math.floor(Math.max(0, s - g) / c.perStep) * c.perStepScore : 0;
+  const extra =
+    c.extraPercent > 0 && c.perStepScore > 0
+      ? Math.floor(Math.max(0, s - g) / dailyUnit(g, c.extraPercent)) * c.perStepScore
+      : 0;
   // 上限只封顶「超出加分」，不封顶达标基础分（否则日上限小于 dailyGoal 时连基础分都拿不到）
   return base + Math.min(extra, c.dailyExtraCap);
 }
 
 // 周跑分（本周累计步数 → 分数）：达标基础分 + 超出加分（无上限）
+// 周公式本次**未改**：档位仍是固定步数 perStep（已弃用字段，仅此处仍在使用）
 function pointsForWeek({ steps, goalSteps, config }) {
   const c = normalizeConfig(config);
   if (!c.enabled) return 0;
@@ -123,33 +187,40 @@ function pointsForWeek({ steps, goalSteps, config }) {
   const g = Math.max(0, Math.round(Number(goalSteps) || 0));
   if (g <= 0) return 0;
   const base = s >= g ? c.weeklyGoal : 0;
-  const extra = c.perStep > 0 ? Math.floor(Math.max(0, s - g) / c.perStep) * c.perStepScore : 0;
+  const extra = c.perStep > 0 && c.perStepScore > 0 ? Math.floor(Math.max(0, s - g) / c.perStep) * c.perStepScore : 0;
   return base + extra;
 }
 
 // 单个数字 → Mongo 聚合表达式（$literal 表达式，供 $max/$min/$floor 使用）
 const lit = (n) => ({ $literal: n });
 
+// 「超出加分」的 Mongo 表达式：floor(max(0, S-G) / 一档步数) * perStepScore
+// unitExpr = 一档步数的表达式；null 表示没有可用档位（记 0）；perStepScore <= 0 也记 0
+function extraPointsExpr(stepField, goalField, unitExpr, perStepScore) {
+  if (unitExpr == null || !(perStepScore > 0)) return lit(0);
+  return {
+    $multiply: [
+      { $floor: { $divide: [{ $max: [0, { $subtract: [stepField, goalField] }] }, unitExpr] } },
+      lit(perStepScore),
+    ],
+  };
+}
+
+// 日档位步数表达式 = max(1, 目标 × extraPercent%) —— 与 dailyUnit() 严格等价（运算顺序一致）
+function dailyUnitExpr(goalField, config) {
+  return {
+    $max: [lit(1), { $divide: [{ $multiply: [goalField, lit(config.extraPercent)] }, lit(100)] }],
+  };
+}
+
 // 日/周跑分的 Mongo 表达式。结构严格等价于 pointsForDay/pointsForWeek：
 //   基础分 = S >= G ? base : 0
-//   超出分 = floor(max(0, S-G) / perStep) * perStepScore
+//   超出分 = floor(max(0, S-G) / 一档步数) * perStepScore
 //   日：base + min(超出分, dailyExtraCap)；周：base + 超出分（无上限）
 // 目标 G <= 0 时整条记 0（必须显式判空：目标缺失时 S >= 0 恒真，会白送达标基础分）。
 // cap 只封顶「超出分」，不能封顶 base，否则日上限小于 dailyGoal 时连基础分都拿不到。
-function pointsExpr({ stepField, goalField, base, cap, config }) {
-  const extra =
-    config.perStep > 0
-      ? {
-          $multiply: [
-            {
-              $floor: {
-                $divide: [{ $max: [0, { $subtract: [stepField, goalField] }] }, lit(config.perStep)],
-              },
-            },
-            lit(config.perStepScore),
-          ],
-        }
-      : lit(0);
+function pointsExpr({ stepField, goalField, base, cap, unitExpr, perStepScore }) {
+  const extra = extraPointsExpr(stepField, goalField, unitExpr, perStepScore);
   const scored = {
     $add: [
       { $cond: [{ $gte: [stepField, goalField] }, lit(base), lit(0)] },
@@ -159,14 +230,30 @@ function pointsExpr({ stepField, goalField, base, cap, config }) {
   return { $cond: [{ $lte: [goalField, 0] }, lit(0), scored] };
 }
 
-// 日跑分表达式：达标基础分 + min(超出加分, 日上限)
+// 日跑分表达式：达标基础分 + min(超出加分, 日上限)，档位 = 个人目标 × extraPercent%
 function dailyPointsExpr(stepField, goalField, c) {
-  return pointsExpr({ stepField, goalField, base: c.dailyGoal, cap: c.dailyExtraCap, config: c });
+  const cfg = normalizeConfig(c);
+  return pointsExpr({
+    stepField,
+    goalField,
+    base: cfg.dailyGoal,
+    cap: cfg.dailyExtraCap,
+    unitExpr: cfg.extraPercent > 0 ? dailyUnitExpr(goalField, cfg) : null,
+    perStepScore: cfg.perStepScore,
+  });
 }
 
-// 周跑分表达式：达标基础分 + 超出加分（无上限）
+// 周跑分表达式：达标基础分 + 超出加分（无上限），档位 = 固定步数 perStep（周公式未改）
 function weeklyPointsExpr(stepField, goalField, c) {
-  return pointsExpr({ stepField, goalField, base: c.weeklyGoal, cap: null, config: c });
+  const cfg = normalizeConfig(c);
+  return pointsExpr({
+    stepField,
+    goalField,
+    base: cfg.weeklyGoal,
+    cap: null,
+    unitExpr: cfg.perStep > 0 ? lit(cfg.perStep) : null,
+    perStepScore: cfg.perStepScore,
+  });
 }
 
 // ===== 聚合常量 =====
@@ -633,12 +720,15 @@ const POINTS_UNIT = '跑分';
 
 module.exports = {
   DEFAULT_POINTS,
+  EXTRA_PERCENT_MIN,
+  EXTRA_PERCENT_MAX,
   POINTS_UNIT,
   currentWindows,
   isoWeekRange,
   getPointsConfig,
   loadEffective,
   normalizeConfig,
+  legacyExtraPercent,
   publicConfig,
   pointsForDay,
   pointsForWeek,

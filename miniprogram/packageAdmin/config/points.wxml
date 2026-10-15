@@ -4,6 +4,15 @@
     <text class="tt-section-extra">学校统一衡量标准</text>
   </view>
 
+  <!-- 旧配置迁移提示：日超出档位从固定步数改成「个人目标的百分比」，这里显式说明换算结果 -->
+  <view class="tt-card cfg-card cfg-legacy" wx:if="{{legacy}}">
+    <text class="cfg-legacy-title">检测到旧版跑分配置（仅 perStep）</text>
+    <text class="cfg-legacy-body">{{legacyText}}</text>
+    <view class="cfg-legacy-act" wx:if="{{legacyAction}}" bindtap="useLegacyPercent">
+      <text>{{legacyAction}}</text>
+    </view>
+  </view>
+
   <view class="tt-card cfg-card">
     <view class="cfg-fitem cfg-fitem-switch">
       <view class="cfg-flabel-col">
@@ -22,26 +31,39 @@
       <input class="cfg-input" type="number" value="{{config.points.weeklyGoal}}" bindinput="onPoints" data-field="weeklyGoal" />
     </view>
     <view class="cfg-fitem">
-      <text class="cfg-flabel">超出部分每多少步</text>
-      <input class="cfg-input" type="number" value="{{config.points.perStep}}" bindinput="onPoints" data-field="perStep" />
+      <view class="cfg-flabel-col">
+        <text class="cfg-flabel cfg-flabel-auto">超出档位（占目标的 %）</text>
+        <text class="cfg-fdesc">超出日目标后，每再多达成目标的这个百分比加一档；按个人目标算：{{unitHint}}；1~100 的整数</text>
+      </view>
+      <input class="cfg-input" type="number" value="{{config.points.extraPercent}}" bindinput="onExtraPercent" />
     </view>
     <view class="cfg-fitem">
       <text class="cfg-flabel">每档加多少分</text>
       <input class="cfg-input" type="number" value="{{config.points.perStepScore}}" bindinput="onPoints" data-field="perStepScore" />
     </view>
     <view class="cfg-fitem">
-      <text class="cfg-flabel">单日超出加分上限</text>
+      <view class="cfg-flabel-col">
+        <text class="cfg-flabel cfg-flabel-auto">单日超出加分上限</text>
+        <text class="cfg-fdesc">仅封顶「超出部分」，达标基础分不受影响</text>
+      </view>
       <input class="cfg-input" type="number" value="{{config.points.dailyExtraCap}}" bindinput="onPoints" data-field="dailyExtraCap" />
+    </view>
+    <view class="cfg-fitem">
+      <view class="cfg-flabel-col">
+        <text class="cfg-flabel cfg-flabel-auto">周跑分每多少步（已弃用）</text>
+        <text class="cfg-fdesc">旧字段 perStep：日公式已改用百分比；目前仅周跑分仍按此值计算</text>
+      </view>
+      <input class="cfg-input" type="number" value="{{config.points.perStep}}" bindinput="onPoints" data-field="perStep" />
     </view>
   </view>
 
   <view class="tt-section">
     <text>效果预览</text>
-    <text class="tt-section-extra">按「日目标 5000 步」估算</text>
+    <text class="tt-section-extra">按不同个人目标估算（档位随目标缩放）</text>
   </view>
   <view class="tt-card cfg-card">
     <view class="cfg-fitem" wx:for="{{preview}}" wx:key="key">
-      <text class="cfg-flabel">{{item.label}}</text>
+      <text class="cfg-flabel cfg-flabel-wide">{{item.label}}</text>
       <text class="cfg-preview-value num-font">{{item.value}} 分</text>
     </view>
   </view>
@@ -50,5 +72,5 @@
     <t-button theme="primary" block loading="{{saving}}" bind:tap="save">保存配置</t-button>
   </view>
 
-  <view class="tt-footer">达标口径与用户端目标一致（个人计划优先）· 保存后立即生效</view>
+  <view class="tt-footer">达标口径与用户端目标一致（个人计划优先）· 保存后立即生效 · 跑分按当前配置实时重算</view>
 </view>

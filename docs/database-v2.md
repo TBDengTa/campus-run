@@ -56,8 +56,11 @@
 索引：`(openid, date)`、`(date)`
 
 ### goal_config（单例）
-全局默认目标（daily/weekly 的 steps/distance/calories）、反作弊阈值 `anticheat`、激励视频规则 `rewardVideo`。
-（分时段目标 `graded` 已废弃移除；默认目标的管理入口在「运动考核」模块 `/api/admin/assessment/defaults`。）
+全局默认目标（daily/weekly 的 steps/distance/calories）、反作弊阈值 `anticheat`、激励视频规则 `rewardVideo`、
+跑分规则 `points`（`dailyGoal` / `weeklyGoal` / `extraPercent`（日超出档位 = 个人目标的百分比，默认 10，1~100）/
+`perStepScore` / `dailyExtraCap`；`perStep` 已弃用，仅周公式还在用）。
+（分时段目标 `graded` 已废弃移除；默认目标的管理入口在「运动考核」模块 `/api/admin/assessment/defaults`，
+跑分设置入口在「系统配置 → 跑分设置」`packageAdmin/config/points`；跑分按当前配置实时计算、不落库快照。）
 
 ### goal_plans / body_data / user_goals
 BMI 预设计划（bmiMin~bmiMax × 强度偏好匹配，`isDefault` 全局唯一兜底，管理入口 `/api/admin/assessment/plans`；
@@ -102,10 +105,26 @@ BMI 预设计划（bmiMin~bmiMax × 强度偏好匹配，`isDefault` 全局唯�
 | 集合 | 说明 |
 |---|---|
 | ad_sponsors | 广告主（名称/联系人/电话/邮箱/logo/active） |
-| ad_slots | 广告位（key 唯一，type: banner/card/splash，maxSponsors/exclusive/enabled） |
+| ad_slots | 广告位（key 唯一，type: banner/card/splash，maxSponsors/exclusive/enabled/builtIn） |
 | ad_contents | 素材（slotKey + sponsorId，投期 startDate~endDate，weight 排序，totalPv/totalClick 冗余计数） |
 | ad_stats | PV/点击明细大表。**必带索引**：`(contentId,date)` `(slotKey,date)` `(date)` `(sponsorId,date)` |
 | ad_pages | 落地页 HTML（slug 唯一），后端 `/p/:slug` 直出 |
+
+内置广告位（`builtIn: true`，启动时由 `services/ads.js::seedAdSlots()` 按 key 幂等播种，
+**不可删除、key 不可修改**，名称/类型/展示规则/开关可由运营改）：
+
+| key | 名称 | type | 所在页面 |
+|---|---|---|---|
+| home_banner | 首页轮播 | banner | 首页 |
+| startup_banner | 开屏（启动页广告） | splash | 启动页 |
+| record_card | 记录页卡片 | card | 运动记录 |
+| ranking_card | 排行榜卡片 | card | 排行榜 |
+
+> 开屏位沿用旧库已有的 `startup_banner`（旧名「启动页轮播」即启动页广告），不另造 key；
+> 该位在库里是**独占位**（`exclusive: true`，只下发权重最高 1 条）。
+
+下发口径（`services/ads.js::pickAdsForSlot`）：广告位停用 → 不下发；`exclusive` → 只下发权重最高 1 条；
+`maxSponsors` → 按广告主去重后限量（同一广告主只取权重最高的一条）。
 
 ## 基础内容
 

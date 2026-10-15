@@ -213,7 +213,7 @@ Page({
               weekText: fmt.formatNumber(pts.week || 0),
               enabled: !pts.config || pts.config.enabled !== false,
               configText: pts.config
-                ? `日目标 +${pts.config.dailyGoal} · 周目标 +${pts.config.weeklyGoal} · 每 ${pts.config.perStep} 步 +${pts.config.perStepScore}（日上限 +${pts.config.dailyExtraCap}）`
+                ? `日目标 +${pts.config.dailyGoal} · 周目标 +${pts.config.weeklyGoal} · 超出日目标后每再多达成个人目标的 ${pts.config.extraPercent}% 加 ${pts.config.perStepScore} 分（单日上限 +${pts.config.dailyExtraCap}）`
                 : '',
             }
           : null,

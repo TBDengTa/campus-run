@@ -1,6 +1,6 @@
 @import "config.wxss";
 
-/* 跑分设置页：只补一个「效果预览」的数值样式（其余复用 config.wxss 公共类） */
+/* 跑分设置页：只补「效果预览」「旧配置提示」与长标签的样式（其余复用 config.wxss 公共类） */
 .cfg-preview-value {
   flex: 1;
   min-width: 0;
@@ -8,4 +8,48 @@
   font-size: 28rpx;
   font-weight: 600;
   color: var(--tt-brand);
+}
+
+/* 带说明的两行标签：放进 .cfg-flabel-col 时不要固定 300rpx 宽 */
+.cfg-flabel-auto {
+  width: auto;
+  flex-shrink: 1;
+}
+
+/* 预览行的标签较长，占满左侧 */
+.cfg-flabel-wide {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+}
+
+/* 旧配置提示卡：品牌浅底 + 品牌色标题，与页面其余卡片同一套令牌 */
+.cfg-legacy {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+  background: var(--tt-brand-soft);
+  box-shadow: none;
+}
+
+.cfg-legacy-title {
+  font-size: 27rpx;
+  font-weight: 600;
+  color: var(--tt-brand);
+}
+
+.cfg-legacy-body {
+  font-size: 23rpx;
+  line-height: 1.6;
+  color: var(--tt-text-2);
+}
+
+.cfg-legacy-act {
+  align-self: flex-start;
+  padding: 10rpx 24rpx;
+  font-size: 24rpx;
+  font-weight: 500;
+  color: var(--tt-brand);
+  background: var(--tt-card);
+  border-radius: 999rpx;
 }

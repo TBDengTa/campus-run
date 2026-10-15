@@ -126,8 +126,10 @@ Page({
               total: fmt.formatNumber(p.total || 0),
               dailyGoal: p.config.dailyGoal,
               weeklyGoal: p.config.weeklyGoal,
-              perStep: p.config.perStep,
+              // 日超出档位按「个人目标的百分比」算（perStep 已弃用，不再展示步数口径）
+              extraPercent: p.config.extraPercent,
               perStepScore: p.config.perStepScore,
+              dailyExtraCap: p.config.dailyExtraCap,
             };
           }
         } catch (e) {
