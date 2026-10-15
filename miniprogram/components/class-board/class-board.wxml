@@ -8,7 +8,8 @@
     <text class="tt-section-extra" wx:if="{{showManage}}" bind:tap="goManage">班级管理 ›</text>
   </view>
 
-  <view class="tt-card cb-card">
+  <!-- 卡片高度是固定常量（cardHeight + 安全网 cardExtra）：单班与多班同一个值、首帧即最终高度 -->
+  <view class="tt-card cb-card" style="--cb-card-h: {{cardHeight + cardExtra}}rpx">
     <!-- 固定头部：当前选中班级 + 身份 + 全校名次（滑动时不动；数据取 currentCard 镜像） -->
     <view class="cb-head">
       <view class="cb-head-main">
@@ -20,7 +21,7 @@
     </view>
     <view class="cb-rank-sub" wx:if="{{currentCard.classRank}}">全校班级榜 · 班级日均 {{currentCard.classRank.avgSteps}} 步（{{currentCard.classRank.members}} 人）</view>
 
-    <!-- 单班：直接渲染，不用 swiper（滑动切换对只有一个班没有意义） -->
+    <!-- 单班：直接渲染，不用 swiper（卡片高度同样是固定值 → 与多班视觉一致） -->
     <block wx:if="{{!multi}}">
       <view class="tt-stat-row cb-stats">
         <view class="tt-stat">
@@ -79,9 +80,9 @@
       <view class="cb-note" wx:else>班委仅查看：本班数据与排名，无操作权限</view>
     </block>
 
-    <!-- 多班：横向滑动切换班级；每个面板是完整的一张班级卡，切到哪班显示哪班的数据 -->
+    <!-- 多班：横向滑动切换班级；每个面板是完整的一张班级卡（高度固定，切换时高度不变） -->
     <block wx:else>
-      <view class="cb-swiper" style="{{swipeHeight ? 'height:' + swipeHeight + 'rpx' : ''}}">
+      <view class="cb-swiper" style="height: {{cardHeight + cardExtra}}rpx">
         <swiper
           class="cb-swiper-box"
           current="{{currentIndex}}"

@@ -15,8 +15,8 @@
 //   多班时卡片可左右滑动切换，**切到哪一班就显示哪一班的数据**：
 //   · 每个班都用 /api/class/overview + /api/class/ranking（带 className）单独拉一份，一次全拉好，
 //     滑动是纯 CSS/手势切换、不再发请求（也不会出现「卡片换了但数字还是上一个班」）；
-//   · 班级切换用原生 <swiper>（手势跟手 + 回弹吸附），高度按「最高的一张卡」实测后写死，
-//     卡片本身不滚动（页面滚动条在 swiper 上照常滑动）；
+//   · 班级切换用原生 <swiper>（手势跟手 + 回弹吸附），高度 = 固定常量 CARD_HEIGHT_RPX
+//     （不动态测量，切换班级高度零变化），卡片本身不滚动（页面滚动条在 swiper 上照常滑动）；
 //   · 头部（班级名 / 身份胶囊 / 全校名次 / 「第 n/N 个班」）在 swiper 之外，是固定不滑的，
 //     所以数字指示器不会跟着卡片滑走。
 const auth = require('../../utils/request');
@@ -24,9 +24,14 @@ const fmt = require('../../utils/format');
 
 // 班级管理页与日/周明细页都在 app.json 的 packageAdmin 分包里登记（跳转写全路径）
 
-// 多班 swiper 高度量不到时的兜底（rpx）：贴近真实卡片「概况 + 达标 + 前三名 3 行 + 管理入口」的高度，
-// 只用于几何未就绪的极端情况。注意**不要**把它写成 .cb-swiper 的 min-height —— 那会顶掉更小的实测值、变回白区。
-const CONSERVATIVE_HEIGHT_RPX = 660;
+// ===== 卡片固定高度（产品口径）=====
+// 前三名恒为 3 行（每个班都超过 3 人），所以卡片内容高度本来就是常量，不动态测量、不跟随当前卡：
+//   20 (padding-top) + 42 (班名 30rpx×1.4) + 34 (名次副行 6 + 20×1.4) + 120 (三项概况)
+//   + 97 (达标块) + 57 (前三名标题) + 3×60 (三行) + 88 (管理入口) + 18 (padding-bottom) = 686rpx
+// 单班 / 多班共用这一个值：多班时 = <swiper> 高度（内联 style），单班时 = 卡片 min-height，
+// 两种模式视觉一致，首帧就是最终高度（不会先 0 再跳），切换班级高度完全不变。
+// WXSS 里通过 --cb-card-h 使用同一数值（WXSS 读不到 JS 常量，改这个值要两处同步）。
+const CARD_HEIGHT_RPX = 686;
 
 Component({
   properties: {
@@ -69,8 +74,13 @@ Component({
     //（真机上表现为滑不过去）；所以头部摆动的是这个镜像对象 —— 模板里 swiper 的 current 只由
     //「点圆点」等显式操作推进，手势滑动只更新镜像与指示器。
     currentCard: null,
-    // swiper 高度（rpx）：取「最高的一张卡」的实测值；0 = 还没量到，用 CSS 兜底高度
-    swipeHeight: 0,
+    // 卡片固定高度（rpx）：多班时是 <swiper> 的内联高度，单班时由 WXSS 的
+    // --cb-card-h / min-height 生效（两处用同一个值）；首帧就是这个值，不会先 0 再跳。
+    cardHeight: CARD_HEIGHT_RPX,
+    // 安全网：仅当实测内容**超过**固定高度时才补的额外高度（只增不减）。
+    // 正常情况恒为 0 → 卡片高 = swiper 高、零白区；极小概率的超高内容（超长班级名换行等）才 >0，
+    // 且卡片与 swiper 一起长高（下面模板同一表达式），不会出现「容器比卡片高」的白区。
+    cardExtra: 0,
   },
 
   lifetimes: {
@@ -126,9 +136,9 @@ Component({
             role: mine.role,
           },
           () => {
-            // 首帧渲染完成后才量高度：此时卡片内容已渲染、swiper-item 有真实几何
+            // 首帧渲染完成后才过安全网（正常情况恒定高度、不 setData，首帧就是最终高度）
             this.updateIndicator();
-            this.measureHeight();
+            this.checkOverflow();
           }
         );
         this.triggerEvent('ready', { role: mine.role, className, overview: payload.overview });
@@ -194,73 +204,43 @@ Component({
       const indicatorText = total > 1 ? `${i + 1}/${total}` : '';
       if (indicatorText !== this.data.indicatorText) this.setData({ indicatorText });
     },
-    // ===== swiper 高度：只取**当前可见那张卡**的实测高度 =====
-    // 为什么不是「所有卡里最高的那张」：<swiper> 是固定高度容器，取最高值的话，切到较矮的
-    // 那一班时容器不变、卡片下方就留出一大片白色空白（用户报的 bug）。所以：
-    //   · 每次切换后按当前卡实测重设高度（切换会平滑跟随，不留白）；
-    //   · 内联高度优先，WXSS 里**不能再给 .cb-swiper 写 min-height** —— min-height 会顶掉
-    //     更小的实测值，效果与「取最高」一样（容器比卡片高 → 白区）；
-    //   · 量不到（首帧 / 无 cards / 视图未就绪）才退回 CONSERVATIVE_HEIGHT_RPX 兜底。
-    measureHeight(done) {
-      if (!this.data.multi || !(this.data.cards || []).length) {
-        if (this.data.swipeHeight) this.setData({ swipeHeight: 0 });
-        if (typeof done === 'function') done();
-        return;
-      }
-      const finish = () => {
-        if (typeof done === 'function') done();
-      };
-      const apply = (rects) => {
-        const list = (rects || []).filter((r) => r && r.height > 0);
-        if (!list.length) {
-          // 量不到（含自动化/真机几何未就绪）：用贴近真实卡片的兜底值，不用明显偏大的值
-          if (!this.data.swipeHeight) this.setData({ swipeHeight: CONSERVATIVE_HEIGHT_RPX });
-          finish();
-          return;
-        }
-        // px → rpx：设备 rpx 定义就是 750 / 屏宽（750 是设计稿基准宽，与机型无关）
-        const px2rpx = 750 / 375;
-        // 取最高的一条：切换动画中两张卡同时可见时，容器不能低于其中较高者（否则会裁内容）；
-        // 稳定态下 .cb-card 只有可见的那一张（单班卡在 swiper 之外），所以这就是「当前卡高」
-        const max = list.reduce((m, r) => Math.max(m, r.height), 0);
-        // +2rpx 只吸收 px→rpx 的取整差，不留可见白区
-        const h = Math.round(max * px2rpx) + 2;
-        if (h !== this.data.swipeHeight) this.setData({ swipeHeight: h });
-        finish();
-      };
+    // ===== 安全网：仅当内容真的超过固定高度时才把高度调大（只增不减）=====
+    // 高度本身**不是**动态测出来的：它就是常量 CARD_HEIGHT_RPX（前三名恒 3 行 → 内容高度是常量）。
+    // 这里只兜一种极小概率的情况：班级名过长换行、名字特别长导致某一行撑高等，
+    // 使某张卡的自然高度 > 常量。此时把「卡片 + swiper」一起按差值长高（模板里是同一个表达式），
+    // 所以永远不会出现「容器比卡片高」的白区；正常情况 cardExtra 恒为 0、高度零变化。
+    // 只在数据装载/刷新后跑一次，**切换班级不跑**（切换时高度必须逐像素一致）。
+    checkOverflow() {
+      if (!this.data.multi || !(this.data.cards || []).length) return;
+      const self = this;
       this.createSelectorQuery()
-        // 优先只量可见的那一个 swiper-item（组件内选择器写 `>>>` 才能进 swiper-item 内部）
-        .selectAll('.cb-swiper-item >>> .cb-card')
-        .boundingClientRect((rects) => {
-          if (rects && rects.length) {
-            apply(rects);
-            return;
-          }
-          // 兜底：`>>>` 在个别基础库版本下取不到跨组件节点时，退回普通选择器
-          //（此时会把所有卡都量到 → 等价于「取最高」，最坏只是高度偏大、内容不会被裁）
-          this.createSelectorQuery().selectAll('.cb-card').boundingClientRect(apply).exec();
+        .selectAll('.cb-card')
+        .boundingClientRect(function (rects) {
+          const list = (rects || []).filter((r) => r && r.height > 0);
+          if (!list.length) return; // 量不到：保持固定高度（不猜、不用兜底值）
+          // px → rpx：rpx 的定义就是 750 / 屏宽（750 是设计稿基准宽，与机型无关）
+          const px2rpx = 750 / 375;
+          const max = list.reduce((m, r) => Math.max(m, r.height), 0);
+          const need = Math.round(max * px2rpx) - CARD_HEIGHT_RPX;
+          if (need > self.data.cardExtra) self.setData({ cardExtra: need });
         })
         .exec();
     },
 
     // 滑动切换班级：只更新镜像 / 指示器 / swipeIndex，不回写 currentIndex（见 data.swipeIndex 说明）
-    // 切换后按新卡重设 swiper 高度（setData 回调里量，确保量到的是新卡的几何）
+    // **不碰高度**：固定高度不随班级变化（产品要求：切换时高度完全不变）
     onSwipeChange(e) {
       const index = Number(e.detail.current) || 0;
-      this.setData({ swipeIndex: index, currentCard: this.viewOf(this.data.cards, index) }, () => {
-        this.updateIndicator(index);
-        this.measureHeight();
-      });
+      this.setData({ swipeIndex: index, currentCard: this.viewOf(this.data.cards, index) }, () => this.updateIndicator(index));
       this.triggerEvent('classchange', { className: this.data.classes[index] || '', index });
     },
 
-    // 滑动动画结束：再量一次（动画期间两张卡同时可见，这里量到的是稳定态）
+    // 滑动动画结束：高度仍然是固定值，这里只做指示器与镜像的最终同步
     onSwipeSettled(e) {
       const index = Number(e.detail.current) || 0;
       if (index !== this.data.swipeIndex) {
         this.setData({ swipeIndex: index, currentCard: this.viewOf(this.data.cards, index) }, () => this.updateIndicator(index));
       }
-      this.measureHeight();
     },
 
     // 点圆点直接跳某个班（显式操作，推进 swiper 的 current）
@@ -273,10 +253,7 @@ Component({
           swipeIndex: index,
           currentCard: this.viewOf(this.data.cards, index),
         },
-        () => {
-          this.updateIndicator(index);
-          this.measureHeight();
-        }
+        () => this.updateIndicator(index)
       );
       this.triggerEvent('classchange', { className: this.data.classes[index] || '', index });
     },
@@ -298,7 +275,8 @@ Component({
           },
           () => {
             this.updateIndicator();
-            this.measureHeight();
+            // 数据变了才重新过一遍安全网（切换班级时不跑，高度必须恒定）
+            this.checkOverflow();
           }
         );
       } catch (e) {

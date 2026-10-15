@@ -3,8 +3,18 @@
   margin-bottom: var(--tt-gap);
 }
 
+/* 卡片高度：固定值，由 WXML 内联 --cb-card-h 提供（= JS 里的 CARD_HEIGHT_RPX 686rpx + 安全网增量），
+   这里只给一个与 JS 常量一致的自兜底默认值（WXSS 读不到 JS 常量，两处一起改）。
+   单班与多班都用它 → 两种模式卡片高度一致、首帧即最终高度。 */
 .cb-card {
+  --cb-card-h: 686rpx;
   padding: 20rpx 24rpx 18rpx;
+}
+
+/* 单班（不渲染 swiper）时卡片吃固定高度：直接给这个固定值，不做内容测量，
+   所以「卡片高 = swiper 高」恒成立，卡片下方不会出现任何多余白区。 */
+.cb-wrap > .cb-card {
+  min-height: var(--cb-card-h);
 }
 
 /* ===== 头部：班级 + 身份 + 名次 ===== */
@@ -70,9 +80,10 @@
 }
 
 /* ===== 多班：横向滑动切换班级 =====
-   高度**只由 JS 按当前可见卡实测后写在内联 style 上**（内联高度 = 当前卡高 + 2rpx 取整余量）。
-   这里刻意**不写 min-height**：<swiper> 不会自动撑高，一旦给它一个下限，
-   切到较矮的班时容器仍被撑住 → 卡片下方留出一大片白色空白（就是这次报的 bug）。 */
+   高度 = **固定常量**（WXML 内联 style 给 .cb-swiper，值 = --cb-card-h = 686rpx + 安全网增量），
+   与卡片高度是同一个表达式 → 卡片高 ≡ swiper 高，卡片下方零白区。
+   这里刻意**不写任何 min-height / 动态测量**：<swiper> 不会自动撑高，给它下限或按「最高卡」设高度，
+   都会让容器高于卡片、在卡片下方留出白色空白（就是产品报的 bug）。 */
 .cb-swiper {
   overflow: hidden;
 }
@@ -81,22 +92,25 @@
   height: 100%;
 }
 
-/* swiper-item 只做「一屏一张卡」的容器：不加 padding / margin / 背景，避免叠加多余空间 */
+/* swiper-item 只做「一屏一张卡」的容器：不加 padding / margin / 背景，避免叠加多余空间；
+   justify-content: flex-start 让卡片贴顶（不拉伸），卡片高度由 --cb-card-h 决定 */
 .cb-swiper-item {
   display: flex;
   flex-direction: column;
+  justify-content: flex-start;
 }
 
 /* 卡片的 padding 由 .cb-card（.tt-card）负责，面板只做纵向排布；margin 必须为 0，
-   否则卡片外边距会和 swiper 内联高度叠出一段空白 */
+   否则卡片外边距会和 swiper 的内联高度叠出一段空白 */
 .cb-panel {
   display: flex;
   flex-direction: column;
+  justify-content: flex-start;
   margin: 0;
   padding: 0;
 }
 
-/* swiper 内的卡片：外边距置 0（.tt-card 自带左右/下边距，在 swiper 里会与高度测量叠加） */
+/* swiper 内的卡片：外边距置 0（.tt-card 自带左右/下边距，在 swiper 里会与固定高度叠出空白） */
 .cb-swiper .cb-card {
   margin: 0;
 }
