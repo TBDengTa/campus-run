@@ -171,7 +171,7 @@ box-shadow: 0 12rpx 32rpx rgba(255, 107, 0, 0.24);
 首页自上而下：**插画头 → 公告跑马灯 → 广告位（教师不展示）→ 今日目标 → 本周目标 → 管理面板（数据概览+快捷按钮，有权限时）→ 快捷入口 → 页脚**。
 
 - **插画头**（`.sky`）：两种形态自动切换。
-  - **有素材**（`assets/home/hero.png` 存在）：`<image mode="widthFix">` 按**图片本身比例**铺满宽度，容器高度自适应
+  - **有素材**（`assets/home/hero.jpg` 存在，旧名 `hero.png` 亦可）：`<image mode="widthFix">` 按**图片本身比例**铺满宽度，容器高度自适应
     （1500×523 的图 → 750rpx 宽时约 262rpx 高），并且**不再叠加标题文字**（图内已含「唐唐快跑」与标语）。
   - **无素材**：CSS 插画兜底 —— 高 `350rpx` 的天空渐变 + 圆角云朵 + 双层椭圆草地 + 虚线椭圆跑道 +
     白色标题（四向蓝描边）与标语，标题区 `padding-top: 74rpx`、跑道 `bottom: 38rpx`。
@@ -200,22 +200,6 @@ box-shadow: 0 12rpx 32rpx rgba(255, 107, 0, 0.24);
   **圆角与其它卡片一致**：卡片 / swiper / 图片三层都写 `border-radius: var(--tt-radius)`，避免圆角被裁切得不一致。
   **教师账号无广告**：`GET /api/ads/slot/:key` 对教师角色直接返回空数组（服务端拦截为权威），首页 banner 不渲染、PV/点击不发生。
 
-## 8.1 开屏广告页与卡片广告位
-
-- **开屏页 `pages/splash/splash`**（`app.json` 的**首屏**，`navigationStyle: custom` + `disableScroll`）：
-  全屏广告素材（`mode="aspectFill"` 铺满，`splash` 广告位，独占位最多 1 条）+ **左上角倒计时跳过**（`5s 跳过`，避开胶囊）
-  + 跳过下方的「广告」标识 + **底部品牌信息条**（受保护的盾牌图标 `secured` +「唐唐快跑 由 唐博客工作室 提供技术支持」）。
-  - 倒计时 **5 秒**（`COUNTDOWN`），到点或点「跳过」→ `wx.switchTab` 首页（失败兜底 `reLaunch`）；进过落地页返回时直接进首页。
-  - **绝不阻塞启动**：无素材 / 图片 `binderror`（域名未配置等）/ 接口异常 → 立即进首页；图片迟迟不返回有 2.5s 兜底；
-    倒计时**等图片 `bindload` 之后**才开始（避免对着空屏倒数）。
-  - 未登录（`getApp().requireLogin()` 为假）不展示开屏，直接走登录页；单页栈非 tabBar 页必须 `wx.hideHomeButton()`。
-  - 平台限制：只有**冷启动进首屏**才会看到开屏；分享/扫码直达其它页面时不展示。
-- **卡片广告位（记录页 / 排行榜）**：通用组件 `components/ad-card/ad-card`，页面里一行接入
-  `<ad-card slot-key="record_card" refresh-at="{{adRefreshAt}}" />`（页面 `onShow` 里 `setData({ adRefreshAt: Date.now() })` 即刷新）。
-  - 位置：记录页在「本周概览」下方、排行榜在「我的排名」卡下方；**无素材时整块不渲染**（不留空卡片）。
-  - 视觉与首页一致：右上角 `.ad-card-flag`「广告」标识、`aspectFit` 不裁切、高度按图片比例换算（限幅 120~420rpx）。
-  - 曝光/点击上报与首页同一套（`POST /api/ads/:id/pv|click`）；教师账号拿到空数组，整块不出现。
-
 - **紧凑比例**：整页按约 0.85 比例收紧（插画头 420→350rpx、卡片内边距 30→22rpx、7 天圆点 66→52rpx、
   指标条数字 36→28rpx、入口图标 104→84rpx），如需再缩放，改 `pages/home/home.wxss` 里对应数值即可。
 - **快捷入口**：饮水管理 / 目标计划 / 徽章成就 / 身体数据（教师端为 饮水管理 / 身体数据 / 公告）。
@@ -232,7 +216,7 @@ box-shadow: 0 12rpx 32rpx rgba(255, 107, 0, 0.24);
 
 | 素材 | 路径 | 建议尺寸 |
 |---|---|---|
-| 顶部场景图（图内含标题文字） | `miniprogram/assets/home/hero.webp` | 宽高比 2.87:1（现用 1500×523），WebP q80 约 41KB |
+| 顶部场景图（图内含标题文字） | `miniprogram/assets/home/hero.jpg` | 宽高比 2.87:1（现用 1500×523），JPG q85 约 74KB；PNG 命名 `hero.png` 亦可作兜底 |
 | 入口-饮水管理 | `miniprogram/assets/home/entry-water.png` | 240×240（原图 512×512 压缩后 ~9KB） |
 | 入口-目标计划 | `miniprogram/assets/home/entry-plan.png` | 240×240 |
 | 入口-徽章成就 | `miniprogram/assets/home/entry-badge.png` | 240×240 |
@@ -247,16 +231,40 @@ box-shadow: 0 12rpx 32rpx rgba(255, 107, 0, 0.24);
 WXML 里 `wx:if="{{entryImages.xxx}}"` 用 `<image mode="aspectFit" class="menu-img">`、`wx:else` 回退原 `t-icon`，
 图标位尺寸不变（68rpx，见 `profile.wxss` 的 `.menu-icon` / `.menu-img`）。
 
-路径常量在 `pages/home/home.js` 顶部的 `HERO_IMAGE_WEBP` / `ENTRY_IMAGES` 与 `pages/profile/profile.js` 的 `ENTRY_IMAGES`，
+路径常量在 `pages/home/home.js` 顶部的 `HERO_IMAGE_JPG` / `HERO_IMAGE_PNG` / `ENTRY_IMAGES` 与 `pages/profile/profile.js` 的 `ENTRY_IMAGES`，
 目录内另有 `assets/home/README.md`、`assets/profile/README.md` 给设计/运营看。
 （注意：不要用 WXSS `background-image` 引用尚不存在的文件，会导致构建报错；统一走上面的运行时探测。
 原始大图放仓库根目录 `.design-src/`（已 gitignore，不入包），压缩后再放进 `assets/home/`。）
 
-**大图格式与体积（实测）**：`hero` 这类 1500×523 插画用 PNG 要 321KB（调色板 256 已到 PNG 压缩极限，再压只剩量化降色），
-WebP q80 只要 41KB 且肉眼无差（RMSE 3.4 / PSNR 37.4dB，与调色板 PNG 的 3.0 / 38.5dB 同档）。
-所以 `hero` 只保留 `hero.webp`、**不留 PNG 副本**：`canDecodeWebp()`（`pages/home/home.js`）判定 iOS<14 / Android<4
-不支持 WebP 时直接走 CSS 插画兜底，`<image bind:error="onHeroError">` 再兜一层解码失败（清空 `heroImage` → 回退 CSS）。
+**大图格式与体积（实测）**：`hero` 这类 1500×523 满幅插画 ——
+**JPG q85 + progressive = 74.2KB（采用）** ／ PNG 调色板 256 = 321.1KB（已到 PNG 压缩极限，再压只剩量化降色）／
+WebP q80 = 41.4KB（更小，但 `image` 组件 iOS 需 14+，目标环境实测不显示 → **已弃用**，仓库不再存 WebP）。
+画质：JPG q85 RMSE 2.49 / PSNR 40.2dB，**优于** PNG 调色板 256 的 3.03 / 38.5dB（JPG q80 更小 64.4KB，但推荐 q85）。
+所以 `hero` 只保留 `hero.jpg`；若把 `hero.png` 放回该目录，`resolveHero()` 会自动兜底用它（无需改代码）。
+`<image bind:error="onHeroError">` 保留为二次兜底：解码失败就清空 `heroImage` → 回退 CSS 插画。
 240×240 的入口小图**统一保持 PNG**：实测这类扁平小图的 WebP 反而比 PNG 大 3%~40%，换格式没有收益。
+
+### 8.1 开屏广告页与卡片广告位
+
+- **开屏页 `pages/splash/splash`**（`app.json` 的**首屏**，`navigationStyle: custom` + `disableScroll`）：
+  全屏广告素材（`mode="aspectFill"` 铺满，**启动页广告位 `startup_banner`**，独占位只出权重最高 1 条）+ **左上角倒计时跳过**（`5s 跳过`）
+  + 跳过按钮正下方的「广告」标识（半透明黑底白字）+ **底部居中靠下的品牌胶囊**（盾牌图标 `secured` +「唐唐快跑 2.0」+「由 河北唐博科技有限公司 提供技术支持」）。
+  - **跳过按钮定位**：与右上角胶囊**同高、垂直对齐**，`top/height` 由 `wx.getMenuButtonBoundingClientRect()` 实测值写入内联 `style`（px），
+    取不到胶囊时退回 `statusBarHeight + 4`，都取不到再用 `20 + 4` 兜底 —— **不要用 `env(safe-area-inset-top)`**（模拟器/多数安卓为 0，会把按钮顶进状态栏）。
+  - **底部胶囊**：`.splash-foot`（整行 flex 居中 + `bottom: 28rpx + env(safe-area-inset-bottom)`）内套 `.splash-foot-pill`（自适应宽度、`border-radius: 999rpx`、
+  `rgba(0,0,0,.42)` 底、文字 `white-space: nowrap`），**不是通栏底条**。
+  - 倒计时 **5 秒**（`COUNTDOWN`），到点或点「跳过」→ `wx.switchTab` 首页（失败兜底 `reLaunch`）；进过落地页返回时直接进首页。
+  - **绝不阻塞启动**：无素材 / 图片 `binderror`（域名未配置等）/ 接口异常 → 立即进首页；图片迟迟不返回有 2.5s 兜底；
+    倒计时**等图片 `bindload` 之后**才开始（避免对着空屏倒数）。
+  - 未登录（`getApp().requireLogin()` 为假）不展示开屏，直接走登录页；单页栈非 tabBar 页必须 `wx.hideHomeButton()`。
+  - 平台限制：只有**冷启动进首屏**才会看到开屏；分享/扫码直达其它页面时不展示。
+  - 开屏素材建议 9:19.5 竖图或两侧留安全边距（`aspectFill` 全屏，9:16 素材在长屏机会裁掉左右约 18%）。
+- **卡片广告位（记录页 / 排行榜）**：通用组件 `components/ad-card/ad-card`，页面里一行接入
+  `<ad-card slot-key="record_card" refresh-at="{{adRefreshAt}}" />`（页面 `onShow` 里 `setData({ adRefreshAt: Date.now() })` 即刷新）。
+  - 位置：记录页在「本周概览」下方、排行榜在「我的排名」卡下方；**无素材时整块不渲染**（不留空卡片）。
+  - 视觉与首页一致：右上角 `.ad-card-flag`「广告」标识、`aspectFit` 不裁切、高度按图片比例换算（限幅 120~420rpx）。
+  - 曝光/点击上报与首页同一套（`POST /api/ads/:id/pv|click`）；教师账号拿到空数组，整块不出现。
+  - 素材解码失败（如老 iOS 不支持 WebP）自动摘掉该条，不留空白卡。
 
 ## 9. 其他页面版式（改版后的统一语言）
 

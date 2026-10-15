@@ -26,7 +26,7 @@ const ENTRY_IMAGES = {
 注意事项：
 
 - 这里**只用 PNG**：240×240 的扁平插画换成 WebP 反而比 PNG 大 3%~40%（实测），换格式没有收益。
-  首页的大图 `assets/home/hero.webp` 才是 WebP（1500×523，PNG 321KB → WebP 41KB）。
+  首页的大图 `assets/home/hero.jpg` 才是压缩过的位图（1500×523，PNG 321KB → JPG q85 74KB；WebP 更小但 iOS 需 14+，已弃用）。
 - 不要用 WXSS 的 `background-image` 引用还不存在的文件，会导致**构建报错**；本目录的探测走的是运行时判断。
 - 教师端「我的」页不展示「运动与健康」整块，素材可照常放。
 - **主包体积上限 2MB**：4 张图合计请控制在 60KB 以内（240×240 调色板 PNG 单张约 8~10KB）。
