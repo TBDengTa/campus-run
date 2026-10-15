@@ -87,22 +87,19 @@
 }
 
 /* ===== 原生模板广告位（格子；学生可见，教师整块不渲染）=====
-   独立悬浮卡：**不在** .sheet 内部，固定在地图区域、面板上沿之上（bottom 锚定），
-   左右留白与 .sheet 一致（24rpx），白底 + 圆角 + 卡片阴影 → 与下方面板视觉分离。
-   不遮挡开始按钮 / 数据区（都在下方面板内部），也不压住顶部状态条与定位重试：
-   bottom 由 measureAd() 实测（必然高于面板），top 上限钳在 140rpx（规格上限 420rpx 时）。
-   min-height 占位：加载中 / 无填充时高度也不突变 */
+   靠右侧的**透明**侧边块：不在 .sheet 内部，只做定位与尺寸占位 ——
+   无背景 / 无阴影 / 无圆角 / 无内边距，广告由微信模板自绘（自带「广告」标识）。
+   垂直位置：bottom 由 measureAd() 实测（锚在面板上沿之上 20rpx）→ 不遮开始按钮/数据区；
+   水平位置：固定右侧 24rpx，宽度收窄到 320rpx → 不再横向铺开在地图中间；
+   尺寸：宽度与 min-height 由内联 style 给出（常量在 index.js 头部，样式无需跟着改）。
+   官方口径：「无广告展示时 ad-custom 不占高度」，所以占位高度由本容器兜住，填充前后不跳动 */
 .run-ad {
   position: fixed;
-  left: 24rpx;
   right: 24rpx;
   bottom: 480rpx; /* 首帧兜底（实测值由内联 style 覆盖）：必然高于面板上沿 */
-  min-height: 220rpx;
-  padding: 8rpx;
-  border-radius: var(--tt-radius);
-  overflow: hidden;
-  background: var(--tt-card);
-  box-shadow: 0 12rpx 40rpx rgba(28, 31, 35, 0.16);
+  width: 320rpx; /* 首帧兜底，与 index.js 的 AD_BOX_WIDTH_RPX 一致 */
+  min-height: 260rpx; /* 同 AD_BOX_MIN_HEIGHT_RPX */
+  background: transparent;
   z-index: 20;
 }
 

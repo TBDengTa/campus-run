@@ -13,6 +13,16 @@ function haversine(lat1, lng1, lat2, lng2) {
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
+// ===== 跑步页原生模板广告（格子）尺寸：只调这两个常量，样式不必改 =====
+// 官方口径（开放能力/广告/原生模板广告）：广告宽高由外层容器决定 —— 外层宽度 = 广告宽度，
+// 内部 `ad-custom` 固定 width:100% + 高度按模板等比自适应，且「无广告展示时 ad-custom 不占高度」，
+// 所以外层要自己给占位高度，否则填充前后会跳动。
+// 这里做成「靠右侧的透明侧边块」：不再铺满地图，也不再自带白底/阴影/圆角/内边距。
+//   · 宽 320rpx（375px 机型 ≈ 160px，320px 窄屏 ≈ 150px）：官方没给最小宽度，具体模板各异；
+//     取「面板宽（702rpx）的 46%」的保守值，宁可稍宽也不留不填充的窄条（越小越可能不填充/字挤）。
+//   · 占位高 260rpx：格子模板常见比例，填充后由容器自身高度撑开，占位只在加载中/无填充时兜底。
+const AD_BOX_WIDTH_RPX = 320;
+const AD_BOX_MIN_HEIGHT_RPX = 260;
 Page({
   data: {
     state: 'idle', // idle | running | paused | finished
@@ -31,11 +41,13 @@ Page({
     // 广告位闸门：只有「角色已确认为学生」才渲染原生模板广告。
     // 首帧 isTeacher 还是默认 false（syncRole 未回来），若直接用 !isTeacher，
     // 教师账号会先渲染出广告节点并可能产生一次曝光 —— 所以单独用 showAd 兜住这个窗口
-    // （拿不到 userInfo / role 时也保持 false，宁可不展示广告）。
+    // （拿不到 userInfo / role 也保持 false，宁可不展示广告）。
     showAd: false,
-    // 格子广告的定位（内联 style）：与 .sheet 视觉分离的独立悬浮卡，
-    // bottom = 窗口高 − 面板内控制区顶部 + 间距（measureAd() 实测），见 index.wxml 注释
+    // 侧边透明广告块的定位与尺寸（内联 style）：
+    //   bottom = 窗口高 − 面板内控制区(.ctrls)顶部 + 间距（measureAd() 实测，锚在面板上沿之上）
+    //   宽度/占位高度来自文件头两个常量（容器必须自带尺寸：ad-custom 无填充时不占高度）
     adStyle: '',
+
     // 保存记录后获得的徽章（自定义带图弹窗，替代把徽章名拼进 wx.showModal 的纯文字写法）
     badgeAward: { visible: false, badges: [] },
   },
@@ -58,7 +70,8 @@ Page({
   },
 
   onReady() {
-    // 首屏渲染完测一次（.ctrls 的 position:absolute 需要视口尺寸，节点渲染后才能测准）
+    // 首屏渲染完测一次（.ctrls 的 position:absolute 需要视口尺寸，节点渲染后才能测准）。
+    // 角色未知时 measureAd() 会直接跳过：教师虽然也会 onReady，但一个字节的广告定位都不算。
     this.measureAd();
   },
 
@@ -66,10 +79,11 @@ Page({
     this.measureAd();
   },
 
-  // 学生路径下量一次控制区上沿，算出格子广告的 bottom。
+  // 学生路径下量一次控制区上沿，算出侧边广告块的 bottom + 自身尺寸。
   // 纯计算 + 一次 setData（只在结果有变化时），不做 DOM 操作，不影响地图与 disableScroll。
   measureAd() {
-    if (this._measuring || this.data.isTeacher) return;
+    // 角色未确认（首帧）或已确认是教师：不测量、不写 adStyle（教师彻底不参与广告定位）
+    if (this._measuring || !this._roleKnown || this.data.isTeacher) return;
     const wxInfo = (wx.getWindowInfo && wx.getWindowInfo()) || (wx.getSystemInfoSync && wx.getSystemInfoSync()) || null;
     if (!wxInfo || !wx.createSelectorQuery) return;
     this._measuring = true;
@@ -81,12 +95,19 @@ Page({
         if (!rect || !rect.height) return;
         const vw = wxInfo.windowWidth || 375;
         const rpx = (n) => (n * 750) / vw;
+        const winH = rpx(wxInfo.windowHeight);
         // 面板内「控制区」顶部（距离面板上沿还有 grab + stats 两块），先转成 rpx
         const ctrlsTop = rpx(rect.top);
-        // 广告与面板上沿留出 20rpx；bottom 钳进合理区间，避免极端窗口高下压到顶部状态条
-        let bottom = Math.round(rpx(wxInfo.windowHeight) - ctrlsTop + 20);
-        bottom = Math.max(240, Math.min(bottom, rpx(wxInfo.windowHeight) - 520));
-        const adStyle = `bottom:${bottom}rpx;`;
+        // 广告与面板上沿留出 20rpx。两个硬约束：
+        //   ① 不压顶部状态胶囊 → 块 top ≥ 200rpx（顶栏底 137rpx + 63rpx 间距）
+        //   ② 不遮面板里的数据区/按钮 → 块 top ≤ 面板上沿（正常机型都远高于此，
+        //      只有小屏 + 待机态（面板较高）才需要把块往下压到面板上沿；此时块会略微压住
+        //      面板顶部约 80~170rpx 的圆角/留白，但仍在数据区之上，按钮零位移）
+        // 故取 min(锚定值, winH − 200 − 占位高)，再兜一个下限 240rpx
+        let bottom = Math.round(winH - ctrlsTop + 20);
+        bottom = Math.min(bottom, Math.round(winH - 200 - AD_BOX_MIN_HEIGHT_RPX));
+        bottom = Math.max(240, bottom);
+        const adStyle = `bottom:${bottom}rpx;width:${AD_BOX_WIDTH_RPX}rpx;min-height:${AD_BOX_MIN_HEIGHT_RPX}rpx;`;
         if (adStyle !== this._adStyle) {
           this._adStyle = adStyle;
           this.setData({ adStyle });
@@ -103,7 +124,7 @@ Page({
       this.applyState('idle');
       return;
     }
-    // 角色已确认：定位格子广告（此时 .ctrls 已渲染）
+    // 角色已确认：这里才允许测量 / 定位侧边广告（教师路径不测量，见 measureAd 首行）
     this.measureAd();
     // tab 页常驻：回到本页时若未开始跑步，刷新一次定位与状态提示
     if (this.data.state === 'idle' || this.data.state === 'finished') {
@@ -125,6 +146,7 @@ Page({
     const isTeacher = user.role === 'teacher';
     // 角色已知（userInfo.role 存在）且为学生，才允许渲染广告位：教师 / 角色未知都不渲染
     this.setData({ isTeacher, showAd: !!user.role && !isTeacher });
+    this._roleKnown = true; // 角色已确认 → 之后 measureAd() 才被放行（教师路径永远不放行）
     return isTeacher;
   },
 

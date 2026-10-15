@@ -94,16 +94,19 @@
     </view>
 
     <!-- ===== 原生模板广告（格子；unit-id 是客户端公开标识，不是密钥）=====
-         独立于控制面板：放在 .sheet 之外、固定在「面板上沿之上」悬浮于地图（position: fixed +
-         bottom 锚定，左右留白与 .sheet 一致 24rpx），视觉上是一张独立卡片，不是面板的一部分。
-         定位：bottom = 窗口高 − 面板内控制区(.ctrls)顶部 + 20rpx 间距，
-         由 measureAd() 用 createSelectorQuery 实测后写进内联 style —— 面板是 bottom 锚定，
-         面板内元素到屏幕底部的距离与广告无关，所以广告出现/消失/撑高都不会推动
-         距离/时长/配速数据区与开始（暂停/结束）按钮：位移 0。
+         靠侧边的透明块：在 .sheet 之外，固定在右侧（right: 24rpx）、面板上沿之上，
+         只做定位与尺寸占位，**不带白底/阴影/圆角/内边距**（广告由微信模板自绘并自带「广告」标识）。
+         官方口径：外层容器宽度 = 广告宽度，内部 ad-custom 固定 width:100%、高度按模板等比自适应；
+         「无广告展示时 ad-custom 不占高度」→ 占位高度必须由本容器给（见 index.js 两个常量）。
+         定位：bottom = 窗口高 − 面板内控制区(.ctrls)顶部 + 20rpx 间距，由 measureAd() 用
+         createSelectorQuery 实测后写进内联 style —— 面板是 bottom 锚定，面板内元素到屏幕底部的
+         距离与广告无关，所以广告出现/撑高/消失都不会推动距离/时长/配速数据区与开始（暂停/结束）
+         按钮：位移 0；小屏（面板占屏比更高）会把块往下压到面板上沿，保证块 top ≥ 200rpx、
+         不压顶部状态胶囊（详见 index.js 里的约束注释）。
          教师不可见：本页教师走上方 .blocked 分支，这里再判 !isTeacher && showAd，整块不进 DOM；
          showAd 只有 syncRole() 确认角色是学生后才置真（首帧 isTeacher 默认 false，
          只看 !isTeacher 会让教师先闪出一条广告；角色未知时同样不展示）。
-         容器 min-height 占位：加载中 / 无填充时高度不突变；binderror 只记日志，跑步流程不受影响 -->
+         binderror 只记日志，跑步流程不受影响 -->
     <view class="run-ad" wx:if="{{!isTeacher && showAd}}" style="{{adStyle}}">
       <ad-custom
         unit-id="adunit-8b909cca0be100b5"

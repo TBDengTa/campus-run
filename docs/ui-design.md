@@ -280,7 +280,7 @@ WebP q80 = 41.4KB（更小，但 `image` 组件 iOS 需 14+，目标环境实测
   |---|---|---|---|
   | 北斗运动 `pages/reward` | 插屏（JS 实例） | `adunit-773c53ab76db1155` | 无节点：模块级全局单例，**进入页面（首屏数据加载完成后）展示 1 次** |
   | 我的 `pages/profile` | 原生模板（横版 `ad-custom`） | `adunit-eeb7b18e406d94b1` | 「我的信息」卡与「累计数据」卡之间的夹缝（**不在**连点 5 次彩蛋那张卡内部） |
-  | 跑步 `pages/run/index` | 原生模板（格子 `ad-custom`） | `adunit-8b909cca0be100b5` | **`.sheet` 之外**：固定在面板上沿之上、悬浮于地图的独立卡片（`bottom` 由 `measureAd()` 实测锚定 → 数据区/按钮零位移） |
+  | 跑步 `pages/run/index` | 原生模板（格子 `ad-custom`） | `adunit-8b909cca0be100b5` | **`.sheet` 之外**：靠右侧的**透明**侧边块（`position: fixed; right: 24rpx`，尺寸由 `AD_BOX_*` 常量给），`bottom` 由 `measureAd()` 实测锚定在面板上沿之上 → 数据区/按钮零位移 |
   - **教师闸门是两道**：`isTeacher` 之外还有 `showAd`（只有 `/api/auth/me` 确认角色是学生后才置真）——
     首帧 `isTeacher` 还是默认 `false`，只用 `!isTeacher` 会让教师先渲染出广告节点、产生一次曝光。
   - **北斗运动页教师「进不去」是刻意的三道拦截**（教师不参与运动记录，本页只对学生开放）：
@@ -292,20 +292,28 @@ WebP q80 = 41.4KB（更小，但 `image` 组件 iOS 需 14+，目标环境实测
   - **插屏节流**（常量在 `pages/reward/reward.js` 头部）：`INTERSTITIAL_SESSION_MAX = 3`（本次运行最多 3 次）、
     **每次进入最多 1 次**（`onShow` 重入不重复弹）、`show()` 失败 catch 静默**且不占额度**；
     计数器是模块级（跨页面重进累计），回调 `onLoad/onError/onClose` 只注册一次。
-  - 两个 `ad-custom` 容器都给了 `min-height` 占位（我的页 240rpx、跑步页 220rpx）：加载中 / 无填充时也占住高度，
-    不发生布局跳动；广告由微信模板自绘并自带「广告」标识，页面不再额外加标识。
+  - 两个 `ad-custom` 容器都给了 `min-height` 占位（我的页 240rpx、跑步页 260rpx）：**官方口径「无广告展示时 `ad-custom` 不占高度」**，
+    所以占位高度必须由父容器给，加载中 / 无填充时也占住高度，不发生布局跳动；
+    广告由微信模板自绘并自带「广告」标识，页面不再额外加标识。
 
-### 8.2 跑步页格子广告的落位（为什么不在面板里）
+### 8.2 跑步页格子广告的落位（侧边透明块）
 
-- **形态**：`.run-ad` 在 `.sheet` **之外**，`position: fixed` + `left/right: 24rpx`（与面板左右留白一致）+
-  白底 / `--tt-radius` 圆角 / 卡片阴影，视觉上是悬浮在地图上的一张独立卡片，不是面板的一部分。
-- **锚定**：`bottom = 窗口高 − 面板内控制区（`.ctrls`）顶部 + 20rpx`，由 `pages/run/index.js::measureAd()`
-  用 `wx.createSelectorQuery` 实测后写进内联 `style`（`onReady` / `onResize` / 每次状态切换 `setData` 回调里复测）。
-  面板是 `bottom` 锚定，面板内元素到屏幕底部的距离与广告无关 → **数据区与按钮位移 0**；
-  `top` 上限钳在 140rpx，极端窗口高下也不会压住顶部状态条与「定位中，点击重试」。
+- **形态**：`.run-ad` 在 `.sheet` **之外**，`position: fixed` + `right: 24rpx`（靠右侧），**透明**——
+  无背景 / 无阴影 / 无圆角 / 无内边距，只做定位与尺寸占位（广告由微信模板自绘并自带「广告」标识）。
+- **尺寸（外层容器决定广告宽高）**：官方口径是「外层容器宽度 = 广告宽度，内部 `ad-custom` 固定 `width:100%`、
+  高度按模板等比自适应」，且「**无广告展示时 `ad-custom` 不占高度**」→ 占位高度必须由外层给。
+  常量在 `pages/run/index.js` 头部：`AD_BOX_WIDTH_RPX = 320`、`AD_BOX_MIN_HEIGHT_RPX = 260`（只改这两个即可）。
+  宽度取 320rpx（375px 机型 ≈ 160px；320px 窄屏 ≈ 150px）＝面板宽 702rpx 的 46%，偏保守（宁可稍宽也不留不填充的窄条）。
+- **锚定**：`bottom = 窗口高 − 面板内控制区（`.ctrls`）顶部 + 20rpx`，再用
+  `min(winH − 200rpx − 占位高)` 封顶（保证块 `top ≥ 200rpx`，不压顶部状态胶囊；小屏 / 待机态面板较高时
+  会把块往下压到面板上沿，最多压住面板顶部约 84rpx 的圆角留白，仍在数据区之上），下限 240rpx。
+  由 `pages/run/index.js::measureAd()` 用 `wx.createSelectorQuery` 实测后写进内联 `style`
+  （`onReady` / `onResize` / 每次状态切换 `setData` 回调里复测；角色未知或教师时直接跳过）。
+  面板是 `bottom` 锚定，面板内元素到屏幕底部的距离与广告无关 → **数据区与按钮位移 0**。
 - **为什么不做顶部固定条**：顶部 24rpx 已被状态胶囊 + 定位重试胶囊占用，顶部条会与之打架；
-  面板上沿到状态条之间是纯地图区，广告放这里**不遮挡**开始按钮 / 数据区 / 地图关键信息。
-- 教师账号整块不进 DOM（`.blocked` 分支 + `!isTeacher && showAd`），加载失败只 `console.error`，不影响跑步流程。
+  面板上沿到状态条之间是纯地图区，块放这里**不遮挡**开始按钮 / 数据区 / 地图关键信息。
+- 教师账号整块不进 DOM（`.blocked` 分支 + `!isTeacher && showAd`），`adStyle` 保持空且不测量；
+  加载失败只 `console.error`，容器仍占位、状态机照常，不影响跑步流程。
 
 
 ## 9. 其他页面版式（改版后的统一语言）
