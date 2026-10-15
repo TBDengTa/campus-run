@@ -1,8 +1,10 @@
 <!-- 通用流量主横幅（原生模板 ad-custom）
      showAd 由父页面给：只有「不是教师 且 角色已确认为学生」才渲染，教师整块不进 DOM。
-     容器自带占位高度（加载前 / 无填充不跳动），bindload 后由 ad-banner.js 收紧到实测尺寸；
-     广告由微信模板自绘并自带「广告」标识，这里不再额外加标识。 -->
-<view class="ad-banner" wx:if="{{showAd}}" style="{{adStyle}}">
+     容器自带占位高度（加载前 / 无填充不跳动），bindload 后由 ad-banner.js 收紧到实测高度；
+     广告由微信模板自绘并自带「广告」标识，这里不再额外加标识。
+     variant="flow-fixed"（饮水页）：固定在视口底部 = 首屏必定可见，且不占文档流、
+     不挤压水瓶交互区（页面把实测高度写进 --wt-ad-h 给舞台让位）。 -->
+<view class="ad-banner {{variant === 'flow-fixed' ? 'flow-fixed' : ''}}" wx:if="{{showAd}}" style="{{adStyle}}">
   <ad-custom
     class="ad-banner-ad"
     unit-id="{{unitId}}"

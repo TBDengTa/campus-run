@@ -59,6 +59,9 @@ Page({
     // 流量主横幅（ad-banner）闸门：首帧都是 false（不渲染），load() 里 ensureLogin 之后才置真
     isTeacher: false,
     showAd: false,
+    // 固定在视口底部的横幅实测高度（rpx）：水瓶舞台据此让位，交互区不被挤压。
+    // 只有 showAd 时才写入，教师/角色未确认时保持 0（舞台不留空）。
+    adH: 0,
   },
 
   onShow() {
@@ -124,6 +127,14 @@ Page({
 
   onCustomInput(e) {
     this.setData({ customAmount: Number(e.detail.value) || 0 });
+  },
+
+  // 首屏横幅实测高度（ad-banner 的 bind:height）：写进 --wt-ad-h 给舞台让位 + 隐藏下滑提示。
+  // 纯几何联动，不改任何交互逻辑；高度没变就不 setData（避免无意义渲染）。
+  onAdHeight(e) {
+    const height = Math.max(0, Math.round(Number((e.detail && e.detail.height) || 0)));
+    if (height === this.data.adH) return;
+    this.setData({ adH: height });
   },
 
   async doAdd(amount) {

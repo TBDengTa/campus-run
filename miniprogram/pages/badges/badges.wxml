@@ -12,6 +12,14 @@
     <text class="badge-sum-percent num-font">{{percent}}%</text>
   </view>
 
+  <!-- ===== 首屏流量主横幅（原生模板 ad-custom）=====
+       位置：汇总卡之后、3 列矩阵**之前**（首屏 = 汇总卡 → 广告 → 矩阵），不滚动即可见。
+       与可点击元素的关系：矩阵格子是图片卡（非主操作按钮），广告与其相隔 24rpx 卡片外边距；
+       广告是矩阵的前一个兄弟节点，不覆盖任何 .badge-cell，也不影响详情抽屉（t-popup 在其外层）。
+       教师不可见：show-ad="{{showAd}}"（applyAdGate 确认角色是学生才置真）；
+       容器自带占位高度（加载中/无填充不跳动），加载成功后由组件收紧到实测高度。 -->
+  <ad-banner unit-id="adunit-09dddc560022022c" show-ad="{{showAd}}" />
+
   <!-- ===== 3 列矩阵：等级徽章按组一格 + 独立徽章各一格，混排不分区（点击开底部弹窗） ===== -->
   <view class="badge-grid" wx:if="{{rows.length}}">
     <view
@@ -42,12 +50,6 @@
   <view class="badge-loading" wx:if="{{loading}}">
     <t-loading theme="circular" size="48rpx" text="加载中…" />
   </view>
-
-  <!-- ===== 流量主横幅（原生模板 ad-custom）=====
-       位置：3 列矩阵**之后**、页脚之前（不在网格中间，也不挡任何 .badge-cell 的点击）。
-       教师不可见：show-ad="{{showAd}}"，showAd 只有 /api/auth/me 角色确认为学生才置真；
-       容器自带占位高度（加载中/无填充不跳动），加载成功后由组件收紧到实测尺寸。 -->
-  <ad-banner unit-id="adunit-09dddc560022022c" show-ad="{{showAd}}" />
 
   <view class="tt-footer">每日坚持运动，徽章会自动点亮</view>
 

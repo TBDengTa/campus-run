@@ -1,4 +1,20 @@
-<view class="page water-page" wx:if="{{today}}">
+<view class="page water-page" wx:if="{{today}}" style="--wt-ad-h: {{adH}}rpx;">
+  <!-- ===== 首屏流量主横幅（原生模板 ad-custom；unit-id 是客户端公开标识）=====
+       位置：**首屏可见**（固定在视口底部）——这是收入来源，放内容末尾（要滚动）等于没有曝光。
+       为什么不插在文档流里：本页首屏是「水瓶舞台」（.wt-stage 占满一屏，杯子是交互主体），
+       插在舞台之后必然被挤出第一屏；固定在视口底部则必定可见，且**不占文档流、不挤压水瓶交互区**
+       （舞台用 --wt-ad-h 让出等高的 padding-bottom；滚动下滑时横幅被下方内容自然盖住）。
+       与可点击元素的关系：横幅上方最近的是「下滑…」提示文字（非按钮），
+       「记一笔」快捷按钮在下一屏卡片内、间距远大于 24rpx；横幅不覆盖任何主操作。
+       教师不可见：show-ad="{{showAd}}"（applyAdGate 确认角色是学生才置真）；
+       容器自带占位高度（加载前/无填充不跳动），加载成功后由组件收紧到实测高度。 -->
+  <ad-banner
+    unit-id="adunit-d3c555674f1c360c"
+    variant="flow-fixed"
+    show-ad="{{showAd}}"
+    bind:height="onAdHeight"
+  />
+
   <!-- ===== 首屏舞台：水瓶居中占满一屏，其余信息下滑可见 ===== -->
   <view class="wt-stage">
     <view class="wt-stage-top">
@@ -35,7 +51,9 @@
       </view>
     </view>
 
-    <view class="wt-stage-foot">
+    <!-- 横幅占位时隐藏「下滑」提示：舞台高度由 min-height:100vh 锁定、不会变小，
+         腾出的这部分高度正好补给底部横幅 —— 水瓶尺寸与位置不受影响 -->
+    <view class="wt-stage-foot" wx:if="{{!adH}}">
       <t-icon name="chevron-down" size="26rpx" color="var(--tt-text-3)" />
       <text>下滑记录喝水、查看历史</text>
     </view>
@@ -118,13 +136,6 @@
         <text wx:if="{{today.targetInfo.hasBodyData}}">BMI 系数 ×{{today.targetInfo.bmiFactor}}</text>
       </view>
     </view>
-
-    <!-- ===== 流量主横幅（原生模板 ad-custom）=====
-         位置：下滑内容区最末（历史记录 / 目标构成之后）、页脚之前 ——
-         首屏是水瓶舞台（不插广告），广告不会遮「记一笔」快捷按钮与历史圆环；
-         本页是**学生端**饮水打卡（/api/water/*，首页「饮水管理」入口进入），教师同样走这两道闸门。
-         容器自带占位高度（加载中/无填充不跳动），加载成功后由组件收紧到实测尺寸。 -->
-    <ad-banner unit-id="adunit-d3c555674f1c360c" show-ad="{{showAd}}" />
 
     <view class="tt-footer">饮水目标按体重与今日步数由系统自动计算</view>
   </view>

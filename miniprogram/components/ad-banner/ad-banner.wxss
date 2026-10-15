@@ -1,7 +1,8 @@
 /* ===== 通用流量主横幅（徽章 / 目标计划 / 身体数据 / 饮水管理 共用）=====
    和卡片广告位（components/ad-card）同一视觉语言：白底卡片 + 统一圆角 + 页面左右留白。
    占位高度统一在 ad-banner.js 的 MIN_HEIGHT_RPX（200rpx）；bindload 后由内联 style
-   收紧成实测宽高（去掉多余空白），所以这里只给「未实测前」的兜底尺寸。 */
+   收紧成实测高度（去掉占位多出来的空白），所以这里只给「未实测前」的兜底尺寸。
+   **首屏可见**：四个页面都插在头部（hero / 概览卡之后、主内容之前），见 docs/ui-design.md §8.1。 */
 .ad-banner {
   position: relative;
   margin: 0 var(--tt-gap) var(--tt-gap);
@@ -10,6 +11,18 @@
   overflow: hidden;
   background: var(--tt-card);
   box-shadow: var(--tt-card-shadow);
+}
+
+/* 饮水页专用：固定在视口底部（首屏必定可见），不占文档流 ——
+   页面把实测高度写进 --wt-ad-h，.wt-stage 的 padding-bottom 跟着让位，水瓶交互区不被挤压。
+   底部安全区用 env() 直接补上，不依赖内联 style 拼接。 */
+.ad-banner.flow-fixed {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: env(safe-area-inset-bottom);
+  z-index: 20;
+  margin: 0 var(--tt-gap);
 }
 
 .ad-banner-ad {

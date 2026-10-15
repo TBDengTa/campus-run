@@ -32,7 +32,11 @@ page {
   --wt-track: rgba(47, 124, 246, 0.16); /* 历史圆环的底环 */
 }
 
-/* ===== 首屏舞台：水瓶居中占满一屏，其余信息下滑可见 ===== */
+/* ===== 首屏舞台：水瓶居中占满一屏，其余信息下滑可见 =====
+   首屏底部有一条固定在视口的流量主横幅（ad-banner variant="flow-fixed"）：
+   横幅不占文档流，舞台用 --wt-ad-h（横幅实测高度，由页面 onAdHeight 写入）让出等高的下方内边距，
+   所以杯子尺寸、水平/垂直居中位置与「没有广告时」一致 —— 不挤压水瓶交互区。
+   （--wt-ad-h 由 .water-page 的内联 style 提供，未渲染广告时为 0。） */
 .water-page {
   padding: 0 0 28rpx; /* 覆盖 .tt-page 的左右内边距，让首屏可以整屏铺开 */
 }
@@ -42,7 +46,7 @@ page {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  padding: 26rpx var(--tt-gap) 18rpx;
+  padding: 26rpx var(--tt-gap) calc(18rpx + var(--wt-ad-h, 0rpx));
   background: radial-gradient(120% 62% at 50% 0%, #e9f4ff 0%, rgba(233, 244, 255, 0) 68%);
 }
 
