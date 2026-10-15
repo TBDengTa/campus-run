@@ -140,7 +140,7 @@
   color: var(--tt-text-3);
 }
 
-/* 未获得：橙色进度条底槽（接口未返回实时进度，仅作状态提示） */
+/* 未获得：真实进度来自接口的 percent（progress/nextTarget 同源） */
 .badge-track {
   width: 100%;
   height: 8rpx;
@@ -155,6 +155,15 @@
   height: 100%;
   border-radius: 999rpx;
   background: var(--tt-brand);
+  transition: width 0.4s ease;
+}
+
+/* 等级徽章：再差多少到下一级 */
+.badge-next {
+  margin-top: 8rpx;
+  font-size: 20rpx;
+  line-height: 28rpx;
+  color: var(--tt-brand);
 }
 
 .badge-mark {

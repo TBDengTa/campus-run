@@ -2,12 +2,12 @@ const auth = require('../../utils/request');
 const fmt = require('../../utils/format');
 
 // 榜单维度：图标必须是 TDesign 图标字体里真实存在的名字（footprints / medal 都不存在，会渲染空白）
+// 注：没有「成就/徽章」维度 —— 产品口径是「跑分/排名是发放徽章的条件」，徽章不参与排名
 const METRICS = [
   { key: 'steps', label: '步数', icon: 'component-steps' },
   { key: 'points', label: '跑分', icon: 'chart-bubble' },
   { key: 'goal', label: '达标', icon: 'check-circle' },
   { key: 'water', label: '饮水', icon: 'drink' },
-  { key: 'badge', label: '成就', icon: 'star' },
 ];
 const RANGES = [
   { key: 'today', label: '今日' },
@@ -19,7 +19,7 @@ const KINDS = [
   { key: 'person', label: '个人榜' },
   { key: 'class', label: '班级榜' },
 ];
-// 班级榜只支持能按「班内求和」比较的指标（达标天数/饮水/成就汇总没有解释意义）
+// 班级榜只支持能按「班内求和」比较的指标（达标天数/饮水按班求和没有解释意义）
 const CLASS_METRICS = ['steps', 'points'];
 
 // 维度可用性：班级榜时把不支持的维度置灰
@@ -43,12 +43,16 @@ Page({
     rank: null,
     loading: false,
     error: '',
+    // 广告卡刷新信号（排行榜卡片位）
+    adRefreshAt: 0,
   },
 
   onShow() {
     // 未登录 / 已退出 / 游客：统一跳登录页，不执行任何业务逻辑
     if (!getApp().requireLogin()) return;
     this.syncTabBar();
+    // 让排行榜广告卡跟着页面一起刷新
+    this.setData({ adRefreshAt: Date.now() });
     this.load();
   },
 

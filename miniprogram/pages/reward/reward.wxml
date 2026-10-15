@@ -77,7 +77,15 @@
     </view>
     <view class="reward-badges-list">
       <view class="reward-badge-chip" wx:for="{{rewarded.badges}}" wx:key="key">
-        <t-icon name="star-filled" size="28rpx" color="var(--tt-brand)" />
+        <!-- icon 为图片 URL / 本地路径时用 image，图标名才走 t-icon -->
+        <image
+          wx:if="{{item.icon && (item.icon.indexOf('http') === 0 || item.icon.indexOf('/') === 0)}}"
+          class="reward-badge-img"
+          src="{{item.icon}}"
+          mode="aspectFit"
+          lazy-load
+        />
+        <t-icon wx:else name="star-filled" size="28rpx" color="var(--tt-brand)" />
         <text>{{item.name}}</text>
       </view>
     </view>

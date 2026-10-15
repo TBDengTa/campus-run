@@ -30,16 +30,19 @@ Page({
       const data = await auth.get('/api/badges');
       const total = Number(data.total) || 0;
       const earnedCount = Number(data.earnedCount) || 0;
+      const percent = total > 0 ? Math.max(0, Math.min(100, Math.round((earnedCount / total) * 100))) : 0;
+      const unitOf = (type) => UNIT_MAP[type] || '天';
       this.setData({
         loading: false,
-        // 仅补充展示用字段，接口数据原样保留
+        // 仅补充展示用字段，接口数据原样保留（progress / nextTarget / percent 来自服务端）
         list: (data.list || []).map((b) => ({
           ...b,
-          targetText: `${fmt.formatNumber(b.target)}${UNIT_MAP[b.type] || '天'}`,
+          targetText: `${fmt.formatNumber(b.target)}${unitOf(b.type)}`,
+          nextText: b.nextTarget ? `${fmt.formatNumber(b.nextTarget)}${unitOf(b.type)}` : '',
         })),
         earnedCount,
         total,
-        percent: total > 0 ? Math.round((earnedCount / total) * 100) : 0,
+        percent,
       });
     } catch (e) {
       this.setData({ loading: false });

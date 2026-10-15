@@ -3,7 +3,6 @@ const { wrap, ok, ApiError } = require('../utils/response');
 const { auth } = require('../middlewares/auth');
 const RunRecord = require('../models/run-record');
 const WaterRecord = require('../models/water-record');
-const UserBadge = require('../models/user-badge');
 const pointsSvc = require('../services/points');
 const { todayKey, weekRange } = require('../utils/dates');
 
@@ -26,12 +25,12 @@ const SCOPES = {
   all: { label: '全校' },
 };
 
-// 榜单类型：步数（默认，保持向后兼容） / 达标天数 / 饮水 / 成就 / 跑分
+// 榜单类型：步数（默认，保持向后兼容） / 达标天数 / 饮水 / 跑分
+// 注：徽章不作为榜单维度 —— 产品口径是「跑分/排名是发放徽章的条件」，而不是徽章参与排名。
 const METRICS = {
   steps: { label: '步数', unit: '步' },
   goal: { label: '达标', unit: '天' },
   water: { label: '饮水', unit: 'ml' },
-  badge: { label: '成就', unit: '枚' },
   points: { label: '跑分', unit: '分' },
 };
 
@@ -220,6 +219,7 @@ function pointsStages(startKey, endKey, config) {
 }
 
 // 各指标聚合管道前半段（match + group 出 value/steps/distance）
+// inRange 是「run_records / water_records 的 date 日历键」窗口（今日 / 本周 / 总榜）
 function metricStages(metric, startKey, endKey) {
   const inRange = startKey ? { date: { $gte: startKey, $lte: endKey } } : {};
   switch (metric) {
@@ -254,20 +254,14 @@ function metricStages(metric, startKey, endKey) {
         { $group: { _id: '$openid', value: { $sum: '$total' }, steps: { $sum: 0 }, distance: { $sum: 0 } } },
         { $match: { value: { $gt: 0 } } },
       ];
-    case 'badge':
-      return [
-        { $match: inRange },
-        { $group: { _id: '$openid', value: { $sum: 1 }, steps: { $sum: 0 }, distance: { $sum: 0 } } },
-      ];
     default:
       throw new ApiError(400, 400, '不支持的榜单类型');
   }
 }
 
-// 指标对应集合（饮水/成就在不同集合）
+// 指标对应集合（饮水在另一个集合）
 function metricCollection(metric) {
   if (metric === 'water') return WaterRecord;
-  if (metric === 'badge') return UserBadge;
   return RunRecord;
 }
 
@@ -323,9 +317,7 @@ function classStages(metric, startKey, endKey) {
             ? { $sum: '$total' }
             : metric === 'goal'
               ? { $sum: { $cond: [{ $eq: ['$goalAchieved', true] }, 1, 0] } }
-              : metric === 'badge'
-                ? { $sum: 1 }
-                : { $sum: '$steps' },
+              : { $sum: '$steps' },
         steps: { $sum: { $ifNull: ['$steps', 0] } },
       },
     },
@@ -334,7 +326,7 @@ function classStages(metric, startKey, endKey) {
   return [
     {
       $lookup: {
-        from: metric === 'water' ? 'water_records' : metric === 'badge' ? 'user_badges' : 'run_records',
+        from: metric === 'water' ? 'water_records' : 'run_records',
         localField: 'openid',
         foreignField: 'openid',
         pipeline: inner,
@@ -425,7 +417,7 @@ async function rankClassRows({ metric, startKey, endKey, scopeFilter: scopedMatc
   return rows;
 }
 
-// GET /api/ranking?metric=steps|goal|water|badge|points&range=today|week|total&scope=class|department|school|all
+// GET /api/ranking?metric=steps|goal|water|points&range=today|week|total&scope=class|department|school|all
 // GET /api/ranking?kind=class&metric=steps|points...  → 班级榜
 router.get(
   '/',

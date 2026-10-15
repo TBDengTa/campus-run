@@ -37,11 +37,12 @@
       <view class="badge-desc">{{item.description}}</view>
       <block wx:if="{{!item.earned}}">
         <view class="badge-target">
-          {{item.tierGroup ? item.tierGroup + ' · ' : ''}}目标 {{item.targetText}}
+          {{item.tierGroup ? item.tierGroup + ' · ' : ''}}当前 {{item.progress}} / 目标 {{item.targetText}}
         </view>
         <view class="badge-track">
-          <view class="badge-track-fill"></view>
+          <view class="badge-track-fill" style="width:{{item.percent}}%"></view>
         </view>
+        <view class="badge-next" wx:if="{{item.nextText}}">下一级 {{item.nextText}}</view>
       </block>
       <view class="badge-mark" wx:else>
         <t-icon name="check-circle-filled" size="24rpx" color="var(--tt-brand)" />

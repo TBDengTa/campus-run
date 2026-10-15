@@ -384,6 +384,13 @@
   background: var(--tt-brand-soft);
 }
 
+/* 图片型徽章图标（icon 存的是 URL 时用；尺寸与图标型保持一致） */
+.ud-badge-icon {
+  width: 44rpx;
+  height: 44rpx;
+  border-radius: 10rpx;
+}
+
 .ud-log-icon.is-ban {
   background: var(--td-error-color-1);
 }

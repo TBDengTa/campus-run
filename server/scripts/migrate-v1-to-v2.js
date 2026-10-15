@@ -84,18 +84,8 @@ async function bulkInsert(target, docs, name) {
 }
 
 // ---------- 默认徽章（旧徽章无法解析映射时使用） ----------
-const DEFAULT_BADGES = [
-  { key: 'first_run', name: '初次奔跑', description: '完成第一次跑步打卡', type: 'total_days', target: 1, sort: 1 },
-  { key: 'steps_100k', name: '十万步', description: '累计步数达到 100,000', type: 'total_steps', target: 100000, sort: 2 },
-  { key: 'steps_500k', name: '五十万步', description: '累计步数达到 500,000', type: 'total_steps', target: 500000, sort: 3 },
-  { key: 'steps_1m', name: '百万步传说', description: '累计步数达到 1,000,000', type: 'total_steps', target: 1000000, sort: 4 },
-  { key: 'single_20k', name: '两万步勇士', description: '单日步数达到 20,000', type: 'single_steps', target: 20000, sort: 5 },
-  { key: 'single_5km', name: '五公里达成', description: '单次跑步距离达到 5 公里', type: 'single_distance', target: 5000, sort: 6 },
-  { key: 'days_7', name: '坚持一周', description: '累计打卡 7 天', type: 'total_days', target: 7, sort: 7 },
-  { key: 'days_30', name: '坚持一月', description: '累计打卡 30 天', type: 'total_days', target: 30, sort: 8 },
-  { key: 'days_100', name: '百日坚持', description: '累计打卡 100 天', type: 'total_days', target: 100, sort: 9 },
-  { key: 'streak_7', name: '七日连击', description: '连续打卡 7 天', type: 'streak_days', target: 7, sort: 10 },
-];
+// 定义已抽到 services/badges.js（启动期播种同一份），迁移脚本只做引用，避免两处漂移
+const { DEFAULT_BADGES } = require('../src/services/badges');
 
 const BADGE_TYPE_MAP = {
   // 旧库真实 conditionType：login_days 登录/打卡天数，achievement_count 达标天数
@@ -452,6 +442,8 @@ async function main() {
       icon: b.imageUrl || b.icon || '',
       type,
       target,
+      // 有阶梯组的就是等级徽章（与启动期回填口径一致）
+      mode: b.tierGroup ? 'tier' : 'single',
       tierGroup: b.tierGroup || '',
       tierLevel: toNum(b.tierLevel, 0),
       tierColor: b.tierColor || '',

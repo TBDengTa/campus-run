@@ -19,6 +19,16 @@ async function main() {
   const { seedRbac } = require('./services/rbac');
   await seedRbac();
 
+  // 播种内置广告位（幂等）：首页轮播 / 开屏 / 记录页卡片 / 排行榜卡片
+  const { seedAdSlots } = require('./services/ads');
+  await seedAdSlots();
+
+  // 徽章地基（幂等）：补齐缺失的默认徽章定义（全新部署不再 0 徽章），
+  // 并把旧数据里「有 tierGroup 但没有 mode」的定义回填为 mode='tier'；均不覆盖运营已改字段
+  const { seedBadges, backfillBadgeModes } = require('./services/badges');
+  await backfillBadgeModes();
+  await seedBadges();
+
   // 启动时确保全局配置存在
   const GoalConfig = require('./models/goal-config');
   await GoalConfig.getSingleton();

@@ -120,6 +120,13 @@
   background: var(--tt-brand-soft);
 }
 
+/* 图片型徽章图标（icon 存的是 URL 时用） */
+.badge-cap-img {
+  width: 48rpx;
+  height: 48rpx;
+  border-radius: 12rpx;
+}
+
 .badge-row-title {
   display: flex;
   align-items: center;
