@@ -16,98 +16,6 @@
   color: var(--tt-text-2);
 }
 
-/* ===== 表单 ===== */
-.badge-form-title {
-  margin: 0 0 20rpx;
-}
-
-.badge-fitem {
-  display: flex;
-  align-items: center;
-  gap: 20rpx;
-  padding: 22rpx 0;
-  border-bottom: 2rpx solid var(--tt-line);
-}
-
-.badge-fitem:last-of-type {
-  border-bottom: none;
-}
-
-.badge-fitem-switch {
-  justify-content: space-between;
-}
-
-.badge-flabel {
-  flex-shrink: 0;
-  width: 180rpx;
-  font-size: 27rpx;
-  color: var(--tt-text-2);
-}
-
-.badge-flabel-col {
-  display: flex;
-  flex-direction: column;
-  gap: 4rpx;
-}
-
-.badge-flabel-col .badge-flabel {
-  width: auto;
-  color: var(--tt-text-1);
-  font-weight: 500;
-}
-
-.badge-fdesc {
-  font-size: 22rpx;
-  color: var(--tt-text-3);
-}
-
-.badge-flabel-sm {
-  display: block;
-  margin-bottom: 10rpx;
-  font-size: 24rpx;
-  color: var(--tt-text-2);
-}
-
-.badge-req {
-  color: var(--td-error-color-6);
-}
-
-.badge-input {
-  flex: 1;
-  min-width: 0;
-  height: 68rpx;
-  padding: 0 20rpx;
-  font-size: 27rpx;
-  color: var(--tt-text-1);
-  background: var(--td-bg-color-component);
-  border-radius: 16rpx;
-  box-sizing: border-box;
-}
-
-.badge-picker {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.badge-frow {
-  display: flex;
-  gap: 20rpx;
-  padding: 22rpx 0;
-  border-bottom: 2rpx solid var(--tt-line);
-}
-
-.badge-fcol {
-  flex: 1;
-  min-width: 0;
-}
-
-.badge-form-actions {
-  display: flex;
-  gap: 16rpx;
-  margin-top: 24rpx;
-}
-
 /* ===== 列表 ===== */
 .badge-cap {
   flex-shrink: 0;
@@ -167,4 +75,85 @@
   display: flex;
   justify-content: center;
   padding: 24rpx;
+}
+
+/* ===== 抽屉表单（骨架走 app.wxss 的 .tt-sheet*，这里只补页面私有类） =====
+   关键：.tt-sheet-body 是 .tt-sheet（flex 列）的子项，默认 min-height:auto 会被表单内容
+   撑成内容高度 → 抽屉被 max-height 裁切、表单滚不动、底部主按钮被顶出屏幕。
+   必须给**确定高度**（只写 min-height:0 不够，本仓库已在 class 抽屉 / 用户详情抽屉踩过两次）。 */
+.badge-sheet .tt-sheet-body {
+  flex: none;
+  min-height: 0;
+  height: 52vh;
+}
+
+.badge-inline-label {
+  width: 132rpx;
+  flex-shrink: 0;
+  font-size: 26rpx;
+  color: var(--tt-text-2);
+}
+
+.badge-field-gap + .badge-field-gap,
+.tt-sheet-pills + .badge-field-gap {
+  margin-top: 12rpx;
+}
+
+/* 等级徽章的两个字段紧跟在药丸选择器之后 */
+.badge-field-tiertop {
+  margin-top: 16rpx;
+}
+
+.badge-req {
+  color: var(--td-error-color-6);
+}
+
+/* 编辑态下 key 只读：视觉上明确「不可改」 */
+.badge-input-locked {
+  color: var(--tt-text-3);
+}
+
+.badge-picker {
+  flex: 1;
+  min-width: 0;
+}
+
+.badge-picker-value {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+  font-size: 27rpx;
+  color: var(--tt-text-1);
+}
+
+.badge-switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+  margin-top: 12rpx;
+  padding: 20rpx 24rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--td-bg-color-component);
+}
+
+.badge-switch-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4rpx;
+  flex: 1;
+  min-width: 0;
+}
+
+.badge-switch-title {
+  font-size: 27rpx;
+  font-weight: 500;
+  color: var(--tt-text-1);
+}
+
+.badge-switch-desc {
+  font-size: 22rpx;
+  line-height: 30rpx;
+  color: var(--tt-text-3);
 }

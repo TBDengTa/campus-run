@@ -19,6 +19,9 @@ function isTeacher(user) {
 // 「检测我是否达成」，服务端只评估 req.user.openid，幂等补发。
 // 成本：固定 3 次单用户查询（启用中的定义 / 我的获得 / 运动汇总，均带 openid 索引），
 //       没有全表扫描、没有定时任务、不遍历其他用户。
+// 例外：命中 rank（跑分总榜前 N 名）条件的定义需要「全校跑分总榜」，这份榜单由
+//       services/badges.js 进程内缓存（TTL 60s）+ 并发合并；**只有本接口**传 allowRank=true
+//       允许触发它的构建（冷启动一次、过期后台重建），其它写入路径一律读缓存或跳过。
 // 幂等：evaluateBadges 用 {openid, badgeKey} 唯一索引 + $setOnInsert，重复调用不会重复发放，
 //       第二次 newBadges 必为空数组（只有真正插入的新行才计入）。
 router.post(
@@ -45,6 +48,7 @@ router.post(
       badges,
       earned: earnedList.map((e) => e.badgeKey),
       stats,
+      allowRank: true,
     });
     const earnedKeys = new Set(earnedList.map((e) => e.badgeKey));
     // 新发放的直接并进来，省掉一次「重新读获得列表」的查询
@@ -76,8 +80,10 @@ router.post(
 // 全部徽章 + 我的获得状态 + 每枚徽章的进度
 // 口径：list 只含「启用中」的定义；earnedCount 也只数这些定义，
 // 已停用/已删除定义的残留 user_badges 行不计入，避免出现「获得数 > 总数」、进度 >100%。
-// 成本：每次请求固定 3 次查询（定义 / 我的获得 / 运动汇总），不随徽章数量增长。
+// 成本：每次请求固定 3 次查询（定义 / 我的获得 / 运动汇总+跑分），不随徽章数量增长。
 // 只读：这里**不发放**任何徽章，发放只发生在 POST /api/badges/check（写入路径另有 3 处）。
+// rank 类型：只**读**跑分总榜的进程内缓存（peekRankIndex，不触发全表排名）；
+//           缓存未命中时该枚徽章的 progress 记 0（未上榜），缓存由 /check 负责预热。
 router.get(
   '/',
   wrap(async (req, res) => {
@@ -97,6 +103,11 @@ router.get(
     const nextTargets = badgesSvc.buildNextTargets(badges);
     const progressCtx = { nextTargets, streak: (daily && daily.streak) || 0 };
 
+    // rank 类型徽章的进度：只读总榜缓存快照（缺失 → 0，等 /check 预热）
+    const needRank = badges.some((b) => b.type === badgesSvc.RANK_TYPE);
+    const rankMap = needRank ? badgesSvc.peekRankIndex() : null;
+    const progressStats = needRank ? { ...stats, rank: (rankMap && rankMap.get(req.user.openid)) || 0 } : stats;
+
     // 前端直接用 item.percent 与 item.progress / item.target 展示，无需再算一遍
     const earnedMap = new Map(earned.map((e) => [e.badgeKey, e]));
     const list = badges.map((b) => ({
@@ -105,7 +116,7 @@ router.get(
       earnedAt: earnedMap.get(b.key)?.createdAt || null,
       // level：该行记录时用户所在的等级（独立徽章为 0）
       level: earnedMap.get(b.key)?.level || 0,
-      ...badgesSvc.progressOf(b, stats, progressCtx),
+      ...badgesSvc.progressOf(b, progressStats, progressCtx),
     }));
     const earnedCount = badges.reduce((n, b) => n + (earnedMap.has(b.key) ? 1 : 0), 0);
     const total = badges.length;

@@ -13,10 +13,21 @@ const badgeSchema = new mongoose.Schema(
     icon: { type: String, default: '' }, // 图片 URL（如 https://file.tangbo.tech/...）或图标名
     type: {
       type: String,
-      enum: ['total_steps', 'total_distance', 'total_days', 'goal_days', 'single_steps', 'single_distance', 'streak_days'],
+      enum: [
+        'total_steps',
+        'total_distance',
+        'total_days',
+        'goal_days',
+        'single_steps',
+        'single_distance',
+        'streak_days',
+        // 跑分体系（services/points.js 是唯一公式来源，禁止在徽章侧另算一套）
+        'points', // 全历史累计跑分达标：target = 分数
+        'rank', // 跑分总榜（全校）排名前 target 名：target = 名次，数值越小越好
+      ],
       required: true,
     },
-    target: { type: Number, required: true }, // 阈值（步/米/天）
+    target: { type: Number, required: true }, // 阈值（步/米/天/分/名次）
     mode: { type: String, enum: ['single', 'tier'], default: 'single' }, // 独立徽章 / 等级徽章
     tierGroup: { type: String, default: '' }, // 阶梯组（如 达标里程/登录达人）
     tierLevel: { type: Number, default: 0 },

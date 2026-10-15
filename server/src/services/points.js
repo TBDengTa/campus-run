@@ -504,6 +504,110 @@ function classAggregationStages({ from, to, config }) {
   ];
 }
 
+// ===== 全校累计跑分总榜（徽章 rank 条件用）=====
+/**
+ * 全校「全历史累计跑分」排名（口径 = sumPointsTotal = 各日跑分之和 + 各达标周的一次性周分）
+ *
+ * 谁在用：services/badges.js 的 rank 徽章（跑分排名前 N 名）。
+ *   —— 榜单**整体只算一次**并由调用方做进程内缓存（TTL 见 services/badges.js），
+ *   徽章评估不会每个用户跑一遍全表。
+ *
+ * 口径要求（与 routes/ranking.js 完全一致）：
+ *   ① 排除 rules：role != 'teacher'、status != 'banned'、privacy.exitRanking != true；
+ *   ② 只统计 points > 0 的账号（与排行榜 pointsStages 的 { value: { $gt: 0 } } 同口径）；
+ *   ③ 排序：points 倒序，同分按 openid 升序（确定的并列名次，避免名次抖动）；
+ *   ④ 公式一律复用本文件的 dailyPointsExpr / weeklyPointsExpr，不在这里另写一套。
+ *
+ * 实现要点（实测 110k run_records / 1538 账号 ≈ 2.7s）：
+ *   必须**从 users 起步**再按 openid $lookup run_records（openid 索引可用，每人只扫自己的行）；
+ *   反过来用 `run_records.$match({ openid: { $in: [...1538 个] } })` 会退化成大范围索引扫描 +
+ *   在 (openid,date) 分组行上做一万多次 user_goals $lookup，同一份数据要 12s+。
+ *   每用户目标用 $lookup(user_goals) 取一次（禁止逐日/逐周查询）。
+ *
+ * @returns {Promise<Array<{ openid:String, points:Number, steps:Number }>>} 按分数倒序（只含 points>0）
+ */
+async function pointsTotalsAllUsers({ config } = {}) {
+  const c = await loadEffective({ config });
+  if (!c.enabled) return [];
+  const dateExpr = { $dateFromString: { dateString: '$date' } };
+  const rows = await User.aggregate([
+    {
+      $match: {
+        openid: { $nin: [null, ''] },
+        status: { $ne: 'banned' },
+        role: { $ne: 'teacher' },
+        'privacy.exitRanking': { $ne: true },
+      },
+    },
+    // 全局默认目标必须以 $literal 注入（否则 $globalDailyGoal 解析成 missing → 目标 0 → 跑分恒为 0）
+    ...globalGoalStages(c.__globalDaily, c.__globalWeekly),
+    // 按日去重后的步数（一人一天一条，供日跑分使用）
+    {
+      $lookup: {
+        from: 'run_records',
+        localField: 'openid',
+        foreignField: 'openid',
+        pipeline: [
+          { $match: { steps: { $gt: 0 } } },
+          { $group: { _id: '$date', steps: { $sum: { $ifNull: ['$steps', 0] } } } },
+          { $limit: LIMIT_PER_USER },
+        ],
+        as: 'dayRows',
+      },
+    },
+    // 按 ISO 周（周一起始）汇总的步数，供周跑分使用；周口径与 weeklyAggregate 一致
+    {
+      $lookup: {
+        from: 'run_records',
+        localField: 'openid',
+        foreignField: 'openid',
+        pipeline: [
+          { $match: { steps: { $gt: 0 } } },
+          {
+            $group: {
+              _id: { y: { $isoWeekYear: dateExpr }, w: { $isoWeek: dateExpr } },
+              steps: { $sum: { $ifNull: ['$steps', 0] } },
+            },
+          },
+          { $limit: LIMIT_PER_USER },
+        ],
+        as: 'weekRows',
+      },
+    },
+    {
+      $lookup: {
+        from: 'user_goals',
+        localField: 'openid',
+        foreignField: 'openid',
+        pipeline: [{ $project: { _id: 0, dailySteps: '$daily.steps', weeklySteps: '$weekly.steps' } }],
+        as: 'g',
+      },
+    },
+    {
+      $addFields: {
+        _goalDaily: { $ifNull: [{ $arrayElemAt: ['$g.dailySteps', 0] }, { $ifNull: ['$globalDailyGoal', 0] }] },
+        _goalWeekly: { $ifNull: [{ $arrayElemAt: ['$g.weeklySteps', 0] }, { $ifNull: ['$globalWeeklyGoal', 0] }] },
+      },
+    },
+    {
+      $project: {
+        _id: 0,
+        openid: 1,
+        steps: { $sum: '$dayRows.steps' },
+        points: {
+          $add: [
+            { $sum: { $map: { input: '$dayRows', as: 'd', in: dailyPointsExpr('$$d.steps', '$_goalDaily', c) } } },
+            { $sum: { $map: { input: '$weekRows', as: 'w', in: weeklyPointsExpr('$$w.steps', '$_goalWeekly', c) } } },
+          ],
+        },
+      },
+    },
+    { $match: { points: { $gt: 0 } } },
+    { $sort: { points: -1, openid: 1 } },
+  ]).allowDiskUse(true);
+  return rows.map((r) => ({ openid: r.openid, points: r.points || 0, steps: r.steps || 0 }));
+}
+
 // ===== 工具 =====
 
 // ISO 周（周一起始）→ { start, end } 日历键；用 UTC 做日期算术，避免时区偏移
@@ -547,5 +651,6 @@ module.exports = {
   pointsByUsersForRange,
   pointsOfUsers,
   pointsOfUserOnDay,
+  pointsTotalsAllUsers,
   classPointsRanking,
 };

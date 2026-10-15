@@ -337,6 +337,13 @@ WebP q80 = 41.4KB（更小，但 `image` 组件 iOS 需 14+，目标环境实测
   内置组显示「系统维护」、不可编辑删除；删除失败（仍被账号使用）时把服务端文案原样提示。
   入口：账户编辑页「账户权限」标题右侧（用户详情页的权限管理区已移除，不再有此入口）。
   接口：`GET/POST /api/admin/permission-groups`、`PUT/DELETE /api/admin/permission-groups/:id`（需 `permission.manage`）。
+- **管理端 · 徽章管理 `packageAdmin/content/badges`**：列表（图标 + 名称 + 启用/条件类型标签 + `条件 ≥ 阈值 · 组 LvN`）
+  → 「+ 新增徽章」/ 行内「编辑 / 删除」→ **底部抽屉表单**（`.tt-sheet*` 公共骨架，与权限组/班级抽屉同款）：
+  `key`（编辑态只读）/名称/描述/图标/条件类型/目标值/形态 `single|tier`（药丸）+ `tierGroup`/`tierLevel`/`tierColor`（仅 `tier` 显示且必填）/排序/启用。
+  **抽屉 `scroll-view.tt-sheet-body` 必须给确定高度**（本页 `.badge-sheet .tt-sheet-body { flex:none; height:52vh }`）——
+  只写 `min-height:0` 不够，权限组那种不写高度的老写法会让表单撑高、确定按钮被顶出屏幕。
+  条件类型下拉含 9 项：7 类运动数据 + `points`（跑分达标，全历史累计跑分）/ `rank`（跑分排名前 N，全校跑分总榜名次）。
+  接口：`GET/POST /api/admin/content/badges`、`PUT/DELETE /api/admin/content/badges/:id`（需 `content.manage`）。
 - **管理端 · 用户详情 `packageAdmin/user-detail/user-detail`**：**权限管理区已移除**（角色/权限编辑只在账户编辑页）；
   编辑资料/重置密码/删除按钮按**当前登录者** effectivePermissions（`permission.manage`）显隐，不再调权限接口探测。
   区块顺序：Hero（绑定状态脱敏展示）→ 基本信息 → **考核与目标**（综合日/周达标率大数字 + 达标计数 + 当前目标）→
@@ -360,7 +367,7 @@ WebP q80 = 41.4KB（更小，但 `image` 组件 iOS 需 14+，目标环境实测
   每节点操作 `+ 下级`（仅学校/院系）/ 编辑 / 删除；表单只有 上级(只读)/名称/排序，
   **类型由服务端按父级推导、前端不选**；删除确认明示递归删除全部下级。
   服务端 `/api/admin/content/organizations` 白名单只收 name/sort(/parentId)，`/api/org/tree` 按 parentId 通用建树。
-- **管理端 · 表单弹层**：计划目标 / 组织架构 / 公告管理 / 版本日志的「新增/编辑」统一用 **t-popup 底部弹层**
+- **管理端 · 表单弹层**：计划目标 / 组织架构 / 公告管理 / 版本日志 / 权限组 / 徽章管理的「新增/编辑」统一用 **t-popup 底部弹层**
   （`placement="bottom"` + `bind:visible-change` 同步状态，`.{xx}-sheet` = 头部标题/关闭 + `scroll-view` 表单（max-height 62vh）+
   底部保存按钮（含 safe-area），样式先例 `permissions/groups` 的 `.pg-sheet`）。列表页内不再放内联表单卡。
 - **管理端 · 文件管理 `packageAdmin/files/files`**：统计卡（总数/占用 + 四分类计数）→ 分类 chips（`.tt-chip`，active 品牌态）
