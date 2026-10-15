@@ -35,7 +35,7 @@ const fmt = require('../../utils/format');
 //   + 78 (达标块 4 + 顶行 35 + 条 6+10+4 + 副行 24) + 48 (前三名标题 10+8+27)
 //   + 3×52 (三行) + 76 (管理入口 10 + 52+14) + 14 (padding-bottom) ≈ 551rpx
 // 取 560rpx：比满卡内容高约 9rpx（略高而不是略矮，避免首帧裁到内容），量到真实值后一次性替换。
-const FALLBACK_HEIGHT_RPX = 560;
+const FALLBACK_HEIGHT_RPX = 518; // = 259px（产品指定的固定高度；不做运行时测量，见 load() 里的说明）
 
 // 第一次量到异常值（0 / 明显超出屏幕）时，延迟这么久再量一次；仍失败就用兜底常量
 const MEASURE_RETRY_MS = 120;
@@ -144,10 +144,11 @@ Component({
           },
           () => {
             this.updateIndicator();
-            // 首屏渲染完成后（再等一个 nextTick，保证 swiper-item 内的卡片几何已就绪）量一次并冻结
-            const measure = () => this.measureOnce();
-            if (typeof wx.nextTick === 'function') wx.nextTick(measure);
-            else setTimeout(measure, 0);
+            // 【固定高度 259px = 518rpx】产品要求卡片高度写死、不随内容变化 → 不做运行时测量。
+            // 若要恢复「量一次即冻结」，取消下面两行注释即可（measureOnce 仍在）。
+            // const measure = () => this.measureOnce();
+            // if (typeof wx.nextTick === 'function') wx.nextTick(measure); else setTimeout(measure, 0);
+            if (!this.data.heightLocked) this.setData({ heightLocked: true });
           }
         );
         this.triggerEvent('ready', { role: mine.role, className, overview: payload.overview });
