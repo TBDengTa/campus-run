@@ -33,6 +33,9 @@ Page({
     // 教师账号会先渲染出广告节点并可能产生一次曝光 —— 所以单独用 showAd 兜住这个窗口
     // （拿不到 userInfo / role 时也保持 false，宁可不展示广告）。
     showAd: false,
+    // 格子广告的定位（内联 style）：与 .sheet 视觉分离的独立悬浮卡，
+    // bottom = 窗口高 − 面板内控制区顶部 + 间距（measureAd() 实测），见 index.wxml 注释
+    adStyle: '',
     // 保存记录后获得的徽章（自定义带图弹窗，替代把徽章名拼进 wx.showModal 的纯文字写法）
     badgeAward: { visible: false, badges: [] },
   },
@@ -54,6 +57,44 @@ Page({
     this.bootstrap();
   },
 
+  onReady() {
+    // 首屏渲染完测一次（.ctrls 的 position:absolute 需要视口尺寸，节点渲染后才能测准）
+    this.measureAd();
+  },
+
+  onResize() {
+    this.measureAd();
+  },
+
+  // 学生路径下量一次控制区上沿，算出格子广告的 bottom。
+  // 纯计算 + 一次 setData（只在结果有变化时），不做 DOM 操作，不影响地图与 disableScroll。
+  measureAd() {
+    if (this._measuring || this.data.isTeacher) return;
+    const wxInfo = (wx.getWindowInfo && wx.getWindowInfo()) || (wx.getSystemInfoSync && wx.getSystemInfoSync()) || null;
+    if (!wxInfo || !wx.createSelectorQuery) return;
+    this._measuring = true;
+    wx.createSelectorQuery()
+      .in(this)
+      .select('.ctrls')
+      .boundingClientRect((rect) => {
+        this._measuring = false;
+        if (!rect || !rect.height) return;
+        const vw = wxInfo.windowWidth || 375;
+        const rpx = (n) => (n * 750) / vw;
+        // 面板内「控制区」顶部（距离面板上沿还有 grab + stats 两块），先转成 rpx
+        const ctrlsTop = rpx(rect.top);
+        // 广告与面板上沿留出 20rpx；bottom 钳进合理区间，避免极端窗口高下压到顶部状态条
+        let bottom = Math.round(rpx(wxInfo.windowHeight) - ctrlsTop + 20);
+        bottom = Math.max(240, Math.min(bottom, rpx(wxInfo.windowHeight) - 520));
+        const adStyle = `bottom:${bottom}rpx;`;
+        if (adStyle !== this._adStyle) {
+          this._adStyle = adStyle;
+          this.setData({ adStyle });
+        }
+      })
+      .exec();
+  },
+
   // 先确认角色，再决定是否进入跑步流程
   async bootstrap() {
     const isTeacher = await this.syncRole();
@@ -62,6 +103,8 @@ Page({
       this.applyState('idle');
       return;
     }
+    // 角色已确认：定位格子广告（此时 .ctrls 已渲染）
+    this.measureAd();
     // tab 页常驻：回到本页时若未开始跑步，刷新一次定位与状态提示
     if (this.data.state === 'idle' || this.data.state === 'finished') {
       this.applyState('idle');
@@ -99,7 +142,8 @@ Page({
   // 统一维护状态与状态文案
   applyState(state) {
     const map = { idle: '准备就绪', running: '跑步中', paused: '已暂停', finished: '已结束' };
-    this.setData({ state, stateText: map[state] || '准备就绪' });
+    // setData 回调里复测：三种状态的控制区高度不同（大按钮 / 两个圆按钮），锚点跟着走
+    this.setData({ state, stateText: map[state] || '准备就绪' }, () => this.measureAd());
   },
 
 

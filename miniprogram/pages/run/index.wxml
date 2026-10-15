@@ -40,23 +40,6 @@
     <view class="sheet">
       <view class="sheet-grab"></view>
 
-      <!-- ===== 原生模板广告（格子；unit-id 是客户端公开标识，不是密钥）=====
-           教师不可见：本页教师走上方 .blocked 分支，这里再判 !isTeacher && showAd，整块不进 DOM；
-           showAd 只有 syncRole() 确认角色是学生后才置真（首帧 isTeacher 默认 false，
-           只看 !isTeacher 会让教师先闪出一条广告；角色未知时同样不展示）。
-           位置 = 控制面板顶部（数据区之上）：面板是 position:absolute + bottom 锚定，
-           面板内「广告之后」的元素到屏幕底部的距离不变 → 插入广告只把面板上沿向上撑开，
-           距离/时长/配速数据区与所有按钮零位移；页面 disableScroll，地图与顶栏均为绝对定位，
-           也不存在滚动跳动。容器 min-height 占位，加载中 / 无填充时高度也不突变 -->
-      <view class="run-ad" wx:if="{{!isTeacher && showAd}}">
-        <ad-custom
-          unit-id="adunit-8b909cca0be100b5"
-          bindload="adLoad"
-          binderror="adError"
-          bindclose="adClose"
-        ></ad-custom>
-      </view>
-
       <view class="stats">
         <view class="stat stat-main">
           <view class="stat-v num-font">{{distanceText}}<text class="stat-u">km</text></view>
@@ -108,6 +91,26 @@
         <t-icon name="info-circle" size="26rpx" color="var(--tt-text-3)" />
         <text>GPS 轨迹与配速将用于校园跑成绩统计</text>
       </view>
+    </view>
+
+    <!-- ===== 原生模板广告（格子；unit-id 是客户端公开标识，不是密钥）=====
+         独立于控制面板：放在 .sheet 之外、固定在「面板上沿之上」悬浮于地图（position: fixed +
+         bottom 锚定，左右留白与 .sheet 一致 24rpx），视觉上是一张独立卡片，不是面板的一部分。
+         定位：bottom = 窗口高 − 面板内控制区(.ctrls)顶部 + 20rpx 间距，
+         由 measureAd() 用 createSelectorQuery 实测后写进内联 style —— 面板是 bottom 锚定，
+         面板内元素到屏幕底部的距离与广告无关，所以广告出现/消失/撑高都不会推动
+         距离/时长/配速数据区与开始（暂停/结束）按钮：位移 0。
+         教师不可见：本页教师走上方 .blocked 分支，这里再判 !isTeacher && showAd，整块不进 DOM；
+         showAd 只有 syncRole() 确认角色是学生后才置真（首帧 isTeacher 默认 false，
+         只看 !isTeacher 会让教师先闪出一条广告；角色未知时同样不展示）。
+         容器 min-height 占位：加载中 / 无填充时高度不突变；binderror 只记日志，跑步流程不受影响 -->
+    <view class="run-ad" wx:if="{{!isTeacher && showAd}}" style="{{adStyle}}">
+      <ad-custom
+        unit-id="adunit-8b909cca0be100b5"
+        bindload="adLoad"
+        binderror="adError"
+        bindclose="adClose"
+      ></ad-custom>
     </view>
   </block>
 

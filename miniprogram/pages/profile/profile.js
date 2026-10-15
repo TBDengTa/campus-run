@@ -231,7 +231,14 @@ Page({
   },
 
   // 累计数据卡片：连点 5 次进入「北斗运动」（原「看视频赚步数」，入口已隐藏）
+  // 教师拦截（第一道）：北斗运动写 run_records，教师不参与运动记录 → 连点 5 次也不跳转，
+  // 只给一句明确提示。页面侧还有 onLoad/onShow 两道兜底（见 pages/reward/reward.js）。
   onStatsTap() {
+    const user = this.data.user || {};
+    if (user.role === 'teacher') {
+      wx.showToast({ title: '教师账号不参与运动记录', icon: 'none' });
+      return;
+    }
     const now = Date.now();
     const taps = now - (this._tapLast || 0) < 2000 ? (this._taps || 0) + 1 : 1;
     this._taps = taps;

@@ -87,17 +87,23 @@
 }
 
 /* ===== 原生模板广告位（格子；学生可见，教师整块不渲染）=====
-   位置：控制面板顶部、数据区之上 —— 面板 bottom 锚定，广告之后的数据区/按钮区
-   到屏幕底部距离不变，因此广告出现只会把面板上沿向上撑开，数据区与控制区零位移；
-   页面 disableScroll + 地图/顶栏绝对定位，也不会产生滚动跳动。
-   min-height 占位：加载中 / 无填充时同样占住高度，面板高度不突变 */
+   独立悬浮卡：**不在** .sheet 内部，固定在地图区域、面板上沿之上（bottom 锚定），
+   左右留白与 .sheet 一致（24rpx），白底 + 圆角 + 卡片阴影 → 与下方面板视觉分离。
+   不遮挡开始按钮 / 数据区（都在下方面板内部），也不压住顶部状态条与定位重试：
+   bottom 由 measureAd() 实测（必然高于面板），top 上限钳在 140rpx（规格上限 420rpx 时）。
+   min-height 占位：加载中 / 无填充时高度也不突变 */
 .run-ad {
-  position: relative;
-  margin-bottom: 24rpx;
+  position: fixed;
+  left: 24rpx;
+  right: 24rpx;
+  bottom: 480rpx; /* 首帧兜底（实测值由内联 style 覆盖）：必然高于面板上沿 */
   min-height: 220rpx;
-  border-radius: var(--tt-radius-sm);
+  padding: 8rpx;
+  border-radius: var(--tt-radius);
   overflow: hidden;
-  background: var(--tt-bg-page);
+  background: var(--tt-card);
+  box-shadow: 0 12rpx 40rpx rgba(28, 31, 35, 0.16);
+  z-index: 20;
 }
 
 .stats {

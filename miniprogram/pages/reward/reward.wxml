@@ -1,4 +1,7 @@
-<view class="page tt-page">
+<!-- 教师拦截：blocked=true 时整页不渲染（连奖励内容与广告节点都不进 DOM），
+     页面 JS 同步给出提示并 wx.navigateBack / reLaunch 退出本页。
+     这一层 wx:if 是「首帧也不闪内容」的关键：首帧就能从本地缓存判定教师角色 -->
+<view class="page tt-page" wx:if="{{!blocked}}">
   <!-- ===== 主视觉 ===== -->
   <view class="reward-hero">
     <view class="reward-hero-body">
@@ -73,7 +76,7 @@
     </view>
   </view>
 
-  <!-- ===== 主行动按钮 ===== -->
+  <!-- ===== 主行动按钮（观看视频 → 激励视频，isEnded === true 才入账） ===== -->
   <view
     class="tt-pill-btn primary reward-action {{(!enabled || remaining <= 0 || watching) ? 'disabled' : ''}}"
     bind:tap="watch"
