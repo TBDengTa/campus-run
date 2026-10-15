@@ -73,13 +73,11 @@ Page({
     entryImages: { body: '', plan: '', water: '', badge: '' },
     stats: null,
     monitor: null,
-    isAdmin: false,
     isTeacher: false,
     // 广告位闸门：只有「角色已确认为学生」才渲染原生模板广告。
     // 首帧 isTeacher 还是默认 false（/api/auth/me 未回来），若直接用 !isTeacher，
     // 教师账号会先渲染出广告节点并可能产生一次曝光 —— 所以单独用 showAd 兜住这个窗口。
     showAd: false,
-    canManagePerms: false,
     roleText: '学生',
     banned: false,
     // 跑分（学生端展示，来自 /api/points/me；教师或未开启时为 null）
@@ -115,7 +113,6 @@ Page({
       if (user.status === 'banned' && (!user.bannedUntil || new Date(user.bannedUntil) > new Date())) {
         banned = true;
       }
-      const perms = user.effectivePermissions || [];
       const isTeacher = user.role === 'teacher';
       const enroll = enrollOf(user);
       // 跑分（学生端展示；接口不可用或未开启时为 null）
@@ -150,8 +147,6 @@ Page({
         isTeacher,
         showAd: !isTeacher, // 角色已确认是学生：广告位才渲染（教师 / 加载失败都不渲染）
         points,
-        isAdmin: !!user.isManager,
-        canManagePerms: perms.includes('*') || perms.includes('permission.manage'),
         roleText: isTeacher ? '教师' : '学生',
         banned,
         stats: {
@@ -254,11 +249,6 @@ Page({
 
   go(e) {
     wx.navigateTo({ url: e.currentTarget.dataset.url });
-  },
-
-  // 权限管理：进用户列表选人（持有 permission.manage 时显示）
-  goPerms() {
-    wx.navigateTo({ url: '/packageAdmin/users/users?selectForPerms=1' });
   },
 
   goBanned() {

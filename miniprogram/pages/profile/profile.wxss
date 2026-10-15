@@ -265,7 +265,7 @@
   color: var(--tt-text-1);
 }
 
-/* 副文案只在必要时出现（管理功能的说明） */
+/* 副文案只在必要时出现（如「身体数据 / 目标计划」的说明） */
 .menu-sub {
   margin-top: 6rpx;
   font-size: 22rpx;

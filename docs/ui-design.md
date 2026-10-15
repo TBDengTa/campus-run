@@ -99,6 +99,11 @@ box-shadow: 0 12rpx 32rpx rgba(255, 107, 0, 0.24);
   不再直接跳用户管理）；教师（无管理权限但是**班主任**）= 首页 / **班级** / 我的，指向 `packageAdmin/class/class`；
   其余无权限教师 = 首页 / 公告 / 我的。
   教师账号不参与运动记录与排名，故不展示跑步 / 记录 / 排行入口。
+- **管理入口按权限、不按角色**（`buildList` 先判权限再判角色）：「有管理权限」= `/api/auth/me` 的
+  `effectivePermissions` 非空（含 `'*'` 通配）或 `isManager` 为真 —— **学生身份的管理员同样出现「管理」项**
+  （学生 5 项 → 首页 / 跑步 / 记录 / **管理** / 排行 / 我的，插在「记录」与「排行」之间），
+  点它 `switchTab` 到 `pages/hub/hub` 并 `setActive('/pages/hub/hub')`；hub 页自己按 `effectivePermissions` 过滤分组。
+  学生班委（`isClassOfficer`）仍是在「排行」与「我的」之间插「班级」；普通学生 5 项不变。
 - **接入约定**：每个 tab 页在 `onShow` 中调用 `this.getTabBar().setActive('<自身路径>')`
   （页面根节点同时加 `.tt-page-tab`，底部留白 `200rpx + 安全区`，避免内容被悬浮胶囊遮挡）。
 - 非 tab 入口（管理端控制台 / 公告）在组件内用 `wx.navigateTo`，tab 页用 `wx.switchTab`。
@@ -380,7 +385,12 @@ WebP q80 = 41.4KB（更小，但 `image` 组件 iOS 需 14+，目标环境实测
   两种身份同一页面，用 `role/readonly/canNudge` 控制，不要写两个页面。
 - **本班数据概况卡 `components/class-board`**（首页用）：概况四格 + 本班前三名 + 全校班级名次 + 管理入口；
   **无班级身份时整块不渲染**（`show:false`，所以学生端首页可无条件放置）；属性 `title/className/showManage/refreshAt`，
-  事件 `ready/manage/student`，方法 `reload()`。组件内用 `app.wxss` 公共类必须声明 `"styleIsolation": "apply-shared"`。
+  事件 `ready/manage/student/classchange`，方法 `reload()`。组件内用 `app.wxss` 公共类必须声明 `"styleIsolation": "apply-shared"`。
+  **多班（班主任被分配多个班）时卡片可左右滑动切换**：用原生 `<swiper>`（`current` + `bindchange`），
+  每个班各拉一份 `/api/class/overview` + `/api/class/ranking`（带 `className`），滑动是纯手势切换、不再发请求
+  —— 切到哪班就显示哪班的数字，不会出现「卡片换了数字没换」；班级名 / 身份胶囊 / 全校名次 / 「n/N」在 swiper 之外固定不滑，
+  卡片底部另有圆点 + `n/N` 指示器（可点选）。swiper 高度由 JS 实测「最高的一张卡」写在内联 style（只往上调，兜底 `min-height`），
+  单班时 `multi:false` → **不渲染 swiper、不显示任何滑动控件**（与改造前一致）。
 - **跑分：首页/我的/记录/排行统一口径**：数字用 `.num-font` + `--tt-brand`，文案为「今日/本周/累计跑分」；
   首页在「今日目标」卡内用浅色三格（`.today-points`），我的页面用独立卡（`.points-card`）；
   **教师账号不参与跑分**（相关块整体隐藏，不是显示 0）。
@@ -489,9 +499,11 @@ WebP q80 = 41.4KB（更小，但 `image` 组件 iOS 需 14+，目标环境实测
   不再把徽章名拼进 `wx.showModal`；关掉弹窗后接回原来的「已保存」框（文案只留 `里程 · 时长`，保留「查看记录」入口）。
   没有新徽章 / 教师账号 / 本次会话已弹过 → 直接走「已保存」框；点「查看我的徽章」跳徽章页，不再追加「已保存」框。
   会话去重与首页共用 `app.globalData.badgePopupShown`。
-- **我的 `pages/profile`**：5 组 —— 用户卡（`.tt-hero`）→ 学籍信息（**只读，学生不可自改**）→ 累计数据（教师隐藏）→ 运动与健康 → 账号与帮助 → 管理功能（仅 `isAdmin`）→ 退出登录。
+- **我的 `pages/profile`**：5 组 —— 用户卡（`.tt-hero`）→ 学籍信息（**只读，学生不可自改**）→ 累计数据（教师隐藏）→ 运动与健康 → 账号与帮助 → 退出登录。
+  **「管理功能 → 用户权限管理」入口已移除**（产品要求）：管理相关入口只保留「管理中枢」`pages/hub/hub`
+  （教师端底部导航「管理」/ 首页管理面板宫格）与管理端用户详情页里的权限编辑，`profile.js` 不再有 `goPerms` 与相关字段。
   头像选择后**先上传服务器**（`POST /api/upload/avatar`，限 2MB，旧头像自动清理）再保存资料——微信临时路径其他设备不可见，禁止直接把 `e.detail.avatarUrl` 存进 `User.avatarUrl`。
-  菜单行图标底色统一 `var(--tt-brand-soft)`、图形统一 `var(--tt-brand)`；字号固定 5 级（36/28/26/24/22rpx）；副文案只出现在需要解释的管理行。
+  菜单行图标底色统一 `var(--tt-brand-soft)`、图形统一 `var(--tt-brand)`；字号固定 5 级（36/28/26/24/22rpx）；副文案只出现在需要解释的行（如「身体数据 / 目标计划」）。
   **顶部身份卡是「异形卡」**：本页用 `.tt-hero.id-card` 覆盖公共圆角，做成**盾形拱底**——
   `border-radius: 40rpx 40rpx 50% 50% / 40rpx 40rpx 64rpx 64rpx`（8 值语法：左右下角各展开半个卡宽形成平缓拱形），
   配套 `padding-bottom: 92rpx` 给拱形留出空间；装饰层为「公共 `.tt-hero::after` 实心圆 + 本页 `::before` 细光环 + `.id-sheen` 斜向高光带」，

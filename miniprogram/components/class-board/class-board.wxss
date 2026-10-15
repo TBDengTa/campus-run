@@ -69,6 +69,65 @@
   border-top: 2rpx solid var(--tt-line);
 }
 
+/* ===== 多班：横向滑动切换班级 =====
+   高度由 JS 实测「最高的一张卡」后写在内联 style 上；量不到时用下面的兜底高度 ——
+   兜底值按「三项概况 + 达标进度 + 前三名(3 行) + 管理入口」的最大高度留足，宁可高一点也不要裁内容。 */
+.cb-swiper {
+  min-height: 620rpx;
+  overflow: hidden;
+}
+
+.cb-swiper-box {
+  height: 100%;
+}
+
+.cb-swiper-item {
+  display: flex;
+  flex-direction: column;
+}
+
+.cb-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 班级指示器（多班才渲染）：圆点 + 「第 n/N 个班」 */
+.cb-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10rpx;
+  margin-top: 12rpx;
+}
+
+.cb-dot {
+  width: 12rpx;
+  height: 12rpx;
+  border-radius: 999rpx;
+  background: var(--td-bg-color-component);
+}
+
+.cb-dot.active {
+  width: 28rpx;
+  background: var(--tt-brand);
+}
+
+.cb-indicator-text {
+  margin-left: 4rpx;
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+}
+
+/* 头部的「第 n/N 个班」小胶囊 */
+.cb-count {
+  flex-shrink: 0;
+  padding: 2rpx 12rpx;
+  border-radius: 999rpx;
+  font-size: 19rpx;
+  color: var(--tt-text-3);
+  background: var(--td-bg-color-component);
+}
+
 /* ===== 达标进度 ===== */
 .cb-goal {
   margin-top: 8rpx;
