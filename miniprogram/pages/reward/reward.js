@@ -58,6 +58,58 @@ function waitForClose() {
   });
 }
 
+// ===== 插屏广告（北斗运动页）：模块级全局单例 + 回调只注册一次 =====
+// 广告位 ID 属于客户端公开标识（与上方激励视频同理），不是密钥。
+const INTERSTITIAL_AD_UNIT_ID = 'adunit-773c53ab76db1155';
+// 展示节奏（常量集中在这里，便于以后调）：
+//   · 只在「一次激励视频成功入账之后」调用 → 进页面 / 加载数据时绝不展示
+//   · 每 INTERSTITIAL_EVERY_N 次成功入账展示 1 次
+//   · 本次小程序运行（会话）内最多展示 INTERSTITIAL_SESSION_MAX 次
+const INTERSTITIAL_EVERY_N = 2;
+const INTERSTITIAL_SESSION_MAX = 3;
+let interstitialAd = null; // 全局单例：只创建一次
+let earnedWatchCount = 0; // 会话内「成功入账」次数（模块级 = 反复进出页面也累计，避免刷插屏）
+let interstitialShowCount = 0; // 会话内插屏已展示次数
+let adPage = null; // 当前页面实例：只用于把插屏事件转发到页面级日志出口
+
+// 页面级日志出口（页面已卸载则跳过日志，绝不影响业务）
+function emitAdEvent(name, payload) {
+  try {
+    if (adPage && typeof adPage[name] === 'function') adPage[name](payload);
+  } catch (e) {
+    /* 记日志失败也不能影响入账 */
+  }
+}
+
+// 创建插屏单例：只创建一次、onLoad/onError/onClose 只注册一次（教师账号不调用）
+function ensureInterstitialAd() {
+  if (interstitialAd) return interstitialAd;
+  if (!wx.createInterstitialAd) return null;
+  interstitialAd = wx.createInterstitialAd({ adUnitId: INTERSTITIAL_AD_UNIT_ID });
+  interstitialAd.onLoad(() => emitAdEvent('adLoad'));
+  interstitialAd.onError((err) => emitAdEvent('adError', err));
+  interstitialAd.onClose(() => emitAdEvent('adClose'));
+  return interstitialAd;
+}
+
+// 一次「成功入账」之后调用：按上面的节奏决定是否展示。
+// 无填充 / 开发者工具无广告等失败一律 catch 静默 —— 插屏失败不影响入账结果与页面功能。
+function maybeShowInterstitial(isTeacher) {
+  earnedWatchCount += 1;
+  if (isTeacher) return; // 教师：不展示（上方也不会为教师创建实例）
+  if (interstitialShowCount >= INTERSTITIAL_SESSION_MAX) return;
+  if (earnedWatchCount % INTERSTITIAL_EVERY_N !== 0) return;
+  const ad = interstitialAd;
+  if (!ad) return;
+  ad.show()
+    .then(() => {
+      interstitialShowCount += 1;
+    })
+    .catch((err) => {
+      console.warn('[reward] 插屏广告显示失败（已静默，不影响入账）', err);
+    });
+}
+
 // 每次可获得 / 今日已入账 的展示文案（距离走 fmt.formatDistance、时长走 fmt.formatDuration）
 function distanceText(meters) {
   return fmt.formatDistance(meters || 0);
@@ -72,6 +124,7 @@ Page({
     loading: true,
     enabled: true,
     watching: false,
+    isTeacher: false, // 教师：不参与运动记录，也不创建 / 不展示任何广告
     adUnitId: '',
     watchCount: 0,
     stepsEarned: 0, // 保留：reward_video_records 累计步数（历史口径展示用）
@@ -93,6 +146,7 @@ Page({
   onShow() {
     // 未登录 / 已退出 / 游客：统一跳登录页，不执行任何业务逻辑
     if (!getApp().requireLogin()) return;
+    adPage = this; // 插屏事件（模块级单例注册）转发到本页 adLoad/adError/adClose 日志出口
     this._unloaded = false;
     this.load();
   },
@@ -101,7 +155,21 @@ Page({
     // 全局单例不销毁（下次进入复用，避免重建实例 / 重复注册回调）；
     // 只作废「本次观看」的等待者：离开页面后即便广告关闭也不再上报
     closeWaiter = null;
+    if (adPage === this) adPage = null; // 页面已卸载：插屏事件不再往本页转发日志
     this._unloaded = true;
+  },
+
+  // ===== 广告事件（仅日志，无任何副作用）：插屏回调在模块级单例上只注册一次，事件转发到这里 =====
+  adLoad() {
+    console.log('[reward] 插屏广告加载成功');
+  },
+
+  adError(err) {
+    console.error('[reward] 插屏广告加载失败', err);
+  },
+
+  adClose() {
+    console.log('[reward] 插屏广告已关闭');
   },
 
   // 兜底：老服务端只回 stepsPerWatch/stepsEarned 时也能完整展示四项
@@ -123,12 +191,20 @@ Page({
 
   async load() {
     try {
-      await getApp().ensureLogin();
+      const me =
+        (await getApp().ensureLogin()) || (getApp().globalData && getApp().globalData.userInfo) || {};
+      const isTeacher = me.role === 'teacher';
       const data = await auth.get('/api/reward-video/today');
       const { per, earned } = this.pickResult(data);
       // 广告位来自服务端配置（缺省用默认广告位）；提前创建单例让广告先开始加载
-      ensureVideoAd(data.adUnitId);
+      // 教师账号：不创建任何广告实例（激励视频不建，插屏也不建）
+      if (!isTeacher) {
+        ensureVideoAd(data.adUnitId);
+        // 插屏同为学生专属：这里只「创建单例 + 注册回调」（各一次），展示时机在成功入账之后
+        ensureInterstitialAd();
+      }
       this.setData({
+        isTeacher,
         loading: false,
         enabled: data.enabled,
         adUnitId: data.adUnitId || '',
@@ -153,6 +229,11 @@ Page({
 
   async watch() {
     if (this._busy) return; // 防连点：一次只处理一次观看
+    if (this.data.isTeacher) {
+      // 教师不参与运动记录（服务端也会拦），也就不给它看任何广告
+      wx.showToast({ title: '教师账号不参与运动记录', icon: 'none' });
+      return;
+    }
     if (!this.data.enabled) {
       wx.showToast({ title: '活动暂未开启', icon: 'none' });
       return;
@@ -212,6 +293,8 @@ Page({
           },
         });
         wx.showToast({ title: `+${per.steps} 步`, icon: 'success' });
+        // 插屏展示时机：唯一入口 —— 一次激励视频「成功入账之后」；节流/上限见文件头常量
+        maybeShowInterstitial(this.data.isTeacher);
       } else {
         wx.showToast({ title: result.message || '上报失败', icon: 'none' });
         this.load();

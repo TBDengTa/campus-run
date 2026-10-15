@@ -77,6 +77,24 @@
     <text>当前为本地测试登录（DEV_LOGIN=true）：登录的是 dev 测试账号，不是你的真实学籍；微信运动同步也不可用。</text>
   </view>
 
+  <!-- ===== 原生模板广告（横版；unit-id 是客户端公开标识，不是密钥）=====
+       教师不可见：整块 wx:if="{{!isTeacher && showAd}}" 不渲染。
+       用 showAd 而不是只用 !isTeacher：首帧 isTeacher 还是默认 false（角色接口未回来），
+       showAd 只有 /api/auth/me 确认是学生后才置真 —— 教师不会先闪出一条广告。
+       位置 = 「我的信息」卡（上方身份 + 学籍）与「累计数据」卡之间的夹缝：
+         · 一条横幅同时服务这两个区域，且**不在**「累计数据」卡片节点内部 —— 连点 5 次进北斗运动
+           的彩蛋 bind:tap="onStatsTap" 仍只绑在那张卡上，广告块既不覆盖也不吞点击；
+         · 全页只放一条：同页重复同一个 unit-id 的原生模板广告填充不保证每条都出，也会挤压信息密度。
+       容器给 min-height 占位：广告位加载中 / 无填充时同样占住高度，下方卡片不会跳动 -->
+  <view class="profile-ad" wx:if="{{!isTeacher && showAd}}">
+    <ad-custom
+      unit-id="adunit-eeb7b18e406d94b1"
+      bindload="adLoad"
+      binderror="adError"
+      bindclose="adClose"
+    ></ad-custom>
+  </view>
+
   <!-- ===== 累计数据（学生可见，教师隐藏）：连点 5 次进入「北斗运动」彩蛋入口 ===== -->
   <block wx:if="{{stats && !isTeacher}}">
     <view class="tt-section">累计数据</view>

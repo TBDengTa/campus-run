@@ -86,6 +86,20 @@
   margin: 0 auto 26rpx;
 }
 
+/* ===== 原生模板广告位（格子；学生可见，教师整块不渲染）=====
+   位置：控制面板顶部、数据区之上 —— 面板 bottom 锚定，广告之后的数据区/按钮区
+   到屏幕底部距离不变，因此广告出现只会把面板上沿向上撑开，数据区与控制区零位移；
+   页面 disableScroll + 地图/顶栏绝对定位，也不会产生滚动跳动。
+   min-height 占位：加载中 / 无填充时同样占住高度，面板高度不突变 */
+.run-ad {
+  position: relative;
+  margin-bottom: 24rpx;
+  min-height: 220rpx;
+  border-radius: var(--tt-radius-sm);
+  overflow: hidden;
+  background: var(--tt-bg-page);
+}
+
 .stats {
   display: flex;
   align-items: flex-end;

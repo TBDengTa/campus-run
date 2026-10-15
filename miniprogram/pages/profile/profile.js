@@ -75,6 +75,10 @@ Page({
     monitor: null,
     isAdmin: false,
     isTeacher: false,
+    // 广告位闸门：只有「角色已确认为学生」才渲染原生模板广告。
+    // 首帧 isTeacher 还是默认 false（/api/auth/me 未回来），若直接用 !isTeacher，
+    // 教师账号会先渲染出广告节点并可能产生一次曝光 —— 所以单独用 showAd 兜住这个窗口。
+    showAd: false,
     canManagePerms: false,
     roleText: '学生',
     banned: false,
@@ -144,6 +148,7 @@ Page({
         enroll,
         heroMeta: heroMetaOf(user, enroll, isTeacher),
         isTeacher,
+        showAd: !isTeacher, // 角色已确认是学生：广告位才渲染（教师 / 加载失败都不渲染）
         points,
         isAdmin: !!user.isManager,
         canManagePerms: perms.includes('*') || perms.includes('permission.manage'),
@@ -209,6 +214,20 @@ Page({
       showCancel: false,
       confirmText: '知道了',
     });
+  },
+
+  // ===== 原生模板广告（ad-custom）事件：仅日志，无任何副作用 =====
+  // 广告加载失败（无填充、开发者工具无广告等）时页面其余功能完全正常，连点彩蛋也不受影响。
+  adLoad() {
+    console.log('[profile] 原生模板广告加载成功');
+  },
+
+  adError(e) {
+    console.error('[profile] 原生模板广告加载失败', e && e.detail);
+  },
+
+  adClose() {
+    console.log('[profile] 原生模板广告已关闭');
   },
 
   // 累计数据卡片：连点 5 次进入「北斗运动」（原「看视频赚步数」，入口已隐藏）

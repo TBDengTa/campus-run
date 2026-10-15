@@ -28,6 +28,11 @@ Page({
     saving: false,
     locationReady: false,
     isTeacher: false,
+    // 广告位闸门：只有「角色已确认为学生」才渲染原生模板广告。
+    // 首帧 isTeacher 还是默认 false（syncRole 未回来），若直接用 !isTeacher，
+    // 教师账号会先渲染出广告节点并可能产生一次曝光 —— 所以单独用 showAd 兜住这个窗口
+    // （拿不到 userInfo / role 时也保持 false，宁可不展示广告）。
+    showAd: false,
     // 保存记录后获得的徽章（自定义带图弹窗，替代把徽章名拼进 wx.showModal 的纯文字写法）
     badgeAward: { visible: false, badges: [] },
   },
@@ -75,7 +80,8 @@ Page({
     }
     const user = (getApp().globalData && getApp().globalData.userInfo) || {};
     const isTeacher = user.role === 'teacher';
-    if (isTeacher !== this.data.isTeacher) this.setData({ isTeacher });
+    // 角色已知（userInfo.role 存在）且为学生，才允许渲染广告位：教师 / 角色未知都不渲染
+    this.setData({ isTeacher, showAd: !!user.role && !isTeacher });
     return isTeacher;
   },
 
@@ -312,6 +318,20 @@ Page({
     this.applyState('idle');
     this.updateStats();
     this.initLocation();
+  },
+
+  // ===== 原生模板广告（ad-custom）事件：仅日志，无任何副作用 =====
+  // 广告加载失败（无填充、开发者工具无广告等）时跑步流程、定位、保存全部照常。
+  adLoad() {
+    console.log('[run] 原生模板广告加载成功');
+  },
+
+  adError(e) {
+    console.error('[run] 原生模板广告加载失败', e && e.detail);
+  },
+
+  adClose() {
+    console.log('[run] 原生模板广告已关闭');
   },
 
   // ===== 获得徽章弹窗（与首页 pages/home 用同一个 badge-award 组件） =====

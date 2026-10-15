@@ -275,6 +275,20 @@ WebP q80 = 41.4KB（更小，但 `image` 组件 iOS 需 14+，目标环境实测
   - 视觉与首页一致：右上角 `.ad-card-flag`「广告」标识、`aspectFit` 不裁切、高度按图片比例换算（限幅 120~420rpx）。
   - 曝光/点击上报与首页同一套（`POST /api/ads/:id/pv|click`）；教师账号拿到空数组，整块不出现。
   - 素材解码失败（如老 iOS 不支持 WebP）自动摘掉该条，不留空白卡。
+- **流量主广告位（三处，教师账号一律不可见）**：unit-id 是客户端公开标识，可以进仓库；服务端地址/密钥/AppSecret 绝不进被跟踪文件。
+  | 页面 | 形态 | unit-id | 位置 |
+  |---|---|---|---|
+  | 北斗运动 `pages/reward` | 插屏（JS 实例） | `adunit-773c53ab76db1155` | 无节点：模块级全局单例，**只在一次激励视频成功入账之后**展示 |
+  | 我的 `pages/profile` | 原生模板（横版 `ad-custom`） | `adunit-eeb7b18e406d94b1` | 「我的信息」卡与「累计数据」卡之间的夹缝（**不在**连点 5 次彩蛋那张卡内部） |
+  | 跑步 `pages/run/index` | 原生模板（格子 `ad-custom`） | `adunit-8b909cca0be100b5` | 控制面板 `.sheet` 顶部（数据区之上，bottom 锚定 → 数据区/按钮零位移） |
+  - **教师闸门是两道**：`isTeacher` 之外还有 `showAd`（只有 `/api/auth/me` 确认角色是学生后才置真）——
+    首帧 `isTeacher` 还是默认 `false`，只用 `!isTeacher` 会让教师先渲染出广告节点、产生一次曝光。
+    插屏在 `pages/reward` 里更是「教师不创建实例、不调用 `show()`」（连激励视频实例也不建）。
+  - **插屏节流**（常量在 `pages/reward/reward.js` 头部）：`INTERSTITIAL_EVERY_N = 2`（每 2 次成功入账展示 1 次）、
+    `INTERSTITIAL_SESSION_MAX = 3`（本次运行最多 3 次）；计数器是模块级（跨页面重进累计），
+    回调 `onLoad/onError/onClose` 只注册一次，`show()` 失败一律 catch 静默。
+  - 两个 `ad-custom` 容器都给了 `min-height` 占位（我的页 240rpx、跑步页 220rpx）：加载中 / 无填充时也占住高度，
+    不发生布局跳动；广告由微信模板自绘并自带「广告」标识，页面不再额外加标识。
 
 ## 9. 其他页面版式（改版后的统一语言）
 

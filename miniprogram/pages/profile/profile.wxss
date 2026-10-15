@@ -331,3 +331,17 @@
   line-height: 32rpx;
   color: var(--tt-text-3);
 }
+
+/* ===== 原生模板广告位（横版；学生可见，教师整块不渲染）=====
+   位置：在「我的信息」卡与「累计数据」卡之间、两张卡之外 ——
+   不覆盖「累计数据」卡片，连点 5 次进北斗运动的彩蛋（onStatsTap）不受影响。
+   min-height 占位：广告位加载中 / 无填充时也占住固定高度，下方内容不跳动；
+   广告由微信模板自己绘制并自带「广告」标识，这里只做圆角与占位，不额外加标识 */
+.profile-ad {
+  position: relative;
+  margin: 0 var(--tt-gap) var(--tt-gap);
+  min-height: 240rpx;
+  border-radius: var(--tt-radius);
+  overflow: hidden;
+  background: var(--tt-card);
+}
