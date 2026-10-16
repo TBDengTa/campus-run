@@ -14,40 +14,40 @@
 
   <t-loading wx:if="{{loading}}" theme="circular" size="40rpx" text="加载中…" class="hub-loading" />
 
-  <!-- ===== 分类列出全部管理入口（单组超过一行可折叠） ===== -->
+  <!-- ===== 分类 + 按钮平铺（点按钮直接进页面）=====
+       与管理中枢的既有交互一致：每个分类下列出它的全部入口按钮，不做折叠、不弹浮层。
+       ⚠️ 只有首页「快捷操作」用「点分类 → 弹窗列条目」（那边是宫格按钮，见 pages/home）。
+       分类与条目来自 utils/nav-groups.js，与首页同一份数据。 ===== -->
   <block wx:for="{{groups}}" wx:key="key" wx:for-item="group">
     <view class="tt-section">
       <text>{{group.title}}</text>
-      <text class="tt-section-extra" wx:if="{{group.desc}}">{{group.desc}}</text>
+      <text class="tt-section-extra">{{group.desc || group.countText}}</text>
     </view>
     <view class="tt-card hub-card">
       <view class="tt-grid">
         <view
           class="tt-grid-item"
-          wx:for="{{group.shown || group.items}}"
+          wx:for="{{group.items}}"
           wx:key="key"
           bind:tap="go"
           data-url="{{item.url}}"
           data-key="{{item.key}}"
         >
-          <view class="tt-chip-icon" style="background: {{item.bg || 'var(--tt-brand-soft)'}}">
-            <t-icon name="{{item.icon}}" size="40rpx" color="{{item.color || 'var(--tt-brand)'}}" />
+          <view class="tt-chip-icon" style="background: {{item.bg}}">
+            <t-icon name="{{item.icon}}" size="40rpx" color="{{item.color}}" />
           </view>
           <text class="tt-grid-text">{{item.label}}</text>
         </view>
       </view>
-
-      <!-- 分组折叠：超过 4 项时只展示一行 -->
-      <view class="hub-fold" wx:if="{{group.foldable}}" bind:tap="toggleGroup" data-key="{{group.key}}">
-        <text>{{group.expanded ? '收起' : '展开全部 ' + group.items.length + ' 项'}}</text>
-        <t-icon name="{{group.expanded ? 'chevron-up' : 'chevron-down'}}" size="28rpx" color="var(--tt-text-3)" />
-      </view>
-
-      <!-- 我的班级：班级过多时折叠展示，可展开逐个进入 -->
-      <view class="hub-classes" wx:if="{{group.key === 'class' && classFold}}">
+    </view>
+    <!-- ===== 我的班级 chips（班主任 / 班委）：并入本分类，紧跟「我的班级」标题显示 =====
+         产品要求：这块要在管理中枢标题下面，而不是页面最底部。
+         它必须与上面的分类卡共用同一个标题，否则页面会出现两个「我的班级」。 -->
+    <view class="tt-card hub-card" wx:if="{{group.key === 'class' && classRole}}">
+      <view class="hub-classes">
         <view class="hub-classes-head">
-          <text class="hub-classes-title">我的班级 · 共 {{classes.length}} 个</text>
-          <view class="hub-classes-toggle" bind:tap="toggleClasses">
+          <text class="hub-classes-title">共 {{classes.length}} 个</text>
+          <view class="hub-classes-toggle" wx:if="{{classFold}}" bind:tap="toggleClasses">
             <text>{{classExpanded ? '收起' : '展开选择'}}</text>
             <t-icon name="{{classExpanded ? 'chevron-up' : 'chevron-down'}}" size="26rpx" color="var(--tt-brand)" />
           </view>
@@ -61,11 +61,7 @@
             data-class="{{item}}"
           >{{item}}</view>
         </view>
-        <view class="hub-classes-tip" wx:if="{{!classExpanded}}">点「班级管理」会先让你选择要进入的班级</view>
-      </view>
-
-      <view class="hub-classes-tip" wx:if="{{group.key === 'class' && !classFold && classes.length}}">
-        直接进入 {{classes[0]}}
+        <view class="hub-classes-tip" wx:if="{{classFold && !classExpanded}}">点「班级管理」会先让你选择要进入的班级</view>
       </view>
     </view>
   </block>
