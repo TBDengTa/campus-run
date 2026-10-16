@@ -2,70 +2,26 @@ const auth = require('../../utils/request');
 
 // 管理中枢：把管理端全部入口按「分类」列出来（教师端导航「管理」指向本页，不再直接跳用户管理）
 // 每项按权限过滤：perms 为 '*'（超级管理员）或含该项 perm 才显示
-const GROUPS = [
-  {
-    key: 'class',
-    title: '我的班级',
-    desc: '班主任可管理本班，班委仅查看',
-    items: [{ key: 'class', perm: '', icon: 'usergroup', label: '班级管理', url: '/packageAdmin/class/class', bg: 'var(--tt-brand-soft)', color: 'var(--tt-brand)' }],
-  },
-  {
-    key: 'user',
-    title: '用户与权限',
-    items: [
-      { key: 'users', perm: 'user.view', icon: 'usergroup', label: '用户管理', url: '/packageAdmin/users/users' },
-      { key: 'import', perm: 'user.manage', icon: 'file-add', label: '导入名单', url: '/packageAdmin/users/import' },
-      { key: 'groups', perm: 'permission.manage', icon: 'secured', label: '权限组', url: '/packageAdmin/permissions/groups' },
-      { key: 'appeals', perm: 'appeal.view', icon: 'assignment-checked', label: '申诉审核', url: '/packageAdmin/appeals/appeals' },
-    ],
-  },
-  {
-    key: 'assessment',
-    title: '考核与目标',
-    items: [
-      { key: 'assessment', perm: 'assessment.view', icon: 'task-checked', label: '运动考核', url: '/packageAdmin/assessment/index' },
-      { key: 'goals', perm: 'assessment.view', icon: 'flag', label: '目标计划', url: '/packageAdmin/assessment/goals' },
-      { key: 'plans', perm: 'assessment.view', icon: 'calendar', label: '考核方案', url: '/packageAdmin/assessment/plans' },
-      { key: 'files', perm: 'file.view', icon: 'folder-open', label: '文件管理', url: '/packageAdmin/files/files' },
-    ],
-  },
-  {
-    key: 'content',
-    title: '内容与通知',
-    items: [
-      { key: 'content', perm: 'content.view', icon: 'layers', label: '内容中枢', url: '/packageAdmin/content/index' },
-      { key: 'announcements', perm: 'content.view', icon: 'notification', label: '公告', url: '/packageAdmin/content/announcements' },
-      { key: 'changelogs', perm: 'content.view', icon: 'history', label: '版本日志', url: '/packageAdmin/content/changelogs' },
-      { key: 'organizations', perm: 'content.view', icon: 'city', label: '组织架构', url: '/packageAdmin/content/organizations' },
-      { key: 'badges', perm: 'content.view', icon: 'star', label: '徽章', url: '/packageAdmin/content/badges' },
-      { key: 'holidays', perm: 'content.view', icon: 'calendar-1', label: '节假日', url: '/packageAdmin/content/holidays' },
-    ],
-  },
-  {
-    key: 'ads',
-    title: '广告运营',
-    items: [
-      { key: 'adContents', perm: 'ad.view', icon: 'play-circle', label: '广告管理', url: '/packageAdmin/ads/contents' },
-      { key: 'adSponsors', perm: 'ad.view', icon: 'user-add', label: '赞助商', url: '/packageAdmin/ads/sponsors' },
-      { key: 'adSlots', perm: 'ad.view', icon: 'app', label: '广告位', url: '/packageAdmin/ads/slots' },
-      { key: 'adStats', perm: 'ad.view', icon: 'chart-bar', label: '广告统计', url: '/packageAdmin/ads/stats' },
-    ],
-  },
-  {
-    key: 'config',
-    title: '系统设置',
-    items: [
-      { key: 'config', perm: 'config.view', icon: 'setting', label: '系统配置', url: '/packageAdmin/config/config' },
-      { key: 'points', perm: 'config.view', icon: 'chart-bubble', label: '跑分设置', url: '/packageAdmin/config/points' },
-      { key: 'anticheat', perm: 'config.view', icon: 'shield-error', label: '反作弊', url: '/packageAdmin/config/anticheat' },
-      { key: 'reward', perm: 'config.view', icon: 'play-circle', label: '看视频奖励', url: '/packageAdmin/config/reward-video' },
-    ],
-  },
-];
+//
+// 命名口径（用户明确要求，全仓库统一）：
+//   · 「班级管理」= 管理入口名，指向 /packageAdmin/class/class；
+//   · 「班超」= 班级检查评比域的产品名，门户页 /pages/banchao/banchao 与「班超排名」保持这个叫法；
+//   · 「学生会配置」「学生会成员」= 学生会域的两个管理入口名。
+//
+// 分类的显示条件（与「按权限过滤」是两层，互不替代）：
+//   only 字段：'class' = 需要班级身份（班主任 / 班委）；'union' = 班级身份或学生会身份；
+//              'unionMember' = 仅学生会成员 / 学生会管理权限（面向学生会域接口的项）。
+//   为什么用「身份」而不是权限：班级域（/api/class/*）与学生会域（/api/union/*）走的是成员资格校验，
+//   不是 requirePermission（见 AGENTS.md），班主任 / 班委 / 学生会成员本来就没有管理权限。
+// 分类与显隐判定统一在 utils/nav-groups.js（管理中枢与首页「快捷操作」共用同一份数据，
+// 用户要求两处分类一致 —— 只有单一数据源才能真正不漂移）
+const { visibleGroups } = require('../../utils/nav-groups');
 
-const FOLD_LIMIT = 4; // 单组宫格「一行」的项数：超过就折叠
 const CLASS_FOLD_LIMIT = 3; // 「我的班级」chips 折叠时展示的班数（多于 3 个班默认折叠）
 
+// 交互差异（用户明确要求，别改）：
+//   管理中枢 = **分类 + 按钮平铺**，点按钮直接进页面；
+//   首页「快捷操作」= 宫格按钮只显示分类名，点分类弹浮层列条目（见 pages/home + behaviors/nav-sheet）。
 Page({
   data: {
     loading: true,
@@ -114,21 +70,33 @@ Page({
         classes = [];
       }
 
-      const groups = GROUPS.map((g) => {
-        if (g.key === 'class') {
-          if (!classRole) return null;
-          return {
-            ...g,
-            desc: classRole === 'homeroom' ? `班主任：${classes.join('、') || '未分配班级'}` : '班委：仅查看本班数据',
-            foldable: false,
-          };
-        }
-        const items = g.items.filter((it) => isSuper || perms.includes(it.perm));
-        if (!items.length) return null;
-        // 单个分组超过一行（4 项）时折叠，先展示前 4 项
-        const foldable = items.length > FOLD_LIMIT;
-        return { ...g, items, shown: foldable ? items.slice(0, FOLD_LIMIT) : items, foldable, expanded: false };
-      }).filter(Boolean);
+      // 身份上下文：分类与显隐判定统一走 utils/nav-groups.js（与首页「快捷操作」**同一份数据**，
+      // 用户要求「管理中枢也一并跟这样重新分类显示」—— 只有单一数据源才能保证两处永不漂移）
+      const ctx = {
+        perms,
+        isSuper,
+        isAdmin: perms.length > 0,
+        isClassRole: !!classRole,
+        isUnionMember: !!(me && me.isUnionMember),
+      };
+      const groups = visibleGroups(ctx).map((g) => {
+        // 「我的班级」分类：右侧只放**极短**的身份标签（班主任 / 班委）。
+        // 班级名不在这里重复 —— 下方的班级 chips 卡已经列出「共 N 个」与每个班名；
+        // 之前这里写「班主任：班名、班名、…」，长文本会把左侧标题挤到换行成三行（产品反馈）。
+        const desc =
+          g.key === 'class' ? (classRole ? (classRole === 'homeroom' ? '班主任' : '班委 · 仅查看') : '未分配班级') : '';
+        // 分类按钮上的条目数（放在分类标题右侧的说明位）
+        const countText = `${g.items.length} 项`;
+        return {
+          key: g.key,
+          title: g.title,
+          desc,
+          countText,
+          tint: g.tint,
+          // 平铺按钮：每条都要 icon / bg / color（visibleGroups 已摊好分类色）
+          items: g.items.map((it) => ({ ...it, bg: it.bg || g.tint.bg, color: it.color || g.tint.color })),
+        };
+      });
 
       this.setData({
         loading: false,
@@ -149,10 +117,14 @@ Page({
     }
   },
 
-  // 宫格入口：班级管理先让用户选班（多班时），其余按 url 直达
+  // 分类下的按钮：点按钮**直接进页面**（管理中枢是平铺交互，不弹浮层 —— 用户明确要求）。
+  // 唯一例外：「班级管理」对多班班主任要先选班，所以走 openClassEntry。
+  // 注意：这里必须按**条目 key** 特判，而条目 key 由 utils/nav-groups.js 定义（当前是 'classManage'）。
+  // 曾经踩过的坑：把 key 改成 classManage 却仍判 'class'，于是多班班主任点「班级管理」会
+  // 直接进第一个班、不再弹选班抽屉（静默走错班，很难被发现）—— 改 nav-groups 的 key 时务必同步这里。
   go(e) {
     const { url, key } = e.currentTarget.dataset;
-    if (key === 'class') {
+    if (key === 'classManage') {
       this.openClassEntry();
       return;
     }
@@ -162,7 +134,12 @@ Page({
   // 「班级管理」主入口：1 个班直接进；多个班先弹班级选择抽屉（必选其一）
   openClassEntry() {
     const classes = this.data.classes || [];
-    if (!classes.length) return;
+    if (!classes.length) {
+      // 没有班级身份却看得到本项（超级管理员 / 只有学生会权限的管理员）：
+      // 仍然进页面，由班级管理页自己给出「你不是班主任/班委」的空态，避免点了没反应
+      wx.navigateTo({ url: '/packageAdmin/class/class' });
+      return;
+    }
     if (classes.length === 1) {
       this.navClass(classes[0]);
       return;
@@ -198,16 +175,9 @@ Page({
     this.navClass(e.currentTarget.dataset.class);
   },
 
-  // 其余分组：展开全部 / 收起（超过一行时）
-  toggleGroup(e) {
-    const key = e.currentTarget.dataset.key;
-    const groups = (this.data.groups || []).map((g) => {
-      if (g.key !== key || !g.foldable) return g;
-      const expanded = !g.expanded;
-      return { ...g, expanded, shown: expanded ? g.items : g.items.slice(0, FOLD_LIMIT) };
-    });
-    this.setData({ groups });
-  },
+  // 注：原来的「分组折叠 toggleGroup」已随新交互删除 —— 分类按钮不再平铺条目，
+  // 条目都在浮层里（浮层自带滚动区），不再需要「展开全部/收起」。
+  // 保留这条注释是为了避免后人看到 wxml 里没有折叠条却找不到原因。
 
   navClass(className) {
     if (!className) return;

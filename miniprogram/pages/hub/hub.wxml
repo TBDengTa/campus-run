@@ -20,7 +20,7 @@
        分类与条目来自 utils/nav-groups.js，与首页同一份数据。 ===== -->
   <block wx:for="{{groups}}" wx:key="key" wx:for-item="group">
     <view class="tt-section">
-      <text>{{group.title}}</text>
+      <text class="hub-section-title">{{group.title}}</text>
       <text class="tt-section-extra">{{group.desc || group.countText}}</text>
     </view>
     <view class="tt-card hub-card">

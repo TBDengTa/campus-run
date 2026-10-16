@@ -1,4 +1,4 @@
-/* 管理中枢：分类列出管理入口 */
+/* 管理中枢：分类 + 按钮平铺（点按钮直接进页面；首页才是「点分类弹浮层」） */
 .hub-page {
   padding-bottom: calc(32rpx + env(safe-area-inset-bottom));
 }
@@ -39,6 +39,13 @@
 
 .hub-card {
   padding: 22rpx 16rpx 6rpx;
+}
+
+/* 分类标题：不参与压缩，避免右侧说明过长时把标题挤成多行（产品反馈：「我的班级」竖排三行）。
+   右侧 .tt-section-extra 自己换行即可 —— 它只有 24rpx 字号，多一行不影响标题。 */
+.hub-section-title {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 /* ===== 分组折叠：超过一行（4 项）时只展示一行 ===== */
