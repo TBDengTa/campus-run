@@ -177,6 +177,13 @@
   font-size: 30rpx;
 }
 
+/* placeholder-class：小程序不会把全局类应用到占位文字上，必须在本页声明，
+   否则学号输入框的提示文字会用系统默认色（与白橙设计系统不一致）。 */
+.form-ph {
+  color: var(--tt-text-3);
+  font-size: 26rpx;
+}
+
 .tips-card {
   margin: 0 24rpx 24rpx;
   background: var(--td-bg-color-secondarycontainer, var(--td-gray-color-1));

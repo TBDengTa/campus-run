@@ -3,138 +3,24 @@
   <view class="tt-card adc-head">
     <view class="flex-1">
       <view class="adc-head-title">广告素材</view>
-      <view class="adc-head-sub">共 {{list.length}} 条素材</view>
+      <view class="adc-head-sub">共 {{list.length}} 条素材{{activeSlot ? '（已按广告位筛选）' : ''}}</view>
     </view>
     <t-button theme="default" size="small" icon="chart-bar" bind:tap="goStats">统计</t-button>
-    <t-button theme="primary" size="small" icon="add" bind:tap="openCreate">新增</t-button>
+    <t-button wx:if="{{canManage}}" theme="primary" size="small" icon="add" bind:tap="openCreate">新增</t-button>
   </view>
 
-  <!-- ===== 新增 / 编辑表单 ===== -->
-  <view class="tt-card" wx:if="{{form}}">
-    <view class="adc-form-head">
-      <text class="adc-form-title">{{form._id ? '编辑素材' : '新增素材'}}</text>
-      <view class="adc-close" bind:tap="closeForm">
-        <t-icon name="close" size="34rpx" color="var(--tt-text-2)" />
-      </view>
-    </view>
-
-    <view class="tt-divider"></view>
-
-    <view class="adc-field adc-field-pick">
-      <text class="adc-field-label adc-pick-label">广告位</text>
-      <picker class="adc-pick-body" range="{{slots}}" range-key="name" value="{{slotIndex}}" bindchange="onSlot">
-        <view class="adc-picker">
-          <text class="adc-picker-text">{{slots.length ? slots[slotIndex].name : '请先创建广告位'}}</text>
-          <t-icon name="chevron-down" size="30rpx" color="var(--tt-text-3)" />
-        </view>
-      </picker>
-    </view>
-
-    <view class="adc-field adc-field-pick">
-      <text class="adc-field-label adc-pick-label">广告主</text>
-      <picker class="adc-pick-body" range="{{sponsors}}" range-key="name" value="{{sponsorIndex}}" bindchange="onSponsor">
-        <view class="adc-picker">
-          <text class="adc-picker-text">{{sponsors.length ? sponsors[sponsorIndex].name : '无（可选）'}}</text>
-          <t-icon name="chevron-down" size="30rpx" color="var(--tt-text-3)" />
-        </view>
-      </picker>
-    </view>
-
-    <view class="adc-field">
-      <t-input
-        borderless
-        label="标题"
-        value="{{form.title}}"
-        placeholder="素材标题"
-        bind:change="onField"
-        data-field="title"
-      />
-    </view>
-
-    <view class="adc-field">
-      <text class="adc-field-label">图片</text>
-      <view class="adc-upload" bind:tap="chooseImage">
-        <image wx:if="{{form.imageUrl}}" class="adc-upload-img" src="{{form.imageUrl}}" mode="aspectFill" />
-        <view class="adc-upload-empty" wx:else>
-          <t-icon name="image-add" size="48rpx" color="var(--tt-brand)" />
-          <text>点击上传 Banner 图</text>
-        </view>
-      </view>
-    </view>
-
-    <view class="adc-field adc-field-pick">
-      <text class="adc-field-label adc-pick-label">跳转类型</text>
-      <picker class="adc-pick-body" range="{{linkTypes}}" range-key="label" value="{{linkTypeIndex}}" bindchange="onLinkType">
-        <view class="adc-picker">
-          <text class="adc-picker-text">{{linkTypes[linkTypeIndex].label}}</text>
-          <t-icon name="chevron-down" size="30rpx" color="var(--tt-text-3)" />
-        </view>
-      </picker>
-    </view>
-
-    <view class="adc-field" wx:if="{{form.linkType === 'web'}}">
-      <t-input
-        borderless
-        label="外链地址"
-        value="{{form.linkUrl}}"
-        placeholder="https://…"
-        bind:change="onField"
-        data-field="linkUrl"
-      />
-    </view>
-
-    <view class="adc-field adc-field-pick" wx:if="{{form.linkType === 'page'}}">
-      <text class="adc-field-label adc-pick-label">落地页</text>
-      <picker class="adc-pick-body" range="{{pages}}" range-key="name" value="{{pageIdIndex}}" bindchange="onPage">
-        <view class="adc-picker">
-          <text class="adc-picker-text">{{pages.length ? pages[pageIdIndex].name : '请先创建落地页'}}</text>
-          <t-icon name="chevron-down" size="30rpx" color="var(--tt-text-3)" />
-        </view>
-      </picker>
-    </view>
-
-    <view class="adc-cols">
-      <view class="adc-col">
-        <text class="adc-field-label">开始日期</text>
-        <picker mode="date" value="{{form.startDate}}" bindchange="onField" data-field="startDate">
-          <view class="adc-date">{{form.startDate || '不限'}}</view>
-        </picker>
-      </view>
-      <view class="adc-col">
-        <text class="adc-field-label">结束日期</text>
-        <picker mode="date" value="{{form.endDate}}" bindchange="onField" data-field="endDate">
-          <view class="adc-date">{{form.endDate || '不限'}}</view>
-        </picker>
-      </view>
-    </view>
-
-    <view class="adc-field">
-      <t-input
-        borderless
-        label="排序权重"
-        type="number"
-        value="{{form.weight}}"
-        placeholder="数值越大越靠前"
-        bind:change="onField"
-        data-field="weight"
-      />
-    </view>
-
-    <view class="adc-field adc-field-row">
-      <view class="flex-1">
-        <view class="adc-field-label">启用</view>
-        <view class="adc-field-tip">停用后该素材不再下发</view>
-      </view>
-      <t-switch value="{{form.enabled}}" bind:change="onField" data-field="enabled" />
-    </view>
-
-    <view class="adc-form-actions">
-      <t-button theme="primary" block bind:tap="save">保存</t-button>
-      <t-button theme="default" block bind:tap="closeForm">取消</t-button>
-    </view>
+  <!-- ===== 按广告位筛选 ===== -->
+  <view class="adc-chips">
+    <view
+      class="tt-chip {{activeSlot === item.key ? 'active' : ''}}"
+      wx:for="{{slotChips}}"
+      wx:key="key"
+      bind:tap="switchSlot"
+      data-key="{{item.key}}"
+    >{{item.name}}</view>
   </view>
 
-  <!-- ===== 列表 ===== -->
+  <!-- ===== 素材列表 ===== -->
   <view class="tt-section">
     <text>素材列表</text>
     <text class="tt-section-extra" bind:tap="goStats">数据统计 ›</text>
@@ -158,17 +44,144 @@
         </view>
       </view>
 
-      <view class="adc-acts">
+      <view class="adc-acts" wx:if="{{canManage}}">
         <view class="adc-act" catch:tap="openEdit" data-id="{{item._id}}">编辑</view>
         <view class="adc-act danger" catch:tap="remove" data-id="{{item._id}}">删除</view>
       </view>
     </view>
 
-    <view class="tt-empty" wx:if="{{!list.length && !loading}}">暂无素材，点击右上角「新增」</view>
+    <view class="tt-empty" wx:if="{{!list.length && !loading}}">{{activeSlot ? '该广告位暂无素材' : '暂无素材，点击右上角「新增」'}}</view>
     <view class="adc-loading" wx:if="{{loading}}">
       <t-loading theme="circular" size="40rpx" />
     </view>
   </view>
 
-  <view class="tt-footer">素材按权重排序，独占位仅展示权重最高的一条</view>
+  <view class="tt-footer">素材按权重排序；独占位（或超出广告位数上限时）只下发权重最高的若干条</view>
+
+  <!-- ===== 新增 / 编辑（底部抽屉）
+       注意必须有页面私有 sheet 类（.adc-sheet）：小程序里 scroll-view 只有拿到**确定的 CSS 高度**
+       才真的能滚动，只有 .tt-sheet 的 flex + max-height 分配高度是滚不动的
+       （见 docs/ui-design.md「抽屉滚动区必须给确定高度」一节，已知中招页面的清单里包含本页）
+--> 
+  <t-popup wx:if="{{canManage}}" visible="{{formVisible}}" placement="bottom" bind:visible-change="onFormVisible">
+    <view class="tt-sheet adc-sheet">
+      <view class="tt-sheet-grab"></view>
+      <view class="tt-sheet-head">
+        <view class="tt-sheet-icon">
+          <t-icon name="image-add" size="36rpx" color="var(--tt-brand)" />
+        </view>
+        <view class="tt-sheet-title">
+          {{form._id ? '编辑素材' : '新增素材'}}
+          <view class="tt-sheet-sub">{{form.title || '未命名素材'}}</view>
+        </view>
+        <view class="tt-sheet-close" bind:tap="closeForm">
+          <t-icon name="close" size="32rpx" color="var(--tt-text-2)" />
+        </view>
+      </view>
+
+      <scroll-view scroll-y class="tt-sheet-body">
+        <view class="tt-sheet-label">投放位置</view>
+
+        <view class="tt-sheet-field adc-sheet-gap adc-sheet-pick">
+          <text class="adc-inline-label">广告位</text>
+          <picker class="adc-pick-body" range="{{slots}}" range-key="name" value="{{slotIndex}}" bindchange="onSlot">
+            <view class="adc-picker">
+              <text class="adc-picker-text">{{slots.length ? slots[slotIndex].name : '请先创建广告位'}}</text>
+              <t-icon name="chevron-down" size="30rpx" color="var(--tt-text-3)" />
+            </view>
+          </picker>
+        </view>
+
+        <view class="tt-sheet-field adc-sheet-gap adc-sheet-pick">
+          <text class="adc-inline-label">广告主</text>
+          <picker class="adc-pick-body" range="{{sponsors}}" range-key="name" value="{{sponsorIndex}}" bindchange="onSponsor">
+            <view class="adc-picker">
+              <text class="adc-picker-text">{{sponsors.length ? sponsors[sponsorIndex].name : '无（可选）'}}</text>
+              <t-icon name="chevron-down" size="30rpx" color="var(--tt-text-3)" />
+            </view>
+          </picker>
+        </view>
+
+        <view class="tt-sheet-label">素材内容</view>
+
+        <view class="tt-sheet-field adc-sheet-gap">
+          <text class="adc-inline-label">标题</text>
+          <input class="tt-sheet-input" value="{{form.title}}" placeholder="素材标题" placeholder-class="tt-sheet-ph" bindinput="onField" data-field="title" />
+        </view>
+
+        <view class="adc-upload-block">
+          <text class="adc-field-label">图片</text>
+          <view class="adc-upload" bind:tap="chooseImage">
+            <image wx:if="{{form.imageUrl}}" class="adc-upload-img" src="{{form.imageUrl}}" mode="aspectFill" />
+            <view class="adc-upload-empty" wx:else>
+              <t-icon name="image-add" size="48rpx" color="var(--tt-brand)" />
+              <text>点击上传 Banner 图</text>
+            </view>
+          </view>
+        </view>
+
+        <view class="tt-sheet-label">跳转方式</view>
+
+        <view class="tt-sheet-field adc-sheet-gap adc-sheet-pick">
+          <text class="adc-inline-label">跳转类型</text>
+          <picker class="adc-pick-body" range="{{linkTypes}}" range-key="label" value="{{linkTypeIndex}}" bindchange="onLinkType">
+            <view class="adc-picker">
+              <text class="adc-picker-text">{{linkTypes[linkTypeIndex].label}}</text>
+              <t-icon name="chevron-down" size="30rpx" color="var(--tt-text-3)" />
+            </view>
+          </picker>
+        </view>
+
+        <view class="tt-sheet-field adc-sheet-gap" wx:if="{{form.linkType === 'web'}}">
+          <text class="adc-inline-label">外链</text>
+          <input class="tt-sheet-input" value="{{form.linkUrl}}" placeholder="https://" placeholder-class="tt-sheet-ph" bindinput="onField" data-field="linkUrl" />
+        </view>
+
+        <view class="tt-sheet-field adc-sheet-gap adc-sheet-pick" wx:if="{{form.linkType === 'page'}}">
+          <text class="adc-inline-label">落地页</text>
+          <picker class="adc-pick-body" range="{{pages}}" range-key="name" value="{{pageIdIndex}}" bindchange="onPage">
+            <view class="adc-picker">
+              <text class="adc-picker-text">{{pages.length ? pages[pageIdIndex].name : '请先创建落地页'}}</text>
+              <t-icon name="chevron-down" size="30rpx" color="var(--tt-text-3)" />
+            </view>
+          </picker>
+        </view>
+
+        <view class="tt-sheet-label">投放排期</view>
+
+        <view class="adc-cols">
+          <view class="adc-col">
+            <text class="adc-field-label">开始日期</text>
+            <picker mode="date" value="{{form.startDate}}" bindchange="onField" data-field="startDate">
+              <view class="adc-date">{{form.startDate || '不限'}}</view>
+            </picker>
+          </view>
+          <view class="adc-col">
+            <text class="adc-field-label">结束日期</text>
+            <picker mode="date" value="{{form.endDate}}" bindchange="onField" data-field="endDate">
+              <view class="adc-date">{{form.endDate || '不限'}}</view>
+            </picker>
+          </view>
+        </view>
+
+        <view class="tt-sheet-field adc-sheet-gap">
+          <text class="adc-inline-label">权重</text>
+          <input class="tt-sheet-input" type="number" value="{{form.weight}}" placeholder="数值越大越靠前" placeholder-class="tt-sheet-ph" bindinput="onField" data-field="weight" />
+        </view>
+
+        <view class="adc-sheet-row">
+          <view class="flex-1">
+            <view class="adc-field-label">启用</view>
+            <view class="adc-field-tip">停用后该素材不再下发</view>
+          </view>
+          <t-switch value="{{form.enabled}}" bind:change="onField" data-field="enabled" />
+        </view>
+      </scroll-view>
+
+      <view class="tt-sheet-foot">
+        <t-button theme="primary" block loading="{{saving}}" bind:tap="save">{{form._id ? '保存修改' : '创建素材'}}</t-button>
+      </view>
+    </view>
+  </t-popup>
 </view>
+

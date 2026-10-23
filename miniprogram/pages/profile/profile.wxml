@@ -21,6 +21,12 @@
             bind:blur="nicknameInput"
           />
           <text class="hero-role">{{roleText}}</text>
+          <!-- 我的人物码（用户 2026-10-22）：所有用户都有码，含教师账号。
+               点开即可出示给学生会干部扫（干部扫码后把这个人加进自己部门）。 -->
+          <view class="hero-qr-btn" catch:tap="openMyQr">
+            <t-icon name="qrcode" size="32rpx" color="var(--tt-brand)" />
+            <text class="hero-qr-t">我的码</text>
+          </view>
         </view>
         <!-- 学生的学籍信息已由下方网格完整展示，这里只在教师端补一行角色提示 -->
         <view class="hero-meta" wx:if="{{isTeacher}}">{{heroMeta}}</view>
@@ -141,6 +147,81 @@
     <view class="points-note">完成日/周目标得分；超出日目标后，每再多达成个人日目标的 {{points.extraPercent}}% 加 {{points.perStepScore}} 分（单日上限 {{points.dailyExtraCap}} 分）；超出周目标后，每再多达成个人周目标的 {{points.weeklyExtraPercent}}% 加 {{points.perStepScore}} 分{{points.weeklyCapText}}</view>
   </block>
 
+  <!-- ===== 学生会（仅成员显示；身份由 /api/auth/me 下发） ===== -->
+  <block wx:if="{{union}}">
+    <view class="tt-section">
+      <text>学生会</text>
+      <text class="tt-section-extra">{{union.roleCount > 1 ? union.roleCount + ' 个职务' : ''}}</text>
+    </view>
+    <view class="tt-card menu-card">
+      <view class="tt-row menu-row" bind:tap="goUnion">
+        <view class="menu-icon">
+          <t-icon name="app" size="36rpx" color="var(--tt-brand)" />
+        </view>
+        <view class="flex-1">
+          <view class="menu-label">学生会工作台</view>
+          <view class="menu-sub">{{union.roleText || '检查录入与我的记录'}}</view>
+        </view>
+        <t-icon name="chevron-right" size="32rpx" color="var(--tt-text-3)" />
+      </view>
+      <view class="tt-row menu-row" bind:tap="goUnionEntry">
+        <view class="menu-icon">
+          <t-icon name="task-checked" size="36rpx" color="var(--tt-brand)" />
+        </view>
+        <view class="flex-1">
+          <view class="menu-label">检查录入</view>
+          <view class="menu-sub">卫生 / 晚自习 / 查宿 / 早操 / 早八</view>
+        </view>
+        <t-icon name="chevron-right" size="32rpx" color="var(--tt-text-3)" />
+      </view>
+      <view class="tt-row menu-row" bind:tap="goUnionRecords">
+        <view class="menu-icon">
+          <t-icon name="file-paste" size="36rpx" color="var(--tt-brand)" />
+        </view>
+        <view class="flex-1">
+          <view class="menu-label">我的录入记录</view>
+        </view>
+        <t-icon name="chevron-right" size="32rpx" color="var(--tt-text-3)" />
+      </view>
+      <view class="tt-row menu-row" bind:tap="goUnionRoster">
+        <view class="menu-icon">
+          <t-icon name="usergroup" size="36rpx" color="var(--tt-brand)" />
+        </view>
+        <view class="flex-1">
+          <view class="menu-label">学生会通讯录</view>
+        </view>
+        <t-icon name="chevron-right" size="32rpx" color="var(--tt-text-3)" />
+      </view>
+    </view>
+  </block>
+
+  <!-- ===== 班超（仅班主任 / 班委显示；普通学生不显示，与首页口径一致） ===== -->
+  <block wx:if="{{banchao}}">
+    <view class="tt-section">班超</view>
+    <view class="tt-card menu-card">
+      <view class="tt-row menu-row" bind:tap="goBanChao">
+        <view class="menu-icon">
+          <t-icon name="chart-bar" size="36rpx" color="var(--tt-brand)" />
+        </view>
+        <view class="flex-1">
+          <view class="menu-label">我的班级</view>
+          <view class="menu-sub">{{banchao.classText}}</view>
+        </view>
+        <t-icon name="chevron-right" size="32rpx" color="var(--tt-text-3)" />
+      </view>
+      <view class="tt-row menu-row" bind:tap="goBanChaoRecords">
+        <view class="menu-icon">
+          <t-icon name="assignment-checked" size="36rpx" color="var(--tt-brand)" />
+        </view>
+        <view class="flex-1">
+          <view class="menu-label">检查申诉记录</view>
+          <view class="menu-sub">对本班检查结果有异议时可申诉</view>
+        </view>
+        <t-icon name="chevron-right" size="32rpx" color="var(--tt-text-3)" />
+      </view>
+    </view>
+  </block>
+
   <!-- ===== 运动与健康（教师不参与运动记录，整块隐藏） =====
        放了 assets/profile/entry-*.png → 自动替换为插画图标；未放置 → 回退到 t-icon（与首页同款素材位） -->
   <block wx:if="{{!isTeacher}}">
@@ -203,14 +284,19 @@
       <text class="menu-label">授权管理</text>
       <t-icon name="chevron-right" size="32rpx" color="var(--tt-text-3)" />
     </view>
-    <view class="tt-row menu-row" bind:tap="goPrivacy">
+    <!-- 隐私设置 / 我的申诉：只对学生显示（用户 2026-10-22「教师账户的我的页面中不应该有
+         隐私设置、我的申诉这两个」）。
+         为什么教师不需要：隐私设置调的是排行榜展示项（隐藏姓名/班级/退出排名），
+         而教师账号不产生运动记录、不参与排名（AGENTS.md「教师账号规则」）；申诉是运动/封禁相关
+         的自助流程，教师端没有这条链路。留着只会点进去看到一片空数据。 -->
+    <view class="tt-row menu-row" wx:if="{{roleReady && !isTeacher}}" bind:tap="goPrivacy">
       <view class="menu-icon">
         <t-icon name="secured" size="36rpx" color="var(--tt-brand)" />
       </view>
       <text class="menu-label">隐私设置</text>
       <t-icon name="chevron-right" size="32rpx" color="var(--tt-text-3)" />
     </view>
-    <view class="tt-row menu-row" bind:tap="go" data-url="/pages/appeal/list">
+    <view class="tt-row menu-row" wx:if="{{roleReady && !isTeacher}}" bind:tap="go" data-url="/pages/appeal/list">
       <view class="menu-icon">
         <t-icon name="error-circle" size="36rpx" color="var(--tt-brand)" />
       </view>
@@ -246,4 +332,42 @@
   </view>
 
   <view class="tt-footer">唐唐快跑 v2.0.0</view>
+
+  <!-- ===== 我的人物码（用户 2026-10-22）：所有用户都有码，含教师 =====
+       学生/教师出示，学生会干部扫码后把本人加进自己的部门。凭证一次性、10 分钟有效。 -->
+  <view class="pf-qr-mask" wx:if="{{qrVisible}}" bind:tap="closeMyQr"></view>
+  <view class="pf-qr-sheet {{qrVisible ? 'open' : ''}}">
+    <view class="pf-qr-grab"></view>
+    <view class="pf-qr-head">
+      <text class="pf-qr-title">我的二维码</text>
+      <view class="pf-qr-close" bind:tap="closeMyQr">
+        <t-icon name="close" size="30rpx" color="var(--tt-text-2)" />
+      </view>
+    </view>
+
+    <view class="pf-qr-body">
+      <view class="pf-qr-name">{{user.realName || user.nickname || '未命名'}}</view>
+      <view class="pf-qr-meta">
+        <text>{{roleText}}</text>
+        <text wx:if="{{enroll.className || user.className}}"> · {{enroll.className || user.className}}</text>
+      </view>
+
+      <!-- 真正的二维码图（后端用 qrcode 生成 dataURL，前端直接显示）。
+           回退：万一图没生成出来，仍显示凭证串，不至于整页空着。 -->
+      <view class="pf-qr-code has-img" wx:if="{{qr.qrImage}}">
+        <image class="pf-qr-img" src="{{qr.qrImage}}" mode="aspectFit" show-menu-by-longpress="{{true}}" />
+      </view>
+      <view class="pf-qr-code" wx:elif="{{qr.token}}">
+        <text class="pf-qr-code-t">{{qr.token}}</text>
+      </view>
+      <view class="pf-qr-tip-line" wx:elif="{{qrLoading}}">生成中…</view>
+      <view class="pf-qr-tip-line is-err" wx:else>{{qrError || '生成失败，请重试'}}</view>
+
+      <view class="pf-qr-tip">有效期至 {{qr.expiresText || '—'}}，使用一次即失效</view>
+    </view>
+
+    <view class="pf-qr-foot">
+      <t-button theme="primary" block loading="{{qrLoading}}" bind:tap="refreshMyQr">重新生成</t-button>
+    </view>
+  </view>
 </view>

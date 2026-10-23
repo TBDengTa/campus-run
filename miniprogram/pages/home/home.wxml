@@ -1,3 +1,7 @@
+<!-- ===== 分类条目浮层（共用模板）===== -->
+<import src="/templates/nav-sheet.wxml" />
+<template is="nav-sheet" data="{{navSheet: navSheet, navSheetVisible: navSheetVisible}}" />
+
 <view class="page home-page">
   <!-- ===== 顶部插画头 =====
        放了 assets/home/hero.jpg（或旧名 hero.png）→ 按图片本身比例铺满宽度显示，不再叠加文字；
@@ -39,9 +43,9 @@
 
   <!-- ===== 教师问候（替代原来的「教师账号不参与运动排名」说明块） ===== -->
   <view class="hi-card" wx:if="{{isTeacher}}">
-    <view class="hi-main">{{greeting}}，{{greetName}}</view>
+    <view class="hi-main">{{greetText}}，{{greetName}}</view>
     <view class="hi-sub">您辛苦了，感谢您为校园运动护航</view>
-    <view class="hi-date">{{todayText}}</view>
+    <view class="hi-date">{{dateText}}</view>
   </view>
 
   <!-- ===== 广告位：右上角「广告」标识；aspectFit + 按图片比例算高度，保证整张图完整可见 ===== -->
@@ -61,7 +65,13 @@
     <view class="ad-flag">广告</view>
   </view>
 
-  <!-- ===== 我的班级（班主任 / 班委才渲染；组件自己判身份，无身份时整块不出现） ===== -->
+  <!-- ===== 我的班级（班主任 / 班委才渲染；组件自己判身份，无身份时整块不出现） =====
+       板块顺序（产品要求）：公告条 → 广告位 → 学生会块 → 班超块 → 我的班级 → 今日目标卡
+       → 快捷入口（学生端四项）→ 「数据概况 + 平均步数排行 + 快捷操作」管理卡。
+       管理卡内部顺序（用户要求）：数据概况 → 平均步数排行 → **快捷操作**（在排行下面）。
+       快捷操作是 8 个分类按钮，点分类弹浮层选条目（与「管理中枢」的平铺交互不同，但同一份数据）。 -->
+  <banchao-block mode="union" refresh-at="{{bcRefreshAt}}" />
+  <banchao-block mode="banchao" refresh-at="{{bcRefreshAt}}" />
   <class-board title="我的班级" refresh-at="{{classRefreshAt}}" />
 
   <!-- ===== 今日目标（学生） ===== -->
@@ -165,16 +175,24 @@
     </block>
   </view>
 
-  <!-- ===== 管理面板：数据概况 + 平均步数前三 + 快捷操作（仅管理员/有权限的教师） ===== -->
-  <view class="tt-card mgr-panel" wx:if="{{isManager}}">
-    <view class="mgr-head">
+  <!-- ===== 管理卡：数据概况 + 平均步数排行 + 快捷操作（同一张卡）=====
+       产品口径（用户明确要求）：
+         · 快捷操作与数据概况**合并成一块**，快捷操作放在**平均步数排行下面**；
+         · 快捷操作是 8 个分类按钮（我的班级 / 学生会 / 用户与权限 / 考核与目标 / 申诉审核 /
+           内容与通知 / 广告运营 / 系统设置），**点分类不直接跳页**，弹浮层列条目，再点条目进页面；
+         · 「数据概况」区仍只给 isManager；身份类分类（我的班级 / 学生会）对班主任 / 班委也可见，
+           而他们没有管理权限 —— 所以整张卡用 showHomeEntries、数据与排行用 isManager，两者不可混用。
+       分类与条目来自 utils/nav-groups.js，与管理中枢同一份数据。 ===== -->
+  <view class="tt-card mgr-panel" wx:if="{{isManager || showHomeEntries}}">
+    <!-- ===== 数据概况（仅 isManager）===== -->
+    <view class="mgr-head" wx:if="{{isManager}}">
       <view class="mgr-title">
         <t-icon name="dashboard" size="34rpx" color="var(--tt-brand)" />
         <text>数据概况</text>
       </view>
     </view>
 
-    <view class="mgr-stats" wx:if="{{overview}}">
+    <view class="mgr-stats" wx:if="{{isManager && overview}}">
       <view class="mgr-stat">
         <view class="num-font mgr-num">{{overview.totalUsers}}</view>
         <view class="tt-muted mgr-label">总用户数</view>
@@ -192,10 +210,16 @@
         <view class="tt-muted mgr-label">今日记录</view>
       </view>
     </view>
-    <t-loading wx:elif="{{loadingOverview}}" theme="circular" size="36rpx" text="加载概览…" class="mgr-loading" />
+    <t-loading
+      wx:elif="{{isManager && loadingOverview}}"
+      theme="circular"
+      size="36rpx"
+      text="加载概览…"
+      class="mgr-loading"
+    />
 
-    <!-- 平均步数排行（本周，日均）：个人 / 班级 各前三 -->
-    <block wx:if="{{top3}}">
+    <!-- 平均步数排行（本周，日均）：个人 / 班级 各前三（仅管理员） -->
+    <block wx:if="{{isManager && top3}}">
       <view class="card-split"></view>
       <view class="mgr-head mgr-head-sub">
         <view class="mgr-title">
@@ -233,26 +257,36 @@
       </view>
     </block>
 
-    <view class="mgr-head mgr-head-sub" wx:if="{{mgrEntries.length}}">
-      <view class="mgr-title">
-        <t-icon name="app" size="32rpx" color="var(--tt-brand)" />
-        <text>快捷操作</text>
-      </view>
-    </view>
-    <view class="tt-grid" wx:if="{{mgrEntries.length}}">
-      <view
-        class="tt-grid-item"
-        wx:for="{{mgrEntries}}"
-        wx:key="key"
-        bind:tap="goAdminPage"
-        data-url="{{item.url}}"
-      >
-        <view class="tt-chip-icon" style="background: {{item.bg}}">
-          <t-icon name="{{item.icon}}" size="40rpx" color="{{item.color}}" />
+    <!-- ===== 快捷操作：8 个**分类**按钮 =====
+         位置：用户要求放在「平均步数排行」**下面**（同一张卡的最后一段）。
+         点击规则（用户明确要求）：
+           · 分类下**还有多条可用入口** → 弹浮层列条目，点条目进页面；
+           · 分类下**只剩 1 条可用**（如「申诉审核」，或某角色下权限只剩一项的分类）→ **直接进页面**，不弹浮层。
+         宫格按钮只显示**分类名**，不直接带页面；分类与条目来自 utils/nav-groups.js，
+         与管理中枢同一份数据（管理中枢是「分类 + 按钮」平铺直跳，交互不同但数据同源）。 ===== -->
+    <block wx:if="{{showHomeEntries}}">
+      <view class="card-split"></view>
+      <view class="mgr-head mgr-head-card">
+        <view class="mgr-title">
+          <t-icon name="app" size="32rpx" color="var(--tt-brand)" />
+          <text>快捷操作</text>
         </view>
-        <text class="tt-grid-text">{{item.label}}</text>
       </view>
-    </view>
+      <view class="tt-grid">
+        <view
+          class="tt-grid-item"
+          wx:for="{{mgrGroups}}"
+          wx:key="key"
+          data-key="{{item.key}}"
+          bind:tap="onNavCellTap"
+        >
+          <view class="tt-chip-icon" style="background: {{item.tint.bg}}">
+            <t-icon name="{{navGroupIcon[item.key] || 'app'}}" size="40rpx" color="{{item.tint.color}}" />
+          </view>
+          <text class="tt-grid-text">{{item.title}}</text>
+        </view>
+      </view>
+    </block>
   </view>
 
   <!-- ===== 快捷入口（学生端：放 assets/home/entry-*.png 后自动替换为插画图标） ===== -->

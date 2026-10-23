@@ -1,0 +1,162 @@
+<view class="page tt-page um-page {{batchMode ? 'um-has-batch' : ''}}">
+  <!-- ===== 吸顶筛选（院校 / 部门 / 学年 / 搜索）===== -->
+  <view class="um-sticky">
+    <view class="um-filter-row">
+      <picker mode="selector" range="{{campusOptions}}" range-key="name" value="{{campusIndex}}" bindchange="onCampusChange">
+        <view class="um-select {{campus ? 'on' : ''}}">
+          <text>{{campusOptions[campusIndex].name}}</text>
+          <t-icon name="chevron-down" size="18rpx" color="var(--tt-text-3)" />
+        </view>
+      </picker>
+      <picker mode="selector" range="{{deptFilterOptions}}" range-key="name" value="{{deptFilterIndex}}" bindchange="onDeptFilterChange">
+        <view class="um-select {{deptKeyFilter ? 'on' : ''}}">
+          <text>{{deptFilterOptions[deptFilterIndex].name}}</text>
+          <t-icon name="chevron-down" size="18rpx" color="var(--tt-text-3)" />
+        </view>
+      </picker>
+      <picker mode="selector" range="{{termOptions}}" range-key="termName" value="{{termIndex}}" bindchange="onTermChange">
+        <view class="um-select {{termIdFilter ? 'on' : ''}}">
+          <text>{{termOptions[termIndex].termName}}</text>
+          <t-icon name="chevron-down" size="18rpx" color="var(--tt-text-3)" />
+        </view>
+      </picker>
+    </view>
+
+    <view class="um-search-row">
+      <view class="um-search-box">
+        <t-icon name="search" size="26rpx" color="var(--tt-text-3)" />
+        <input
+          class="um-input"
+          placeholder="姓名 / 学号 / 班级"
+          value="{{keyword}}"
+          bindinput="onKeyword"
+          bindconfirm="onSearch"
+          confirm-type="search"
+        />
+      </view>
+      <view class="um-add-btn" wx:if="{{canManage}}" bind:tap="openAdd">+ 添加</view>
+      <!-- 批量管理入口（用户 2026-10-21「增加批量管理操作(改职务、调部门、离任)」） -->
+      <view class="um-batch-btn {{batchMode ? 'on' : ''}}" wx:if="{{canManage}}" bind:tap="toggleBatchMode">
+        {{batchMode ? '退出' : '批量'}}
+      </view>
+    </view>
+    <!-- 提示条只在**真的筛过**时出现：campus='' 是「全部成员」（不限），不算筛选条件。 -->
+    <view class="um-filter-hint" wx:if="{{campus || deptKeyFilter || termIdFilter}}" bind:tap="onResetFilters">
+      共 {{total}} 人 · 点此清除筛选
+    </view>
+  </view>
+
+  <!-- ===== 紧凑列表（左滑：改职务 / 调部门 / 离任）===== -->
+  <view class="tt-card um-list">
+    <t-swipe-cell wx:for="{{list}}" wx:key="rowKey">
+      <view class="um-item {{batchMode ? 'um-item-batch' : ''}}" data-id="{{item.id}}" bind:tap="onItemTap">
+        <!-- 批量模式下左侧出勾选圈；点整行即可切换（不做成只有小圈能点，手指瞄准太小）。
+             ⚠️ 勾选态读预计算的 item.checked：WXML 不能调 indexOf（只有 WXS 能调），
+             写成 checkedIds.indexOf(item.id) >= 0 恒为 false —— 这个坑本仓库已踩过两次。 -->
+        <view class="um-check {{item.checked ? 'on' : ''}}" wx:if="{{batchMode}}">
+          <t-icon wx:if="{{item.checked}}" name="check" size="26rpx" color="#ffffff" />
+        </view>
+        <text class="um-avatar">{{item.initial}}</text>
+        <view class="um-item-main">
+          <view class="um-item-line">
+            <text class="um-name">{{item.realName || '—'}}</text>
+            <text class="um-role um-role-{{item.roleClass}}">{{item.roleText}}</text>
+            <text class="um-tag">{{item.orgText}}</text>
+            <text class="um-tag">{{item.deptText}}</text>
+          </view>
+          <text class="um-sub">{{item.subText || '—'}}<text wx:if="{{item.termText}}"> · {{item.termText}}</text></text>
+          <text class="um-warn" wx:if="{{item.campusWarning}}">{{item.campusWarning}}</text>
+        </view>
+        <!-- 滑不动时的兜底入口 -->
+        <view class="um-more-btn" wx:if="{{canManage}}" data-id="{{item.id}}" catch:tap="onFallbackAction">
+          <t-icon name="ellipsis" size="28rpx" color="var(--tt-text-3)" />
+        </view>
+      </view>
+
+      <view slot="right" class="um-swipe-actions">
+        <view class="um-swipe-btn role" data-action="role" data-id="{{item.id}}" catch:tap="onSwipeAction">改职务</view>
+        <view class="um-swipe-btn dept" data-action="dept" data-id="{{item.id}}" catch:tap="onSwipeAction">调部门</view>
+        <view class="um-swipe-btn leave" data-action="leave" data-id="{{item.id}}" catch:tap="onSwipeAction">离任</view>
+      </view>
+    </t-swipe-cell>
+
+    <view class="um-empty" wx:if="{{!loading && !list.length}}">当前筛选下没有成员</view>
+    <view class="um-more" wx:elif="{{loading}}">加载中…</view>
+    <view class="um-more" wx:elif="{{!hasMore && list.length}}">没有更多了</view>
+  </view>
+
+  <view class="tt-footer">
+    左滑成员可改职务 / 调部门 / 离任；学年按 9 月自动切换
+    <text class="um-config-link" wx:if="{{canManage}}" bind:tap="goConfig">部门与模块配置 ›</text>
+  </view>
+
+  <!-- ===== 批量操作栏（底部固定，仅在批量模式下出现）===== -->
+  <view class="um-batch-bar" wx:if="{{batchMode}}">
+    <view class="um-batch-info">
+      <text class="um-batch-n num-font">{{checkedCount}}</text>
+      <text class="um-batch-t">人已选</text>
+      <text class="um-batch-all" bind:tap="toggleCheckAll">全选本页</text>
+    </view>
+    <view class="um-batch-acts">
+      <view class="um-batch-act" bind:tap="batchSetRole">改职务</view>
+      <view class="um-batch-act" bind:tap="batchSetDept">调部门</view>
+      <view class="um-batch-act leave" bind:tap="batchLeave">离任</view>
+    </view>
+  </view>
+
+  <!-- ===== 添加成员抽屉 ===== -->
+  <view class="um-mask" wx:if="{{showAdd}}" bind:tap="closeAdd"></view>
+  <view class="um-sheet {{showAdd ? 'open' : ''}}">
+    <view class="um-sheet-head">
+      <text class="um-sheet-title">添加学生会成员</text>
+      <text class="um-sheet-close" bind:tap="closeAdd">关闭</text>
+    </view>
+
+    <scroll-view scroll-y class="um-sheet-body">
+      <view class="um-tip">搜索学生库选择成员（可多选批量添加），不用手输学号或姓名</view>
+
+      <person-picker
+        api="/api/admin/union/members/candidates"
+        extra-query="{{pickerQuery}}"
+        limit="{{100}}"
+        selected="{{picked}}"
+        placeholder="输入姓名 / 学号 / 班级搜索"
+        bind:change="onPicked"
+      />
+
+      <view class="um-form-grid">
+        <view class="um-field">
+          <text class="um-field-l">院校</text>
+          <picker mode="selector" range="{{addCampusOptions}}" range-key="name" value="{{addCampusIndex}}" bindchange="onAddCampus">
+            <view class="um-picker">{{addCampusOptions[addCampusIndex].name}}</view>
+          </picker>
+        </view>
+        <view class="um-field">
+          <text class="um-field-l">部门</text>
+          <picker mode="selector" range="{{addDeptOptions}}" range-key="name" value="{{addDeptIndex}}" bindchange="onAddDept">
+            <view class="um-picker">{{addDeptOptions[addDeptIndex].name}}</view>
+          </picker>
+        </view>
+        <view class="um-field">
+          <text class="um-field-l">职务</text>
+          <picker mode="selector" range="{{roleOptions}}" range-key="label" value="{{roleIndex}}" bindchange="onAddRole">
+            <view class="um-picker">{{roleOptions[roleIndex].label}}</view>
+          </picker>
+        </view>
+        <view class="um-field">
+          <text class="um-field-l">学年</text>
+          <picker mode="selector" range="{{addTermOptions}}" range-key="termName" value="{{addTermIndex}}" bindchange="onAddTerm">
+            <view class="um-picker">{{addTermOptions[addTermIndex].termName || '当前学年'}}</view>
+          </picker>
+        </view>
+      </view>
+    </scroll-view>
+
+    <view class="um-sheet-actions">
+      <view class="um-btn-ghost" bind:tap="closeAdd">取消</view>
+      <view class="um-btn {{saving ? 'disabled' : ''}}" wx:if="{{canManage}}" bind:tap="submitAdd">
+        {{saving ? '保存中…' : (picked.length > 1 ? '批量添加 ' + picked.length + ' 人' : '添加')}}
+      </view>
+    </view>
+  </view>
+</view>

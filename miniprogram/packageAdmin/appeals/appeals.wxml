@@ -35,7 +35,8 @@
         <text class="appeal-reply-text">{{item.reply}}</text>
       </view>
 
-      <view class="appeal-actions" wx:if="{{tab === 'pending'}}">
+      <!-- 审核 = 写操作（appeal.review）：只读账号（appeal.view）只看得到申诉内容与当前状态 -->
+      <view class="appeal-actions" wx:if="{{tab === 'pending' && canReview}}">
         <t-button theme="primary" size="small" bind:tap="review" data-id="{{item._id}}" data-approve="true">
           通过并解除「{{item.typeText}}」
         </t-button>

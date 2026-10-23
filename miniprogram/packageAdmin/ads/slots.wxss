@@ -1,9 +1,5 @@
 /* ===== 广告位管理 · 白橙 ===== */
 .slot-page {
-  --td-input-vertical-padding: 0;
-  --td-input-label-min-width: 150rpx;
-  --td-input-label-max-width: 230rpx;
-  --td-input-label-text-color: var(--tt-text-2);
   padding-bottom: calc(32rpx + env(safe-area-inset-bottom));
 }
 
@@ -27,62 +23,35 @@
   color: var(--tt-text-3);
 }
 
-/* 表单 */
-.slot-form-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+/* 底部抽屉表单 */
+/* 滚动区必须给「确定高度」，否则 scroll-view 滚不动（底部按钮被顶出屏幕点不到）；
+   写法与 docs/ui-design.md 一致：flex:none + max-height:46vh（内容短自适应、长封顶可滚） */
+.slot-sheet .tt-sheet-body {
+  flex: none;
+  min-height: 0;
+  max-height: 46vh;
 }
 
-.slot-form-title {
-  font-size: 30rpx;
-  font-weight: 600;
-  color: var(--tt-text-1);
+.slot-sheet-gap {
+  margin-bottom: 14rpx;
 }
 
-.slot-close {
-  width: 56rpx;
-  height: 56rpx;
-  border-radius: 50%;
-  background: var(--td-bg-color-component);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.slot-sheet-pick {
+  gap: 12rpx;
 }
 
-.slot-close:active {
-  opacity: 0.7;
+.slot-inline-label {
+  width: 130rpx;
+  flex-shrink: 0;
+  font-size: 27rpx;
+  color: var(--tt-text-2);
 }
 
-.slot-field {
-  /* t-input 的标签与内容统一到 28rpx，和页面内其它表单行一致 */
-  --td-font-size-m: 28rpx;
-  padding: 26rpx 0;
-  border-bottom: 2rpx solid var(--tt-line);
-}
-
-.slot-field:last-child {
-  border-bottom: none;
-}
-
-.slot-field-row {
+.slot-sheet-row {
   display: flex;
   align-items: center;
   gap: 20rpx;
-}
-
-.slot-field-pick {
-  display: flex;
-  align-items: center;
-}
-
-.slot-pick-label {
-  min-width: 150rpx;
-  padding-right: 32rpx;
-}
-
-.slot-pick-body {
-  flex: 1;
+  padding: 22rpx 0;
 }
 
 .slot-field-label {
@@ -96,6 +65,10 @@
   color: var(--tt-text-3);
 }
 
+.slot-pick-body {
+  flex: 1;
+}
+
 .slot-picker {
   display: flex;
   align-items: center;
@@ -106,12 +79,6 @@
 
 .slot-picker-text {
   flex: 1;
-}
-
-.slot-form-actions {
-  display: flex;
-  gap: 16rpx;
-  margin-top: 32rpx;
 }
 
 /* 列表 */
@@ -153,6 +120,7 @@
 .slot-acts {
   display: flex;
   flex-direction: column;
+  align-items: flex-end;
   gap: 10rpx;
   flex-shrink: 0;
 }
@@ -173,6 +141,11 @@
 
 .slot-act:active {
   opacity: 0.7;
+}
+
+.slot-locked {
+  font-size: 22rpx;
+  color: var(--tt-text-3);
 }
 
 .slot-loading {

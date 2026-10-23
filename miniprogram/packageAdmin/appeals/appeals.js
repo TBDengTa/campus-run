@@ -1,4 +1,7 @@
 const auth = require('../../utils/request');
+// 审核是写操作（appeal.review）：只有 appeal.view 的账号能看列表，但看不到「通过 / 驳回」。
+// 用户 2026-10-22「申诉审核：没有权限就不应该显示操作」。
+const adminPerm = require('../../utils/admin-perm');
 
 const STATUS = {
   pending: { text: '待审核', theme: 'warning' },
@@ -11,6 +14,7 @@ Page({
     tab: 'pending',
     list: [],
     loading: false,
+    canReview: false,
   },
 
   onShow() {
@@ -32,6 +36,7 @@ Page({
     this.setData({ loading: true });
     try {
       await getApp().ensureLogin();
+      await adminPerm.applyManage(this, 'appeal.review', { extra: ['canReview'] });
       const res = await auth.get('/api/admin/appeals', { status: this.data.tab, limit: 50 });
       this.setData({
         list: res.list.map((a) => {

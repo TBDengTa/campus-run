@@ -77,6 +77,25 @@ function marqueeFor(text) {
   return { marquee: true, duration: Math.min(40, Math.max(8, Math.round(len * 0.2))) };
 }
 
+// 管理端导航分类：与管理中枢**共用同一份数据**（utils/nav-groups.js）。
+// 以前这里与 hub.js 各写一套 HOME_ENTRIES / GROUPS + entryVisible，权限 key 与分组名都会漂移；
+// 用户要求「管理中枢也一并跟这样重新分类显示」，所以两处一律从共享模块取。
+const { homeGroups, navCtx } = require('../../utils/nav-groups');
+// 分类 → 条目 → 页面 的两级交互（与管理中枢共用同一套 Behavior，见 behaviors/nav-sheet.js）
+const navSheetBehavior = require('../../behaviors/nav-sheet');
+
+// 8 个分类各自的图标（分类按钮本身要一个图标，条目图标在浮层里显示）
+const NAV_GROUP_ICON = {
+  class: 'usergroup',
+  union: 'usergroup',
+  user: 'secured',
+  assessment: 'task-checked',
+  appeal: 'assignment-checked',
+  content: 'notification',
+  ads: 'play-circle',
+  system: 'setting',
+};
+
 const WEEK_LABELS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 
 function addDaysToKey(key, days) {
@@ -101,6 +120,9 @@ function toKmText(meters, fixed = 2) {
 }
 
 Page({
+  // 分类 → 条目 → 页面 的两级交互由 Behavior 提供（navSheet / navSheetVisible / onNavCellTap / onNavEntryTap）
+  behaviors: [navSheetBehavior],
+
   data: {
     loading: true,
     dateText: '',
@@ -137,6 +159,8 @@ Page({
     points: null,
     // 「我的班级」卡的刷新触发器（onShow 时更新，组件 observer 收到即重新拉取）
     classRefreshAt: 0,
+    // 班超块 / 学生会块的刷新触发器（同上的机制，两个块共用一个触发器）
+    bcRefreshAt: 0,
     pointsToday: '',
     pointsWeek: '',
     pointsTotal: '',
@@ -148,7 +172,13 @@ Page({
     roleText: '学生',
     isTeacher: false,
     isManager: false,
-    mgrEntries: [],
+    // 快捷操作：8 个分类（我的班级 / 学生会 / 用户与权限 / 考核与目标 / 申诉审核 / 内容与通知 /
+    // 广告运营 / 系统设置），来自 utils/nav-groups.js 的 visibleGroups()，空分类整组不出现
+    mgrGroups: [],
+    // 分类按钮的图标（分类不是页面，得自己配一个图标给宫格用）
+    navGroupIcon: NAV_GROUP_ICON,
+    // 「数据概况 + 快捷操作」卡的显隐（与 isManager 解耦：班主任 / 班委无管理权限也要看到「我的班级」组）
+    showHomeEntries: false,
     overview: null,
     top3: null, // 平均步数前三（本周日均）：个人 / 班级
     greetName: '', // 教师问候称呼（如「王老师」）
@@ -174,8 +204,8 @@ Page({
     // 未登录 / 已退出 / 游客：统一跳登录页，不执行任何业务逻辑
     if (!getApp().requireLogin()) return;
     this.syncTabBar();
-    // 让「我的班级」卡（班主任/班委）跟着首页一起刷新
-    this.setData({ classRefreshAt: Date.now() });
+    // 让「我的班级」卡（班主任/班委）与班超块 / 学生会块跟着首页一起刷新
+    this.setData({ classRefreshAt: Date.now(), bcRefreshAt: Date.now() });
     this.refresh();
   },
 
@@ -224,18 +254,19 @@ Page({
       }
       const isManager = !!user.isManager;
       const perms = user.effectivePermissions || [];
-      // 按权限过滤的管理入口（WXML 无法调用方法，这里预计算）
-      const allEntries = [
-        { key: 'users', perm: 'user.view', icon: 'usergroup', label: '用户管理', url: '/packageAdmin/users/users', bg: 'var(--td-success-color-1)', color: 'var(--td-success-color-5)' },
-        { key: 'appeals', perm: 'appeal.view', icon: 'assignment-checked', label: '申诉审核', url: '/packageAdmin/appeals/appeals', bg: 'var(--td-warning-color-1)', color: 'var(--td-warning-color-5)' },
-        { key: 'ads', perm: 'ad.view', icon: 'play-circle', label: '广告管理', url: '/packageAdmin/ads/contents', bg: 'var(--td-error-color-1)', color: 'var(--td-error-color-6)' },
-        { key: 'content', perm: 'content.view', icon: 'layers', label: '内容管理', url: '/packageAdmin/content/index', bg: 'var(--td-gray-color-2)', color: 'var(--td-gray-color-8)' },
-        { key: 'assessment', perm: 'assessment.view', icon: 'task-checked', label: '运动考核', url: '/packageAdmin/assessment/index', bg: 'var(--td-warning-color-1)', color: 'var(--td-warning-color-5)' },
-        { key: 'files', perm: 'file.view', icon: 'folder-open', label: '文件管理', url: '/packageAdmin/files/files', bg: 'var(--td-success-color-1)', color: 'var(--td-success-color-5)' },
-        { key: 'config', perm: 'config.view', icon: 'setting', label: '系统配置', url: '/packageAdmin/config/config', bg: 'var(--td-brand-color-light)', color: 'var(--td-brand-color)' },
-      ];
-      const mgrEntries = allEntries.filter((e) => perms.includes('*') || perms.includes(e.perm));
-      // 注：这里不再追加「管理中枢」宫格（产品要求）—— 底部导航的「管理」项（自定义 tabBar，按权限渲染）
+      // 按权限 + 身份过滤的管理入口（WXML 无法调用方法，这里预计算）
+      // 分类与显隐判定统一走 utils/nav-groups.js —— 与管理中枢**同一份数据**，
+      // 用户要求「管理中枢也一并跟这样重新分类显示」，靠共享模块保证两处永不漂移。
+      // ctx 由 navCtx() 统一派生（含 canUnionScanJoin：只有主席团/部长/副部长/总管能「扫码加人」）。
+      const ctx = navCtx(user);
+      // 8 个分类（我的班级 / 学生会 / 用户与权限 / 考核与目标 / 申诉审核 / 内容与通知 / 广告运营 / 系统设置）。
+      // 首页用 homeGroups()：**纯学生会成员**看不到「学生会」分类（用户要求 —— 已有独立学生会卡片
+      // 与底部「学生会」tab，不必再列一排管理导航）；持 union.* 权限的管理员照旧可见（那是他们的入口）。
+      const mgrGroups = homeGroups(ctx);
+      // 「快捷操作」卡与 isManager 解耦：班主任 / 班委没有管理权限，但「我的班级」组正是给他们看的；
+      // 身份类条目的可见性由 nav-groups 的 only 条件保证，后台入口不会漏给无权限账号。
+      const showHomeEntries = mgrGroups.length > 0;
+      // 注：管理面板里不追加「管理中枢」宫格（产品要求）—— 底部导航的「管理」项（自定义 tabBar，按权限渲染）
       // 与学生管理员/教师管理员都能用，管理面板里的快捷操作只保留具体的管理子模块入口。
       const isTeacher = user.role === 'teacher';
       // 教师问候称呼：名字里已含「老师」就不再重复拼接
@@ -243,7 +274,8 @@ Page({
       const greetName = !rawName ? '老师' : /老师/.test(rawName) ? rawName : `${rawName}老师`;
       this.setData({
         isManager,
-        mgrEntries,
+        mgrGroups,
+        showHomeEntries,
         canViewAds: perms.includes('*') || perms.includes('ad.view'),
         role: user.role || 'student',
         roleText: isTeacher ? '教师' : '学生',

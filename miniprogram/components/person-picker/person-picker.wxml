@@ -1,0 +1,76 @@
+<!-- 通用选人组件：搜索 → 点选 → 已选列表（外部只拿 selected） -->
+<view class="pp-root">
+  <view class="pp-search">
+    <t-icon name="search" size="32rpx" color="var(--tt-text-3)" />
+    <input
+      class="pp-input"
+      value="{{keyword}}"
+      placeholder="{{placeholder}}"
+      confirm-type="search"
+      bindinput="onInput"
+      bindconfirm="onConfirm"
+    />
+    <view class="pp-search-clear" wx:if="{{keyword}}" bind:tap="clearKeyword">清除</view>
+    <text class="pp-limit" wx:if="{{!keyword}}">{{limitText}}</text>
+  </view>
+
+  <!-- 已选：姓名 / 学号一行，原因单独一行（原来四个人挤在一行，按钮又小又难看清） -->
+  <view class="pp-picked" wx:if="{{selected.length}}">
+    <view class="pp-picked-head">
+      <text class="pp-picked-title">已选 {{selected.length}} 人</text>
+      <view class="pp-clear" bind:tap="clearAll">清空</view>
+    </view>
+    <view class="pp-picked-list">
+      <view class="pp-picked-item" wx:for="{{selected}}" wx:key="userId">
+        <view class="pp-picked-top">
+          <view class="pp-picked-main">
+            <text class="pp-picked-name">{{item.name}}</text>
+            <text class="pp-picked-sub">{{item.studentId || '—'}}{{item.roomNo ? ' · ' + item.roomNo : ''}}</text>
+          </view>
+          <view class="pp-remove" data-id="{{item.userId}}" bind:tap="remove">移除</view>
+        </view>
+        <view class="pp-reasons" wx:if="{{withReason}}">
+          <text class="pp-reason-label">原因</text>
+          <view
+            class="pp-reason {{item.reason === option ? 'active' : ''}}"
+            wx:for="{{reasonOptions}}"
+            wx:for-item="option"
+            wx:key="*this"
+            data-id="{{item.userId}}"
+            data-reason="{{option}}"
+            bind:tap="onReason"
+          >
+            {{option}}
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 搜索结果 -->
+  <view class="pp-results">
+    <view
+      class="pp-row {{item.picked ? 'picked' : ''}}"
+      wx:for="{{list}}"
+      wx:key="userId"
+      data-id="{{item.userId}}"
+      bind:tap="toggle"
+    >
+      <view class="pp-row-main">
+        <view class="pp-row-title">
+          <text class="pp-name">{{item.name}}</text>
+          <text class="pp-tag" wx:if="{{item.unionTags.length}}">已是{{item.unionTags}}</text>
+        </view>
+        <text class="pp-sub">{{item.studentId || '—'}}{{item.subText ? ' · ' + item.subText : ''}}{{item.roomNo ? ' · ' + item.roomNo : ''}}</text>
+      </view>
+      <view class="pp-check {{item.picked ? 'on' : ''}}">
+        <t-icon wx:if="{{item.picked}}" name="check" size="28rpx" color="#ffffff" />
+      </view>
+    </view>
+
+    <view class="pp-hint" wx:if="{{loading}}">搜索中…</view>
+    <view class="pp-hint" wx:elif="{{!list.length}}">{{keyword ? '没有匹配的学生' : '输入姓名或学号开始搜索'}}</view>
+    <view class="pp-hint" wx:elif="{{loadingMore}}">加载中…</view>
+    <view class="pp-hint" wx:elif="{{hasMore}}" bind:tap="onLoadMore">加载更多</view>
+  </view>
+</view>

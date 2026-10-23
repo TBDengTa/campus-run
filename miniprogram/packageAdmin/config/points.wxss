@@ -1,55 +1,222 @@
 @import "config.wxss";
 
-/* 跑分设置页：只补「效果预览」「旧配置提示」与长标签的样式（其余复用 config.wxss 公共类） */
-.cfg-preview-value {
+/* 跑分设置：紧凑表单（双列 / 三列网格 + 一行提示），不再「一行一输入框」拉长页面 */
+.pts-page {
+  padding-bottom: 28rpx;
+}
+
+.pts-page .tt-section {
+  margin: 16rpx var(--tt-gap) 8rpx;
+  font-size: 26rpx;
+}
+
+.pts-page .tt-section::before {
+  width: 6rpx;
+  height: 22rpx;
+}
+
+.pts-page .tt-section-extra {
+  font-size: 19rpx;
+}
+
+.pts-card {
+  padding: 4rpx 16rpx;
+  margin-bottom: 8rpx;
+}
+
+/* ===== 启用开关 ===== */
+.pts-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  padding: 16rpx 0;
+}
+
+.pts-switch-main {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4rpx;
+}
+
+.pts-switch-t {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.pts-switch-s {
+  font-size: 19rpx;
+  line-height: 1.45;
+  color: var(--tt-text-3);
+}
+
+/* ===== 网格 ===== */
+.pts-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+
+.pts-cell {
+  width: 48.5%;
+  box-sizing: border-box;
+  padding: 14rpx 0;
+  border-bottom: 1rpx solid var(--tt-line);
+}
+
+/* 双列时最后两格去掉下边框，避免与卡片底边重叠 */
+.pts-grid .pts-cell:nth-last-child(-n + 2) {
+  border-bottom: none;
+}
+
+.pts-grid-3 .pts-cell {
+  width: 32%;
+}
+
+/* 三列只有一行：全部去掉下边框 */
+.pts-grid-3 .pts-cell {
+  border-bottom: none;
+}
+
+.pts-l {
+  display: block;
+  font-size: 21rpx;
+  color: var(--tt-text-2);
+}
+
+.pts-field {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  margin-top: 7rpx;
+}
+
+.pts-input {
+  flex: 1;
+  min-width: 0;
+  height: 62rpx;
+  padding: 0 12rpx;
+  border-radius: 12rpx;
+  background: var(--td-bg-color-component);
+  font-size: 26rpx;
+  font-weight: 600;
   text-align: right;
-  font-size: 28rpx;
+  color: var(--tt-text-1);
+  box-sizing: border-box;
+}
+
+.pts-unit {
+  flex-shrink: 0;
+  width: 30rpx;
+  font-size: 19rpx;
+  color: var(--tt-text-3);
+}
+
+.pts-cell-hint {
+  display: block;
+  margin-top: 6rpx;
+  font-size: 18rpx;
+  line-height: 1.45;
+  color: var(--tt-text-3);
+}
+
+.pts-hint {
+  padding: 10rpx 0 12rpx;
+  font-size: 18rpx;
+  line-height: 1.5;
+  color: var(--tt-text-3);
+}
+
+/* ===== 弃用字段说明 ===== */
+.pts-deprecated {
+  display: flex;
+  align-items: flex-start;
+  gap: 6rpx;
+  margin: 0 var(--tt-gap) 8rpx;
+  padding: 10rpx 14rpx;
+  border-radius: 12rpx;
+  background: rgba(0, 0, 0, 0.03);
+  font-size: 18rpx;
+  line-height: 1.5;
+  color: var(--tt-text-3);
+}
+
+/* ===== 预览行 ===== */
+.pts-preview {
+  padding: 2rpx 16rpx;
+}
+
+.pts-prow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+  padding: 11rpx 0;
+  border-bottom: 1rpx solid var(--tt-line);
+}
+
+.pts-preview .pts-prow:last-child {
+  border-bottom: none;
+}
+
+.pts-plabel {
+  flex: 1;
+  min-width: 0;
+  font-size: 20rpx;
+  line-height: 1.45;
+  color: var(--tt-text-2);
+}
+
+.pts-pvalue {
+  flex-shrink: 0;
+  font-size: 25rpx;
   font-weight: 600;
   color: var(--tt-brand);
 }
 
-/* 带说明的两行标签：放进 .cfg-flabel-col 时不要固定 300rpx 宽 */
-.cfg-flabel-auto {
-  width: auto;
-  flex-shrink: 1;
-}
-
-/* 预览行的标签较长，占满左侧 */
-.cfg-flabel-wide {
-  flex: 1;
-  width: auto;
-  min-width: 0;
-}
-
-/* 旧配置提示卡：品牌浅底 + 品牌色标题，与页面其余卡片同一套令牌 */
-.cfg-legacy {
+/* ===== 旧配置提示 ===== */
+.pts-legacy {
   display: flex;
   flex-direction: column;
-  gap: 12rpx;
+  gap: 8rpx;
+  margin: 0 var(--tt-gap) 8rpx;
+  padding: 14rpx 16rpx;
   background: var(--tt-brand-soft);
   box-shadow: none;
 }
 
 .cfg-legacy-title {
-  font-size: 27rpx;
+  font-size: 23rpx;
   font-weight: 600;
-  color: var(--tt-brand);
+  color: var(--tt-brand-deep);
 }
 
 .cfg-legacy-body {
-  font-size: 23rpx;
-  line-height: 1.6;
+  font-size: 19rpx;
+  line-height: 1.55;
   color: var(--tt-text-2);
+}
+
+.pts-legacy-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8rpx;
+  margin-top: 2rpx;
 }
 
 .cfg-legacy-act {
   align-self: flex-start;
-  padding: 10rpx 24rpx;
-  font-size: 24rpx;
+  padding: 7rpx 16rpx;
+  font-size: 19rpx;
   font-weight: 500;
-  color: var(--tt-brand);
+  color: var(--tt-brand-deep);
   background: var(--tt-card);
   border-radius: 999rpx;
+}
+
+.pts-save {
+  margin-top: 12rpx;
 }

@@ -1,0 +1,184 @@
+/* 扫码加人（学生会干部用）：① 选部门 → ② 扫码 → 结果可撤回 */
+.sj-page {
+  padding-bottom: 40rpx;
+}
+
+.sj-card {
+  margin: 0 24rpx 20rpx;
+  padding: 28rpx 24rpx;
+}
+
+/* ===== 步骤标号 ===== */
+.sj-step {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-bottom: 20rpx;
+}
+
+.sj-step-no {
+  flex: 0 0 auto;
+  width: 40rpx;
+  height: 40rpx;
+  border-radius: 50%;
+  background: var(--tt-brand);
+  color: #ffffff;
+  font-size: 24rpx;
+  line-height: 40rpx;
+  text-align: center;
+}
+
+.sj-step-t {
+  font-size: 29rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+/* ===== 部门选择 ===== */
+.sj-picker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+  padding: 22rpx 24rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-bg-page);
+}
+
+.sj-picker-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4rpx;
+}
+
+.sj-picker-name {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.sj-picker-org {
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+.sj-hint {
+  display: block;
+  margin-top: 12rpx;
+  font-size: 22rpx;
+  line-height: 32rpx;
+  color: var(--tt-text-3);
+}
+
+/* ===== 扫码区 ===== */
+.sj-scan-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8rpx 0;
+}
+
+.sj-scan-icon {
+  width: 130rpx;
+  height: 130rpx;
+  border-radius: 34rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--tt-brand-soft);
+}
+
+/* 未选部门时整体降级，明确「还不能扫」 */
+.sj-scan-icon.is-off {
+  background: var(--tt-bg-page);
+}
+
+.sj-scan-t {
+  margin-top: 20rpx;
+  font-size: 26rpx;
+  color: var(--tt-text-1);
+  text-align: center;
+}
+
+.sj-scan-btn {
+  width: 100%;
+  margin-top: 24rpx;
+}
+
+.sj-scan-tip {
+  margin-top: 12rpx;
+  font-size: 22rpx;
+  line-height: 32rpx;
+  color: var(--tt-text-3);
+  text-align: center;
+}
+
+/* ===== 空态 / 错误 ===== */
+.sj-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12rpx;
+  padding: 34rpx 20rpx 20rpx;
+}
+
+.sj-empty-t {
+  font-size: 26rpx;
+  color: var(--tt-text-2);
+  text-align: center;
+}
+
+.sj-empty-d {
+  font-size: 22rpx;
+  line-height: 32rpx;
+  color: var(--tt-text-3);
+  text-align: center;
+}
+
+.sj-empty-btn {
+  width: 100%;
+  margin-top: 14rpx;
+}
+
+/* ===== 加入结果卡片 ===== */
+.sj-result {
+  border: 2rpx solid var(--td-success-color-5);
+}
+
+.sj-result-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 14rpx;
+}
+
+.sj-result-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+.sj-result-t {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.sj-result-sub {
+  font-size: 23rpx;
+  color: var(--tt-text-3);
+}
+
+.sj-result-actions {
+  display: flex;
+  gap: 14rpx;
+  margin-top: 20rpx;
+}
+
+.sj-result-btn {
+  flex: 1;
+  min-width: 0;
+}

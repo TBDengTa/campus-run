@@ -1,0 +1,561 @@
+.uc-page {
+  padding-bottom: 40rpx;
+}
+
+/* 吸顶 tab（B 端：滚长列表时仍可切换「部门 / 检查模块」）
+   ⚠️ 背景不透明 + 整宽 + padding 做留白（不要 margin：margin 透明，吸顶会露缝）。 */
+.uc-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: 12rpx var(--tt-gap) 8rpx;
+  background: var(--tt-bg-page);
+}
+
+.uc-tabs {
+  display: flex;
+  gap: 12rpx;
+}
+
+.uc-tab {
+  flex: 1;
+  text-align: center;
+  padding: 16rpx 0;
+  border-radius: var(--tt-radius-sm);
+  font-size: 26rpx;
+  color: var(--tt-text-2);
+  background: var(--tt-card);
+  box-shadow: var(--tt-card-shadow);
+}
+
+.uc-tab.active {
+  color: #ffffff;
+  background: var(--tt-brand);
+  font-weight: 600;
+}
+
+.uc-list {
+  padding: 8rpx var(--tt-pad);
+}
+
+.uc-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16rpx;
+  padding: 22rpx 0;
+  border-bottom: 1rpx solid var(--tt-line);
+}
+
+.uc-item:last-child {
+  border-bottom: none;
+}
+
+.uc-item-main {
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+  min-width: 0;
+  flex: 1;
+}
+
+.uc-item-title {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  flex-wrap: wrap;
+}
+
+.uc-name {
+  font-size: 28rpx;
+  font-weight: 500;
+  color: var(--tt-text-1);
+}
+
+.uc-tag {
+  padding: 4rpx 14rpx;
+  border-radius: 999rpx;
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+  background: var(--tt-line);
+}
+
+.uc-tag-off {
+  color: var(--td-error-color-6, #d54941);
+  background: rgba(213, 73, 65, 0.12);
+}
+
+.uc-sub {
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+  word-break: break-all;
+}
+
+.uc-item-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10rpx;
+  flex: 0 0 auto;
+}
+
+.uc-action {
+  font-size: 24rpx;
+  color: var(--tt-brand-deep);
+}
+
+.uc-flags {
+  font-size: 22rpx;
+  color: var(--tt-text-2);
+}
+
+.uc-flag-btns {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8rpx;
+}
+
+/* 搜索与筛选 */
+.uc-search {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  padding: 20rpx var(--tt-pad);
+}
+
+.uc-input {
+  flex: 1;
+  padding: 16rpx 20rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-bg-page);
+  font-size: 26rpx;
+  color: var(--tt-text-1);
+}
+
+.uc-mini-btn {
+  flex: 0 0 auto;
+  padding: 14rpx 24rpx;
+  border-radius: 999rpx;
+  font-size: 24rpx;
+  color: var(--tt-text-2);
+  background: var(--tt-bg-page);
+}
+
+.uc-mini-primary {
+  color: #ffffff;
+  background: var(--tt-brand);
+}
+
+.uc-mini-btn.disabled {
+  opacity: 0.6;
+}
+
+.uc-filters {
+  display: flex;
+  gap: 12rpx;
+  margin: 0 var(--tt-gap) var(--tt-gap);
+}
+
+.uc-pill {
+  padding: 10rpx 26rpx;
+  border-radius: 999rpx;
+  font-size: 24rpx;
+  color: var(--tt-text-2);
+  background: var(--tt-card);
+  box-shadow: var(--tt-card-shadow);
+}
+
+.uc-pill.active {
+  color: #ffffff;
+  background: var(--tt-brand);
+}
+
+.uc-empty {
+  padding: 40rpx 0;
+  text-align: center;
+  font-size: 24rpx;
+  color: var(--tt-text-3);
+}
+
+/* ===== 部门树（拍平渲染，缩进由节点 depth 内联控制）=====
+   与「组织架构」页（packageAdmin/content/organizations）**同一套视觉语言**：
+   tt-card 容器 + 单层 wx:for + padding-left: depth*36rpx + 竖线 org-line + 品牌浅底根节点 +
+   圆形药丸操作按钮（catch:tap）。类名用 uc- 前缀（页面私有，禁止重定义公共 .tt-*），
+   数值/配色令牌与 organizations.wxss 逐项对齐，便于两页互相对照。 */
+.uc-tree {
+  padding: 24rpx 24rpx 8rpx;
+}
+
+.uc-node {
+  position: relative;
+  margin-bottom: 12rpx;
+}
+
+/* 层级连接线（left 随 depth 内联，与 org-line 同值） */
+.uc-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  border-left: 2rpx solid var(--tt-line);
+}
+
+.uc-node-body {
+  position: relative;
+  display: flex;
+  /* 允许换行：叶子行右侧有三个操作按钮时，按钮整体落到第二行右对齐，
+     名称/职责模块得以拿到整行宽度（部门行的信息量比组织架构页更大） */
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 18rpx;
+  padding: 20rpx;
+  background: var(--td-bg-color-component);
+  border-radius: var(--tt-radius-sm);
+}
+
+.uc-node-root .uc-node-body {
+  background: var(--tt-brand-soft);
+}
+
+.uc-cap {
+  flex-shrink: 0;
+  width: 64rpx;
+  height: 64rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 18rpx;
+}
+
+.uc-node-root .uc-cap {
+  background: var(--tt-card);
+}
+
+.uc-info {
+  flex: 1 1 240rpx;
+  min-width: 240rpx;
+}
+
+.uc-node-name-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10rpx;
+}
+
+.uc-node-name {
+  font-size: 29rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.uc-node-name-sub {
+  font-size: 27rpx;
+  font-weight: 400;
+  color: var(--tt-text-2);
+}
+
+.uc-node-meta {
+  margin-top: 4rpx;
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+/* 院校叶子：「分院在任成员 N（未按校区细分）」——
+   branchCount 是全局分院校计数的旧口径，不是该校区人数。除了文案自带说明，
+   再加一道虚线底边作「约数」的视觉提示（不用斜体：中文合成斜体在真机上很丑）。 */
+.uc-node-meta-warn {
+  color: var(--tt-text-3);
+  border-bottom: 1rpx dashed var(--tt-line);
+  display: inline-block;
+  padding-bottom: 2rpx;
+}
+
+/* 院校列表缺失时的提示行（不白屏：此时仍渲染「全校」根） */
+.uc-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 10rpx;
+  margin: 0 var(--tt-gap) var(--tt-gap);
+  padding: 18rpx 22rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-brand-soft);
+}
+
+.uc-tip-text {
+  flex: 1;
+  font-size: 22rpx;
+  line-height: 1.5;
+  color: var(--tt-brand-deep);
+}
+
+/* 配置缺口提示（如「N 个模块没配录入部门」）：用更醒目的浅橙底，区别于普通说明 */
+.uc-tip-warn {
+  background: var(--tt-brand-soft-2);
+}
+
+/* 模块副信息里的警告态（「未配置（没人能录）」）：一眼看出配置缺口 */
+.uc-sub-warn {
+  color: var(--td-warning-color-6, #d98a0b);
+}
+
+/* 树下的一句归属说明（部门定义只有一套，多挂是常态，避免管理员误以为是重复数据） */
+.uc-dept-hint {
+  margin: 16rpx var(--tt-gap) 0;
+  font-size: 22rpx;
+  line-height: 1.5;
+  color: var(--tt-text-3);
+}
+
+.uc-node-note {
+  margin-top: 6rpx;
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+}
+
+.uc-node-actions {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  margin-left: auto;
+  gap: 10rpx;
+}
+
+.uc-node-btn {
+  padding: 8rpx 18rpx;
+  font-size: 22rpx;
+  color: var(--tt-brand);
+  background: var(--tt-card);
+  border-radius: 999rpx;
+}
+
+.uc-node-btn.danger {
+  color: var(--td-error-color-6);
+  background: var(--td-error-color-1);
+}
+
+.uc-node-btn:active {
+  opacity: 0.7;
+}
+
+.uc-add {
+  margin: 8rpx var(--tt-gap) 0;
+}
+
+.uc-loading {
+  display: flex;
+  justify-content: center;
+  padding: 24rpx;
+}
+
+/* 抽屉 */
+.uc-mask {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 20;
+}
+
+/* 抽屉：外层 fixed 只负责定位/圆角/安全区，滚动交给内部 scroll-view
+   （fixed 容器上的 overflow-y: auto 在真机不滚动，「保存」按钮会被推出屏幕） */
+.uc-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 21;
+  display: flex;
+  flex-direction: column;
+  padding: 32rpx 32rpx calc(40rpx + env(safe-area-inset-bottom));
+  border-radius: 32rpx 32rpx 0 0;
+  background: var(--tt-card);
+  transform: translateY(110%);
+  transition: transform 0.24s ease;
+  max-height: 86vh;
+  overflow: hidden; /* 圆角裁切；不再用 overflow-y: auto 当滚动容器 */
+}
+
+.uc-sheet.open {
+  transform: translateY(0);
+}
+
+/* 滚动区必须有「确定高度」才真的能滚：max-height 封顶 —— 内容短时自适应、长时封顶可滚，
+   head + body + actions 之和 < 抽屉 max-height，底部「保存」因此始终在屏内 */
+.uc-sheet-body {
+  flex: none;
+  min-height: 0;
+  max-height: 60vh;
+  box-sizing: border-box;
+}
+
+.uc-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20rpx;
+  flex-shrink: 0; /* 不参与压缩：标题栏始终留在抽屉顶部 */
+}
+
+.uc-sheet-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.uc-sheet-close {
+  font-size: 26rpx;
+  color: var(--tt-text-3);
+}
+
+.uc-field {
+  margin-bottom: 18rpx;
+}
+
+.uc-field-l {
+  display: block;
+  margin-bottom: 10rpx;
+  font-size: 24rpx;
+  color: var(--tt-text-2);
+}
+
+.uc-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+}
+
+/* picker 触发区：与 .uc-input 同一视觉（同底色同圆角），否则「归属校区」比旁边的输入框矮一截 */
+.uc-picker {
+  padding: 16rpx 20rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-bg-page);
+  font-size: 26rpx;
+  color: var(--tt-text-1);
+}
+
+/* 字段下方的浅色说明（如「已指定归属校区，适用范围自动为仅分院」） */
+.uc-field-hint {
+  display: block;
+  margin-top: 8rpx;
+  font-size: 22rpx;
+  line-height: 32rpx;
+  color: var(--tt-text-3);
+}
+
+/* 被前置条件锁住的选项（选了具体校区时「两级都有/仅校级」不再可选）。
+   只做视觉弱化，点击仍进 onDeptScope —— 由它给出「请先取消归属校区」的提示，
+   比静默无反应更可解释。 */
+.uc-level-tab.is-disabled {
+  opacity: 0.4;
+}
+
+/* 模块「允许录入的部门」按校区分组（用户 2026-10-21「需要多级的去设置而不是独立名称」） */
+.uc-dept-group {
+  margin-top: 14rpx;
+}
+
+.uc-dept-group:first-child {
+  margin-top: 0;
+}
+
+.uc-dept-group-name {
+  margin-bottom: 10rpx;
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+.uc-chip {
+  padding: 10rpx 24rpx;
+  border-radius: 999rpx;
+  font-size: 24rpx;
+  color: var(--tt-text-2);
+  background: var(--tt-bg-page);
+  /* 用户 2026-10-21 连续两次截图：胶囊里只显示一个字符（「生活部」→「e」、「学习部」→「s」）。
+     两次修 CSS 都不奏效，根因是**胶囊自身没有形成独立的行内布局**，
+     文字在父级 flex 里被压成逐字换行，再被 999rpx 圆角裁掉。
+     改成显式 inline-flex 横向布局 + 名字用独立 <text>（不换行、不压缩），
+     同时给 min-width 兜底，确保「两个字以上」的名字一定完整显示。 */
+  display: inline-flex;
+  align-items: center;
+  flex-flow: row nowrap;
+  gap: 8rpx;
+  flex: 0 0 auto;
+  white-space: nowrap;
+  min-width: 120rpx;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* 胶囊里的名字：单行、可伸缩、绝不折行 */
+.uc-chip-t {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  line-height: 1.35;
+}
+
+/* 胶囊里的 ✕：固定尺寸，不参与挤压 */
+.uc-chip-x {
+  flex: 0 0 auto;
+  font-size: 22rpx;
+  opacity: 0.85;
+  line-height: 1;
+}
+
+.uc-chip.active {
+  color: #ffffff;
+  background: var(--tt-brand);
+}
+
+.uc-level-tabs {
+  display: flex;
+  gap: 12rpx;
+}
+
+.uc-level-tab {
+  flex: 1;
+  text-align: center;
+  padding: 16rpx 0;
+  border-radius: var(--tt-radius-sm);
+  font-size: 24rpx;
+  color: var(--tt-text-2);
+  background: var(--tt-bg-page);
+}
+
+.uc-level-tab.active {
+  color: #ffffff;
+  background: var(--tt-brand);
+  font-weight: 600;
+}
+
+.uc-sheet-actions {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 28rpx;
+  flex-shrink: 0; /* 不参与压缩：滚动到底与否都能点到「保存」 */
+}
+
+.uc-btn-ghost {
+  flex: 1;
+  text-align: center;
+  padding: 22rpx 0;
+  border-radius: 999rpx;
+  font-size: 28rpx;
+  color: var(--tt-text-2);
+  background: var(--tt-bg-page);
+}
+
+.uc-btn {
+  flex: 1.4;
+  text-align: center;
+  padding: 22rpx 0;
+  border-radius: 999rpx;
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #ffffff;
+  background: var(--tt-brand);
+}

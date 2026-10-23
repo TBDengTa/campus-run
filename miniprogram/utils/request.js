@@ -62,14 +62,30 @@ function clearAuth() {
 }
 
 // 退出登录：清除本机登录信息 + 打「已退出」标记（不会被 ensureLogin 静默登回）
+//
+// ⚠️ 必须把**所有与账号相关**的缓存一起清掉（用户 2026-10-22「登录刘恩琦后依旧是陈宇航」）：
+// 以前只清 userInfo/today，剩下的 stats/unionIdentity/points 与 app 里的
+// `_roleProbe`（广告闸门的角色探测缓存）、`_identityChecked`（身份确认已做过）
+// 都是上一个账号的结论 —— 换号后仍然生效，表现就是「换了账号还带着上一个人的身份」。
+// 只清一半比不清更危险：页面半新半旧，报出来的现象无法复现。
 function logout() {
   clearAuth();
   markLoggedOut();
   try {
     const app = getApp();
     if (app && app.globalData) {
-      app.globalData.userInfo = null;
-      if (app.globalData.today !== undefined) app.globalData.today = null;
+      const g = app.globalData;
+      g.userInfo = null;
+      if (g.today !== undefined) g.today = null;
+      if (g.stats !== undefined) g.stats = null;
+      if (g.unionIdentity !== undefined) g.unionIdentity = null;
+      if (g.points !== undefined) g.points = null;
+      // 换代：让各页面 onShow 里的 refreshPermission / permissionStale 知道要重算
+      g.permissionEpoch = (Number(g.permissionEpoch) || 0) + 1;
+    }
+    if (app) {
+      app._roleProbe = null; // 角色探测缓存（applyAdGate）必须失效，否则教师闸门仍按上一个人的角色判定
+      app._identityChecked = false; // 下次登录要重新向服务端确认「我是谁」
     }
   } catch (e) {
     // App 未就绪时忽略
@@ -78,10 +94,92 @@ function logout() {
 
 let loginPromise = null;
 
+/**
+ * 登录成功后刷新缓存（用户 2026-10-22「在登录账户时一定要刷新缓存」）。
+ *
+ * 为什么必须有：各管理端页面在 `onLoad` 里按 `globalData.userInfo.effectivePermissions`
+ * 把 `canManage` / `canManagePerms` 之类算好存进 `data`，之后再也不会重算。
+ * 换账号登录（尤其从「可写」换到「只读」）时：
+ *   · `globalData.userInfo` 已经换新，但页面 data 里还是上一个账号的结论；
+ *   · 结果是「只读账号看到操作按钮，点了被后端 403」——正是用户报的第二个问题的成因之一。
+ *
+ * 做三件事：
+ *   ① 清掉全局缓存里与账号相关的字段（userInfo/today/stats 等由 app 自己定义的缓存）；
+ *   ② 把「缓存已换代」写进 globalData 并交给各页面的 `onShow` 重算权限
+ *      （页面若实现了 refreshPermission() 会被调用）；
+ *   ③ 清掉业务级缓存（如 union 身份缓存），避免旧账号的成员身份残留。
+ */
+function refreshCachesAfterLogin(userInfo) {
+  try {
+    const app = getApp();
+    if (!app) return;
+    const g = app.globalData || {};
+
+    // ① 账号相关缓存全部置空（字段是 app.js 里定义的，逐个清而不是整体替换，
+    //    避免抹掉 banner / 系统配置这类与账号无关的缓存）
+    g.userInfo = userInfo || null;
+    if (g.today !== undefined) g.today = null;
+    if (g.stats !== undefined) g.stats = null;
+    if (g.unionIdentity !== undefined) g.unionIdentity = null;
+    if (g.points !== undefined) g.points = null;
+    // ② 换代计数：页面 onShow 里比对它就知道「权限可能变了，要重算」
+    g.permissionEpoch = (Number(g.permissionEpoch) || 0) + 1;
+    // 本次登录已经向服务端确认过身份，启动时的静默确认不必再跑一遍
+    app._identityChecked = true;
+
+    // ③ 通知当前页面栈里的页面重算权限（如果它实现了 refreshPermission）
+    const pages = (getCurrentPages && getCurrentPages()) || [];
+    for (const p of pages) {
+      if (p && typeof p.refreshPermission === 'function') {
+        try {
+          p.refreshPermission(g.permissionEpoch);
+        } catch (e) {
+          /* 单个页面失败不能影响登录 */
+        }
+      }
+    }
+  } catch (e) {
+    /* getApp 未就绪（极早期调用）→ 忽略，下次 ensureLogin 会再刷一次 */
+  }
+}
+
+/**
+ * 页面侧统一入口：在 onShow 里调用，判断是否需要因「换账号 / 权限变更」重算。
+ *
+ * 用法（页面）：
+ *   onShow() { if (!getApp().requireLogin()) return; auth.syncPermission(this, (u, perms) => {...}); }
+ *
+ * 返回 true 表示这次应当重算。
+ */
+function permissionStale(page) {
+  try {
+    const g = getApp().globalData || {};
+    const seen = Number(page && page.__permEpoch) || 0;
+    return (Number(g.permissionEpoch) || 0) !== seen;
+  } catch (e) {
+    return false;
+  }
+}
+
+function markPermissionSynced(page) {
+  try {
+    const g = getApp().globalData || {};
+    if (page) page.__permEpoch = Number(g.permissionEpoch) || 0;
+  } catch (e) {
+    /* ignore */
+  }
+}
+
 // 静默登录：wx.login → code → 后端换 token
 // 本地测试模式（env.DEV_LOGIN）直接用约定角色 code，无需微信 AppSecret
 // 注意：用户主动退出登录后不再静默登录，必须由登录页显式调用（先 clearLoggedOut）
-function login() {
+//
+// options.silent：只确认身份、不签发设备令牌（启动时的身份确认用）。
+// 为什么启动要再跑一次 login 而不是直接信本地 token：本地 token 可能属于**上一个身份**
+// （解绑/换绑/换微信后 JWT 仍有效 30 天），而 `/api/auth/login` 只按**当前微信的 openid**
+// 定身份 —— 它是「我是谁」的唯一权威来源，跑一次就自愈成本地缓存里的旧账号。
+function login(options = {}) {
+  const silent = !!options.silent;
   if (isLoggedOut()) {
     const err = new Error('已退出登录，请重新登录');
     err.code = 401;
@@ -109,7 +207,7 @@ function login() {
       rawRequest({
         url: '/api/auth/login',
         method: 'POST',
-        data: { code },
+        data: { code, silent },
         _noAuthRetry: true,
       })
     )
@@ -119,6 +217,11 @@ function login() {
       getApp().globalData.userInfo = data.userInfo || null;
       // 记录登录历史（供登录页一键登录）
       if (data.bound !== false && data.deviceToken) history.push(data.userInfo, data.deviceToken);
+      // ⚠️ 登录成功必须**刷新缓存**（用户 2026-10-22「在登录账户时一定要刷新缓存」）：
+      //   各页面在 onLoad 里把 canManage 之类算好存进 data，登录换了账号后那些值是旧的 ——
+      //   表现就是「换成本该只读的账号还能看到操作按钮」或反过来「该有的按钮没有」。
+      //   这里清掉全局缓存并通知页面重算（见 refreshCachesAfterLogin）。
+      refreshCachesAfterLogin(data.userInfo);
       return data;
     })
     .finally(() => {
@@ -177,6 +280,9 @@ function rawRequest({ url, method = 'GET', data, header = {}, timeout = 15000, _
         }
         const err = new Error(body.message || `请求失败(${statusCode})`);
         err.code = body.code || statusCode;
+        // 业务补充字段（如班超重复提交返回的 existingId）挂到 error 上，页面可直接用
+        if (body.existingId) err.existingId = body.existingId;
+        if (body.existing) err.existing = body.existing;
         reject(err);
       },
       fail: (e) => {
@@ -232,37 +338,53 @@ async function request(options) {
 }
 
 // 姓名 + 密码 绑定/登录（游客态调用）
-function bindAccount(account, password) {
+// studentId 可选：同名账号存在时服务端会返回 400902 要求补学号精确区分（见 routes/auth.js /bind）。
+function bindAccount(account, password, studentId) {
   return rawRequest({
     url: '/api/auth/bind',
     method: 'POST',
-    data: { account, password },
+    data: { account, password, studentId: studentId || '' },
     _noAuthRetry: true,
   }).then((data) => {
     setAuth(data.token, data.userInfo, true);
     getApp().globalData.userInfo = data.userInfo;
     if (data.deviceToken) history.push(data.userInfo, data.deviceToken);
+    // 绑定账号 = 换登录身份，同样要刷新缓存（否则页面还拿着上一个身份的权限结论）
+    refreshCachesAfterLogin(data.userInfo);
     return data;
   });
 }
 
 // 设备令牌一键登录（登录页历史登录列表）
+//
+// 失败时给错误对象打上 `deviceTokenInvalid`，让调用方能区分「这条记录真的没用了」与
+// 「暂时失败」：只有服务端明确回 401/401001（令牌失效/被撤销）才算失效，
+// 网络异常、5xx、其它 4xx 一律**保留本地历史记录**（用户 2026-10-23 报障：
+// 一键登录的历史记录会莫名消失 —— 旧实现在页面上把任何失败都当成失效并删记录）。
 function deviceLogin(deviceToken) {
   return rawRequest({
     url: '/api/auth/device-login',
     method: 'POST',
     data: { deviceToken },
     _noAuthRetry: true,
-  }).then((data) => {
-    clearLoggedOut(); // 主动登录动作
-    setAuth(data.token, data.userInfo, true);
-    getApp().globalData.userInfo = data.userInfo;
-    // 服务端已轮换令牌：覆盖本地历史里的旧令牌
-    if (data.deviceToken && data.userInfo) {
-      history.refreshToken(data.userInfo.account || data.userInfo.realName, data.userInfo.studentId, data.deviceToken);
-    }
-    return data;
-  });
+  })
+    .then((data) => {
+      clearLoggedOut(); // 主动登录动作
+      setAuth(data.token, data.userInfo, true);
+      getApp().globalData.userInfo = data.userInfo;
+      // 服务端已轮换令牌：覆盖本地历史里的旧令牌
+      if (data.deviceToken && data.userInfo) {
+        history.refreshToken(data.userInfo.account || data.userInfo.realName, data.userInfo.studentId, data.deviceToken);
+      }
+      // 一键登录 = 换登录身份，同样要刷新缓存
+      refreshCachesAfterLogin(data.userInfo);
+      return data;
+    })
+    .catch((e) => {
+      // 401001 = 该登录记录已失效（服务端 routes/auth.js::/device-login 的固定码）
+      e.deviceTokenInvalid = !!(e && (e.code === 401001 || e.code === 401));
+      throw e;
+    });
 }
 
 // 撤销设备令牌（删除历史登录记录）
@@ -282,9 +404,10 @@ const put = (url, data) => request({ url, method: 'PUT', data });
 const del = (url, data) => request({ url, method: 'DELETE', data });
 
 // 上传文件（默认管理端接口；头像等用户端接口通过 options.url 指定）
+// options.onProgress(percent)：上传进度回调（0-100）
 function uploadFile(filePath, options = {}) {
   return new Promise((resolve, reject) => {
-    wx.uploadFile({
+    const task = wx.uploadFile({
       url: `${env.BASE_URL}${options.url || '/api/admin/upload'}`,
       filePath,
       name: 'file',
@@ -301,6 +424,52 @@ function uploadFile(filePath, options = {}) {
       },
       fail: () => reject(new Error('上传失败')),
     });
+    if (options.onProgress && task && typeof task.onProgressUpdate === 'function') {
+      task.onProgressUpdate((res) => options.onProgress(res.progress));
+    }
+  });
+}
+
+// 检查留证照片上传（学生会录入台专用）—— **新增方法，不改动 uploadFile / rawRequest 的任何行为**。
+//
+// 为什么不直接调 uploadFile（刻意独立实现，两处差异都是必须的）：
+//   ① 服务器地址拼装必须留在本文件里（AGENTS.md 红线：被 git 跟踪的文件不许出现服务器地址，
+//      地址只能来自 config/env.js 的 BASE_URL）；
+//   ② **业务错误码要透出给页面**：uploadFile 只 reject 一个 Error(message)，页面分不清
+//      「不是学生会成员（403002，重试无意义）」与「网络抖动（值得重试）」。这里把服务端返回的
+//      code 挂到 error.code 上，页面的「失败重试」逻辑才能只对可重试的错误生效。
+//
+// 返回 { url }；options.onProgress(percent) 显示单张上传进度。
+function uploadCheckPhoto(filePath, options = {}) {
+  return new Promise((resolve, reject) => {
+    const task = wx.uploadFile({
+      url: `${env.BASE_URL}/api/upload/check-photo`,
+      filePath,
+      name: 'file',
+      header: { Authorization: getToken() ? `Bearer ${getToken()}` : '' },
+      success: (res) => {
+        let body = {};
+        try {
+          body = JSON.parse(res.data);
+        } catch (e) {
+          reject(new Error(res.statusCode === 413 ? '照片太大（单张最多 5MB）' : '上传失败，请重试'));
+          return;
+        }
+        if (body.code === 0 && body.data && body.data.url) {
+          resolve(body.data);
+          return;
+        }
+        const err = new Error(body.message || '上传失败');
+        err.code = body.code || res.statusCode;
+        // 401 允许外层重登后重试（与 rawRequest 的 401 语义保持一致）
+        if (res.statusCode === 401) err.code = 401;
+        reject(err);
+      },
+      fail: () => reject(new Error('上传失败，请检查网络后重试')),
+    });
+    if (options.onProgress && task && typeof task.onProgressUpdate === 'function') {
+      task.onProgressUpdate((res) => options.onProgress(res.progress));
+    }
   });
 }
 
@@ -316,6 +485,7 @@ module.exports = {
   put,
   del,
   uploadFile,
+  uploadCheckPhoto,
   getToken,
   setAuth,
   getUser,
@@ -326,4 +496,8 @@ module.exports = {
   markLoggedOut,
   clearLoggedOut,
   isBound,
+  // 登录后刷新缓存 / 页面权限换代（用户 2026-10-22「登录账户时一定要刷新缓存」）
+  refreshCachesAfterLogin,
+  permissionStale,
+  markPermissionSynced,
 };

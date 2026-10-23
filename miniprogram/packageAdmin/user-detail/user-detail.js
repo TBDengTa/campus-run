@@ -11,26 +11,8 @@ function dateText(dateKey) {
   return `${Number(dateKey.slice(5, 7))}月${Number(dateKey.slice(8, 10))}日`;
 }
 
-// 运动明细每页条数（按钮翻页）
+// 运动明细每页条数（简化分页：上一页 / n·m / 下一页）
 const PAGE_SIZE = 10;
-
-// 页码条：页数少时全列，多时首尾 + 当前页附近，间隔用省略号
-function buildPageItems(current, total) {
-  const out = [];
-  const push = (page, label) => out.push({ k: `${page}-${out.length}`, page, label: label || String(page) });
-  if (total <= 7) {
-    for (let i = 1; i <= total; i += 1) push(i);
-    return out;
-  }
-  push(1);
-  const start = Math.max(2, current - 1);
-  const end = Math.min(total - 1, current + 1);
-  if (start > 2) push(0, '…');
-  for (let i = start; i <= end; i += 1) push(i);
-  if (end < total - 1) push(0, '…');
-  push(total);
-  return out;
-}
 
 // 班名前缀推年级：'25大数据与会计' → '2025'；'23级机电1班' → '2023'（与 roster 口径一致）
 function gradeOfClassName(name) {
@@ -161,8 +143,28 @@ Page({
     // 当前登录者权限：编辑资料/重置密码/删除账户需 permission.manage，解绑微信需 user.manage
     canManagePerms: false,
     canManageUser: false,
+    // ===== 班主任对本班学生的管理权（用户 2026-10-22）=====
+    // **与权限项无关**：班主任身份本身就是「只管本班学生」的管理授权，
+    // 可做 编辑资料 / 重置密码 / 发放徽章 / 限制功能(sync,gps) / 删除账户。
+    // 判定全部由服务端给（/api/admin/users/:id 的 canManageStudent、/api/class/student/:id/manage 的 200），
+    // 前端只控显隐；真正的鉴权在 services/student-scope.js + 班级域写接口。
+    canManageStudent: false,
+    // ===== 班主任能做什么：**由服务端逐项下发**（/api/class/student/:id/manage 的 capabilities）=====
+    // 用户 2026-10-23：「有的功能显示按钮，你像删除账户，他没有这个权限请你不要显示」。
+    // 前端不再自己判断哪几个动作能开，服务端说能做什么就画什么 —— 两边判断一漂移就会出现
+    // 「按钮能点、点了 403」。管理端视角没有 capabilities，按权限项算（见 canPermsOf）。
+    caps: { editProfile: false, resetPassword: false, badges: false, ban: false, unban: false, dorm: false, deleteAccount: false },
+    // 班主任只能限制这两个类型（限制登录是校级处置，服务端会拒绝 login）
+    banScopes: [],
     // 徽章发放 / 回收需 badge.manage（服务端 requirePermission('badge.manage') 同步拦，前端只控显隐）
     canManageBadges: false,
+    // 加入学生会二维码（用户 2026-10-22）：学生主页展示，干部扫码加人。
+    // canShowInvite 由权限决定（需能看学生会域）；qr 存凭证串与有效期。
+    canShowInvite: false,
+    qrVisible: false,
+    qrLoading: false,
+    qrError: '',
+    qr: { token: '', qrImage: '', expiresText: '', realName: '', studentId: '', className: '' },
     // 当前生效的限制（限制登录 / 限制微信同步 / 限制 GPS）
     restrictions: [],
     // 「限制账号功能」抽屉
@@ -172,6 +174,8 @@ Page({
     goal: null,
     // 跑分汇总（{ totalText, todayText, weekText, enabled, configText }）
     points: null,
+    // 主 Tab：概览 overview | 运动 sport | 班级 class | 账号 account
+    mainTab: 'overview',
     recordTab: 'daily', // 最近运动 runs | 日记录 daily | 周记录 weekly | 饮水 water | 徽章 badges
     // 运动明细：按 Tab 分页缓存（每页 PAGE_SIZE 条，按钮翻页，不是触底追加）
     records: { runs: [], daily: [], weekly: [], water: [], badges: [] },
@@ -180,7 +184,6 @@ Page({
     recordPage: 1,
     recordPagesTotal: 1,
     recordTotal: 0,
-    pageItems: [], // 页码条：[{ k, label, page }]
     recordLoading: false,
     loginInfo: null,
     unbinding: false,
@@ -205,6 +208,24 @@ Page({
     classDraft: [],
     classSaving: false,
     officerSaving: false,
+    // ===== 宿舍（按学生绑定房间：权威数据是 dorm_assignments，一间房可混住几个班）=====
+    // 录入形态**与「班级管理 → 宿舍」共用同一份组件**（主包 components/dorm-sheet，页面 json 已注册）：
+    // 单栏「宿舍号（楼号·门号）」主输入 + 可选「床位号」次输入 + 楼栋/已有房间快捷 + 退宿/保存，
+    // 组件只抛事件、页面持状态并调接口（两处接口不同），所以这里只保留受控字段。
+    dorm: null, // { roomText, roomId, bedNo, status } | null（null = 未分配 / 未绑微信 / 教师）
+    dormText: '未分配',
+    // ===== 学生会身份（只读展示；改成员走管理端学生会成员页 / 用户端成员管理）=====
+    union: { isMember: false, roles: [], text: '' },
+    unionRoles: [],
+    dormSheetVisible: false,
+    dormSheetSub: '', // 抽屉副标题（组件 sub 属性）
+    dormSheetLoading: false,
+    dormSaving: false,
+    dormSheetCanUnbind: false, // 有在住记录才允许退宿（按钮置灰而不是消失）
+    dormWechatBound: true, // false → 保存禁用并给出明确原因（住宿记录按 openid 建立）
+    dormForm: { roomText: '', bedNo: '' },
+    dormBuildings: [], // [{ name, rooms }]
+    dormQuickRooms: [], // 本班已住过的房间（混宿时复用同一间最常用）
     // ===== 徽章发放抽屉（需 badge.manage）=====
     badgeSheetVisible: false,
     badgeSheetLoading: false,
@@ -228,13 +249,32 @@ Page({
     try {
       await getApp().ensureLogin();
       const me = (getApp().globalData.userInfo || {}).effectivePermissions || [];
+      const star = me.includes('*');
+      const canPerms = star || me.includes('permission.manage');
+      const canUser = star || me.includes('user.manage');
+      const canBadges = star || me.includes('badge.manage');
       this.setData({
-        canManagePerms: me.includes('*') || me.includes('permission.manage'),
-        canManageUser: me.includes('*') || me.includes('user.manage'),
+        canManagePerms: canPerms,
+        canManageUser: canUser,
         // 班级身份（班主任班级 / 班委）在本页分配，需 user.manage
-        canManageClass: me.includes('*') || me.includes('user.manage'),
+        canManageClass: canUser,
         // 徽章发放 / 回收：独立权限项 badge.manage（不与 content.manage 复用）
-        canManageBadges: me.includes('*') || me.includes('badge.manage'),
+        canManageBadges: canBadges,
+        // 加入学生会二维码：能看学生会域即可展示（谁都能看这张码，用它是干部的事）
+        canShowInvite: star || me.includes('union.view') || me.includes('union.manage') || me.includes('union.steward'),
+        // 管理端视角的能力表：与班级域 capabilities **同一套字段**，模板只读一处。
+        // 服务端鉴权仍按权限项（requirePermission），这里只决定画不画按钮。
+        caps: {
+          editProfile: canPerms,
+          resetPassword: canPerms,
+          // 徽章以 badge.manage 为准（管理端独立权限项）
+          badges: canBadges,
+          ban: canUser,
+          unban: canUser,
+          dorm: canUser,
+          // 删除账户在管理端是 permission.manage（与「编辑资料」同权限项）
+          deleteAccount: canPerms,
+        },
       });
       // 班级域打开时：先按管理端权限取资料（有权限 → 与管理面板完全一致）；
       // 无权限（403）才降级为班级域只读数据，绝不绕过服务端权限
@@ -252,8 +292,7 @@ Page({
       const [sportDetail] = await Promise.all([
         auth.get(`/api/admin/users/${this.data.id}/sport-detail`).catch(() => null),
       ]);
-      const { user, bans, sport: sportArg, goal: goalArg, loginInfo, restrictions } = detail;
-      const SCOPE_TEXT = { login: '限制登录', sync: '限制微信同步', gps: '限制 GPS', manual: '限制登录' };
+      const { user, bans, sport: sportArg, goal: goalArg, loginInfo, restrictions, dorm, union } = detail;      const SCOPE_TEXT = { login: '限制登录', sync: '限制微信同步', gps: '限制 GPS', manual: '限制登录' };
       // 限制类型对应图标（在 JS 里算好：WXML 的三元表达式会让静态检查把 'sync' 当成图标名）
       const SCOPE_ICON = { login: 'lock-on', sync: 'logo-wechat-stroke', gps: 'location' };
       const recentRuns = ((sportArg && sportArg.recentRuns) || []).map((r) => ({
@@ -268,6 +307,9 @@ Page({
       const goal = (sportDetail && sportDetail.goal) || goalArg || null;
       // 跑分汇总（学校衡量标准）：total 全历史 / today 今日 / week 本周（周一起）
       const pts = (sportDetail && sportDetail.points) || null;
+      // 宿舍：权威数据在 dorm_assignments（学生 ↔ 房间），详情接口已带回，不再额外请求。
+      // 教师账号不安排宿舍；未绑微信 / 未在住都按「未分配」展示。
+      const dormRow = user.role === 'teacher' ? null : dorm || null;
       this.setData({
         loading: false,
         // 目标账号是教师：教师不参与运动记录与排名 → 隐藏运动 / 跑分 / 考核内容（班级身份与账号操作保留）
@@ -276,13 +318,34 @@ Page({
         classMissing: false,
         classInfo: null,
         isSuper: (user.permissionGroups || []).includes('superadmin'),
+        // 班主任对本班学生的管理权（服务端判定）：走到管理端详情分支也要认它 ——
+        // 「有 user.view 的班主任」不会进班级域回退分支，只认权限项的话他们会一个按钮都看不到。
+        canManageStudent: !!detail.canManageStudent,
+        banScopes: detail.canManageStudent ? ['sync', 'gps'] : [],
         homeroomClasses: user.homeroomClasses || [],
         isClassOfficer: !!user.isClassOfficer,
+        dorm: dormRow,
+        dormText: dormRow && dormRow.roomText
+          ? `${dormRow.roomText}${dormRow.bedNo ? `（${dormRow.bedNo} 床）` : ''}`
+          : '未分配',
+        // 抽屉副标题（组件 sub 属性）：与「班级管理 → 宿舍」同一口径 = 「班级/学号 · 当前宿舍」
+        dormSheetSub: `${user.className || '未分班'} · ${
+          dormRow && dormRow.roomText
+            ? `${dormRow.roomText}${dormRow.bedNo ? `（${dormRow.bedNo} 床）` : ''}`
+            : '未分配'
+        }`,
         user: {
           ...user,
           createdText: fmtTime(user.createdAt),
           bannedUntilText: user.bannedUntil ? user.bannedUntil.slice(0, 16).replace('T', ' ') : '',
         },
+        // 学生会身份（服务端按 openid 查在任成员记录）：非成员 = { isMember:false }
+        union: union || { isMember: false, roles: [], text: '' },
+        unionRoles: ((union && union.roles) || []).map((r) => ({
+          ...r,
+          mainText: [r.deptName, r.roleText].filter(Boolean).join(' · '),
+          subText: [r.levelText, r.termLabel].filter(Boolean).join(' · '),
+        })),
         bans: bans.map((b) => ({
           ...b,
           timeText: fmtTime(b.createdAt),
@@ -349,7 +412,6 @@ Page({
         recordPage: 1,
         recordPagesTotal: 1,
         recordTotal: 0,
-        pageItems: [],
       });
       this.loadRecords(this.data.recordTab, 1);
     } catch (e) {
@@ -358,8 +420,11 @@ Page({
     }
   },
 
-  // ===== 班级域只读视图（scope=class 且无管理端权限：班主任 / 班委）=====
-  // 数据只用 /api/class/*（服务端成员资格校验、只读），不出现任何写操作
+  // ===== 班级域视图（scope=class：无管理端权限的班主任 / 班委）=====
+  // 数据只用 /api/class/*（服务端成员资格校验）。
+  // 班主任（且目标是没有管理权限的普通学生）额外拿到「管理权」：编辑资料 / 重置密码 /
+  // 发放徽章 / 限制功能 / 删除账户（用户 2026-10-22）。判定完全由服务端给：
+  // GET /api/class/student/:id/manage → 200 才有；班委一律 403（这里静默按只读渲染）。
   async loadClassScope() {
     const { id, className, fallbackName } = this.data;
     const cls = className || '';
@@ -371,10 +436,18 @@ Page({
     } catch (e) {
       row = null;
     }
+    // 管理权探测（班主任专属接口；班委 403 → canManageStudent=false，保持只读视图）
+    let manage = null;
+    try {
+      manage = await auth.get(`/api/class/student/${id}/manage?className=${encodeURIComponent(cls)}`);
+    } catch (e) {
+      manage = null;
+    }
     if (!row) {
       this.setData({ loading: false, classOnly: true, classMissing: true });
       return;
     }
+    const profile = (manage && manage.profile) || null;
     const todayTarget = Number(row.todayTarget) || 0;
     const weekTarget = Number(row.weekTarget) || 0;
     this.setData({
@@ -383,29 +456,69 @@ Page({
       classMissing: false,
       isTeacherUser: false,
       isSuper: false,
-      // 走到回退分支就说明管理端资料接口 403：管理类操作一律不渲染（班委仅查看）
+      // 管理类操作：只有班级域判定为「本班班主任 + 普通学生」才开；
+      // 权限项那三个（canManagePerms / canManageUser / canManageBadges）在这里恒 false。
+      // **具体哪几个按钮**由服务端 capabilities 决定（用户 2026-10-23「删除账户他没有这个权限
+      // 请你不要显示」）：服务端说不给 → 这里就是 false → 模板不渲染，点了也不会有请求。
       canManagePerms: false,
       canManageUser: false,
       canManageClass: false,
-      // 班委/班主任的班级只读视角绝不渲染徽章发放与回收入口（服务端也会按 badge.manage 拦）
       canManageBadges: false,
+      canManageStudent: !!manage,
+      caps: (manage && manage.capabilities) || {
+        editProfile: false,
+        resetPassword: false,
+        badges: false,
+        ban: false,
+        unban: false,
+        dorm: false,
+        deleteAccount: false,
+      },
+      banScopes: (manage && manage.banScopes) || [],
       badgeSheetVisible: false,
       badgeItems: [],
       bans: [],
-      restrictions: [],
+      // 生效中的限制（班主任可解除自己下的 sync/gps 限制）
+      restrictions: ((manage && manage.restrictions) || []).map((r) => ({
+        ...r,
+        untilText: r.until ? fmtTime(r.until) : '永久',
+      })),
       loginInfo: null,
       rates: null,
       goal: null,
       points: null,
       homeroomClasses: [],
       isClassOfficer: !!row.isClassOfficer,
+      // 宿舍：用 /manage 一起下发的宿舍面板（当前在住 + 楼名 + 本班已用房间 + 是否绑微信）。
+      // 班主任可以**直接改本班学生宿舍**（用户 2026-10-22），楼名由服务端随面板下发，
+      // 不依赖 building.view。manage 里没有 dorm（老服务端）时退回列表行的 roomText。
+      dorm: (manage && manage.dorm && manage.dorm.roomText)
+        ? { roomText: manage.dorm.roomText, bedNo: manage.dorm.bedNo || '', roomId: manage.dorm.roomId || '' }
+        : row.roomText
+          ? { roomText: row.roomText, bedNo: '', roomId: '' }
+          : null,
+      dormText: (manage && manage.dorm && manage.dorm.roomText) || row.roomText || '未分配',
+      // 班级视角的学生会身份：/api/class/students 每行带 unionText（「生活部 · 部长」），
+      // 没有就是未加入 —— 班主任只读视角也要能看到，不然「学生会」信息在班级入口永远缺失。
+      union: row.unionText ? { isMember: true, text: row.unionText } : { isMember: false, roles: [], text: '' },
+      unionRoles: row.unionText
+        ? [{ mainText: row.unionText, levelText: '学生会', termLabel: '' }]
+        : [],
+      dormSheetSub: `${cls || '未分班'} · ${(manage && manage.dorm && manage.dorm.roomText) || row.roomText || '未分配'}`,
+      dormSheetVisible: false,
+      // 楼名与快捷房间随 manage 一起回来，抽屉打开即用（不必再请求，也不需要 building.view）
+      dormBuildings: (manage && manage.dorm && manage.dorm.buildings) || [],
+      dormQuickRooms: (manage && manage.dorm && manage.dorm.quickRooms) || [],
+      dormWechatBound: !!(manage && manage.dorm && manage.dorm.wechatBound),
       user: {
         _id: id,
-        realName: row.name || fallbackName || '未命名',
+        realName: (profile && profile.realName) || row.name || fallbackName || '未命名',
         nickname: '',
         className: cls,
         studentId: row.studentId || '',
         role: 'student',
+        gender: (profile && profile.gender) || 0,
+        birthdate: (profile && profile.birthdate) || '',
         isClassOfficer: !!row.isClassOfficer,
       },
       // hero 四项换成班级域口径（累计字段班级接口不提供，只有本周 / 活跃 / 跑分）
@@ -436,10 +549,16 @@ Page({
       recordPage: 1,
       recordPagesTotal: 1,
       recordTotal: 0,
-      pageItems: [],
       recordTab: 'daily',
     });
     this.loadRecords('daily', 1);
+  },
+
+  // 主 Tab 切换（概览 / 运动 / 班级 / 账号）：纯前端分组，不重新请求
+  switchMainTab(e) {
+    const tab = e.currentTarget.dataset.tab;
+    if (!tab || tab === this.data.mainTab) return;
+    this.setData({ mainTab: tab });
   },
 
   // 明细 Tab 切换：首次进入该 Tab 才拉数据；已加载过则恢复它自己的页码
@@ -456,7 +575,6 @@ Page({
       recordPage: page,
       recordTotal: total,
       recordPagesTotal: Math.max(1, Math.ceil(total / PAGE_SIZE)),
-      pageItems: buildPageItems(page, Math.max(1, Math.ceil(total / PAGE_SIZE))),
     });
     if (!cached) this.loadRecords(tab, 1);
   },
@@ -487,7 +605,6 @@ Page({
         recordPage: p,
         recordTotal: total,
         recordPagesTotal: pagesTotal,
-        pageItems: buildPageItems(p, pagesTotal),
       });
     } catch (e) {
       wx.showToast({ title: e.message || '明细加载失败', icon: 'none' });
@@ -530,14 +647,7 @@ Page({
     };
   },
 
-  // 按钮翻页：上一页 / 指定页 / 下一页
-  goRecordPage(e) {
-    const p = Number(e.currentTarget.dataset.page) || 0;
-    if (!p || p === this.data.recordPage) return;
-    if (p < 1 || p > this.data.recordPagesTotal) return;
-    this.loadRecords(this.data.recordTab, p);
-  },
-
+  // 按钮翻页：上一页 / 下一页（页码条已简化，不再支持跳指定页）
   prevRecordPage() {
     if (this.data.recordPage > 1) this.loadRecords(this.data.recordTab, this.data.recordPage - 1);
   },
@@ -597,8 +707,42 @@ Page({
     });
   },
 
+  // 同一个动作有两条接口路径：有对应管理权限 → 管理端 `/api/admin/users/:id/...`；
+  // 否则（班主任）→ 班级域 `/api/class/student/:id/...`（服务端按班主任+本班学生鉴权）。
+  // 这里只决定 URL；权限结论始终由服务端给（canManagePerms / canManageUser / canManageBadges / canManageStudent）。
+  apiFor(kind) {
+    const d = this.data;
+    const viaAdmin = !!{
+      account: d.canManagePerms,
+      ban: d.canManageUser,
+      badges: d.canManageBadges,
+      // 宿舍：管理端按 user.manage（宿管），班主任按班级域（只能给自己班学生安排）
+      dorm: d.canManageUser,
+    }[kind];
+    const head = viaAdmin ? `/api/admin/users/${d.id}` : `/api/class/student/${d.id}`;
+    // 班级域的每个写接口都要带 className（服务端据此定位作用域）。
+    // 多班班主任从「用户管理」列表进来时 URL 里没有 className → 回落到该学生自己的班级名，
+    // 否则服务端会按「你负责多个班级，请指定 className」拒绝。
+    const cls = d.className || (d.user && d.user.className) || '';
+    const q = viaAdmin ? '' : `?className=${encodeURIComponent(cls)}`;
+    return { head, q, viaAdmin, className: cls };
+  },
+
   goEdit() {
-    wx.navigateTo({ url: `/packageAdmin/users/account-edit/account-edit?id=${this.data.id}` });
+    const { viaAdmin, className } = this.apiFor('account');
+    if (viaAdmin) {
+      wx.navigateTo({ url: `/packageAdmin/users/account-edit/account-edit?id=${this.data.id}` });
+      return;
+    }
+    if (!this.data.canManageStudent) {
+      wx.showToast({ title: '只有班主任可以编辑本班学生资料', icon: 'none' });
+      return;
+    }
+    wx.navigateTo({
+      url:
+        `/packageAdmin/users/account-edit/account-edit?id=${this.data.id}` +
+        `&scope=class&className=${encodeURIComponent(className || '')}`,
+    });
   },
 
   // 返回：班级视角下数据缺失时的兜底出口
@@ -608,6 +752,8 @@ Page({
   },
 
   // 限制账号功能（类型 + 时长 + 原因）——走 ban-sheet 抽屉
+  // 班主任（班级域）只允许「限制微信同步 / 限制 GPS」，banScopes 由服务端给，
+  // 组件据此收敛选项 —— 不把注定 403 的「限制登录」摆出来。
   openBanSheet() {
     const u = this.data.user || {};
     this.setData({
@@ -621,9 +767,10 @@ Page({
 
   async onBanSubmit(e) {
     const { scope, days, reason } = e.detail || {};
+    const { head, q } = this.apiFor('ban');
     this.setData({ 'banSheet.busy': true });
     try {
-      await auth.post(`/api/admin/users/${this.data.id}/ban`, { scope, days, reason: reason || '违反社区规范' });
+      await auth.post(`${head}/ban${q}`, { scope, days, reason: reason || '违反社区规范' });
       const text = { login: '限制登录', sync: '限制微信同步', gps: '限制 GPS' }[scope] || '已限制';
       wx.showToast({ title: `${text}${days > 0 ? ' ' + days + ' 天' : '（永久）'}`, icon: 'none' });
       this.setData({ 'banSheet.visible': false });
@@ -638,6 +785,7 @@ Page({
   // 解除限制：列出生效中的限制，再补固定三类 + 全部解除
   unban() {
     const that = this;
+    const { head, q } = this.apiFor('ban');
     const items = [{ label: '全部解除', scope: 'all' }];
     (this.data.restrictions || []).forEach((r) => items.push({ label: `解除「${r.text}」`, scope: r.scope }));
     [
@@ -652,7 +800,7 @@ Page({
       success: async (res) => {
         const scope = (items[res.tapIndex] || {}).scope || 'all';
         try {
-          const r = await auth.post(`/api/admin/users/${that.data.id}/unban`, { scope });
+          const r = await auth.post(`${head}/unban${q}`, { scope });
           wx.showToast({ title: r && r.lifted && r.lifted.length ? '已解除' : '该类型当前无生效限制', icon: 'none' });
           that.load();
         } catch (err) {
@@ -662,20 +810,28 @@ Page({
     });
   },
 
-  // 删除账户：与列表左滑「删除」同一接口，删完返回列表
+  // 删除账户：与列表左滑「删除」同一接口，删完返回列表。
+  // ⚠️ 能力由服务端给（caps.deleteAccount）：班主任默认**没有**（用户 2026-10-23）。
+  //    这里再挡一道 —— 模板已经不画按钮了，但留个硬闸门，避免日后从别处调进来发一次注定 403 的请求。
   removeAccount() {
+    if (!this.data.caps.deleteAccount) {
+      wx.showToast({ title: '班主任不能删除学生账户，如需调出本班请用「转移」', icon: 'none' });
+      return;
+    }
     const that = this;
     const u = this.data.user || {};
     const name = u.account || u.nickname || u.realName || '该用户';
+    const { head, q, viaAdmin } = this.apiFor('account');
+    void viaAdmin;
     wx.showModal({
       title: '删除账户',
-      content: `将删除「${name}」及其全部运动 / 饮水 / 徽章等数据，不可恢复！确认删除？`,
+      content: `将删除「${name}」及其全部运动 / 饮水 / 徽章 / 住宿等数据，不可恢复！确认删除？`,
       confirmText: '删除',
       confirmColor: '#e5484d',
       success: async (res) => {
         if (!res.confirm) return;
         try {
-          await auth.del(`/api/admin/users/${that.data.id}`);
+          await auth.del(`${head}${q}`);
           wx.showToast({ title: '已删除', icon: 'success' });
           setTimeout(() => wx.navigateBack(), 600);
         } catch (err) {
@@ -815,10 +971,11 @@ Page({
     }
   },
 
-  // ===== 徽章：手工发放 / 回收（需 badge.manage；服务端 requirePermission 同步拦）=====
+  // ===== 徽章：手工发放 / 回收 =====
+  // 管理端要 badge.manage；班主任（班级域）对本班学生也可发/收（用户 2026-10-22）。
   // 打开发放抽屉（先拉「全部启用中的定义 + 已获得」，再渲染）
   openBadgeSheet() {
-    if (!this.data.canManageBadges) {
+    if (!this.data.canManageBadges && !this.data.canManageStudent) {
       wx.showToast({ title: '需要「发放与回收徽章」权限', icon: 'none' });
       return;
     }
@@ -836,9 +993,10 @@ Page({
 
   // 拉徽章定义与已获得列表 → 组装抽屉（等级组按组折叠，保留上一轮展开状态）
   async loadBadgeSheet() {
+    const { head, q } = this.apiFor('badges');
     this.setData({ badgeSheetLoading: true });
     try {
-      const r = await auth.get(`/api/admin/users/${this.data.id}/badges`);
+      const r = await auth.get(`${head}/badges${q}`);
       this.applyBadgeCount((r && r.list) || []);
       this.setData({ badgeItems: buildBadgeItems((r && r.definitions) || [], this.data.badgeItems) });
     } catch (e) {
@@ -870,7 +1028,8 @@ Page({
     }
     this.setData({ badgeGranting: key });
     try {
-      const r = await auth.post(`/api/admin/users/${this.data.id}/badges`, { badgeKey: key });
+      const { head, q } = this.apiFor('badges');
+      const r = await auth.post(`${head}/badges${q}`, { badgeKey: key });
       wx.showToast({ title: r && r.granted ? `已发放「${name || key}」` : `「${name || key}」已获得`, icon: 'none' });
       this.applyBadgeCount((r && r.list) || []);
       await this.loadBadgeSheet();
@@ -894,7 +1053,8 @@ Page({
       success: async (res) => {
         if (!res.confirm) return;
         try {
-          const r = await auth.del(`/api/admin/users/${that.data.id}/badges/${encodeURIComponent(key)}`);
+          const { head, q } = that.apiFor('badges');
+          const r = await auth.del(`${head}/badges/${encodeURIComponent(key)}${q}`);
           wx.showToast({ title: r && r.revoked ? '已回收' : '该用户未获得此徽章', icon: 'none' });
           that.applyBadgeCount((r && r.list) || []);
           if (that.data.badgeSheetVisible) await that.loadBadgeSheet();
@@ -918,7 +1078,186 @@ Page({
     if (this.data.recordTab === 'badges') this.loadRecords('badges', 1);
   },
 
-  // 重置登录密码：恢复为初始密码（学号/身份证后8），需 permission.manage
+  // ===== 宿舍：按学生绑定房间（权威数据 dorm_assignments，混宿一间房可住几个班）=====
+  // 录入形态**与「班级管理 → 宿舍」共用同一个组件**（主包 components/dorm-sheet）：
+  // 单栏「宿舍号（楼号·门号）」+ 可选「床位号」+ 楼栋 / 已有房间快捷 + 退宿 / 保存。
+  // 写接口 PUT/DELETE /api/admin/users/:id/dorm，服务端 requirePermission('user.manage')。
+  // 写权限沿用本页既有写接口的判定（canManageUser = user.manage，服务端同名 requirePermission 拦截）
+  // ===== 加入学生会二维码（用户 2026-10-22）=====
+  // 学生在自己主页出示二维码，干部用「扫码加人」扫它 → 一次性凭证，10 分钟有效。
+  //
+  // ⚠️ 这里的接口是 /api/union/invite/mine —— 它按**当前登录者**发凭证。
+  //   管理端在别人主页上打开本页时，拿到的是**管理员自己**的凭证，不是这个学生的！
+  //   所以：本页只负责「展示这个学生是谁」，凭证必须由学生本人在自己的小程序里取。
+  //   为了让管理员也能生成给学生用的码，接口支持传 userId（管理员有 union.manage 时放行）。
+  async openInviteQr() {
+    this.setData({ qrVisible: true, qrLoading: true, qrError: '' });
+    await this.loadInviteQr();
+  },
+
+  async loadInviteQr() {
+    this.setData({ qrLoading: true, qrError: '' });
+    try {
+      const res = await auth.get(`/api/union/invite/mine?userId=${encodeURIComponent(this.data.id)}`);
+      const exp = res && res.expiresAt ? new Date(res.expiresAt) : null;
+      const pad = (n) => String(n).padStart(2, '0');
+      const expiresText = exp
+        ? `${pad(exp.getMonth() + 1)}-${pad(exp.getDate())} ${pad(exp.getHours())}:${pad(exp.getMinutes())}`
+        : '';
+      this.setData({
+        qrLoading: false,
+        qr: {
+          token: (res && res.token) || '',
+          // 后端生成的二维码 PNG dataURL；空 = 生成失败，页面回退显示凭证串
+          qrImage: (res && res.qrImage) || '',
+          expiresText,
+          realName: (res && res.realName) || '',
+          studentId: (res && res.studentId) || '',
+          className: (res && res.className) || '',
+        },
+      });
+    } catch (e) {
+      this.setData({ qrLoading: false, qrError: e.message || '生成失败' });
+    }
+  },
+
+  // 重新生成：旧凭证仍在服务端有效期内，但这里换一张新的更方便现场展示
+  async refreshInviteQr() {
+    if (this.data.qrLoading) return;
+    await this.loadInviteQr();
+  },
+
+  closeInviteQr() {
+    this.setData({ qrVisible: false });
+  },
+
+  async openDormSheet() {
+    const canDorm = this.data.canManageUser || this.data.canManageStudent;
+    if (!canDorm) {
+      wx.showToast({ title: '只有班主任或管理员可以安排宿舍', icon: 'none' });
+      return;
+    }
+    const d = this.data.dorm || null;
+    this.setData({
+      dormSheetVisible: true,
+      dormWechatBound: !!this.data.user.openid || !!(this.data.loginInfo && this.data.loginInfo.wechatBound),
+      dormForm: { roomText: d && d.roomText ? d.roomText : '', bedNo: (d && d.bedNo) || '' },
+      dormSheetCanUnbind: !!(d && d.roomText),
+    });
+    // 快捷候选（楼栋 + 本班已住房间）：打开时才取一次。
+    // ⚠️ 楼名清单**跟着宿舍接口一起下发**，不再单独请求 /api/admin/config/buildings ——
+    //    那条路径要 building.view / config.view（宿管维护楼名的权限），教师权限组没有，
+    //    于是班主任明明要给学生排宿舍，却选不到楼（用户 2026-10-22 报的就是这个）。
+    if (!this.data.dormBuildings.length && !this.data.dormQuickRooms.length) {
+      this.setData({ dormSheetLoading: true });
+      try {
+        const { head, q } = this.apiFor('dorm');
+        const r = await auth.get(`${head}/dorm${q}`);
+        // 服务端已把「系统设置里的宿舍楼 ∪ 历史出现过的楼」合并好（管理端与班级域同一份实现）
+        const hist = (r && r.buildings) || [];
+        this.setData({
+          dormBuildings: hist,
+          dormQuickRooms: (r && r.quickRooms) || [],
+          dormWechatBound: !!(r && r.wechatBound),
+        });
+      } catch (e) {
+        wx.showToast({ title: e.message || '宿舍候选加载失败', icon: 'none' });
+      } finally {
+        this.setData({ dormSheetLoading: false });
+      }
+    }
+  },
+
+  closeDormSheet() {
+    this.setData({ dormSheetVisible: false });
+  },
+
+  // 受控回灌：组件内的输入与楼栋 / 已有房间快捷点击都只抛 change，值由页面持有
+  onDormFormChange(e) {
+    const { field, value } = (e.detail || {});
+    if (field !== 'roomText' && field !== 'bedNo') return;
+    this.setData({ [`dormForm.${field}`]: value });
+  },
+
+  // 绑定 / 改绑：房间不存在由服务端自动建档，改绑把旧记录置「已换房」
+  async submitDorm(e) {
+    if (this.data.dormSaving) return;
+    // 值以组件抛出的 detail 为准（组件已 trim）；页面 state 只作回灌
+    const detail = (e && e.detail) || {};
+    const label = String(detail.roomText || this.data.dormForm.roomText || '').trim();
+    const bedNo = String(detail.bedNo || this.data.dormForm.bedNo || '').trim();
+    if (!label) {
+      wx.showToast({ title: '请填写宿舍号，如 1号楼·201', icon: 'none' });
+      return;
+    }
+    if (!this.data.dormWechatBound) {
+      wx.showToast({ title: '该学生还没绑定微信，无法记录住宿', icon: 'none' });
+      return;
+    }
+    this.setData({ dormSaving: true });
+    try {
+      const { head, q } = this.apiFor('dorm');
+      const r = await auth.put(`${head}/dorm${q}`, { roomLabel: label, bedNo });
+      const extra = r && r.createdRoom ? '（已新建房间）' : r && r.movedFrom ? `（原 ${r.movedFrom}）` : '';
+      wx.showToast({ title: `已绑定 ${r.room || label}${extra}`, icon: 'none' });
+      // 新建的房间 / 新楼栋要出现在下次打开的快捷里：清空候选缓存，下次 openDormSheet 重取
+      this.setData({ dormSheetVisible: false, dormSaving: false, dormBuildings: [], dormQuickRooms: [] });
+      this.applyDorm({ roomText: r.room || '', roomId: r.roomId || '', bedNo: (r.bedNo || '').trim() });
+    } catch (e2) {
+      this.setData({ dormSaving: false });
+      // 服务端明确文案（如「该学生还没绑定微信，暂时无法记录住宿」）直接透出，别吞成「操作失败」
+      wx.showToast({ title: e2.message || '绑定失败', icon: 'none' });
+    }
+  },
+
+  // 退宿：在住记录置 checked_out，历史保留，之后可重新绑定（组件只在 canUnbind 为真时抛事件）
+  unbindDorm() {
+    const canDorm = this.data.canManageUser || this.data.canManageStudent;
+    if (!canDorm) {
+      wx.showToast({ title: '只有班主任或管理员可以安排宿舍', icon: 'none' });
+      return;
+    }
+    const that = this;
+    // 文案取「当前在住」的房间（dorm），不取输入框里的未保存值，避免确认后写着没生效的房号
+    const cur = (that.data.dorm || {}).roomText || '';
+    wx.showModal({
+      title: '退宿',
+      content: cur
+        ? `确认把「${cur}」标记为退宿？历史记录保留，之后可重新绑定。`
+        : '当前没有在住记录，无需退宿。',
+      confirmColor: '#e5484d',
+      success: async (res) => {
+        if (!res.confirm) return;
+        try {
+          const { head, q } = that.apiFor('dorm');
+          const r = await auth.del(`${head}/dorm${q}`);
+          wx.showToast({ title: r && r.checkedOut ? '已退宿' : (r && r.reason) || '当前没有在住记录', icon: 'none' });
+          that.setData({ dormSheetVisible: false, dormBuildings: [], dormQuickRooms: [] });
+          if (r && r.checkedOut) await that.applyDorm(null);
+        } catch (err) {
+          wx.showToast({ title: err.message || '操作失败', icon: 'none' });
+        }
+      },
+    });
+  },
+
+  // 绑定 / 退宿后的本地同步：不再整页重拉，只改宿舍那一行（含退宿按钮可用态与抽屉副标题）
+  async applyDorm(dorm) {
+    const row = dorm || null;
+    const text = row && row.roomText
+      ? `${row.roomText}${row.bedNo ? `（${row.bedNo} 床）` : ''}`
+      : '未分配';
+    this.setData({
+      dorm: row,
+      dormText: text,
+      dormSheetSub: `${(this.data.user && this.data.user.className) || '未分班'} · ${text}`,
+      dormForm: { roomText: row && row.roomText ? row.roomText : '', bedNo: (row && row.bedNo) || '' },
+      dormSheetCanUnbind: !!(row && row.roomText),
+    });
+  },
+
+  // 重置登录密码：恢复为初始密码（学号/身份证后8）。
+  // 管理端需 permission.manage；班主任（班级域）可重置本班学生。
   resetPassword() {
     const that = this;
     wx.showModal({
@@ -927,7 +1266,8 @@ Page({
       success: async (res) => {
         if (!res.confirm) return;
         try {
-          const r = await auth.post(`/api/admin/users/${that.data.id}/reset-password`);
+          const { head, q } = that.apiFor('account');
+          const r = await auth.post(`${head}/reset-password${q}`);
           wx.showModal({ title: '已重置', content: r.message, showCancel: false });
           that.load();
         } catch (err) {

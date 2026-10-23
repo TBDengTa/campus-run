@@ -1,0 +1,236 @@
+<view class="page tt-page uc-page">
+  <!-- 吸顶 tab（B 端：滚长列表时「部门 / 检查模块」始终可切；背景不透明，避免内容透出） -->
+  <view class="uc-sticky">
+    <view class="uc-tabs">
+      <view
+        class="uc-tab {{tab === item.key ? 'active' : ''}}"
+        wx:for="{{tabs}}"
+        wx:key="key"
+        data-tab="{{item.key}}"
+        bind:tap="onTabTap"
+      >
+        {{item.label}}
+      </view>
+    </view>
+  </view>
+
+  <!-- ===== 部门（可展开树：「全校」+ 每个真实院校为根，子节点由 scope 归属；仿「组织架构」页视觉） =====
+       根 = 「全校」+ organizations 里 type='school' 的**每一个院校**（北校区 / 洋河校区 / 教师院…），
+       院校列表来自现成接口 GET /api/org/tree（与学生会成员页同一口径，**未改后端**）。
+       层级来源只有 union_departments.scope（校级/分院两级语义，模型里没有 parentId）：
+       「全校」根收 scope ∈ {school, both}，**每个院校根**收 scope ∈ {branch, both}，
+       scope='both' 的部门是全校与各院校共用的一套定义 → **在全校与每一个院校下各出现一次**（多挂，
+       nodeId 为 `school-<key>` / `<院校id>-<key>` 复合 key，wx:key="nodeId" 才不冲突）。 -->
+  <block wx:if="{{tab === 'departments'}}">
+    <view class="tt-section">
+      <text>学生会部门</text>
+      <text class="tt-section-extra">{{deptStat.deptCount}} 个部门 · 院校 {{deptStat.campusCount}} 个</text>
+    </view>
+    <!-- 院校列表缺失时的提示行（不白屏、不空树：此时仍渲染「全校」根） -->
+    <view class="uc-tip" wx:if="{{campusTip}}">
+      <t-icon name="info-circle" size="28rpx" color="var(--tt-brand)" />
+      <text class="uc-tip-text">{{campusTip}}</text>
+    </view>
+    <view class="tt-card uc-tree">
+      <block wx:if="{{deptStat.deptCount}}">
+        <view
+          class="uc-node {{item.depth === 0 ? 'uc-node-root' : ''}}"
+          wx:for="{{deptNodes}}"
+          wx:key="nodeId"
+          style="padding-left: {{item.depth * 36}}rpx"
+        >
+          <view class="uc-line" style="left: {{item.depth * 36 + 13}}rpx"></view>
+          <view class="uc-node-body">
+            <view class="uc-cap">
+              <t-icon name="{{item.icon}}" size="{{item.depth === 0 ? 34 : 28}}rpx" color="{{item.depth === 0 ? 'var(--tt-brand)' : 'var(--tt-text-2)'}}" />
+            </view>
+            <!-- 叶子行也绑了展开事件（与组织架构页「每行都绑」一致），靠 data-root 挡掉误触 -->
+            <view
+              class="flex-1 uc-info"
+              data-root="{{item.isRoot}}"
+              data-root-key="{{item.rootKey}}"
+              bind:tap="toggleDeptExpand"
+            >
+              <view class="uc-node-name-row">
+                <view class="uc-node-name {{item.depth > 0 ? 'uc-node-name-sub' : ''}}">{{item.name}}</view>
+                <!-- 叶子保留原有的 key / 内置 / 已停用 标签 -->
+                <text class="uc-tag" wx:if="{{!item.isRoot}}">{{item.key}}</text>
+                <text class="uc-tag" wx:if="{{item.builtIn}}">内置</text>
+                <text class="uc-tag uc-tag-off" wx:if="{{!item.isRoot && !item.enabled}}">已停用</text>
+              </view>
+              <!-- 根节点：部门数 + 展开/收起；叶子：范围 · 成员数 · 职责模块 -->
+              <view class="uc-node-meta" wx:if="{{item.isRoot}}">{{item.metaText}}</view>
+              <block wx:else>
+                <!-- 院校叶子的成员数是**全局分院校计数的旧口径**（未按校区细分），文案已自带说明，
+                     不自称是该校区人数；不自称精确的说明见 config.js 的 BRANCH_MEMBER_HINT -->
+                <view class="uc-node-meta {{item.memberExact ? '' : 'uc-node-meta-warn'}}">{{item.scopeText}} · {{item.memberText}}</view>
+                <view class="uc-node-meta {{item.dutyWarn ? 'uc-node-meta-warn' : ''}}">职责模块：{{item.dutyText}}</view>
+              </block>
+              <!-- 根节点说明行：「全校」说清归属规则，院校根可由数据补 note -->
+              <view class="uc-node-note" wx:if="{{item.isRoot && item.note}}">{{item.note}}</view>
+            </view>
+            <!-- 操作按钮必须 catch:tap，否则会冒泡触发整行展开/收起（组织架构页同款处理） -->
+            <view class="uc-node-actions" wx:if="{{!item.isRoot && canManage}}">
+              <view class="uc-node-btn" catch:tap="renameDept" data-id="{{item.id}}" data-name="{{item.name}}">改名</view>
+              <view class="uc-node-btn" catch:tap="toggleDept" data-id="{{item.id}}" data-enabled="{{item.enabled}}">
+                {{item.enabled ? '停用' : '启用'}}
+              </view>
+              <!-- 内置部门不可删：按现有语义**不渲染**删除按钮 -->
+              <view
+                class="uc-node-btn danger"
+                wx:if="{{!item.builtIn}}"
+                catch:tap="removeDept"
+                data-id="{{item.id}}"
+                data-name="{{item.name}}"
+                data-builtin="{{item.builtIn}}"
+              >
+                删除
+              </view>
+            </view>
+          </view>
+        </view>
+      </block>
+      <view class="tt-empty" wx:if="{{!deptStat.deptCount && !loading}}">{{canManage ? '暂无部门数据，点下方「+ 添加部门」新增' : '暂无部门数据'}}</view>
+      <t-loading wx:if="{{loading}}" theme="circular" size="40rpx" class="uc-loading" />
+    </view>
+
+    <view class="uc-dept-hint" wx:if="{{deptStat.deptCount}}">
+      部门归属由「适用范围」决定：仅校级 → 全校；仅分院 / 两级都有 → 全校与每个院校各出现一次（同一套部门定义）。
+    </view>
+
+    <view class="uc-add" wx:if="{{canManage}}">
+      <t-button theme="primary" block bind:tap="openDeptAdd">+ 添加部门</t-button>
+    </view>
+  </block>
+
+  <!-- ===== 检查模块 ===== -->
+  <block wx:if="{{tab === 'modules'}}">
+    <view class="tt-section">
+      <text>检查模块（班超评比项）</text>
+      <text class="tt-section-extra">{{moduleStat.total}} 项 · {{moduleStat.enabled}} 项启用</text>
+    </view>
+    <!-- 配置缺口显性化：录入部门决定鉴权口径，没配 = 实际上没人能录这项检查 -->
+    <view class="uc-tip uc-tip-warn" wx:if="{{moduleStat.noDept}}">
+      <t-icon name="info-circle" size="28rpx" color="var(--tt-brand)" />
+      <text class="uc-tip-text">{{moduleStat.noDept}} 个模块没配「允许录入的部门」——没人能录这项检查，建议逐个配置</text>
+    </view>
+    <view class="tt-card uc-list">
+      <view class="uc-item" wx:for="{{modules}}" wx:key="key">
+        <view class="uc-item-main">
+          <view class="uc-item-title">
+            <text class="uc-name">{{item.name}}</text>
+            <text class="uc-tag" wx:if="{{!item.enabled}}">已停用</text>
+          </view>
+          <!-- 未配录入部门用警告色，扫一眼就能发现；配了则正常显示部门名 -->
+          <text class="uc-sub {{item.noEntryDept ? 'uc-sub-warn' : ''}}">录入部门：{{item.entryNames || '未配置（没人能录）'}}</text>
+          <text class="uc-sub">计分：{{item.scoreText}} · 权重 {{item.scoring.weight}}</text>
+        </view>
+        <view class="uc-item-actions" wx:if="{{canManage}}">
+          <text class="uc-action" data-key="{{item.key}}" bind:tap="editModule">配置</text>
+          <text class="uc-action" data-key="{{item.key}}" bind:tap="resetModule">恢复默认</text>
+        </view>
+      </view>
+      <view class="tt-empty" wx:if="{{!modules.length && !loading}}">暂无检查模块</view>
+    </view>
+  </block>
+
+  <!-- ===== 班级台账已拆到独立页「班级管理」（packageAdmin/class-manage）=====
+       原因：台账管的是**全校所有班级**（早操 / 早八 / 校园跑标记、人数），与学生会（部门、检查模块）
+       不是一回事；而且它的权限语义是 class.view / class.manage，不该逼学生处为改一个班的跑操标记
+       额外持有 union.manage。留在本页会让管理员找不到地方改「哪个班不跑操」。 -->
+
+  <!-- ===== 新增部门抽屉 ===== -->
+  <view class="uc-mask" wx:if="{{showDeptAdd}}" bind:tap="closeDeptAdd"></view>
+  <view class="uc-sheet {{showDeptAdd ? 'open' : ''}}">
+    <view class="uc-sheet-head">
+      <text class="uc-sheet-title">添加部门</text>
+      <text class="uc-sheet-close" bind:tap="closeDeptAdd">关闭</text>
+    </view>
+    <!-- 表单区用 scroll-view（fixed 容器上的 overflow-y:auto 真机不滚动，
+         见 docs/ui-design.md「抽屉滚动区必须给确定高度」）；标题与底部按钮留在滚动区外 -->
+    <scroll-view scroll-y class="uc-sheet-body">
+      <!-- 部门标识（key）不再让用户填（用户 2026-10-21「部门标识自动生成」）：
+           它只是鉴权用的内部唯一键，服务端按名称生成、冲突自动加序号。 -->
+      <view class="uc-field">
+        <text class="uc-field-l">部门名称</text>
+        <input class="uc-input" value="{{deptForm.name}}" data-key="name" bindinput="onDeptInput" />
+        <text class="uc-field-hint">标识（内部唯一键）会自动生成，无需填写。</text>
+      </view>
+      <!-- 归属（用户 2026-10-21「北校区有生活部、洋河叫卫生部，互不干扰」）。
+           原本「适用范围」（两级都有/仅校级/仅分院）与这里语义重叠，用户要求彻底去掉，
+           于是把它折进这一个选择器，且只保留两类真实层级：
+             校学生会（仅校级） / 具体校区（北校区、洋河校区…）
+           「各院校通用」这类中间态已刻意移除 —— 用户 2026-10-21「别写通用，操作成本高」。 -->
+      <view class="uc-field">
+        <text class="uc-field-l">归属</text>
+        <picker mode="selector" range="{{deptSchoolOptions}}" range-key="name" value="{{deptSchoolIndex}}" bindchange="onDeptSchool">
+          <view class="uc-picker">{{deptSchoolOptions[deptSchoolIndex].name || '请选择归属'}}</view>
+        </picker>
+        <text class="uc-field-hint">选具体校区 → 该部门只出现在那个校区，两校区可各有自己的部门；选「所有院校」→ 每个院校下都会出现。</text>
+      </view>
+    </scroll-view>
+    <view class="uc-sheet-actions">
+      <view class="uc-btn-ghost" bind:tap="closeDeptAdd">取消</view>
+      <view class="uc-btn" wx:if="{{canManage}}" bind:tap="submitDept">保存</view>
+    </view>
+  </view>
+
+  <!-- ===== 模块配置抽屉 ===== -->
+  <view class="uc-mask" wx:if="{{moduleEditingKey}}" bind:tap="closeModuleEdit"></view>
+  <view class="uc-sheet {{moduleEditingKey ? 'open' : ''}}">
+    <view class="uc-sheet-head">
+      <text class="uc-sheet-title">{{moduleForm.name}}</text>
+      <text class="uc-sheet-close" bind:tap="closeModuleEdit">关闭</text>
+    </view>
+    <scroll-view scroll-y class="uc-sheet-body">
+      <view class="uc-field">
+        <text class="uc-field-l">模块名称</text>
+        <input class="uc-input" value="{{moduleForm.name}}" data-key="name" bindinput="onModuleInput" />
+      </view>
+      <view class="uc-field">
+        <text class="uc-field-l">简称（首页卡片显示）</text>
+        <input class="uc-input" value="{{moduleForm.shortName}}" data-key="shortName" bindinput="onModuleInput" />
+      </view>
+      <view class="uc-field">
+        <text class="uc-field-l">计分权重（0 = 不计分）</text>
+        <input class="uc-input" type="digit" value="{{moduleForm.weight}}" data-key="weight" bindinput="onModuleInput" />
+      </view>
+      <view class="uc-field">
+        <text class="uc-field-l">允许录入的部门（决定谁能录这项检查）</text>
+        <!-- 多级勾选（用户 2026-10-21「你别叠加弹窗选择了，你就在原本弹窗中使用多级显示 我勾选吧」）：
+             直接在抽屉里按「校学生会 / <校区>学生会」分组列出所有部门，点一下即勾选/取消。
+             不再套 TDesign 的 cascader 弹层 —— 那层弹窗会自己关，且它的 change 只回传
+             **最后一级的单个值**（不是路径数组），两层弹窗叠加反而把多选做坏了。 -->
+        <block wx:if="{{moduleDeptGroups.length}}">
+          <view class="uc-dept-group" wx:for="{{moduleDeptGroups}}" wx:key="rootKey" wx:for-item="grp">
+            <view class="uc-dept-group-name">{{grp.name}}</view>
+            <view class="uc-chips">
+              <view
+                class="uc-chip {{item.active ? 'active' : ''}}"
+                wx:for="{{grp.items}}"
+                wx:key="key"
+                data-key="{{item.key}}"
+                bind:tap="toggleModuleDept"
+              >
+                <text class="uc-chip-t">{{item.name}}</text>
+                <text class="uc-chip-x" wx:if="{{item.active}}">✓</text>
+              </view>
+            </view>
+          </view>
+        </block>
+        <text class="uc-field-hint" wx:else>还没有部门，请先到「部门」页添加。</text>
+        <text class="uc-field-hint" wx:if="{{moduleDeptGroups.length && !moduleForm.entryDeptKeys.length}}">还没有勾选任何部门 —— 这样这个检查项没人能录入。</text>
+      </view>
+      <view class="uc-field">
+        <text class="uc-field-l">启用</text>
+        <switch checked="{{moduleForm.enabled}}" bindchange="toggleModuleEnabled" />
+      </view>
+    </scroll-view>
+    <view class="uc-sheet-actions">
+      <view class="uc-btn-ghost" bind:tap="closeModuleEdit">取消</view>
+      <view class="uc-btn" wx:if="{{canManage}}" bind:tap="submitModule">保存</view>
+    </view>
+  </view>
+
+  <view class="tt-footer">检查模块的录入部门决定鉴权口径，改完即时生效（客户端 30 秒内刷新）</view>
+</view>

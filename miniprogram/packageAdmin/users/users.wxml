@@ -1,4 +1,4 @@
-<view class="page tt-page users-page">
+<view class="page tt-page users-page {{batchMode ? 'is-batching' : ''}}">
   <!-- ===== 顶部：搜索 + 三枚紧凑工具（筛选 / 导入名单 / 创建账户） ===== -->
   <view class="users-head">
     <view class="users-search-card">
@@ -11,11 +11,19 @@
         <text>筛选</text>
         <text class="users-tool-dot" wx:if="{{filterCount}}">{{filterCount}}</text>
       </view>
-      <view class="users-tool" bind:tap="goImport">
-        <t-icon name="upload" size="28rpx" />
-        <text>导入名单</text>
+      <!-- 批量模式开关：与「筛选」同级，开启后行内出现勾选框、底部浮出动作条。
+           图标名必须在 TDesign 图标表里真实存在 —— 写错不会报错，只会渲染成**空白**
+           （checkbox 就不存在，这里用 check-circle）。
+           批量动作分属两个写权限（user.manage / permission.manage），两者都没有就不显示开关。 -->
+      <view class="users-tool {{batchMode ? 'is-on' : ''}}" wx:if="{{canManage || canPerms}}" bind:tap="toggleBatchMode">
+        <t-icon name="check-circle" size="28rpx" />
+        <text>{{batchMode ? '退出批量' : '批量'}}</text>
       </view>
-      <view class="users-tool is-primary" bind:tap="goCreateAccount">
+      <view class="users-tool" wx:if="{{canImport}}" bind:tap="goImport">
+        <t-icon name="upload" size="28rpx" />
+        <text>导入</text>
+      </view>
+      <view class="users-tool is-primary" wx:if="{{canPerms}}" bind:tap="goCreateAccount">
         <t-icon name="user-add" size="28rpx" />
         <text>创建账户</text>
       </view>
@@ -44,24 +52,38 @@
       </view>
     </view>
 
+    <!-- 院校 → 系部 → 专业 联动：选上级只收窄下级选项（纯前端收窄，不发请求）；
+         年级 / 达标情况是正交维度，不参与联动，选项始终全量。
+         label 绑 filterLabels.*（不是静态维度名）：TDesign 菜单条渲染 `label || computedLabel`，
+         传静态值会永久盖住选中项，选完看不出选了啥（见 users.js::computeFilterLabels）。 -->
     <view class="users-dd">
       <t-dropdown-menu>
-        <t-dropdown-item label="院校" value="{{filters.school}}" options="{{filterOptions.schools}}" bind:change="onDropdownChange" data-key="school" />
-        <t-dropdown-item label="系部" value="{{filters.department}}" options="{{filterOptions.departments}}" bind:change="onDropdownChange" data-key="department" />
-        <t-dropdown-item label="专业" value="{{filters.specialty}}" options="{{filterOptions.specialties}}" bind:change="onDropdownChange" data-key="specialty" />
+        <t-dropdown-item label="{{filterLabels.school}}" value="{{filters.school}}" options="{{filterOptions.schools}}" bind:change="onDropdownChange" data-key="school" />
+        <t-dropdown-item label="{{filterLabels.department}}" value="{{filters.department}}" options="{{filterOptions.departments}}" bind:change="onDropdownChange" data-key="department" />
+        <t-dropdown-item label="{{filterLabels.specialty}}" value="{{filters.specialty}}" options="{{filterOptions.specialties}}" bind:change="onDropdownChange" data-key="specialty" />
       </t-dropdown-menu>
     </view>
 
     <view class="users-dd">
       <t-dropdown-menu>
-        <t-dropdown-item label="年级" value="{{filters.grade}}" options="{{filterOptions.grades}}" bind:change="onDropdownChange" data-key="grade" />
-        <t-dropdown-item label="日目标" value="{{filters.dailyAchieved}}" options="{{filterOptions.dailyAchieved}}" bind:change="onDropdownChange" data-key="dailyAchieved" />
-        <t-dropdown-item label="周目标" value="{{filters.weeklyAchieved}}" options="{{filterOptions.weeklyAchieved}}" bind:change="onDropdownChange" data-key="weeklyAchieved" />
+        <t-dropdown-item label="{{filterLabels.grade}}" value="{{filters.grade}}" options="{{filterOptions.grades}}" bind:change="onDropdownChange" data-key="grade" />
+        <t-dropdown-item label="{{filterLabels.dailyAchieved}}" value="{{filters.dailyAchieved}}" options="{{filterOptions.dailyAchieved}}" bind:change="onDropdownChange" data-key="dailyAchieved" />
+        <t-dropdown-item label="{{filterLabels.weeklyAchieved}}" value="{{filters.weeklyAchieved}}" options="{{filterOptions.weeklyAchieved}}" bind:change="onDropdownChange" data-key="weeklyAchieved" />
+      </t-dropdown-menu>
+    </view>
+
+    <!-- 班级状态 / 身份：与院校三级、年级、达标情况都是正交维度，可任意叠加。
+         「班级状态」筛的是该生**所在班**在班级台账里的状态（实习/毕业班不参加班超与校园跑），
+         「正常」含老数据没有该字段的班 —— 与台账页口径一致。 -->
+    <view class="users-dd">
+      <t-dropdown-menu>
+        <t-dropdown-item label="{{filterLabels.classStatus}}" value="{{filters.classStatus}}" options="{{filterOptions.classStatus}}" bind:change="onDropdownChange" data-key="classStatus" />
+        <t-dropdown-item label="{{filterLabels.identity}}" value="{{filters.identity}}" options="{{filterOptions.identity}}" bind:change="onDropdownChange" data-key="identity" />
       </t-dropdown-menu>
     </view>
 
     <view class="users-panel-foot">
-      <text class="users-panel-tip">下拉筛选即时生效</text>
+      <text class="users-panel-tip">下拉筛选即时生效 · 院校 / 系部 / 专业 逐级联动</text>
       <view class="users-clear-chip {{hasActiveFilter ? '' : 'is-hidden'}}" bind:tap="clearFilters">
         <t-icon name="close-circle-filled" size="24rpx" />
         <text>清除筛选</text>
@@ -80,52 +102,50 @@
 
   <view class="tt-section users-sec">
     <text>用户列表</text>
-    <text class="tt-section-extra">共 {{total}} 人</text>
+    <view class="users-sec-right">
+      <text class="users-sec-tip" wx:if="{{batchMode}}">已选 {{selectedCount}} / 本页 {{list.length}}</text>
+      <text class="users-sec-link" wx:if="{{batchMode && list.length}}" bind:tap="toggleCheckAll">{{allChecked ? '取消全选' : '全选本页'}}</text>
+      <text class="tt-section-extra" wx:else>共 {{total}} 人</text>
+    </view>
   </view>
 
-  <!-- ===== 列表（点卡片进详情 · 左滑操作） ===== -->
+  <!-- ===== 列表 =====
+       紧凑排版（用户要求）：一行两行搞定 ——
+         第 1 行：姓名 + 标签（管理员/教师 → 班级状态 → 班委/班主任 → 学生会 → 限制）
+         第 2 行：学号 · 班级 · 宿舍 · 目标（用 · 连成一条，不再各占一行）
+       批量模式下：行左侧出勾选框、左滑禁用（避免边选边误删）、点行=勾选而非进详情。 -->
   <view class="users-list">
     <t-swipe-cell
       wx:for="{{list}}"
       wx:key="_id"
       right="{{item.swipeRight}}"
+      disabled="{{batchMode}}"
       bind:click="onSwipeAction"
     >
-      <view class="user-row {{item.status === 'banned' ? 'is-banned' : ''}}" bind:tap="onRowTap" data-id="{{item._id}}">
+      <!-- 事件名**不能**写成 bind:tap="{{batchMode ? 'a' : 'b'}}"：WXML 的事件绑定值不做数据绑定，
+           动态名字在真机上会静默失效（表现就是「点行没反应」）。统一走 onRowTap，由 JS 内部按模式派发。 -->
+      <view class="user-row {{item.status === 'banned' ? 'is-banned' : ''}} {{batchMode ? 'is-batch' : ''}} {{selected[item._id] ? 'is-checked' : ''}}" bind:tap="onRowTap" data-id="{{item._id}}" data-name="{{item.nameText}}">
+        <view class="users-check" wx:if="{{batchMode}}">
+          <t-icon name="{{selected[item._id] ? 'check-circle-filled' : 'circle'}}" size="36rpx" color="{{selected[item._id] ? 'var(--tt-brand)' : 'var(--tt-text-3)'}}" />
+        </view>
         <view class="users-avatar {{item.isTeacher ? 'is-teacher' : ''}}">
           <image wx:if="{{item.avatarUrl}}" class="users-avatar-img" src="{{item.avatarUrl}}" mode="aspectFill" />
           <text wx:else class="users-avatar-txt">{{item.initial}}</text>
         </view>
         <view class="user-row-main">
-          <view class="users-name">
-            <text class="user-row-name">{{item.nameText}}</text>
-            <t-tag wx:if="{{item.isSuper}}" theme="primary" variant="light" size="small">管理员</t-tag>
-            <t-tag wx:elif="{{item.isTeacher}}" theme="default" variant="light" size="small">教师</t-tag>
-            <!-- 生效中的限制：限制登录 / 限制微信同步 / 限制 GPS -->
-            <t-tag
-              wx:for="{{item.scopeLabels}}"
-              wx:for-item="scopeLabel"
-              wx:key="*this"
-              theme="{{item.activeScopes[index] === 'login' ? 'danger' : 'warning'}}"
-              variant="light"
-              size="small"
-            >
-              {{scopeLabel}}
-            </t-tag>
-          </view>
-          <!-- 学生：学号 / 班级 / 运动目标；教师：无学号，只展示所属院系 -->
-          <view class="user-row-sub" wx:if="{{!item.isTeacher}}">
-            <text>学号 {{item.studentId || '—'}}</text>
-            <text>{{item.className || '未分班'}}</text>
-          </view>
-          <view class="user-row-sub" wx:if="{{!item.isTeacher && item.goalText}}">
-            <text class="user-row-goal">{{item.goalText}}</text>
-          </view>
-          <view class="user-row-sub" wx:if="{{item.isTeacher && item.deptText}}">
-            <text>{{item.deptText}}</text>
+          <!-- 单行不折行。⚠️ 标签用 <view> 而不是 <text>：
+               <text> 即便 display:inline-block，在部分基础库上内部仍会断行（真机标签掉到第二行，
+               而 Chromium 预览不重现 —— 这是本组件第三次栽在「<text> 盒模型设备差异」上：
+               height 裁字 → 那次也是它）。<view> 默认块级，inline-block 后是**保证原子**的行内盒，
+               绝不内部折行，是最久经考验的单行标签写法。
+               容器 white-space:nowrap 兜住「标签整体不换到下一行」；子项间空白靠 margin-left 撑。 -->
+          <view class="users-name"><text class="user-row-name">{{item.nameText}}</text><view class="users-chip users-chip-{{chip.cls}}" wx:for="{{item.chips}}" wx:for-item="chip" wx:key="text">{{chip.text}}<text wx:if="{{chip.more}}" class="users-chip-more">+{{chip.more}}</text></view></view>
+          <!-- 一行元信息：学生 = 学号 · 班级 · 宿舍 · 目标；教师 = 院系 · 院校 -->
+          <view class="user-row-meta" wx:if="{{item.metaText}}">
+            <text>{{item.metaText}}</text>
           </view>
         </view>
-        <t-icon name="chevron-right" size="30rpx" color="var(--tt-text-3)" />
+        <t-icon name="chevron-right" size="30rpx" color="var(--tt-text-3)" wx:if="{{!batchMode}}" />
       </view>
     </t-swipe-cell>
 
@@ -133,7 +153,89 @@
     <t-loading wx:if="{{loading || loadingMore}}" theme="circular" size="40rpx" class="users-loading" />
   </view>
 
-  <view class="tt-footer">点卡片看详情 · 左滑可编辑 / 限制 / 解除 / 删除</view>
+  <view class="tt-footer" wx:if="{{!batchMode}}">{{canManage || canPerms ? '点卡片看详情 · 左滑可编辑 / 限制 / 解除 / 删除' : '点卡片看详情（只读：无用户管理权限）'}}</view>
+
+  <!-- ===== 批量动作条（仅批量模式；固定在底部，不随列表滚走） ===== -->
+  <view class="users-batch-bar" wx:if="{{batchMode}}">
+    <view class="users-batch-count {{selectedCount ? 'is-on' : ''}}">已选 {{selectedCount}}</view>
+    <scroll-view class="users-batch-actions" scroll-x enable-flex>
+      <!-- 批量动作按写权限分组显示：设班委/限制/转移 = user.manage，重置密码/删除 = permission.manage -->
+      <block wx:if="{{canManage}}">
+        <view class="users-batch-btn" data-action="officer" bind:tap="onBatchAction">设为班委</view>
+        <view class="users-batch-btn" data-action="unofficer" bind:tap="onBatchAction">取消班委</view>
+        <view class="users-batch-btn" data-action="ban" bind:tap="onBatchAction">限制</view>
+        <view class="users-batch-btn" data-action="unban" bind:tap="onBatchAction">解除限制</view>
+        <!-- 转移是级联抽屉（不是自由输入弹窗）：一键转院校 = 只选院校，两校区系部/专业同名时够用 -->
+        <view class="users-batch-btn" data-action="transfer" data-mode="school" bind:tap="onBatchAction">一键转院校</view>
+        <view class="users-batch-btn" data-action="transfer" data-mode="full" bind:tap="onBatchAction">转移</view>
+      </block>
+      <block wx:if="{{canPerms}}">
+        <view class="users-batch-btn" data-action="reset-password" bind:tap="onBatchAction">重置密码</view>
+        <view class="users-batch-btn is-danger" data-action="delete" bind:tap="onBatchAction">删除</view>
+      </block>
+    </scroll-view>
+    <view class="users-batch-clear" wx:if="{{selectedCount}}" bind:tap="toggleCheckAll">清空</view>
+  </view>
+
+  <!-- ===== 批量转移（按组织架构级联选择，不提供自由输入） =====
+       每级首项「不修改」= 该字段不提交。院校变了会清空系部/专业（换校区后旧系部不一定成立）。 -->
+  <t-popup visible="{{transferSheet.visible}}" placement="bottom" bind:visible-change="closeTransferSheet">
+    <view class="tt-sheet users-transfer-sheet">
+      <view class="tt-sheet-grab"></view>
+      <view class="tt-sheet-head">
+        <view class="tt-sheet-icon">
+          <t-icon name="swap" size="36rpx" color="var(--tt-brand)" />
+        </view>
+        <view class="tt-sheet-title">
+          {{transferSheet.mode === 'school' ? '一键转移院校' : '批量转移'}}
+          <view class="tt-sheet-sub">已选 {{selectedCount}} 人 · 选项来自「组织架构」</view>
+        </view>
+        <view class="tt-sheet-close" bind:tap="closeTransferSheet">
+          <t-icon name="close" size="32rpx" color="var(--tt-text-2)" />
+        </view>
+      </view>
+
+      <scroll-view scroll-y class="tt-sheet-body">
+        <view class="tt-sheet-field">
+          <text class="users-transfer-label">院校</text>
+          <picker mode="selector" range="{{transferOptions.schools}}" range-key="label" value="{{transferIndex.schools}}" data-level="school" bindchange="onTransferPick">
+            <view class="tt-sheet-input {{transfer.school ? '' : 'tt-sheet-ph'}}">{{transfer.school || '不修改'}}</view>
+          </picker>
+        </view>
+
+        <block wx:if="{{transferSheet.mode === 'full'}}">
+          <view class="tt-sheet-field">
+            <text class="users-transfer-label">系部</text>
+            <picker mode="selector" range="{{transferOptions.departments}}" range-key="label" value="{{transferIndex.departments}}" data-level="department" bindchange="onTransferPick">
+              <view class="tt-sheet-input {{transfer.department ? '' : 'tt-sheet-ph'}}">{{transfer.department || (transfer.school ? '不修改' : '请先选院校')}}</view>
+            </picker>
+          </view>
+          <view class="tt-sheet-field">
+            <text class="users-transfer-label">专业</text>
+            <picker mode="selector" range="{{transferOptions.specialties}}" range-key="label" value="{{transferIndex.specialties}}" data-level="specialty" bindchange="onTransferPick">
+              <view class="tt-sheet-input {{transfer.specialty ? '' : 'tt-sheet-ph'}}">{{transfer.specialty || '不修改'}}</view>
+            </picker>
+          </view>
+          <view class="tt-sheet-field">
+            <text class="users-transfer-label">年级</text>
+            <picker mode="selector" range="{{transferOptions.grades}}" range-key="label" value="{{transferIndex.grades}}" data-level="grade" bindchange="onTransferPick">
+              <view class="tt-sheet-input {{transfer.grade ? '' : 'tt-sheet-ph'}}">{{transfer.gradeLabel || '不修改'}}</view>
+            </picker>
+          </view>
+        </block>
+
+        <view class="tt-sheet-note">
+          {{transferSheet.mode === 'school'
+            ? '只换院校：两校区的系部与专业名称一致时够用；新校区没有同名系部的学生会清空系部归属并在结果里说明。'
+            : '只改你选的那几项，其余保持原值。班级名由服务端按「年级 + 专业」自动重算。'}}
+        </view>
+      </scroll-view>
+
+      <view class="tt-sheet-foot">
+        <t-button wx:if="{{canManage}}" theme="primary" block loading="{{transferSheet.busy}}" bind:tap="submitTransfer">确认转移</t-button>
+      </view>
+    </view>
+  </t-popup>
 
   <!-- ===== 限制账号功能（类型 + 时长 + 原因） ===== -->
   <ban-sheet

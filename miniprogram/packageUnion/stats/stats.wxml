@@ -1,0 +1,154 @@
+<view class="page tt-page st-page">
+  <!-- ===== 吸顶筛选：院校 / 系部 / 年级 + 周期 ===== -->
+  <view class="st-sticky">
+    <view class="st-filter-card">
+      <view class="st-filter-row">
+        <picker mode="selector" range="{{schools}}" range-key="label" value="{{schoolIndex}}" bindchange="onSchoolChange">
+          <view class="st-select {{school ? 'on' : ''}}">
+            <text>{{schools[schoolIndex].label}}</text>
+            <t-icon name="chevron-down" size="20rpx" color="var(--tt-text-3)" />
+          </view>
+        </picker>
+        <picker mode="selector" range="{{departments}}" range-key="label" value="{{departmentIndex}}" bindchange="onDepartmentChange">
+          <view class="st-select {{department ? 'on' : ''}}">
+            <text>{{departments[departmentIndex].label}}</text>
+            <t-icon name="chevron-down" size="20rpx" color="var(--tt-text-3)" />
+          </view>
+        </picker>
+        <picker mode="selector" range="{{grades}}" range-key="label" value="{{gradeIndex}}" bindchange="onGradeChange">
+          <view class="st-select {{grade ? 'on' : ''}}">
+            <text>{{grades[gradeIndex].label}}</text>
+            <t-icon name="chevron-down" size="20rpx" color="var(--tt-text-3)" />
+          </view>
+        </picker>
+        <view class="st-reset" wx:if="{{hasFilter}}" bind:tap="onResetFilters">重置</view>
+      </view>
+
+      <view class="tt-segment st-range-seg">
+        <view
+          class="tt-segment-item {{range === item.key ? 'active' : ''}}"
+          wx:for="{{ranges}}"
+          wx:key="key"
+          data-range="{{item.key}}"
+          bind:tap="onRangeTap"
+        >
+          {{item.label}}
+        </view>
+      </view>
+
+      <view class="st-period-row">
+        <text class="st-period-l">统计日期</text>
+        <block wx:if="{{range === 'day'}}">
+          <picker mode="date" value="{{date}}" bindchange="onDateChange">
+            <view class="st-period-chip">
+              <t-icon name="calendar" size="22rpx" color="var(--tt-brand)" />
+              <text>{{dateText}}</text>
+            </view>
+          </picker>
+        </block>
+
+        <block wx:elif="{{range === 'week'}}">
+          <picker mode="selector" range="{{monthOptions}}" range-key="label" value="{{monthIndex}}" bindchange="onMonthChange">
+            <view class="st-period-chip">
+              <t-icon name="calendar" size="22rpx" color="var(--tt-brand)" />
+              <text>{{monthOptions[monthIndex].label}}</text>
+            </view>
+          </picker>
+          <picker mode="selector" range="{{weekOptions}}" range-key="label" value="{{weekIndex}}" bindchange="onWeekChange">
+            <view class="st-period-chip">
+              <t-icon name="view-list" size="22rpx" color="var(--tt-brand)" />
+              <text>{{weekOptions[weekIndex].label}}</text>
+            </view>
+          </picker>
+          <!-- 周区间再单列一行说明：picker 里的 label 已带日期段，这里补「本周」语义 + 区间，窄屏折行也能读全 -->
+          <text class="st-period-hint" wx:if="{{weekRangeText}}">本周 {{weekRangeText}}</text>        </block>
+
+        <block wx:else>
+          <picker mode="selector" range="{{monthOptions}}" range-key="label" value="{{monthIndex}}" bindchange="onMonthChange">
+            <view class="st-period-chip">
+              <t-icon name="calendar" size="22rpx" color="var(--tt-brand)" />
+              <text>{{monthOptions[monthIndex].label}}</text>
+            </view>
+          </picker>
+        </block>
+
+      </view>
+    </view>
+  </view>
+
+  <!-- ===== 我所在的班（吸顶之下、榜单之上，避免在自己班的排名里翻找）===== -->
+  <view class="tt-card st-me" wx:if="{{me}}">
+    <view class="st-me-rank">
+      <text class="num-font st-me-rank-v">{{me.rank}}</text>
+      <text class="st-me-rank-l">/ {{ranking.total}} 名</text>
+    </view>
+    <view class="st-me-main">
+      <view class="st-me-title">
+        <text class="st-me-class">{{me.className}}</text>
+        <text class="st-me-badge">我所在的班</text>
+      </view>
+      <text class="st-me-sub">{{periodText}}平均 {{me.scoreText}} 分 · {{me.days}} 天有记录</text>
+    </view>
+    <text class="num-font st-me-score">{{me.scoreText}}</text>
+  </view>
+
+  <!-- ===== 完整榜单 ===== -->
+  <view class="tt-section">
+    <text>班级班超榜</text>
+    <text class="tt-section-extra">{{periodText}} · {{ranking.total || 0}} 个班</text>
+  </view>
+  <view class="tt-card st-list">
+    <view class="tt-empty" wx:if="{{loading && !list.length}}">正在加载榜单…</view>
+    <view
+      class="st-row"
+      wx:for="{{list}}"
+      wx:key="className"
+      data-class="{{item.className}}"
+      bind:tap="goClass"
+      hover-class="st-row-hover"
+    >
+      <text class="st-no st-no-{{item.rank <= 3 ? item.rank : 'x'}}">{{item.rank}}</text>
+      <view class="st-main">
+        <text class="st-name">{{item.className}}</text>
+        <text class="st-sub">{{item.departmentName || '—'}} · {{item.grade ? item.grade + '级' : '年级未设置'}} · {{item.days}} 天 · {{item.recordCount}} 条记录</text>
+      </view>
+      <view class="st-right">
+        <text class="num-font st-score">{{item.scoreText}}</text>
+        <text class="st-score-unit">分</text>
+      </view>
+    </view>
+    <view class="tt-empty" wx:if="{{!loading && !list.length}}">
+      当前筛选 / 日期下没有检查记录。可切换日榜、周榜、月榜或调整院校、系部、年级。
+    </view>
+  </view>
+
+  <!-- ===== 红黑榜 ===== -->
+  <block wx:if="{{bottom.length}}">
+    <view class="tt-section">
+      <text>需要关注</text>
+      <text class="tt-section-extra">得分靠后</text>
+    </view>
+    <view class="tt-card st-list">
+      <view
+        class="st-row"
+        wx:for="{{bottom}}"
+        wx:key="className"
+        data-class="{{item.className}}"
+        bind:tap="goClass"
+        hover-class="st-row-hover"
+      >
+        <text class="st-no st-no-warn">!</text>
+        <view class="st-main">
+          <text class="st-name">{{item.className}}</text>
+          <text class="st-sub">{{item.departmentName || '—'}} · 扣分 {{item.deduct}}</text>
+        </view>
+        <view class="st-right">
+          <text class="num-font st-score st-score-warn">{{item.scoreText}}</text>
+          <text class="st-score-unit">分</text>
+        </view>
+      </view>
+    </view>
+  </block>
+
+  <view class="tt-footer">班级得分 = 100 − 各模块扣分（按日均）；无早操 / 已取消的检查不计入</view>
+</view>

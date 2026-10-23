@@ -1,0 +1,72 @@
+<!-- 班级考勤汇总（只读）：周期切换 + 概览卡（各模块区间平均出勤率 / 累计缺勤 / 未归）+ 按日倒序明细
+     数据来自 GET /api/class/attendance（班级域成员资格校验：班主任 / 班委可读）；组件内没有任何写操作。 -->
+<view class="at-root">
+  <!-- 周期：今日 / 本周 / 本月。
+       父页面（我的班级页的「班超联赛」tab）自己有一个周期选择器并用 range-from/range-to 驱动本组件时，
+       rangeDriven=true → 这里**不渲染**，否则页面上会出现两个周期条、还互相打架。 -->
+  <view class="at-periods" wx:if="{{!rangeDriven}}">
+    <view
+      class="at-period {{index === periodIndex ? 'active' : ''}}"
+      wx:for="{{periods}}"
+      wx:key="key"
+      data-index="{{index}}"
+      bind:tap="onPeriod"
+    >
+      {{item.label}}
+    </view>
+    <text class="at-range" wx:if="{{periodLabel}}">{{periodLabel}}</text>
+  </view>
+  <!-- 父驱动时只留一行区间说明（周会带日期段：「本周 10月8日至10月14日」） -->
+  <view class="at-periods at-periods-driven" wx:else>
+    <text class="at-range">{{periodLabel}}</text>
+  </view>
+
+  <!-- ===== 概览卡 ===== -->
+  <view class="tt-card at-card">
+    <block wx:if="{{loading}}">
+      <view class="at-loading">加载中…</view>
+    </block>
+
+    <block wx:elif="{{error}}">
+      <view class="at-error">{{error}}</view>
+      <view class="at-error-s">班级考勤仅班主任与班委可查看</view>
+    </block>
+
+    <block wx:elif="{{summary && summary.hasAny}}">
+      <!-- 累计缺勤 / 未归次数：区间内每天的合计（人次） -->
+      <view class="tt-stat-row">
+        <view class="tt-stat">
+          <view class="tt-stat-value num-font">{{summary.absent === null ? '—' : summary.absent}}</view>
+          <view class="tt-stat-label">累计缺勤{{summary.estimated ? '（估算）' : ''}}</view>
+        </view>
+        <view class="tt-stat">
+          <view class="tt-stat-value num-font">{{summary.notReturned === null ? '—' : summary.notReturned}}</view>
+          <view class="tt-stat-label">未归次数{{summary.estimated ? '（估算）' : ''}}</view>
+        </view>
+        <view class="tt-stat">
+          <view class="tt-stat-value num-font">{{summary.avgText}}</view>
+          <view class="tt-stat-label">平均出勤率</view>
+        </view>
+      </view>
+
+      <!-- 各模块区间平均出勤率：没有早操的班级显示「本班无早操」，不显示 0 -->
+      <view class="at-mods">
+        <view class="at-mod" wx:for="{{summary.modules}}" wx:key="key">
+          <text class="at-mod-name">{{item.short}}</text>
+          <text class="at-mod-rate num-font {{item.muted ? 'is-muted' : (item.full ? 'is-full' : '')}}">{{item.rateText}}</text>
+        </view>
+      </view>
+      <view class="at-note">区间内在统计里的天数：{{summary.days}} 天；卫生为打分模块，不参与出勤率平均</view>
+    </block>
+
+    <view class="tt-empty" wx:else>该区间暂无考勤记录</view>
+  </view>
+
+  <!-- 明细：**已移除**（用户 2026-10-19 口径：「不需要每日啊，咱们已经有筛选了」）。
+       页面顶部已有「今日 / 本周 / 本月 + 具体日期」的周期选择器，
+       组件再列一遍「每日明细（按日期倒序）」既重复、又和概览卡的「该区间暂无考勤记录」自相矛盾
+       （卡片说没记录，下面却列出「10月19日 未录入」）。
+       日期维度的数据仍由服务端下发（days），此处只是不再渲染。 -->
+
+  <view class="tt-footer">考勤数据由学生会检查记录汇总，只读展示；有异议可向主席团申诉</view>
+</view>

@@ -3,11 +3,16 @@ const fmt = require('../../utils/format');
 
 const PAGE_SIZE = 24;
 // 用途（与 server/src/models/file-object.js 的 CATEGORIES 一一对应）
+// ⚠️ check_photo = 学生会检查录入的现场留证照片（第四轮新增）。**漏了它就会出现**
+//   「明明传了照片、文件管理里既看不到分类也筛不出来」（用户报障）——
+//   增删用途时必须与模型的 CATEGORIES 同步（服务端的统计键已改为从模型派生，加了自动传导；
+//   但这份 CATS 是前端展示顺序与文案的唯一来源，仍需手动同步）。
 const CATS = [
   { key: '', label: '全部' },
   { key: 'avatar', label: '头像' },
   { key: 'ad', label: '广告' },
   { key: 'badge', label: '徽章' },
+  { key: 'check_photo', label: '检查照片' },
   { key: 'other', label: '其他' },
 ];
 
@@ -84,7 +89,9 @@ Page({
       if (activeCat) query.category = activeCat;
       const res = await auth.get('/api/admin/files', query);
       const list = res.list.map((x) => this.decorate(x));
-      // 筛选条需要「全部」；统计网格放不下 5 项，且「全部」= 总览卡右上角的总数，故不重复计入
+      // 筛选条需要「全部」；统计网格放不下 6 项，且「全部」= 总览卡右上角的总数，故不重复计入。
+      // 注意：这里按**服务端下发的 byCategory 键**取数（服务端已从模型枚举派生），
+      // 所以新增用途时前端只要补 CATS（展示顺序与文案），计数不会再漏。
       const cats = CATS.map((c) => ({
         ...c,
         count: c.key === '' ? res.stats.byCategory.all : res.stats.byCategory[c.key] || 0,
@@ -127,7 +134,9 @@ Page({
     const that = this;
     wx.showModal({
       title: '删除文件',
-      content: `确认删除「${name}」？引用该图的素材/头像将一并清空。`,
+      // 文案要点明「会清掉哪些引用」：检查照片是复核留证，删了会从检查记录里摘掉，
+      // 这比「头像裂图」严重（复核证据消失），所以要单独说清楚。
+      content: `确认删除「${name}」？引用该图的素材 / 头像 / 徽章图标将一并清空，检查记录里的留证照片也会被移除。`,
       confirmColor: '#e34d59',
       success: async (res) => {
         if (!res.confirm) return;

@@ -1,0 +1,399 @@
+<view class="page tt-page en-page {{bodyLocked ? 'en-body-locked' : ''}}">
+  <!-- ===== 无录入权限 ===== -->
+  <view class="tt-card en-empty" wx:if="{{!loading && !canEnter}}">
+    <t-icon name="info-circle" size="40rpx" color="var(--tt-text-3)" />
+    <view class="en-empty-t">你所在的部门暂不负责检查录入</view>
+    <view class="en-empty-s">如需调整职责范围，请联系学生会主席团或学生处</view>
+  </view>
+
+  <block wx:if="{{canEnter}}">
+    <!-- ===== 吸顶区（B 端：滚列表时筛选始终可见）=====
+         包含：模块切换 + 日期/时段 + 搜索 + 进度概览（还差几个未录） -->
+    <view class="en-sticky">
+      <view class="en-tabs">
+        <view
+          class="en-tab {{item.key === moduleKey ? 'active' : ''}}"
+          wx:for="{{modules}}"
+          wx:key="key"
+          data-key="{{item.key}}"
+          bind:tap="onModuleChange"
+        >
+          {{item.shortName || item.name}}
+        </view>
+      </view>
+
+      <view class="en-filters">
+        <picker class="en-filter" mode="selector" range="{{dates}}" range-key="label" value="{{dateIndex}}" bindchange="onDateChange">
+          <view class="en-filter-v">
+            <t-icon name="calendar" size="24rpx" color="var(--tt-text-2)" />
+            <text>{{dates[dateIndex].label || '今天'}}</text>
+          </view>
+        </picker>
+        <picker class="en-filter" wx:if="{{periods.length > 1}}" mode="selector" range="{{periodLabels}}" value="{{periodIndex}}" bindchange="onPeriodChange">
+          <view class="en-filter-v">
+            <t-icon name="time" size="24rpx" color="var(--tt-text-2)" />
+            <text>{{periodLabels[periodIndex]}}</text>
+          </view>
+        </picker>
+      </view>
+    </view>
+
+    <!-- ===== 进度概览（B 端头部：一眼看出今天还差多少）=====
+         早八这类「只记异常人」的模块：未录**不算待办**（没人迟到是常态），
+         所以左上角那块显示「无迟到」而不是数字 0 —— 否则会读成「一个都没录」。 -->
+    <view class="tt-card en-summary">
+      <view class="en-sum">
+        <text class="num-font en-sum-v en-sum-outstanding" wx:if="{{!stats.optional}}">{{stats.missing}}</text>
+        <text class="en-sum-v en-sum-none" wx:else>{{stats.noRecordText}}</text>
+        <text class="en-sum-l">{{stats.optional ? '待录' : '未录'}}</text>
+      </view>
+      <view class="en-sum">
+        <text class="num-font en-sum-v">{{stats.entered}}</text>
+        <text class="en-sum-l">已录</text>
+      </view>
+      <view class="en-sum">
+        <text class="num-font en-sum-v">{{stats.reviewed}}</text>
+        <text class="en-sum-l">已复核</text>
+      </view>
+      <view class="en-sum">
+        <text class="num-font en-sum-v">{{stats.total}}</text>
+        <text class="en-sum-l">受检对象</text>
+      </view>
+      <view class="en-sum-tip {{allEntered ? 'done' : ''}}">{{allEnteredTip}}</view>
+    </view>
+
+    <!-- ===== 搜索（与吸顶区一起固定）===== -->
+    <view class="en-search">
+      <t-icon name="search" size="28rpx" color="var(--tt-text-3)" />
+      <input
+        class="en-search-input"
+        placeholder="搜索班级 / 房间 / 区域"
+        value="{{keyword}}"
+        bindinput="onKeyword"
+      />
+      <view class="en-search-clear" wx:if="{{keyword}}" bind:tap="clearKeyword">清除</view>
+    </view>
+
+    <!-- ===== 三级筛选：院校 → 系部 → 年级 =====
+         选项只从服务端已按分会范围收敛的 targets 生成：分院身份看不到本校以外的院校/系部。 -->
+    <view class="en-cascade" wx:if="{{targets.length}}">
+      <picker
+        class="en-cascade-item"
+        mode="selector"
+        range="{{schoolOptions}}"
+        range-key="label"
+        value="{{schoolIndex}}"
+        bindchange="onSchoolChange"
+      >
+        <view class="en-cascade-v {{schoolFilter ? 'active' : ''}}">
+          <text class="en-cascade-label">院校</text>
+          <text class="en-cascade-value">{{schoolOptions[schoolIndex].label}}</text>
+          <t-icon name="chevron-down" size="20rpx" color="var(--tt-text-3)" />
+        </view>
+      </picker>
+      <picker
+        class="en-cascade-item"
+        mode="selector"
+        range="{{departmentOptions}}"
+        range-key="label"
+        value="{{departmentIndex}}"
+        bindchange="onDepartmentChange"
+      >
+        <view class="en-cascade-v {{departmentFilter ? 'active' : ''}}">
+          <text class="en-cascade-label">系部</text>
+          <text class="en-cascade-value">{{departmentOptions[departmentIndex].label}}</text>
+          <t-icon name="chevron-down" size="20rpx" color="var(--tt-text-3)" />
+        </view>
+      </picker>
+      <picker
+        class="en-cascade-item"
+        mode="selector"
+        range="{{gradeOptions}}"
+        range-key="label"
+        value="{{gradeIndex}}"
+        bindchange="onGradeChange"
+      >
+        <view class="en-cascade-v {{gradeFilter ? 'active' : ''}}">
+          <text class="en-cascade-label">年级</text>
+          <text class="en-cascade-value">{{gradeOptions[gradeIndex].label}}</text>
+          <t-icon name="chevron-down" size="20rpx" color="var(--tt-text-3)" />
+        </view>
+      </picker>
+    </view>
+    <view class="en-scope-hint" wx:if="{{scopeHint}}">
+      <t-icon name="info-circle" size="22rpx" color="var(--tt-text-3)" />
+      <text>{{scopeHint}}</text>
+    </view>
+
+    <!-- ===== 受检对象列表（卡片化；点整行 → 开抽屉填表）===== -->
+    <view class="tt-section">
+      <text>受检对象</text>
+      <text class="en-priority" wx:if="{{!schoolFilter && !departmentFilter && !gradeFilter && hasCurrentYear}}">今年优先</text>
+      <text class="tt-section-extra">{{filtered.length}} / {{targets.length}} 个</text>
+    </view>
+    <view class="tt-card en-targets">
+      <view
+        id="en-target-{{ti}}"
+        class="en-target {{item.targetId === locatingId ? 'en-target-focus' : ''}}"
+        wx:for="{{filtered}}"
+        wx:for-index="ti"
+        wx:key="targetId"
+        data-id="{{item.targetId}}"
+        bind:tap="pickTarget"
+      >
+        <view class="en-target-main">
+          <view class="en-target-head">
+            <text class="en-target-name">{{item.targetName}}</text>
+            <text class="en-target-status en-target-{{item.statusClass}}">{{item.statusText}}</text>
+          </view>
+          <text class="en-target-sub">{{item.info}}</text>
+          <text class="en-target-sum" wx:if="{{item.summary}}">{{item.summary}}</text>
+        </view>
+        <t-icon name="chevron-right" size="26rpx" color="var(--tt-text-3)" />
+      </view>
+      <view class="en-empty-s" wx:if="{{!filtered.length}}">
+        没有符合条件的受检对象<text wx:if="{{keyword || gradeFilter}}">，试试清空搜索或切换年级</text>
+      </view>
+    </view>
+
+    <view class="tt-footer">只可补录最近 {{backfillDays}} 天，更早请通过管理端录入；提交后由主席团复核</view>
+
+    <!-- ===== 半屏抽屉表单（B 端：填表不离开列表）=====
+         抽屉骨架用公共 .tt-sheet*；滚动区确定高度见 wxss（history: 只写 min-height/flex 都滚不动） -->
+    <view class="en-mask" wx:if="{{showForm}}" bind:tap="closeForm"></view>
+    <view class="en-sheet {{showForm ? 'open' : ''}}" wx:if="{{current}}">
+      <view class="en-sheet-inner">
+        <view class="tt-sheet-grab"></view>
+        <view class="tt-sheet-head">
+          <view class="tt-sheet-icon">
+            <t-icon name="file-paste" size="32rpx" color="var(--tt-brand)" />
+          </view>
+          <view class="tt-sheet-title">
+            {{current.targetName}}
+            <view class="tt-sheet-sub">{{current.info}}{{existingId ? ' · 已有记录，提交将修改' : ''}}</view>
+          </view>
+          <view class="tt-sheet-close" bind:tap="closeForm">
+            <t-icon name="close" size="28rpx" color="var(--tt-text-2)" />
+          </view>
+        </view>
+
+        <scroll-view scroll-y class="tt-sheet-body en-sheet-body">
+          <!-- 模块没配字段时不能只留一个空白抽屉：给出可执行的配置提示，而不是让人以为页面坏了 -->
+          <view class="en-sheet-empty" wx:if="{{module && (!module.fields || !module.fields.length)}}">
+            <t-icon name="file-paste" size="44rpx" color="var(--tt-text-3)" />
+            <view class="en-sheet-empty-t">该检查模块还没有配置表单字段</view>
+            <view class="en-sheet-empty-s">请管理员到管理端「学生会配置 → 检查模块」补充字段后再录入</view>
+          </view>
+
+          <!-- 申诉改判模式：说明「这次提交会做什么」，避免评审以为只是普通修改 -->
+          <view class="en-form-tip en-appeal-tip" wx:if="{{appealReview}}">
+            正在更正申诉记录：按更正后的内容重算扣分，提交后**申诉直接标记为成立**
+          </view>
+
+          <!-- 已有记录提示 -->
+          <view class="en-form-tip" wx:if="{{existingId}}">
+            该对象当日已有记录（{{current.statusText}}），提交将修改原记录
+            <text class="en-form-link" catch:tap="viewRecord">查看</text>
+          </view>
+
+          <!-- 派生字段的只读「自动计算」：应到 / 实到 / 缺勤（或应住 / 实到 / 未归）一屏看清 -->
+          <view class="en-calc" wx:if="{{derivedRows.length}}">
+            <view class="en-calc-head">
+              <text>自动计算</text>
+              <text class="en-calc-sub">无需填写</text>
+            </view>
+            <view class="en-calc-grid">
+              <view class="en-calc-item" wx:for="{{derivedRows}}" wx:key="key">
+                <view class="en-calc-value-line">
+                  <text class="num-font en-calc-value">{{item.value}}</text>
+                  <text class="en-calc-unit">{{item.unit}}</text>
+                </view>
+                <text class="en-calc-label">{{item.label}}</text>
+                <text class="en-calc-detail">{{item.detail}}</text>
+              </view>
+            </view>
+          </view>
+
+          <!-- 「网课」提示（仅晚自习） -->
+          <view class="en-online-tip" wx:if="{{onlineDorm}}">{{onlineDormTip}}</view>
+
+          <block wx:for="{{fields}}" wx:key="key" wx:for-item="f">
+            <view class="en-field" wx:if="{{!f.derived}}">
+              <view class="en-field-label">
+                <view class="en-field-title">
+                  <text>{{f.label || f.key}}</text>
+                  <text class="en-required" wx:if="{{f.required}}">*</text>
+                </view>
+                <text class="en-field-hint" wx:if="{{f.hint}}">{{f.hint}}</text>
+              </view>
+
+              <!-- 数值 / 整数 -->
+              <block wx:if="{{f.type === 'int' || f.type === 'number'}}">
+                <input
+                  class="en-input"
+                  type="digit"
+                  placeholder="{{f.placeholder || '请输入'}}"
+                  value="{{form[f.key]}}"
+                  data-key="{{f.key}}"
+                  bindinput="onNumInput"
+                />
+              </block>
+
+              <!-- 文本 -->
+              <block wx:elif="{{f.type === 'text'}}">
+                <input
+                  class="en-input"
+                  placeholder="{{f.placeholder || '请输入'}}"
+                  value="{{form[f.key]}}"
+                  data-key="{{f.key}}"
+                  bindinput="onTextInput"
+                />
+              </block>
+
+              <!-- 多行文本 -->
+              <block wx:elif="{{f.type === 'textarea'}}">
+                <textarea
+                  class="en-textarea"
+                  placeholder="{{f.placeholder || '请输入'}}"
+                  value="{{form[f.key]}}"
+                  data-key="{{f.key}}"
+                  maxlength="300"
+                  bindinput="onTextInput"
+                />
+              </block>
+
+              <!-- 单选（「评价」= 优 / 良 / 差 / 网课）：必须单选，多选会录出「优 + 差」这种自相矛盾的结果 -->
+              <block wx:elif="{{f.type === 'select' && f.key === 'grade'}}">
+                <view class="en-grade" wx:if="{{f.options.length}}">
+                  <view
+                    class="en-grade-item {{form[f.key] === option ? 'active' : ''}}"
+                    wx:for="{{f.options}}"
+                    wx:for-item="option"
+                    wx:key="*this"
+                    data-key="{{f.key}}"
+                    data-option="{{option}}"
+                    bind:tap="onSingleSelectTap"
+                  >
+                    {{option}}
+                  </view>
+                </view>
+                <view class="en-field-hint" wx:else>选项由管理端维护，当前可留空</view>
+              </block>
+
+              <!-- 多选（自定义模块的问题项 / 违规类型） -->
+              <block wx:elif="{{f.type === 'select'}}">
+                <view class="en-chips">
+                  <view
+                    class="en-chip {{form[f.key] && form[f.key].indexOf(option) >= 0 ? 'active' : ''}}"
+                    wx:for="{{f.options}}"
+                    wx:for-item="option"
+                    wx:key="*this"
+                    data-key="{{f.key}}"
+                    data-option="{{option}}"
+                    bind:tap="onSelectTap"
+                  >
+                    {{option}}
+                  </view>
+                  <view class="en-field-hint" wx:if="{{!f.options.length}}">选项由管理端维护，当前可留空</view>
+                </view>
+              </block>
+
+              <!-- 检查项打分（自定义模块可能用） -->
+              <block wx:elif="{{f.type === 'items'}}">
+                <view class="en-items">
+                  <view class="en-item" wx:for="{{form[f.key]}}" wx:for-item="it" wx:for-index="ii" wx:key="key">
+                    <text class="en-item-label">{{it.label}}</text>
+                    <input
+                      class="en-item-input"
+                      type="digit"
+                      value="{{it.score}}"
+                      data-key="{{f.key}}"
+                      data-index="{{ii}}"
+                      bindinput="onItemScore"
+                    />
+                    <text class="en-item-max">/ {{it.max}}</text>
+                  </view>
+                </view>
+              </block>
+
+              <!-- 学生名单：搜索勾选（不再手输姓名 / 学号） -->
+              <block wx:elif="{{f.type === 'students'}}">
+                <person-picker
+                  wx:if="{{current && (current.className || pickerQuery.roomId || pickerQuery.scope)}}"
+                  api="/api/union/entry/students"
+                  extra-query="{{pickerQuery}}"
+                  limit="{{personsLimit}}"
+                  selected="{{form[f.key]}}"
+                  with-reason="{{f.key !== 'lateList'}}"
+                  auto-load="{{true}}"
+                  data-field="{{f.key}}"
+                  bind:change="onPersonsChange"
+                />
+                <view class="en-field-hint" wx:if="{{pickerHint}}">{{pickerHint}}</view>
+                <view class="en-field-hint" wx:elif="{{!current.className && !pickerQuery.roomId && !pickerQuery.scope}}">该受检对象没有绑定班级，无法拉取名单</view>
+              </block>
+
+              <!-- 留证照片（type='photo'）：网格缩略图 + 「+ 拍照/相册」，最多 9 张 -->
+              <block wx:elif="{{f.type === 'photo' || f.type === 'photos' || f.type === 'image'}}">
+                <view class="en-photos">
+                  <view class="en-photo" wx:for="{{photos}}" wx:for-item="p" wx:for-index="pi" wx:key="path">
+                    <image
+                      class="en-photo-img"
+                      src="{{p.path || p.url}}"
+                      mode="aspectFill"
+                      data-index="{{pi}}"
+                      bind:tap="previewPhoto"
+                    />
+                    <view class="en-photo-mask" wx:if="{{p.status === 'uploading'}}">
+                      <text class="en-photo-pct num-font">{{p.progress}}%</text>
+                    </view>
+                    <view
+                      class="en-photo-mask en-photo-failed"
+                      wx:elif="{{p.status === 'failed'}}"
+                      data-index="{{pi}}"
+                      catch:tap="retryPhoto"
+                    >
+                      <t-icon name="refresh" size="40rpx" color="#ffffff" />
+                      <text class="en-photo-retry-t">重试</text>
+                    </view>
+                    <view class="en-photo-del" data-index="{{pi}}" catch:tap="removePhoto">
+                      <t-icon name="close" size="24rpx" color="#ffffff" />
+                    </view>
+                  </view>
+
+                  <view
+                    class="en-photo-add"
+                    wx:if="{{photos.length < maxPhotos}}"
+                    data-field="{{f.key}}"
+                    bind:tap="onChoosePhoto"
+                  >
+                    <t-icon name="camera" size="40rpx" color="var(--tt-text-3)" />
+                    <text class="en-photo-add-t">拍照 / 相册</text>
+                  </view>
+                </view>
+                <view class="en-photo-tip">
+                  选填，最多 {{maxPhotos}} 张；已上传 {{photos.length}} 张
+                  <text class="en-photo-fail-n" wx:if="{{photosFailedCount}}">（{{photosFailedCount}} 张失败可点图重试）</text>
+                </view>
+              </block>
+
+              <!-- 开关 -->
+              <block wx:elif="{{f.type === 'bool'}}">
+                <switch checked="{{form[f.key]}}" data-key="{{f.key}}" bindchange="onTextInput" />
+              </block>
+            </view>
+          </block>
+        </scroll-view>
+
+        <!-- 底部固定操作（不随内容滚）：B 端惯例 -->
+        <view class="tt-sheet-foot en-sheet-foot">
+          <view class="en-btn-ghost" bind:tap="closeForm">取消</view>
+          <view class="en-btn-ghost" wx:if="{{existingId}}" bind:tap="cancelRecord">本次不检查</view>
+          <view class="en-btn {{submitting ? 'disabled' : ''}}" bind:tap="submit">
+            {{submitting ? '提交中…' : (existingId ? '保存修改' : '提交')}}
+          </view>
+        </view>
+      </view>
+    </view>
+  </block>
+</view>

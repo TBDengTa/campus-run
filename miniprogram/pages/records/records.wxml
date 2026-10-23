@@ -35,6 +35,9 @@
     </view>
   </view>
 
+  <!-- ===== 广告位（记录页卡片位；无素材时整块不渲染） ===== -->
+  <ad-card slot-key="record_card" refresh-at="{{adRefreshAt}}" />
+
   <!-- ===== 分段切换 ===== -->
   <view class="records-segment">
     <view class="tt-segment">

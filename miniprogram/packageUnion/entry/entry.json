@@ -1,0 +1,7 @@
+{
+  "navigationBarTitleText": "检查录入",
+  "enablePullDownRefresh": false,
+  "usingComponents": {
+    "person-picker": "/components/person-picker/person-picker"
+  }
+}

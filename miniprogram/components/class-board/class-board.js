@@ -1,8 +1,8 @@
-// 本班数据概况卡（首页/任意页可放）：班级概况 + 本班前三名 + 全校班级名次 + 班级管理入口
+// 本班数据概况卡（首页/任意页可放）：班级概况 + 本班前三名 + 全校班级名次 + 班超联赛入口
 //
 // 用法（父页面）：
 //   1) 页面 json 里注册： "class-board": "/components/class-board/class-board"
-//   2) wxml 直接放一行： <class-board title="我的班级" bind:ready="onClassBoardReady" />
+//   2) wxml 直接放一行： <class-board title="班超联赛" bind:ready="onClassBoardReady" />
 //   3) 该组件**自己判断身份**：不是班主任/班委时整块不渲染（不会出现空卡片），
 //      所以学生端首页可以无条件放一个，不用先查接口。
 //   4) 想主动刷新（如首页 onShow）：this.setData({ classRefreshAt: Date.now() })
@@ -318,12 +318,13 @@ Component({
       }
     },
 
-    // 「班级管理 ›」：先抛事件（父页面想做埋点/拦截都可以），再跳页面
+    // 「班超联赛 ›」：先抛事件（父页面想做埋点/拦截都可以），再跳页面
     // 带上**当前选中的班级**（多班滑动切换后点进来就是那一个班）
     goManage() {
       const className = (this.data.currentCard && this.data.currentCard.className) || this.data.className;
       this.triggerEvent('manage', { className, role: this.data.role });
-      wx.navigateTo({ url: `/packageAdmin/class/class?className=${encodeURIComponent(className)}` });
+      // 落「班超」tab（原班超详细页已并入该 tab）；带 className 时多班班主任不会跳错班
+      wx.navigateTo({ url: `/packageAdmin/class/class?tab=attendance&className=${encodeURIComponent(className)}` });
     },
 
     // 点本班前三名 → 该生的本周明细（班级视角，只读）

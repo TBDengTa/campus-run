@@ -1,1 +1,10 @@
 /* 限制账号功能抽屉：骨架走 app.wxss 的公共 .tt-sheet*，这里只留组件私有类 */
+
+/* 滚动区必须给「确定高度」，否则 scroll-view 滚不动（限制项多时底部按钮点不到）。
+   组件内要用 app.wxss 的公共类，组件 json 必须声明 styleIsolation: apply-shared（本组件已声明）。
+   写法与 docs/ui-design.md 一致：flex:none + max-height:46vh。 */
+.ban-sheet .tt-sheet-body {
+  flex: none;
+  min-height: 0;
+  max-height: 46vh;
+}

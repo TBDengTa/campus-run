@@ -1,6 +1,8 @@
 const auth = require('../../utils/request');
+// 写权限（ad.manage）：只有 ad.view 的账号看不到新增/编辑/删除/保存
+const adminPerm = require('../../utils/admin-perm');
 
-const EMPTY = { _id: '', key: '', name: '', page: '', type: 'banner', maxSponsors: 5, exclusive: false, enabled: true };
+const EMPTY = { _id: '', key: '', name: '', page: '', type: 'banner', maxSponsors: 5, exclusive: false, enabled: true, builtIn: false };
 const TYPES = [
   { value: 'banner', label: '轮播图' },
   { value: 'card', label: '卡片' },
@@ -10,8 +12,12 @@ const TYPES = [
 Page({
   data: {
     list: [],
-    loading: false,
-    form: null,
+    builtInCount: 0,
+    loading: true,
+    saving: false,
+    canManage: false,
+    formVisible: false,
+    form: EMPTY,
     types: TYPES,
     typeIndex: 0,
   },
@@ -24,8 +30,10 @@ Page({
     this.setData({ loading: true });
     try {
       await getApp().ensureLogin();
+      await adminPerm.applyManage(this, 'ad.manage');
       const res = await auth.get('/api/admin/ads/slots', { limit: 100 });
-      this.setData({ list: res.list });
+      const list = res.list || [];
+      this.setData({ list, builtInCount: list.filter((s) => s.builtIn).length });
     } catch (e) {
       wx.showToast({ title: e.message, icon: 'none' });
     } finally {
@@ -34,19 +42,26 @@ Page({
   },
 
   openCreate() {
-    this.setData({ form: { ...EMPTY }, typeIndex: 0 });
+    this.setData({ formVisible: true, saving: false, form: { ...EMPTY }, typeIndex: 0 });
   },
 
   openEdit(e) {
     const item = this.data.list.find((x) => x._id === e.currentTarget.dataset.id);
+    if (!item) return;
     this.setData({
-      form: { ...item },
+      formVisible: true,
+      saving: false,
+      form: { ...EMPTY, ...item },
       typeIndex: Math.max(0, TYPES.findIndex((t) => t.value === item.type)),
     });
   },
 
+  onFormVisible(e) {
+    this.setData({ formVisible: !!(e.detail && e.detail.visible) });
+  },
+
   closeForm() {
-    this.setData({ form: null });
+    this.setData({ formVisible: false });
   },
 
   onField(e) {
@@ -72,23 +87,34 @@ Page({
 
   async save() {
     const { form } = this.data;
-    if (!form.key || !form.name) {
+    const key = String(form.key || '').trim();
+    const name = String(form.name || '').trim();
+    if (!key || !name) {
       wx.showToast({ title: 'key 和名称必填', icon: 'none' });
       return;
     }
-    const payload = { ...form };
-    delete payload._id;
-    delete payload.createdAt;
-    delete payload.updatedAt;
-    delete payload.__v;
+    const payload = {
+      key,
+      name,
+      type: form.type,
+      page: String(form.page || '').trim(),
+      maxSponsors: Number(form.maxSponsors) || 1,
+      exclusive: !!form.exclusive,
+      enabled: !!form.enabled,
+    };
+    // 内置位 key 不可改：编辑时不提交 key，避免无谓的校验失败
+    if (form._id && form.builtIn) delete payload.key;
+    this.setData({ saving: true });
     try {
       if (form._id) await auth.put(`/api/admin/ads/slots/${form._id}`, payload);
       else await auth.post('/api/admin/ads/slots', payload);
       wx.showToast({ title: '已保存', icon: 'success' });
-      this.setData({ form: null });
+      this.setData({ formVisible: false });
       this.load();
     } catch (e) {
       wx.showToast({ title: e.message, icon: 'none' });
+    } finally {
+      this.setData({ saving: false });
     }
   },
 

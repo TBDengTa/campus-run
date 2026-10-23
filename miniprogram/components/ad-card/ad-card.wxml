@@ -1,0 +1,16 @@
+<!-- 通用广告卡：无素材时整块不渲染；右上角固定「广告」标识 -->
+<view class="ad-card" wx:if="{{ads.length}}">
+  <swiper
+    class="ad-card-swiper"
+    style="height: {{height}}rpx"
+    autoplay="{{ads.length > 1}}"
+    circular
+    interval="4000"
+    indicator-dots="{{ads.length > 1}}"
+  >
+    <swiper-item wx:for="{{ads}}" wx:key="_id" bind:tap="onTap" data-index="{{index}}">
+      <image class="ad-card-image" src="{{item.imageUrl}}" mode="aspectFit" bind:error="onImgError" data-index="{{index}}" />
+    </swiper-item>
+  </swiper>
+  <view class="ad-card-flag">广告</view>
+</view>

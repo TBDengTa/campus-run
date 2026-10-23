@@ -1,0 +1,483 @@
+/* ===== 吸顶筛选（院校 / 部门 / 学年 + 搜索）=====
+   ⚠️ 背景必须不透明（--tt-bg-page）；用整宽 + padding 做留白，不要用 margin。 */
+.um-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: 10rpx var(--tt-gap) 8rpx;
+  background: var(--tt-bg-page);
+}
+
+.um-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 7rpx;
+}
+
+.um-filter-row picker {
+  flex: 1;
+  min-width: 0;
+}
+
+.um-select {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 3rpx;
+  padding: 9rpx 10rpx;
+  border: 1rpx solid var(--tt-line);
+  border-radius: 10rpx;
+  background: var(--tt-card);
+  font-size: 20rpx;
+  color: var(--tt-text-2);
+}
+
+.um-select text {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.um-select.on {
+  border-color: var(--tt-brand);
+  color: var(--tt-brand-deep);
+  background: var(--tt-brand-soft);
+}
+
+.um-search-row {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  margin-top: 8rpx;
+}
+
+.um-search-box {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7rpx;
+  padding: 0 16rpx;
+  height: 66rpx;
+  border-radius: 999rpx;
+  background: var(--tt-card);
+}
+
+.um-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 23rpx;
+  color: var(--tt-text-1);
+}
+
+.um-add-btn {
+  flex-shrink: 0;
+  padding: 0 22rpx;
+  height: 66rpx;
+  line-height: 66rpx;
+  border-radius: 999rpx;
+  font-size: 23rpx;
+  font-weight: 600;
+  color: #ffffff;
+  background: var(--tt-brand);
+}
+
+.um-filter-hint {
+  margin-top: 7rpx;
+  font-size: 18rpx;
+  color: var(--tt-brand-deep);
+}
+
+/* ===== 紧凑成员列表 ===== */
+.um-list {
+  padding: 0 16rpx;
+}
+
+.um-item {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  padding: 13rpx 0;
+  border-bottom: 1rpx solid var(--tt-line);
+  background: var(--tt-card);
+}
+
+.um-list .t-swipe-cell:last-child .um-item {
+  border-bottom: none;
+}
+
+.um-avatar {
+  flex-shrink: 0;
+  width: 52rpx;
+  height: 52rpx;
+  line-height: 52rpx;
+  text-align: center;
+  border-radius: 50%;
+  background: var(--tt-brand-soft);
+  color: var(--tt-brand-deep);
+  font-size: 23rpx;
+  font-weight: 600;
+}
+
+.um-item-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3rpx;
+}
+
+.um-item-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6rpx;
+  min-width: 0;
+}
+
+.um-name {
+  font-size: 25rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.um-role {
+  padding: 1rpx 8rpx;
+  border-radius: 999rpx;
+  font-size: 16rpx;
+  color: var(--tt-brand-deep);
+  background: var(--tt-brand-soft);
+}
+
+.um-role-branch {
+  color: var(--td-success-color-5, #2ba471);
+  background: rgba(43, 164, 113, 0.12);
+}
+
+.um-role-top {
+  color: #ffffff;
+  background: var(--tt-brand);
+}
+
+.um-tag {
+  padding: 1rpx 8rpx;
+  border-radius: 999rpx;
+  font-size: 16rpx;
+  color: var(--tt-text-2);
+  background: var(--tt-bg-page);
+}
+
+.um-sub {
+  font-size: 18rpx;
+  color: var(--tt-text-3);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.um-warn {
+  font-size: 18rpx;
+  line-height: 1.45;
+  color: var(--td-warning-color-6, #d98a0b);
+}
+
+.um-more-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52rpx;
+  height: 52rpx;
+}
+
+/* 左滑操作按钮（放在 swipe-cell 的 right slot 里） */
+.um-swipe-actions {
+  display: flex;
+  height: 100%;
+}
+
+.um-swipe-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 118rpx;
+  height: 100%;
+  font-size: 21rpx;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.um-swipe-btn.role {
+  background: var(--tt-brand);
+}
+
+.um-swipe-btn.dept {
+  background: var(--tt-brand-deep);
+}
+
+.um-swipe-btn.leave {
+  background: var(--td-error-color-6, #d54941);
+}
+
+.um-empty,
+.um-more {
+  padding: 32rpx 0;
+  text-align: center;
+  font-size: 21rpx;
+  color: var(--tt-text-3);
+}
+
+.um-page .tt-footer {
+  padding: 14rpx 28rpx 28rpx;
+  font-size: 19rpx;
+}
+
+/* ===== 添加抽屉 ===== */
+.um-mask {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 20;
+}
+
+.um-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 21;
+  display: flex;
+  flex-direction: column;
+  padding: 26rpx 28rpx calc(28rpx + env(safe-area-inset-bottom));
+  border-radius: 28rpx 28rpx 0 0;
+  background: var(--tt-card);
+  transform: translateY(110%);
+  transition: transform 0.24s ease;
+  max-height: 86vh;
+  overflow: hidden;
+}
+
+.um-sheet.open {
+  transform: translateY(0);
+}
+
+.um-sheet-body {
+  flex: none;
+  min-height: 0;
+  max-height: 58vh;
+  box-sizing: border-box;
+}
+
+.um-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16rpx;
+  flex-shrink: 0;
+}
+
+.um-sheet-title {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.um-sheet-close {
+  font-size: 24rpx;
+  color: var(--tt-text-3);
+}
+
+.um-tip {
+  margin-bottom: 12rpx;
+  padding: 11rpx 14rpx;
+  border-radius: 10rpx;
+  background: var(--tt-brand-soft);
+  font-size: 19rpx;
+  color: var(--tt-brand-deep);
+  line-height: 1.5;
+}
+
+/* 两列表单：院校 / 部门 / 职务 / 学年一屏放得下 */
+.um-form-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  margin-top: 12rpx;
+}
+
+.um-field {
+  width: 48.5%;
+  margin-bottom: 12rpx;
+}
+
+.um-field-l {
+  display: block;
+  margin-bottom: 6rpx;
+  font-size: 19rpx;
+  color: var(--tt-text-3);
+}
+
+.um-picker {
+  padding: 12rpx 14rpx;
+  border: 1rpx solid var(--tt-line);
+  border-radius: 10rpx;
+  background: var(--tt-bg-page);
+  font-size: 22rpx;
+  color: var(--tt-text-1);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.um-sheet-actions {
+  display: flex;
+  gap: 14rpx;
+  margin-top: 20rpx;
+  flex-shrink: 0;
+}
+
+.um-btn-ghost {
+  flex: 1;
+  text-align: center;
+  padding: 18rpx 0;
+  border-radius: 999rpx;
+  font-size: 25rpx;
+  color: var(--tt-text-2);
+  background: var(--tt-bg-page);
+}
+
+.um-btn {
+  flex: 1.5;
+  text-align: center;
+  padding: 18rpx 0;
+  border-radius: 999rpx;
+  font-size: 25rpx;
+  font-weight: 600;
+  color: #ffffff;
+  background: var(--tt-brand);
+}
+
+.um-btn.disabled {
+  opacity: 0.6;
+}
+
+
+.um-config-link {
+  margin-left: 8rpx;
+  color: var(--tt-brand-deep);
+}
+
+/* ===== 批量管理（用户 2026-10-21「增加批量管理操作(改职务、调部门、离任)」）===== */
+
+/* 顶部「批量」按钮：与「+ 添加」同高同圆角，但描边而非实心（次要操作不该抢主操作的位置） */
+.um-batch-btn {
+  flex-shrink: 0;
+  margin-left: 14rpx;
+  padding: 0 22rpx;
+  height: 66rpx;
+  line-height: 66rpx;
+  border-radius: 999rpx;
+  font-size: 23rpx;
+  font-weight: 600;
+  color: var(--tt-brand);
+  background: var(--tt-brand-soft);
+}
+
+.um-batch-btn.on {
+  color: #ffffff;
+  background: var(--tt-brand);
+}
+
+/* 批量模式下整行可点，给一点视觉反馈 */
+.um-item-batch {
+  background: var(--tt-bg-page);
+}
+
+/* 勾选圈：固定尺寸，不随文字伸缩 */
+.um-check {
+  flex: 0 0 auto;
+  width: 44rpx;
+  height: 44rpx;
+  margin-right: 12rpx;
+  border-radius: 50%;
+  border: 2rpx solid var(--tt-line);
+  background: var(--tt-card);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+.um-check.on {
+  border-color: var(--tt-brand);
+  background: var(--tt-brand);
+}
+
+/* 底部固定操作栏
+   ⚠️ 背景必须用 var(--tt-card)：之前误写成 --tt-bg-card（该令牌不存在）
+   → background 声明失效 → 栏体透明，内容直接叠在列表上（用户 2026-10-22「没有背景」）。
+   现在补齐：实心卡背景 + 上边框分隔 + 阴影，确保它明确浮在列表之上。 */
+.um-batch-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 18rpx 24rpx calc(18rpx + env(safe-area-inset-bottom));
+  background: var(--tt-card);
+  border-top: 2rpx solid var(--tt-line);
+  box-shadow: 0 -6rpx 24rpx rgba(28, 31, 35, 0.1);
+  z-index: 60;
+  box-sizing: border-box;
+}
+
+.um-batch-info {
+  display: flex;
+  align-items: baseline;
+  gap: 10rpx;
+  margin-bottom: 12rpx;
+}
+
+.um-batch-n {
+  font-size: 34rpx;
+  font-weight: 600;
+  color: var(--tt-brand);
+}
+
+.um-batch-t {
+  font-size: 24rpx;
+  color: var(--tt-text-2);
+}
+
+.um-batch-all {
+  margin-left: auto;
+  font-size: 24rpx;
+  color: var(--tt-brand);
+}
+
+.um-batch-acts {
+  display: flex;
+  gap: 14rpx;
+}
+
+.um-batch-act {
+  flex: 1;
+  text-align: center;
+  padding: 18rpx 0;
+  border-radius: var(--tt-radius-sm);
+  font-size: 26rpx;
+  color: var(--tt-brand);
+  background: var(--tt-brand-soft);
+}
+
+.um-batch-act.leave {
+  color: var(--td-error-color-6);
+  background: var(--td-error-color-1);
+}
+
+/* 批量栏出现时页面底部留位，否则最后一行被固定栏挡住 */
+.um-page.um-has-batch {
+  padding-bottom: 200rpx;
+}

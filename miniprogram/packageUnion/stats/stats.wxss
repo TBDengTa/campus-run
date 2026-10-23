@@ -1,0 +1,398 @@
+/* ===== 吸顶筛选区（范围 + 周期）=====
+   背景必须不透明（var(--tt-bg-page)），否则榜单会从分段控件底下透出来。 */
+.st-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: 16rpx var(--tt-gap) 12rpx;
+  background: var(--tt-bg-page);
+}
+
+.st-sticky .tt-segment + .tt-segment {
+  margin-top: 12rpx;
+}
+
+/* ===== 我的班级（置顶卡）===== */
+.st-me {
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+  padding: 28rpx var(--tt-pad);
+  border: 2rpx solid var(--tt-brand-soft-2);
+}
+
+.st-me-rank {
+  display: flex;
+  align-items: baseline;
+  gap: 6rpx;
+  flex-shrink: 0;
+}
+
+.st-me-rank-v {
+  font-size: 56rpx;
+  font-weight: 700;
+  color: var(--tt-brand);
+}
+
+.st-me-rank-l {
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+.st-me-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.st-me-title {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  min-width: 0;
+}
+
+.st-me-class {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.st-me-badge {
+  flex-shrink: 0;
+  padding: 4rpx 14rpx;
+  border-radius: 999rpx;
+  font-size: 20rpx;
+  color: var(--tt-brand-deep);
+  background: var(--tt-brand-soft);
+}
+
+.st-me-sub {
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+.st-me-score {
+  flex-shrink: 0;
+  font-size: 36rpx;
+  font-weight: 700;
+  color: var(--tt-brand);
+}
+
+/* ===== 榜单卡片列表 ===== */
+.st-list {
+  padding: 8rpx var(--tt-pad);
+}
+
+.st-row {
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+  min-height: 96rpx;
+  padding: 22rpx 0;
+  border-bottom: 2rpx solid var(--tt-line);
+}
+
+.st-row:last-child {
+  border-bottom: none;
+}
+
+.st-row-hover {
+  background: var(--tt-brand-soft);
+}
+
+/* 名次徽标：前三名用品牌色系区分（1 名实心、2 名浅底加深字、3 名中性浅底） */
+.st-no {
+  flex: 0 0 52rpx;
+  height: 52rpx;
+  line-height: 52rpx;
+  text-align: center;
+  border-radius: 50%;
+  font-size: 24rpx;
+  font-weight: 600;
+  color: var(--tt-text-2);
+  background: var(--tt-line);
+}
+
+.st-no-1 {
+  color: #ffffff;
+  background: var(--tt-brand);
+}
+
+.st-no-2 {
+  color: var(--tt-brand-deep);
+  background: var(--tt-brand-soft-2);
+}
+
+.st-no-3 {
+  color: var(--tt-brand-deep);
+  background: var(--tt-brand-soft);
+}
+
+.st-no-warn {
+  color: var(--td-error-color-6, #d54941);
+  background: rgba(213, 73, 65, 0.12);
+}
+
+.st-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+.st-name {
+  font-size: 29rpx;
+  font-weight: 500;
+  color: var(--tt-text-1);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.st-sub {
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.st-right {
+  flex-shrink: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 4rpx;
+}
+
+.st-score {
+  font-size: 34rpx;
+  font-weight: 600;
+  color: var(--tt-brand);
+}
+
+.st-score-unit {
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+}
+
+.st-score-warn {
+  color: var(--td-error-color-6, #d54941);
+}
+
+
+/* ===== 筛选：院校 / 系部 / 年级 + 周期 / 日期 ===== */
+.st-filter-card {
+  padding: 12rpx;
+  border-radius: var(--tt-radius);
+  background: var(--tt-card);
+  box-shadow: var(--tt-card-shadow);
+}
+
+.st-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+}
+
+.st-filter-row picker {
+  flex: 1;
+  min-width: 0;
+}
+
+.st-select {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4rpx;
+  min-width: 0;
+  padding: 9rpx 10rpx;
+  border: 1rpx solid var(--tt-line);
+  border-radius: 10rpx;
+  background: var(--tt-bg-page);
+  font-size: 21rpx;
+  color: var(--tt-text-2);
+}
+
+.st-select text {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.st-select.on {
+  border-color: var(--tt-brand);
+  color: var(--tt-brand-deep);
+  background: var(--tt-brand-soft);
+}
+
+.st-reset {
+  flex-shrink: 0;
+  padding: 8rpx 10rpx;
+  font-size: 20rpx;
+  color: var(--tt-brand-deep);
+}
+
+.st-range-row {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  margin-top: 10rpx;
+}
+
+.st-range-seg {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+.st-date {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4rpx;
+  padding: 9rpx 12rpx;
+  border: 1rpx solid var(--tt-line);
+  border-radius: 10rpx;
+  background: var(--tt-bg-page);
+  font-size: 20rpx;
+  color: var(--tt-text-2);
+}
+
+.st-range-hint {
+  margin-top: 7rpx;
+  font-size: 19rpx;
+  color: var(--tt-text-3);
+}
+
+.st-sticky {
+  padding: 10rpx var(--tt-gap) 8rpx;
+}
+
+.st-me {
+  gap: 16rpx;
+  padding: 20rpx var(--tt-pad);
+}
+
+.st-me-rank-v {
+  font-size: 46rpx;
+}
+
+.st-me-class {
+  font-size: 26rpx;
+}
+
+.st-me-sub {
+  font-size: 20rpx;
+}
+
+.st-me-score {
+  font-size: 36rpx;
+}
+
+.st-page .tt-section {
+  gap: 10rpx;
+  margin: 4rpx 28rpx 10rpx;
+  font-size: 27rpx;
+}
+
+.st-page .tt-section::before {
+  width: 7rpx;
+  height: 24rpx;
+}
+
+.st-list {
+  padding: 4rpx 20rpx;
+}
+
+.st-row {
+  gap: 14rpx;
+  padding: 16rpx 0;
+}
+
+.st-no {
+  width: 42rpx;
+  height: 42rpx;
+  font-size: 22rpx;
+}
+
+.st-name {
+  font-size: 25rpx;
+}
+
+.st-sub {
+  font-size: 19rpx;
+}
+
+.st-score {
+  font-size: 34rpx;
+}
+
+.st-score-unit {
+  font-size: 19rpx;
+}
+
+.st-page .tt-footer {
+  padding: 14rpx 28rpx 28rpx;
+  font-size: 21rpx;
+}
+
+
+/* ===== 周期选择：日选日期、周选「月+第几周」、月选 1-12 月 ===== */
+.st-range-seg {
+  width: 100%;
+  margin-top: 12rpx;
+}
+
+.st-period-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8rpx;
+  margin-top: 10rpx;
+  padding: 8rpx 10rpx;
+  border-radius: 12rpx;
+  background: var(--tt-bg-page);
+}
+
+.st-period-l {
+  flex-shrink: 0;
+  font-size: 19rpx;
+  color: var(--tt-text-3);
+}
+
+.st-period-chip {
+  display: flex;
+  align-items: center;
+  gap: 5rpx;
+  padding: 7rpx 12rpx;
+  border: 1rpx solid var(--tt-line);
+  border-radius: 9rpx;
+  background: var(--tt-card);
+  font-size: 21rpx;
+  color: var(--tt-text-1);
+}
+
+.st-period-hint {
+  margin-left: auto;
+  font-size: 19rpx;
+  color: var(--tt-text-3);
+}
+
+.st-filter-card {
+  padding: 12rpx;
+}
+
+.st-sticky {
+  padding: 10rpx var(--tt-gap) 10rpx;
+}
+
+.st-page .tt-section {
+  margin-top: 8rpx;
+}

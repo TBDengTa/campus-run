@@ -1,0 +1,248 @@
+<view class="page tt-page cm-page">
+  <!-- ===== 搜索 + 批量 ===== -->
+  <view class="cm-top">
+    <view class="cm-search-box">
+      <t-icon name="search" size="26rpx" color="var(--tt-text-3)" />
+      <input class="cm-input" placeholder="搜索班级名" value="{{keyword}}" bindinput="onKeyword" bindconfirm="search" />
+      <text class="cm-clear" wx:if="{{keyword}}" bind:tap="clearKeyword">清空</text>
+    </view>
+    <!-- 批量入口只给有写权限的人（用户 2026-10-22：只读用户不该看到操作按钮） -->
+    <view class="cm-mini-btn {{bulkMode ? 'active' : ''}}" wx:if="{{canManage}}" bind:tap="toggleBulk">{{bulkMode ? '完成' : '批量'}}</view>
+  </view>
+
+  <!-- ===== 筛选：全部用选择器（院校 / 系部 / 专业 / 年级 / 状态 / 标记）===== -->
+  <view class="cm-pickers">
+    <picker class="cm-picker" mode="selector" range="{{schoolOptions}}" range-key="label" value="{{schoolIndex}}" bindchange="onSchoolChange">
+      <view class="cm-picker-box {{schoolKey ? 'on' : ''}}">
+        <text class="cm-picker-value">{{schoolOptions[schoolIndex].short || '院校'}}</text>
+        <t-icon name="chevron-down" size="18rpx" color="var(--tt-text-3)" />
+      </view>
+    </picker>
+    <picker class="cm-picker" mode="selector" range="{{deptOptions}}" range-key="label" value="{{deptIndex}}" bindchange="onDeptChange">
+      <view class="cm-picker-box {{deptKey ? 'on' : ''}}">
+        <text class="cm-picker-value">{{deptOptions[deptIndex].short || '系部'}}</text>
+        <t-icon name="chevron-down" size="18rpx" color="var(--tt-text-3)" />
+      </view>
+    </picker>
+    <picker class="cm-picker" mode="selector" range="{{specialtyOptions}}" range-key="label" value="{{specialtyIndex}}" bindchange="onSpecialtyChange">
+      <view class="cm-picker-box {{specialtyKey ? 'on' : ''}}">
+        <text class="cm-picker-value">{{specialtyOptions[specialtyIndex].short || '专业'}}</text>
+        <t-icon name="chevron-down" size="18rpx" color="var(--tt-text-3)" />
+      </view>
+    </picker>
+    <picker class="cm-picker" mode="selector" range="{{gradeOptions}}" range-key="label" value="{{gradeIndex}}" bindchange="onGradeChange">
+      <view class="cm-picker-box {{gradeKey ? 'on' : ''}}">
+        <text class="cm-picker-value">{{gradeOptions[gradeIndex].short || '年级'}}</text>
+        <t-icon name="chevron-down" size="18rpx" color="var(--tt-text-3)" />
+      </view>
+    </picker>
+  </view>
+
+  <view class="cm-pickers cm-pickers-2">
+    <picker class="cm-picker" mode="selector" range="{{statusOptions}}" range-key="label" value="{{statusIndex}}" bindchange="onStatusChange">
+      <view class="cm-picker-box {{statusFilter !== 'normal' ? 'on' : ''}}">
+        <text class="cm-picker-value">{{statusOptions[statusIndex].label}}</text>
+        <t-icon name="chevron-down" size="18rpx" color="var(--tt-text-3)" />
+      </view>
+    </picker>
+    <picker class="cm-picker" mode="selector" range="{{filterOptions}}" range-key="label" value="{{filterIndex}}" bindchange="onFilterChange">
+      <view class="cm-picker-box {{filter ? 'on' : ''}}">
+        <text class="cm-picker-value">{{filterOptions[filterIndex].label}}</text>
+        <t-icon name="chevron-down" size="18rpx" color="var(--tt-text-3)" />
+      </view>
+    </picker>
+    <view class="cm-reset" wx:if="{{hasFilter}}" bind:tap="resetFilters">重置</view>
+  </view>
+
+  <view class="cm-facet-hint" wx:if="{{facetHint}}">{{facetHint}}</view>
+
+  <!-- ===== 工具栏 ===== -->
+  <view class="cm-toolbar">
+    <text class="cm-toolbar-t">{{statusOptions[statusIndex].label}}</text>
+    <text class="cm-toolbar-n">{{total}} 个班 · 近年优先</text>
+    <block wx:if="{{bulkMode}}">
+      <view class="cm-toolbar-link" wx:if="{{!allPageChecked}}" bind:tap="selectAllPage">全选</view>
+      <view class="cm-toolbar-link" wx:else bind:tap="clearChecked">取消全选</view>
+      <text class="cm-toolbar-sel">已选 {{checkedCount}}</text>
+    </block>
+    <view class="cm-toolbar-link cm-toolbar-sync {{syncing ? 'disabled' : ''}}" bind:tap="sync">{{syncing ? '同步中' : '同步学籍'}}</view>
+  </view>
+
+  <!-- ===== 批量面板 =====
+       双条件：批量模式 **且** 有写权限（用户 2026-10-22：只读用户不该看到操作按钮）。
+       页面里 toggleBulk 也会拦只读用户，这里再加一道是为了「意图显式 + 可静态校验」。 -->
+  <view class="cm-bulk-panel" wx:if="{{bulkMode && canManage}}">
+    <view class="cm-bulk-scope">
+      <text class="cm-bulk-scope-l">作用范围</text>
+      <view class="cm-bulk-scope-v">{{checkedCount ? '已勾选 ' + checkedCount + ' 个班' : '当前筛选的全部班级'}}</view>
+    </view>
+
+    <view class="cm-bulk-group">
+      <text class="cm-bulk-title">状态</text>
+      <view class="cm-bulk-chips">
+        <view class="cm-bulk-chip s-normal" data-status="normal" bind:tap="applyStatus">正常</view>
+        <view class="cm-bulk-chip s-intern" data-status="intern" bind:tap="applyStatus">实习</view>
+        <view class="cm-bulk-chip s-graduated" data-status="graduated" bind:tap="applyStatus">毕业</view>
+      </view>
+    </view>
+
+    <view class="cm-bulk-group">
+      <text class="cm-bulk-title">早操</text>
+      <view class="cm-bulk-chips">
+        <view class="cm-bulk-chip f-on" data-field="hasMorningExercise" data-value="1" bind:tap="applyFlag">有</view>
+        <view class="cm-bulk-chip f-off" data-field="hasMorningExercise" data-value="0" bind:tap="applyFlag">无</view>
+      </view>
+    </view>
+
+    <view class="cm-bulk-group">
+      <text class="cm-bulk-title">早八</text>
+      <view class="cm-bulk-chips">
+        <view class="cm-bulk-chip f-on" data-field="hasMorningClass" data-value="1" bind:tap="applyFlag">有</view>
+        <view class="cm-bulk-chip f-off" data-field="hasMorningClass" data-value="0" bind:tap="applyFlag">无</view>
+      </view>
+    </view>
+
+    <!-- 晚自习（用户 2026-10-21「增设班级管理中的晚自习开关，部分班级是没有晚自习的所以不涉及考勤」）：
+         「无」的班级不进晚自习考勤的录入台，也不计入出勤率分母（与早操/早八同一套口径）。 -->
+    <view class="cm-bulk-group">
+      <text class="cm-bulk-title">晚自习</text>
+      <view class="cm-bulk-chips">
+        <view class="cm-bulk-chip f-on" data-field="hasNightStudy" data-value="1" bind:tap="applyFlag">有</view>
+        <view class="cm-bulk-chip f-off" data-field="hasNightStudy" data-value="0" bind:tap="applyFlag">无</view>
+      </view>
+    </view>
+
+    <view class="cm-bulk-group">
+      <text class="cm-bulk-title">校园跑</text>
+      <view class="cm-bulk-chips">
+        <view class="cm-bulk-chip f-on" data-field="hasMorningRun" data-value="1" bind:tap="applyFlag">参跑</view>
+        <view class="cm-bulk-chip f-off" data-field="hasMorningRun" data-value="0" bind:tap="applyFlag">不参跑</view>
+      </view>
+    </view>
+
+    <text class="cm-bulk-hint">实习 / 毕业班不参加班超与校园跑；毕业班学生不可登录。</text>
+  </view>
+
+  <!-- ===== 班级列表 ===== -->
+  <view class="cm-list">
+    <!-- 批量模式下整卡可点选；非批量时整卡点开「更多」菜单 -->
+    <view
+      class="cm-item {{item.checked ? 'checked' : ''}} {{bulkMode ? 'selectable' : ''}}"
+      wx:for="{{list}}"
+      wx:key="className"
+      data-name="{{item.className}}"
+      data-id="{{item.id}}"
+      data-status="{{item.status}}"
+      bind:tap="onCardTap"
+    >
+      <view class="cm-row-main">
+        <view class="cm-check {{item.checked ? 'on' : ''}}" wx:if="{{bulkMode}}">
+          <t-icon wx:if="{{item.checked}}" name="check" size="20rpx" color="#ffffff" />
+        </view>
+        <view class="cm-main">
+          <view class="cm-line1">
+            <text class="cm-name">{{item.className}}</text>
+            <text class="cm-status cm-status-{{item.status}}" wx:if="{{item.status !== 'normal'}}">{{item.statusText}}</text>
+          </view>
+          <text class="cm-line2">{{item.orgText}}{{item.grade ? ' · ' + item.grade + '级' : ''}} · {{item.studentCount}} 人<text wx:if="{{item.dormCount}}"> · 住宿 {{item.dormCount}}</text></text>
+        </view>
+        <view class="cm-open" data-id="{{item.id}}" data-name="{{item.className}}" data-status="{{item.status}}" catch:tap="openMore">
+          <t-icon name="ellipsis" size="30rpx" color="var(--tt-text-3)" />
+        </view>
+      </view>
+
+      <!-- 五个开关（早操/早八/晚自习/校园跑/…）是写操作：只读账号**只显示状态，不给点**。
+           做法是同一组 chips 渲染两遍：可写时带 catch:tap，只读时纯展示（不能靠 CSS 拦点击，
+           否则只读用户还是能点出一次请求、被后端 403）。 -->
+      <view class="cm-flags" wx:if="{{canManage}}">
+        <view
+          class="cm-flag {{f.on ? 'on' : 'off'}}"
+          wx:for="{{item.flags}}"
+          wx:for-item="f"
+          wx:key="field"
+          data-id="{{item.id}}"
+          data-field="{{f.field}}"
+          data-value="{{f.on}}"
+          data-name="{{item.className}}"
+          catch:tap="toggleFlag"
+        >{{f.short}}</view>
+        <!-- 教室由 room-dialog 选择：只在有 class.manage 时给入口 -->
+        <view class="cm-flag cm-flag-class" data-id="{{item.id}}" data-name="{{item.className}}" data-classroom="{{item.classroom}}" catch:tap="editClassroom">
+          {{item.classroomText}}
+        </view>
+      </view>
+      <view class="cm-flags" wx:else>
+        <view class="cm-flag {{f.on ? 'on' : 'off'}}" wx:for="{{item.flags}}" wx:for-item="f" wx:key="field">{{f.short}}</view>
+        <view class="cm-flag cm-flag-class">{{item.classroomText}}</view>
+      </view>
+    </view>
+
+    <view class="cm-empty" wx:if="{{!loading && !list.length}}">
+      <block wx:if="{{emptyReason}}">{{emptyReason}}</block>
+      <block wx:else>没有符合条件的班级。新导入名单产生的班级，点「同步学籍」生成台账。</block>
+    </view>
+  </view>
+
+  <view class="cm-pages" wx:if="{{pagesTotal > 1}}">
+    <view class="cm-page-btn {{page <= 1 ? 'disabled' : ''}}" bind:tap="prevPage">上一页</view>
+    <text class="cm-page-text">{{page}} / {{pagesTotal}}</text>
+    <view class="cm-page-btn {{page >= pagesTotal ? 'disabled' : ''}}" bind:tap="nextPage">下一页</view>
+  </view>
+
+  <view class="tt-footer" wx:if="{{!canManage}}">你只有查看权限（需 class.manage 才能修改）</view>
+  <view class="tt-footer" wx:else>默认只看「正常」班级；实习 / 毕业班不进班超与校园跑统计</view>
+
+  <!-- ===== 卫生区抽屉（写操作：只读账号连抽屉都打不开） ===== -->
+  <view class="cm-mask" wx:if="{{canManage && areaSheetVisible}}" bind:tap="closeAreas"></view>
+  <view class="cm-sheet {{areaSheetVisible ? 'open' : ''}}" wx:if="{{canManage && areaSheet}}">
+    <view class="cm-sheet-head">
+      <text class="cm-sheet-title">{{areaSheet.className}} 的卫生区</text>
+      <text class="cm-sheet-close" bind:tap="closeAreas">关闭</text>
+    </view>
+    <scroll-view scroll-y class="cm-sheet-body">
+      <view class="cm-sheet-hint">勾选即表示本班是该区域的责任班级之一；一个区域可由多个班级共管（按人数权重分摊得分）。</view>
+      <view class="cm-newarea">
+        <input class="cm-newarea-input" placeholder="新区域名称，如 教学楼东侧" value="{{newAreaName}}" bindinput="onNewAreaInput" />
+        <view class="cm-newarea-btn" bind:tap="addNewArea">添加</view>
+      </view>
+      <view
+        class="cm-area {{a.checked ? 'checked' : ''}}"
+        wx:for="{{areaSheet.options}}"
+        wx:for-item="a"
+        wx:key="id"
+        data-id="{{a.id}}"
+        bind:tap="toggleArea"
+      >
+        <view class="cm-area-check {{a.checked ? 'on' : ''}}">
+          <t-icon wx:if="{{a.checked}}" name="check" size="26rpx" color="#ffffff" />
+        </view>
+        <view class="cm-area-main">
+          <text class="cm-area-name">{{a.name}}<text class="cm-area-new" wx:if="{{a.isNew}}">新增</text></text>
+          <text class="cm-area-sub">{{a.typeLabel}}{{a.location ? ' · ' + a.location : ''}}</text>
+        </view>
+      </view>
+      <view class="cm-sheet-empty" wx:if="{{!areaSheet.options.length}}">还没有卫生区，用上面「添加」新建一个即可</view>
+    </scroll-view>
+    <view class="cm-sheet-actions">
+      <view class="cm-btn-ghost" bind:tap="closeAreas">取消</view>
+      <view class="cm-btn" bind:tap="saveAreas">保存</view>
+    </view>
+  </view>
+
+  <!-- 教室设置对话框（用户 2026-10-22：一个完整对话框里选楼 + 填门号，一次保存） -->
+  <room-dialog
+    visible="{{roomVisible}}"
+    kind="classroom"
+    title="设置教室"
+    sub="{{roomTarget ? roomTarget.name : ''}}"
+    value="{{roomValue}}"
+    buildings="{{teachingBuildings}}"
+    show-bed="{{false}}"
+    can-clear="{{roomValue}}"
+    can-manage="{{canManage}}"
+    saving="{{roomSaving}}"
+    bind:confirm="onRoomConfirm"
+    bind:clear="onRoomClear"
+    bind:close="closeRoomDialog"
+  />
+</view>

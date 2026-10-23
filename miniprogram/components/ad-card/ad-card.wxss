@@ -1,0 +1,39 @@
+/* ===== 通用广告卡（记录页 / 排行榜卡片位） ===== */
+.ad-card {
+  position: relative;
+  margin: 0 var(--tt-gap) var(--tt-gap);
+  padding: 0;
+  background: var(--tt-card);
+  border-radius: var(--tt-radius);
+  box-shadow: var(--tt-card-shadow);
+  overflow: hidden;
+}
+
+.ad-card-swiper {
+  width: 100%;
+  height: 250rpx; /* 兜底高度，实际由内联 style 覆盖 */
+  border-radius: var(--tt-radius);
+  overflow: hidden;
+}
+
+.ad-card-image {
+  width: 100%;
+  height: 100%;
+  border-radius: var(--tt-radius);
+  background: var(--td-bg-color-page);
+}
+
+.ad-card-flag {
+  position: absolute;
+  right: 12rpx;
+  top: 12rpx;
+  z-index: 2;
+  padding: 2rpx 12rpx;
+  border-radius: 8rpx;
+  font-size: 18rpx;
+  line-height: 26rpx;
+  letter-spacing: 2rpx;
+  color: #ffffff;
+  background: rgba(0, 0, 0, 0.34);
+  pointer-events: none;
+}

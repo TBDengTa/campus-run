@@ -1,0 +1,38 @@
+<!--
+  管理导航条目浮层（共用模板）
+  用法：
+    1) wxml: <import src="/templates/nav-sheet.wxml" />
+             <template is="nav-sheet" data="{{navSheet: navSheet, navSheetVisible: navSheetVisible}}" />
+    2) js  : behaviors: [require('../../behaviors/nav-sheet')]
+  交互：点分类 → 本浮层列条目 → 点条目进页面（单条目分类在浮层里就是一行 + 「进入页面」）。
+-->
+<template name="nav-sheet">
+  <t-popup visible="{{navSheetVisible}}" placement="bottom" bind:visible-change="onNavSheetVisible">
+    <view class="nav-sheet">
+      <view class="nav-sheet-head">
+        <text class="nav-sheet-title">{{navSheet.title}}</text>
+        <text class="nav-sheet-close" bind:tap="closeNavSheet">关闭</text>
+      </view>
+      <view class="nav-sheet-body">
+        <view
+          class="nav-sheet-item"
+          wx:for="{{navSheet.items}}"
+          wx:key="key"
+          data-url="{{item.url}}"
+          data-key="{{item.key}}"
+          bind:tap="onNavEntryTap"
+        >
+          <view class="nav-sheet-icon" style="background: {{item.bg || (navSheet.tint && navSheet.tint.bg)}}">
+            <t-icon name="{{item.icon}}" size="40rpx" color="{{item.color || (navSheet.tint && navSheet.tint.color)}}" />
+          </view>
+          <view class="nav-sheet-main">
+            <text class="nav-sheet-label">{{item.label}}</text>
+            <text class="nav-sheet-desc" wx:if="{{item.desc}}">{{item.desc}}</text>
+          </view>
+          <t-icon name="chevron-right" size="32rpx" color="var(--tt-text-3)" />
+        </view>
+        <view class="nav-sheet-hint" wx:if="{{!navSheet.items.length}}">该分类下暂无可用的入口</view>
+      </view>
+    </view>
+  </t-popup>
+</template>

@@ -381,13 +381,23 @@ WebP q80 = 41.4KB（更小，但 `image` 组件 iOS 需 14+，目标环境实测
   注意：计划库里有**同名但不同性别**的计划（如 2 条 `BMI正常·激进版`），去重必须按 `_id`，不能按 `name`。
 - **身体数据 `pages/body-data`**：橙色 `tt-hero` BMI 概览（无数据显示灰色「待完善」）→ 关键指标四列 → **首屏横幅（ad-banner，在编辑表单之前）** → 编辑表单（性别/身高/体重/强度偏好，斤↔kg 可切换）→ **目标计划只留跳转入口**（数值不在此重复展示）。
   数据读取注意：`GET /api/goal/body-data` 返回的是 `{ bodyData, currentPlan, planName, autoMatched, effective }`，**字段在 `bodyData` 里**，不要按扁平对象读。
-- **管理端 · 班级管理 `packageAdmin/class/class`**（班主任 / 班委）：
-  顶部身份卡（班级名 + `班主任`/`班委 · 仅查看` 胶囊 + 概况四格）→ 排名卡（班内榜 + 该班在全校班级榜的名次）→
-  名单（分页 + 搜索 + 「今日未达标」筛选 + 排序 chips）→ 底部操作。
-  **班主任**：可「督促未达标学生」（抽屉列出未达标名单，可复制到剪贴板）；
-  **班委**：`canNudge:false`，**不渲染任何操作按钮**，卡片上直接写明「仅查看模式：可查看概况、名单与榜单，不能做任何修改」。
-  两种身份同一页面，用 `role/readonly/canNudge` 控制，不要写两个页面。
-- **本班数据概况卡 `components/class-board`**（首页用）：概况四格 + 本班前三名 + 全校班级名次 + 管理入口；
+- **我的班级 `packageAdmin/class/class`**（班主任 / 班委；**页面名与入口名都是「我的班级」**）：
+  顶部身份卡（班级名 + `班主任`/`班委 · 仅查看` 胶囊 + 多班切换）→ 4 个页内 tab：
+  **学生名单 / 校园跑 / 班超联赛 / 班级配置**。
+  - 「**班超联赛**」tab（原「班级考勤」改名；2026-10-19 并入原独立页 `pages/banchao/banchao`，该页已删除）：
+    吸顶周期选择（今日选日期 / 本周选当月第几周 / 本月选 1-12 月，**周选项 label 带日期段**：
+    「第2周(10月8日至10月14日)」）→ 总评 hero（区间平均分 + 记录数 + 全校名次）→ 检查明细（5 模块）→
+    得分趋势 → 最近记录 → 班级榜前三 → **班级考勤组件**（同一区间驱动，故不渲染自带周期条）。
+    口径与「班超排名」页一致：日 = `date`，周 = `month` + `weekNo`，月 = `month`；
+    **周是从当月 1 日起算的完整 7 天、不按月末截断**（10月第5周 = 10月29日至11月4日）；
+    前端唯一实现是 `utils/period.js`（与服务端 `band-chao.js::monthWeekRange` 逐例对齐，改动必须两处同步）。
+  - 名单（分页 + 搜索 + 「今日未达标」筛选 + 排序 chips）；
+    **班主任**可「督促未达标学生」（抽屉列出未达标名单，可复制到剪贴板）；
+    **班委** `canNudge:false`，**不渲染任何操作按钮**，卡片上直接写明「仅查看模式…」。
+    两种身份同一页面，用 `role/readonly/canNudge` 控制，不要写两个页面。
+  > ⚠️ 命名三层别混（2026-10-19 用户纠正）：**入口名 / 页面名 = 我的班级**；
+  > **页内第三个 tab = 班超联赛**（原「班级考勤」）；**管理员全校台账 = 班级管理**（`packageAdmin/class-manage`）。
+- **本班数据概况卡 `components/class-board`**（首页用）：概况四格 + 本班前三名 + 全校班级名次 + 我的班级入口；
   **无班级身份时整块不渲染**（`show:false`，所以学生端首页可无条件放置）；属性 `title/className/showManage/refreshAt`，
   事件 `ready/manage/student/classchange`，方法 `reload()`。组件内用 `app.wxss` 公共类必须声明 `"styleIsolation": "apply-shared"`。
   **多班（班主任被分配多个班）时卡片可左右滑动切换**：用原生 `<swiper>`（`current` + `bindchange`），
@@ -484,7 +494,9 @@ WebP q80 = 41.4KB（更小，但 `image` 组件 iOS 需 14+，目标环境实测
   **登录与绑定**（微信绑定脱敏展示，持 `user.manage` 者可「解绑」：清 openid/wx_sessions 并吊销设备令牌，业务数据保留）→
   当前限制 → 账号操作（封禁/解封、重置密码 `permission.manage`、删除账户）→ 限制/解除流水。
   数据来源：`GET /api/admin/users/:id`（含 loginInfo）+ `GET /api/admin/users/:id/sport-detail`（日/周窗口、全历史达标率、饮水、徽章、生效目标）。
-- **管理端 · 分类中枢页**：`config/config`、`content/index`、`assessment/index` 是同一套「分类中枢」语言——
+- **管理端 · 分类中枢页**：`config/config`、`content/index` 是同一套「分类中枢」语言——
+  （`assessment/index` 已于 2026-10-22 按用户要求删除：里面只有「默认目标 / 计划目标」两项，
+  两者已平铺到「考核与目标」分类，留着等于多一层点击）
   `.tt-section` 标题（副文案写清生效范围）+ 单张 `.tt-card` 内多行 `tt-row` 分类项
   （`.cfg-cat-icon`/`.ct-cat-icon`/`.am-cat-icon`：72rpx 品牌软底圆角块 + 品牌色图标 + 标题/摘要 + `chevron-right`），
   每行跳独立子页；中枢页与子页都必须有 `checkAndLoad` 权限闸门。

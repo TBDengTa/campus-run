@@ -1,0 +1,233 @@
+/* 楼名管理（白橙设计系统）：顶部说明 + 两张分栏卡片（教学用楼 / 宿舍用楼） */
+.bd-page {
+  padding-bottom: 40rpx;
+}
+
+/* ===== 顶部说明卡 ===== */
+.bd-hero {
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+  margin: 0 24rpx 24rpx;
+  padding: 26rpx 24rpx;
+  border-radius: var(--tt-radius);
+  background: linear-gradient(135deg, var(--tt-brand-soft), var(--tt-card));
+  box-sizing: border-box;
+}
+
+.bd-hero-icon {
+  flex: 0 0 auto;
+  width: 76rpx;
+  height: 76rpx;
+  border-radius: 22rpx;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--tt-card);
+}
+
+.bd-hero-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+.bd-hero-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.bd-hero-desc {
+  font-size: 23rpx;
+  line-height: 32rpx;
+  color: var(--tt-text-2);
+}
+
+/* ===== 卡片 ===== */
+.bd-card {
+  margin: 0 24rpx 20rpx;
+  padding: 26rpx 24rpx 24rpx;
+  border-radius: var(--tt-radius);
+  background: var(--tt-card);
+  box-sizing: border-box;
+}
+
+.bd-card-head {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin-bottom: 22rpx;
+}
+
+.bd-card-icon {
+  flex: 0 0 auto;
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 18rpx;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bd-icon-teach {
+  background: var(--td-warning-color-1);
+}
+
+.bd-icon-dorm {
+  background: var(--tt-brand-soft);
+}
+
+.bd-card-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4rpx;
+}
+
+.bd-card-name {
+  font-size: 29rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.bd-card-hint {
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+/* 数量徽标：一眼看出配了几个 */
+.bd-badge {
+  flex: 0 0 auto;
+  min-width: 56rpx;
+  height: 44rpx;
+  padding: 0 16rpx;
+  border-radius: 999rpx;
+  font-size: 24rpx;
+  line-height: 44rpx;
+  text-align: center;
+  color: var(--tt-brand);
+  background: var(--tt-brand-soft);
+  box-sizing: border-box;
+}
+
+/* ===== 输入行 ===== */
+.bd-input-row {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+}
+
+.bd-input {
+  flex: 1;
+  min-width: 0;
+  padding: 20rpx 22rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-bg-page);
+  font-size: 26rpx;
+  color: var(--tt-text-1);
+}
+
+.bd-ph {
+  color: var(--tt-text-3);
+}
+
+.bd-add {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6rpx;
+  padding: 0 28rpx;
+  height: 76rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-brand);
+}
+
+.bd-add-t {
+  font-size: 26rpx;
+  color: #ffffff;
+}
+
+/* ===== 楼名胶囊 =====
+   与模块部门胶囊同一套「不许折行 / 不许压窄」的写法
+   （本仓库踩过「生活部」被裁成「e」的坑，楼名更长更容易出事） */
+.bd-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14rpx;
+  margin-top: 22rpx;
+}
+
+.bd-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 10rpx;
+  flex: 0 0 auto;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 12rpx 18rpx 12rpx 22rpx;
+  border-radius: 999rpx;
+}
+
+.bd-tag-teach {
+  background: var(--td-warning-color-1);
+}
+
+.bd-tag-dorm {
+  background: var(--tt-brand-soft);
+}
+
+.bd-tag-t {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-size: 25rpx;
+  line-height: 1.35;
+  color: var(--tt-text-1);
+}
+
+.bd-tag-x {
+  flex: 0 0 auto;
+  width: 34rpx;
+  height: 34rpx;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--tt-card);
+}
+
+/* ===== 空态 ===== */
+.bd-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8rpx;
+  padding: 30rpx 0 10rpx;
+}
+
+.bd-empty-t {
+  font-size: 26rpx;
+  color: var(--tt-text-2);
+}
+
+.bd-empty-d {
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+/* ===== 底部说明 ===== */
+.bd-note {
+  display: flex;
+  gap: 10rpx;
+  margin: 8rpx 32rpx 0;
+}
+
+.bd-note-t {
+  flex: 1;
+  font-size: 22rpx;
+  line-height: 34rpx;
+  color: var(--tt-text-3);
+}

@@ -19,6 +19,10 @@ Component({
     visible: { type: Boolean, value: false },
     user: { type: Object, value: null }, // { _id, account }
     busy: { type: Boolean, value: false },
+    // 允许的限制类型（值数组，如 ['sync','gps']）：null/空 = 全部。
+    // 用途：班主任在班级域只能限制「同步 / GPS」，「限制登录」是校级处置
+    //（服务端 /api/class/student/:id/ban 会拒绝 login，前端不把注定 403 的选项摆出来）。
+    allowScopes: { type: Array, value: null },
   },
 
   data: {
@@ -31,9 +35,13 @@ Component({
   },
 
   observers: {
-    visible(v) {
-      // 每次打开都重置为默认值，避免沿用上一次的选择
-      if (v) this.setData({ scope: 'login', days: 7, reason: '', scopeTip: SCOPES[0].tip });
+    // 打开时按 allowScopes 收敛选项，并重置为「第一个可用类型」
+    'visible, allowScopes'(v) {
+      if (!v) return;
+      const allow = Array.isArray(this.data.allowScopes) ? this.data.allowScopes : [];
+      const scopes = allow.length ? SCOPES.filter((s) => allow.includes(s.value)) : SCOPES;
+      const first = scopes[0] || SCOPES[0];
+      this.setData({ scopes, scope: first.value, days: 7, reason: '', scopeTip: first.tip });
     },
   },
 

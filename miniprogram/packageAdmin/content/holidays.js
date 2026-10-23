@@ -1,4 +1,6 @@
 const auth = require('../../utils/request');
+// 写权限（content.manage）：只有查看权限的账号不显示新增/编辑/删除/保存
+const adminPerm = require('../../utils/admin-perm');
 
 const EMPTY = { _id: '', date: '', name: '', type: 'festival' };
 
@@ -7,6 +9,7 @@ Page({
     list: [],
     year: new Date().getFullYear(),
     loading: false,
+    canManage: false,
     form: null,
   },
 
@@ -18,6 +21,7 @@ Page({
     this.setData({ loading: true });
     try {
       await getApp().ensureLogin();
+      await adminPerm.applyManage(this, 'content.manage');
       const list = await auth.get('/api/content/holidays', { year: this.data.year });
       this.setData({
         list: list.map((h) => ({

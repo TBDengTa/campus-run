@@ -1,0 +1,298 @@
+/* ===== 吸顶搜索 ===== */
+.ro-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: 16rpx var(--tt-gap) 12rpx;
+  background: var(--tt-bg-page);
+}
+
+.ro-search {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  height: 84rpx;
+  padding: 0 28rpx;
+  border-radius: 999rpx;
+  background: var(--tt-card);
+  box-shadow: var(--tt-card-shadow);
+}
+
+.ro-search-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 27rpx;
+  color: var(--tt-text-1);
+}
+
+.ro-search-ph {
+  color: var(--tt-text-3);
+}
+
+/* ===== 分组 ===== */
+.ro-group {
+  margin-bottom: 8rpx;
+}
+
+/* 分组标题吸顶：紧贴在搜索条下方（搜索条高 84rpx + 上下内边距 ≈ 112rpx）
+   ⚠️ 用 padding 而不是 margin 做左右留白：margin 区域是**透明的**，吸顶时成员列表会从两侧
+      24rpx 的缝隙里透出来滚过去（sticky 元素必须整宽 + 内边距）。 */
+.ro-group-head {
+  position: sticky;
+  top: 112rpx;
+  z-index: 9;
+  display: flex;
+  align-items: baseline;
+  gap: 12rpx;
+  padding: 16rpx var(--tt-gap) 12rpx;
+  background: var(--tt-bg-page);
+}
+
+.ro-group-title {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.ro-group-dept {
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+/* ===== 成员行（卡片内列表行，整行可点态留白）===== */
+.ro-members {
+  padding: 8rpx var(--tt-pad);
+}
+
+.ro-member {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  min-height: 96rpx;
+  padding: 20rpx 0;
+  border-bottom: 2rpx solid var(--tt-line);
+}
+
+.ro-member:last-child {
+  border-bottom: none;
+}
+
+/* 首字母胶囊（无头像字段，用姓名首字 + 品牌浅底，与 B 端通讯录一致） */
+.ro-avatar {
+  flex: 0 0 76rpx;
+  height: 76rpx;
+  line-height: 76rpx;
+  text-align: center;
+  border-radius: 50%;
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--tt-brand-deep);
+  background: var(--tt-brand-soft);
+}
+
+.ro-member-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.ro-member-line {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  min-width: 0;
+}
+
+.ro-member-name {
+  font-size: 29rpx;
+  font-weight: 500;
+  color: var(--tt-text-1);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 职务徽标 */
+.ro-role {
+  flex-shrink: 0;
+  padding: 4rpx 16rpx;
+  border-radius: 999rpx;
+  font-size: 21rpx;
+  color: var(--tt-brand-deep);
+  background: var(--tt-brand-soft);
+}
+
+.ro-member-sub {
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+
+/* ===== 通讯录筛选 + 两级折叠 ===== */
+.ro-sticky {
+  padding: 10rpx var(--tt-gap) 8rpx;
+}
+
+.ro-search {
+  height: 72rpx;
+  padding: 0 22rpx;
+  gap: 10rpx;
+}
+
+.ro-search-input {
+  font-size: 24rpx;
+}
+
+.ro-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 7rpx;
+  margin-top: 8rpx;
+}
+
+.ro-filter-row picker {
+  flex: 1;
+  min-width: 0;
+}
+
+.ro-select {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 3rpx;
+  padding: 8rpx 9rpx;
+  border: 1rpx solid var(--tt-line);
+  border-radius: 9rpx;
+  background: var(--tt-card);
+  font-size: 19rpx;
+  color: var(--tt-text-2);
+}
+
+.ro-select text {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ro-select.on {
+  border-color: var(--tt-brand);
+  color: var(--tt-brand-deep);
+  background: var(--tt-brand-soft);
+}
+
+.ro-reset {
+  flex-shrink: 0;
+  padding: 7rpx 8rpx;
+  font-size: 19rpx;
+  color: var(--tt-brand-deep);
+}
+
+.ro-org {
+  margin: 0 var(--tt-gap) 8rpx;
+}
+
+.ro-org-head {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  padding: 14rpx 18rpx;
+  border-radius: 14rpx;
+  background: var(--tt-card);
+  box-shadow: var(--tt-card-shadow);
+}
+
+.ro-org-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10rpx;
+}
+
+.ro-org-title {
+  font-size: 28rpx;
+  font-weight: 700;
+  color: var(--tt-text-1);
+}
+
+.ro-org-meta {
+  font-size: 19rpx;
+  color: var(--tt-text-3);
+}
+
+.ro-dept {
+  margin-top: 6rpx;
+  padding-left: 12rpx;
+}
+
+.ro-dept-head {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  padding: 10rpx 8rpx;
+}
+
+.ro-dept-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 23rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.ro-dept-count {
+  font-size: 19rpx;
+  color: var(--tt-text-3);
+}
+
+.ro-members {
+  margin-bottom: 8rpx;
+  padding: 2rpx 18rpx;
+}
+
+.ro-member {
+  gap: 14rpx;
+  min-height: 72rpx;
+  padding: 12rpx 0;
+  border-bottom: 1rpx solid var(--tt-line);
+}
+
+.ro-avatar {
+  flex-basis: 56rpx;
+  height: 56rpx;
+  line-height: 56rpx;
+  font-size: 24rpx;
+}
+
+.ro-member-name {
+  font-size: 25rpx;
+}
+
+.ro-role {
+  padding: 2rpx 9rpx;
+  font-size: 17rpx;
+}
+
+.ro-member-sub {
+  font-size: 19rpx;
+}
+
+.ro-page .tt-section {
+  margin: 4rpx 28rpx 10rpx;
+  font-size: 27rpx;
+}
+
+.ro-page .tt-section::before {
+  width: 7rpx;
+  height: 24rpx;
+}
+
+.ro-page .tt-footer {
+  padding: 14rpx 28rpx 28rpx;
+  font-size: 20rpx;
+}

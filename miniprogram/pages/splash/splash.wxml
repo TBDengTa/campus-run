@@ -1,0 +1,30 @@
+<!-- 开屏广告：全屏素材 + 左上角倒计时跳过（与胶囊同高对齐、不压状态栏）+ 底部品牌胶囊 -->
+<view class="splash-page">
+  <!-- 素材未加载完成时的底：品牌渐变，避免白屏 -->
+  <view class="splash-bg"></view>
+
+  <image
+    wx:if="{{ad}}"
+    class="splash-img"
+    src="{{ad.imageUrl}}"
+    mode="aspectFill"
+    bindload="onImgLoad"
+    binderror="onImgError"
+    bind:tap="onAdTap"
+  />
+
+  <!-- 跳过 / 广告标识：图片加载完成后出现；top 由状态栏 + 胶囊实测值算得（px） -->
+  <view class="splash-skip" wx:if="{{show}}" style="top: {{skipTop}}px; height: {{skipHeight}}px;" bind:tap="skip">
+    <text class="splash-skip-text">{{skipText}}</text>
+  </view>
+  <view class="splash-flag" wx:if="{{show}}" style="top: {{flagTop}}px;">广告</view>
+
+  <!-- 底部品牌信息：居中靠下的半透明胶囊 -->
+  <view class="splash-foot">
+    <view class="splash-foot-pill">
+      <t-icon name="secured" size="26rpx" color="rgba(255,255,255,0.92)" />
+      <text class="splash-foot-brand">唐唐快跑 2.0</text>
+      <text class="splash-foot-sub">由 河北唐博科技有限公司 提供技术支持</text>
+    </view>
+  </view>
+</view>

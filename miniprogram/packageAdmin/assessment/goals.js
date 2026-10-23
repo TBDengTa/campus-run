@@ -1,10 +1,13 @@
 const auth = require('../../utils/request');
+// 写权限（assessment.manage）：只有 assessment.view 的账号看不到保存入口
+const adminPerm = require('../../utils/admin-perm');
 
 // 默认目标（全局单例）：每日 / 每周 步数·距离·千卡
 Page({
   data: {
     defaults: null,
     saving: false,
+    canManage: false,
   },
 
   onShow() {
@@ -25,6 +28,8 @@ Page({
         });
         return;
       }
+      // 只读 / 可写分开：assessment.view 能看默认目标，assessment.manage 才能改
+      await adminPerm.applyManage(this, 'assessment.manage');
       this.load();
     } catch (e) {
       wx.showToast({ title: e.message, icon: 'none' });

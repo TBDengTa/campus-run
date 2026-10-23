@@ -345,3 +345,158 @@
   overflow: hidden;
   background: var(--tt-card);
 }
+
+/* ===== 我的人物码（用户 2026-10-22）===== */
+.hero-qr-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6rpx;
+  margin-left: 10rpx;
+  padding: 8rpx 18rpx;
+  border-radius: 999rpx;
+  background: var(--tt-brand-soft);
+}
+
+.hero-qr-t {
+  font-size: 21rpx;
+  color: var(--tt-brand);
+  white-space: nowrap;
+}
+
+.pf-qr-mask {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 1020;
+}
+
+.pf-qr-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  /* 必须高于自定义 tabBar：它是 position:fixed + z-index:999，
+     弹层用 40 时会被 tabBar 整个盖住（用户 2026-10-22 截图「这码被挡住了」）。 */
+  z-index: 1021;
+  display: flex;
+  flex-direction: column;
+  /* 底部多留：tabBar 高 112rpx + 它自身 16rpx 偏移，加起来 ≈128rpx；
+     不留这个空间，二维码说明与按钮会藏在胶囊后面。 */
+  padding: 0 28rpx calc(140rpx + env(safe-area-inset-bottom));
+  border-radius: 28rpx 28rpx 0 0;
+  background: var(--tt-card);
+  transform: translateY(110%);
+  transition: transform 0.24s ease;
+  max-height: 84vh;
+}
+
+.pf-qr-sheet.open {
+  transform: translateY(0);
+}
+
+.pf-qr-grab {
+  width: 72rpx;
+  height: 8rpx;
+  margin: 16rpx auto 0;
+  border-radius: 999rpx;
+  background: var(--tt-line);
+}
+
+.pf-qr-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20rpx 0 8rpx;
+}
+
+.pf-qr-title {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: var(--tt-text-1);
+}
+
+.pf-qr-close {
+  width: 56rpx;
+  height: 56rpx;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999rpx;
+  background: var(--tt-bg-page);
+}
+
+.pf-qr-body {
+  padding: 10rpx 0 6rpx;
+  text-align: center;
+}
+
+.pf-qr-name {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.pf-qr-meta {
+  margin-top: 6rpx;
+  font-size: 23rpx;
+  color: var(--tt-text-3);
+}
+
+.pf-qr-code {
+  margin: 22rpx 0;
+  padding: 24rpx 20rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-bg-page);
+  border: 2rpx dashed var(--tt-line);
+}
+
+/* 有二维码图时：去掉虚线框、改白底（扫码识别率更高，视觉也更干净）。
+   不用 :has()（小程序 WXSS 支持不可靠），改用并列的修饰类。 */
+.pf-qr-code.has-img {
+  padding: 0;
+  background: transparent;
+  border: 0;
+}
+
+/* 二维码图片：白底正方形，quiet zone 由后端 margin 保证，这里只给圆角 */
+.pf-qr-img {
+  display: block;
+  width: 460rpx;
+  height: 460rpx;
+  margin: 0 auto;
+  border-radius: 12rpx;
+  background: #ffffff;
+}
+
+.pf-qr-code-t {
+  font-size: 22rpx;
+  line-height: 34rpx;
+  color: var(--tt-text-1);
+  word-break: break-all;
+  font-family: Menlo, Consolas, monospace;
+}
+
+.pf-qr-tip-line {
+  margin: 30rpx 0;
+  font-size: 25rpx;
+  color: var(--tt-text-3);
+}
+
+.pf-qr-tip-line.is-err {
+  color: var(--td-error-color-6);
+}
+
+.pf-qr-tip {
+  margin-top: 8rpx;
+  font-size: 22rpx;
+  line-height: 32rpx;
+  color: var(--tt-text-3);
+}
+
+.pf-qr-foot {
+  padding-top: 18rpx;
+}

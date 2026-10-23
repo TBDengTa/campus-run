@@ -41,6 +41,21 @@
   `routes/run.js`、`routes/reward-video.js` 与 `services/steps.js` 三层拦截（`403 + code 403003`）；
   排行榜 `$lookup users` 后按 `role != 'teacher'` 过滤。
 - 新增任何写入 `run_records` 的能力时，必须同步加教师判定，避免教师账号产生运动数据。
+- **教师账号不限制微信绑定**（用户 2026-10-22「教师账户不限制微信绑定的登录」）：
+  `POST /api/auth/bind` 里 `role === 'teacher'` 的账号**允许换绑**（换手机/换微信都能登进来，`user.openid` 随之更新、
+  `openidBoundAt` 记新绑定时间）；**学生仍然一账号一微信**（防止代跑代签）。
+  同一个微信只能登一个账号，所以绑定前必须查「这个微信现在绑在谁身上」：
+  - 绑在**另一个教师**账号 → 允许**顶替换绑**（先 `$unset` 原账号的 openid，否则会撞 openid 唯一索引；
+    **不要**吊销原账号的设备令牌）。这是登录页「用「X」登录」走的路径（截图场景：同一微信从刘恩琦切到陈宇航）。
+  - 绑在**学生**账号 → 一律 `403 403004`（学生微信不能被任何账号顶掉，含「学生账号自己还没绑过」的情形）。
+  登录页遇到「当前微信已绑 A、输入的是 B」时用 `wx.showActionSheet` 给三个选择
+  （用「B」登录 / 继续进入「A」/ 返回），**不要**退回 `showModal` 的两按钮 —— 那是死胡同。
+  副作用（刻意如此）：换绑后原账号在**这台设备**上的 JWT 因 `openid` 不一致被判 401，等于本机退出登录；
+  **但不得吊销原账号的 deviceToken**（别的设备的一键登录仍然合法，见「登录态」第 ④ 条）。
+  回归：`tools/verify-teacher-rebind.js`（含教师顶替、学生拒绝、旧令牌失效、原账号仍可一键登录）。
+- 教师「我的」页**不显示**「隐私设置」与「我的申诉」：教师不参与排名（隐私设置调的是排行榜展示项），
+  也没有申诉链路。前端用 `roleReady && !isTeacher` 控制（`roleReady` 防止首帧按默认 `isTeacher:false`
+  误闪一下学生菜单）。
 
 ## 角色与权限（RBAC）
 - 用户角色只有 `student` / `teacher`；"管理员"= 持有 `superadmin` 权限组（permissions 含 `'*'`）。
@@ -48,12 +63,28 @@
 - 管理端路由一律用 `requirePermission('xxx')` 挂载（见 `src/routes/admin/index.js`），禁止只靠前端隐藏入口。
 - 新增管理能力时：先在 `Permission.DEFAULT_CATALOG` 加权限项（启动自动播种），再挂到对应路由。
 - **权限组增删改**走 `server/src/routes/admin/permission-groups.js`（挂 `permission.manage`），规则：
-  ① 内置组（`builtIn: true`，来自 `PermissionGroup.DEFAULT_GROUPS`）**只读**——每次启动都会按默认值重新播种，改了也会被覆盖；
+  ① 内置组（`builtIn: true`，来自 `PermissionGroup.DEFAULT_GROUPS`）**可编辑但不可删**（用户 2026-10-20 修订，旧规则是"只读、每次启动覆盖"）：
+     保存时写入 `customized: true`，`services/rbac.js::seedPermissions()` 见到该标记就**跳过播种不再覆盖**——
+     否则管理员改完当下生效、下次重启被静默抹掉（假生效，比不能改更糟）。**superadmin 组例外，恒只读**（唯一持 `'*'`，改坏等于锁死自己）；
   ② 自定义组标识 `key` 只能 `^[a-z][a-z0-9_.-]{1,31}$`，且不能包含通配 `*`（`*` 仅超级管理员组）；
   ③ 删除前必须确认没有账号在用（`user.permissionGroups` 引用检查），内置组一律不可删；
   ④ 权限项必须存在于权限目录（`assertPermsExist`）。
   管理端页面：`packageAdmin/permissions/groups`（账户编辑页与用户详情页都有「管理权限组 ›」入口）。
 - 本地测试登录：后端 `DEV_LOGIN=true` + 前端 `env.js` `DEV_LOGIN: true, DEV_ROLE: 'dev-student|dev-teacher|dev-admin'`；生产必须关闭。
+- **只读账号不显示写入口**（用户 2026-10-22「只有查看权限时应该不显示操作功能按钮，而不是点击后被后端拒绝掉」）：
+  ① 每个管理端页面在 `onShow`/`load` 里调 `utils/admin-perm.js::applyManage(this, '<模块>.manage')`
+     得到 `data.canManage`（`*` 或该项），写入口一律 `wx:if="{{canManage}}"`，输入框 `disabled="{{!canManage}}"`；
+     页面自己有更细的写权限就多算几个（如用户管理：`canManage`=user.manage / `canPerms`=permission.manage / `canImport`=user.import）；
+  ② 前端只控显隐，**鉴权仍在服务端**；取不到权限时**按只读渲染**（fail-closed）；
+  ③ 回归：`tools/check-write-guard.js` 扫描**整个 packageAdmin**（bind:tap、catch:tap、bind:confirm），
+     写动作必须有权限条件守卫；只有「整页都需要写权限」的页面（目前仅 `permissions/groups`）在
+     `WRITE_ONLY_PAGES` 白名单里，新增白名单必须写清理由。
+- **导航条目要按「真实能力」而不是「能看一眼」判定**（用户 2026-10-22）：
+  `北斗运动` = `config.view`（旧实现有任意管理权限就显示，普通教师也能看到假入口）；
+  `扫码加人` = `only:'unionManager'`（主席团 / 部长 / 副部长 / 学生会总管，与 `assertMemberManager` 同口径）；
+  `检查记录` = `only:'unionRecords'`（学生会成员，或 `union.steward` 总管；纯 union.view 不放行）。
+  首页与中枢共用 `utils/nav-groups.js::navCtx(user)` 生成上下文（含 `canUnionScanJoin`），
+  **不要在 hub.js / home.js 各写一份 ctx** —— 新增身份维度时只改 navCtx。回归：`tools/check-nav-groups.js` 的角色矩阵。
 
 ## 登录态与退出登录（小程序）
 - 登录态 = `utils/request.js` 的 `isBound()`：**有 token 且已绑定名单账号**（游客 token 不算登录），且未被主动退出。
@@ -71,6 +102,21 @@
   小程序用 `utils/login-history.js` 存本地（最多 5 条，**绝不存密码**），登录页列表点「一键登录」调 `POST /api/auth/device-login`。
   令牌**用后即轮换**（旧令牌立刻失效，客户端需用返回值覆盖本地记录），删除记录时调 `POST /api/auth/device-revoke`。
   退出登录**不撤销** deviceToken（否则"退出后一键登回"就没意义），只有用户删除历史记录或管理员踢下线才撤销。
+- **身份 = 令牌对应的账号；旧令牌由服务端判死**（2026-10-22 事故：登录刘恩琦后进去还是陈宇航；
+  2026-10-23 事故：一键登录的历史记录莫名失效）。三条硬约束：
+  ① **服务端**：JWT 只在签发时的那个绑定下有效 —— `middlewares/auth.js` 比对令牌里的 `openid` 与
+     `user.openid`，不一致（含解绑后为空）一律 `401`。这是「旧令牌不能继续用」的**唯一**防线；
+  ② **小程序**：`app.ensureLogin()` 每个启动周期确认一次身份，走 **`refreshUser()`（`/api/auth/me`，按 token 校验）**。
+     **不要**改成按 openid 重新登录（曾经的 `auth.login({silent:true})`）——那会在教师「一键登录 A 账号、
+     而当前微信绑在 B」时把身份静默切回 B，正是一键登录失效的成因。旧令牌失效时 `request()` 会自动重登，
+     自愈不需要靠启动覆盖。
+  ③ `logout()` 必须清掉所有账号级缓存（`userInfo/today/stats/unionIdentity/points`）并重置
+     `app._roleProbe`、`app._identityChecked` —— 只清一半会让页面半新半旧，现象无法复现。
+  ④ **换绑不得吊销原账号的设备令牌**：`login_devices` 按账号签发、与微信无关，
+     原账号在其它手机上的「一键登录」仍然合法。客户端 `quickLogin` 只在服务端明确回 `401001`
+     时删本地记录，网络/5xx 一律保留（否则用户的历史记录会被误删且不可恢复）。
+  回归：`tools/check-identity-binding.js`（静态，含反向断言）+ `tools/verify-identity-e2e.js`
+  + `tools/verify-teacher-rebind.js`（含「换绑后原账号仍能一键登录」）。
 
 ## 班主任与班委（班级域）
 - **班主任**：教师可被分配多个班级 —— `user.homeroomClasses: [String]`（存班级名，与 `className` 同口径）。
@@ -84,6 +130,37 @@
   ③ 其余一律 403。
   新增任何 `/api/class/*` 接口**都必须先校验「目标学生属于该 className」**，防止跨班越权。
 - 分配入口在管理端用户详情页（需 `user.manage`）。
+- **班主任可以管理本班学生（不需要任何管理权限，用户 2026-10-22）**：
+  编辑资料 / 重置密码 / 发放徽章 / 限制功能 / 排宿舍；**删除账户不给班主任**（用户 2026-10-23）。
+  三个硬约束，改这里之前先读 `services/student-scope.js`：
+  ① 只有**班主任**能写（`role === 'teacher'` 且目标 `className` 在其 `homeroomClasses` 里），**班委一律只读**；
+  ② 目标必须是**普通学生**：持任何管理权限的学生交管理员处理（否则班主任能重置/删除一个学生身份的管理员）；
+  ③ 编辑资料只允许 姓名/性别/出生日期（学籍字段 `403 403005`），限制功能只允许 `sync`/`gps`
+     （限制登录是校级处置，`403`）。
+  **「能做什么」由服务端下发能力表**（`GET /api/class/student/:id/manage` 的 `capabilities`，
+  开关在 `routes/class.js::HOMEROOM_CAN_DELETE`）：前端 `user-detail.wxml` 只读 `caps.*` 画按钮，
+  **不要**在模板里各写一遍 `canManagePerms || canManageStudent` 之类的组合 ——
+  用户 2026-10-23 报的「删除账户他没有这个权限请你不要显示」就是两处判断漂移的产物。
+  关闭的能力必须**同时**在服务端 403（不能只隐藏按钮）。
+  **实现必须与管理端共用同一份 service**（`services/user-account-admin.js`、`services/user-badges-manual.js`、
+  `services/student-dorm.js`）：
+  班级域 `/api/class/student/*` 只做鉴权与取参，禁止另写一套删除/重置/发徽章/排宿舍逻辑
+  （历史踩点：单条会恢复 `initialHashes`、批量不会；删除漏吊销设备令牌）。
+  前端：`packageAdmin/user-detail`（`canManageStudent` 决定按钮，管理端详情与班级域两条读路径都要给）
+  + `account-edit?scope=class`（只读学籍 + 只提交三个字段）。
+  回归：`tools/check-server-contract.js`（单一实现）+ `tools/verify-homeroom-scope.js`（端到端，含清理核对）。
+- **班主任也能给本班学生安排宿舍**（用户 2026-10-22「班主任可以给本班学生设置宿舍」）：
+  班级域 `/api/class/student/:id/dorm`（GET/PUT/DELETE，成员资格校验 + `services/student-dorm.js`），
+  与管理端 `/api/admin/users/:id/dorm`（`user.manage`）**共用同一份实现**。
+- **楼名清单不是权限**（用户 2026-10-22「为什么教师权限组无法获取楼名」）：
+  填教室 / 宿舍需要「先选楼」，但 `GET /api/admin/config/buildings` 挂在
+  `building.view|building.manage|config.view` 下 —— 那是**宿管维护楼名清单**的权限，
+  发给所有教师就等于让他们能改全校配置。所以：
+  ① 只读楼名走 `GET /api/class/buildings`（登录即可读，只回 `{teaching,dorm}` 字符串）；
+  ② 宿舍面板（`/student/:id/manage` 与 `/student/:id/dorm`）**自带楼名**（配置 ∪ 历史），
+     前端不再单独请求 `/api/admin/config/buildings`；
+  ③ 楼名的增删改仍然只走 `PUT /api/admin/config` + `building.manage`，两者刻意分开。
+  这条规律适用于所有「参考数据」：**读取（填表要用）与维护（改全校配置）必须拆成两条路径**。
 - `/api/auth/me` 必须暴露 `homeroomClasses` 与 `isClassOfficer`：自定义 tabBar 依赖它决定教师中间导航项
   （有管理权限 → 管理中枢；无权限但是班主任 → 班级管理；否则 → 公告）。
 - 班级统计口径与首页数据概况一致；班级排名只统计 `role != 'teacher'` 的学生。

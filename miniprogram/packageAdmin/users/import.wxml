@@ -2,25 +2,21 @@
   <view class="tt-section">学生名单导入</view>
   <view class="tt-card">
     <view class="imp-mode-row">
-      <view class="imp-mode {{mode === 'create' ? 'active' : ''}}" bind:tap="switchMode" data-mode="create">
-        <view class="imp-mode-title">导入新用户</view>
-        <view class="imp-mode-desc">学号不存在则创建账户</view>
-      </view>
-      <view class="imp-mode {{mode === 'update' ? 'active' : ''}}" bind:tap="switchMode" data-mode="update">
-        <view class="imp-mode-title">更新已有用户</view>
-        <view class="imp-mode-desc">仅更新性别与出生日期</view>
+      <view
+        class="imp-mode {{mode === item.value ? 'active' : ''}}"
+        wx:for="{{modes}}"
+        wx:key="value"
+        bind:tap="switchMode"
+        data-mode="{{item.value}}"
+      >
+        <view class="imp-mode-title">{{item.title}}</view>
+        <view class="imp-mode-desc">{{item.desc}}</view>
       </view>
     </view>
   </view>
   <view class="tt-card">
     <view class="import-tip">
-      <view class="tip-line">· {{mode === 'create' ? '支持创建：表头 学号,姓名,院校,系部,专业(班级可选),性别,出生日期' : '仅更新模式：表头 学号,性别,出生日期；按学号匹配已有用户'}}</view>
-      <view class="tip-line">· 支持粘贴 CSV / JSON，或从聊天记录选择 .xlsx / .xls / .csv 表格文件</view>
-      <view class="tip-line">· CSV 表头：{{mode === 'create' ? '姓名,学号,身份证号,学校,院系,班级,专业,性别,出生日期' : '学号,性别,出生日期'}}</view>
-      <view class="tip-line">· 班级按「年级+专业」自动组合（如 2023 + 机电一体化 → 23级机电一体化），名单班级列可选；显式写了同前缀的更细班（如 23级机电1班）则原样保留</view>
-      <view class="tip-line">· 初始密码 = 身份证后8位（无身份证用学号后8位），首次登录强制修改</view>
-      <view class="tip-line">· 按「学号」去重：已存在的学生仅更新班级信息，不会改动密码和微信绑定</view>
-      <view class="tip-line warn">· 同名且同初始密码的记录会被拒绝，请学校核实后调整</view>
+      <view class="tip-line" wx:for="{{tipLines}}" wx:key="index">· {{item}}</view>
     </view>
     <view class="import-actions">
       <view class="import-btn" bind:tap="chooseFile">选择文件</view>
@@ -62,17 +58,36 @@
       </view>
 
       <view class="imp-table" wx:if="{{previewData.preview.length}}">
-        <view class="imp-tr imp-th">
-          <text class="imp-td imp-td-name">姓名</text>
-          <text class="imp-td imp-td-sid">学号</text>
-          <text class="imp-td">班级</text>
-        </view>
         <scroll-view scroll-y class="imp-table-body">
-          <view class="imp-tr" wx:for="{{previewData.preview}}" wx:key="index">
-            <text class="imp-td imp-td-name">{{item.name || '-'}}</text>
-            <text class="imp-td imp-td-sid">{{item.studentId}}</text>
-            <text class="imp-td">{{item.className || '-'}}</text>
-          </view>
+          <scroll-view scroll-x class="imp-table-x">
+            <view class="imp-table-inner">
+              <view class="imp-tr imp-th">
+                <text class="imp-col imp-col-status" wx:if="{{mode === 'smart'}}">状态</text>
+                <text class="imp-col imp-col-name">姓名</text>
+                <text class="imp-col imp-col-sid">学号</text>
+                <text class="imp-col imp-col-gender">性别</text>
+                <text class="imp-col imp-col-birth">出生日期</text>
+                <text class="imp-col imp-col-school">院校</text>
+                <text class="imp-col imp-col-dept">系部</text>
+                <text class="imp-col imp-col-spec">专业</text>
+                <text class="imp-col imp-col-class">班级</text>
+              </view>
+              <view class="imp-tr" wx:for="{{previewData.preview}}" wx:key="index">
+                <view class="imp-col imp-col-status" wx:if="{{mode === 'smart'}}">
+                  <text class="imp-status {{item.exists ? 'is-update' : 'is-create'}}" wx:if="{{item.statusText}}">{{item.statusText}}</text>
+                  <text wx:else>-</text>
+                </view>
+                <text class="imp-col imp-col-name">{{item.name || '-'}}</text>
+                <text class="imp-col imp-col-sid">{{item.studentId}}</text>
+                <text class="imp-col imp-col-gender">{{item.genderText || '-'}}</text>
+                <text class="imp-col imp-col-birth">{{item.birthText || '-'}}</text>
+                <text class="imp-col imp-col-school">{{item.school || '-'}}</text>
+                <text class="imp-col imp-col-dept">{{item.deptText || '-'}}</text>
+                <text class="imp-col imp-col-spec">{{item.specialty || '-'}}</text>
+                <text class="imp-col imp-col-class">{{item.className || '-'}}</text>
+              </view>
+            </view>
+          </scroll-view>
         </scroll-view>
       </view>
       <view class="imp-more" wx:if="{{previewData.total > 20}}">仅显示前 20 条，其余行确认后照常导入</view>
@@ -84,14 +99,26 @@
         </view>
       </view>
 
+      <block wx:if="{{importing.active}}">
+        <view class="imp-progress mt-16">
+          <view class="imp-progress-head">
+            <text>正在导入 {{importing.done}} / {{importing.total}} 行</text>
+            <text class="num-font imp-progress-percent">{{importing.percent}}%</text>
+          </view>
+          <view class="imp-progress-bar">
+            <view class="imp-progress-fill" style="width: {{importing.percent}}%"></view>
+          </view>
+          <view class="imp-progress-sub">已新增 {{importing.created}} · 已更新 {{importing.updated}}{{importing.failedCount ? ' · 失败 ' + importing.failedCount : ''}}</view>
+        </view>
+      </block>
       <t-button
+        wx:if="{{!importing.active}}"
         theme="primary"
         block
-        loading="{{confirming}}"
         disabled="{{!previewData.valid}}"
         bind:tap="confirmImport"
         class="mt-16"
-      >确认导入（{{mode === 'create' ? '创建/更新' : '仅更新'}}模式）</t-button>
+      >{{importing.done > 0 ? '继续导入（已完成 ' + importing.done + ' 行）' : '确认导入（' + (mode === 'smart' ? '智能' : mode === 'create' ? '新增' : '更新') + '模式）'}}</t-button>
     </view>
   </block>
 

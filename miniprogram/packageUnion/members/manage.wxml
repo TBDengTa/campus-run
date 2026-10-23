@@ -1,0 +1,31 @@
+<view class="page tt-page mm-page">
+  <view class="tt-hero mm-hero">
+    <view class="tt-hero-body">
+      <view class="mm-title">成员管理</view>
+      <view class="mm-sub">{{scopeText || '学生会'}} · 仅可调整本校 / 本院 / 本部门成员</view>
+    </view>
+  </view>
+
+  <view class="tt-section">
+    <text>成员</text>
+    <text class="tt-section-extra">{{total}} 人</text>
+  </view>
+
+  <view class="tt-card mm-list">
+    <view class="mm-row" wx:for="{{list}}" wx:key="id" data-id="{{item.id}}" bind:tap="onMemberTap">
+      <text class="mm-avatar">{{item.initial}}</text>
+      <view class="mm-main">
+        <view class="mm-name-line">
+          <text class="mm-name">{{item.realName}}</text>
+          <text class="mm-role mm-role-{{item.roleClass}}">{{item.roleText}}</text>
+        </view>
+        <text class="mm-subline">{{item.subText || '—'}}<text wx:if="{{item.classText}}"> · {{item.classText}}</text><text wx:if="{{item.termText}}"> · {{item.termText}}</text></text>
+      </view>
+      <t-icon name="chevron-right" size="22rpx" color="var(--tt-text-3)" />
+    </view>
+    <view class="tt-empty" wx:if="{{loading && !list.length}}">正在加载成员…</view>
+    <view class="tt-empty" wx:if="{{!loading && !list.length}}">暂无可管理的成员</view>
+  </view>
+
+  <view class="tt-footer">点成员可改职务、转移部门或移出；不能调整自己。新增成员仍在管理端操作。</view>
+</view>

@@ -1,13 +1,11 @@
-/* 班级管理（班主任 / 班委）：手机端紧凑版式
+/* 班级管理（班主任 / 班委）· 4 个 tab：学生名单 / 校园跑 / 班级考勤 / 班级配置
    节奏：顶部留白 16rpx、卡片间距 16rpx、卡内 20~22rpx、行内 16rpx；配色/圆角/阴影只用 --tt-* 与 --td-* 令牌 */
+/* 正文底部留白：督促从「学生名单」tab 的底部固定操作条整体迁到校园跑 tab 后，
+   本页不再有任何 fixed 底栏，原来的 .cls-page.has-footbar（210rpx 补位）随之删除 ——
+   留着会让名单 tab 底部空出一截。 */
 .cls-page {
   padding-top: 16rpx;
   padding-bottom: calc(40rpx + env(safe-area-inset-bottom));
-}
-
-/* 班主任：底部固定操作条，正文预留出空间 */
-.cls-page.has-footbar {
-  padding-bottom: calc(210rpx + env(safe-area-inset-bottom));
 }
 
 .cls-page .tt-section {
@@ -15,7 +13,7 @@
   font-size: 28rpx;
 }
 
-/* ===== 无身份空状态 ===== */
+/* ===== 无身份空状态 / 无权限说明 ===== */
 .tt-card.cls-blank {
   margin-top: 100rpx;
   display: flex;
@@ -111,10 +109,45 @@
   opacity: 0.85;
 }
 
-/* ===== 2. 概况四格 ===== */
+/* ===== 2. 四个 tab（页面内状态切换，分包页不能用原生 tabBar） ===== */
+.cls-tabs {
+  display: flex;
+  gap: 10rpx;
+  margin: 0 var(--tt-gap) 16rpx;
+}
+
+.cls-tab {
+  flex: 1;
+  text-align: center;
+  padding: 16rpx 0;
+  border-radius: var(--tt-radius-sm);
+  font-size: 25rpx;
+  color: var(--tt-text-2);
+  background: var(--tt-card);
+  box-shadow: var(--tt-card-shadow);
+}
+
+.cls-tab.active {
+  color: #fff;
+  font-weight: 600;
+  background: linear-gradient(135deg, #ff9a3d, var(--tt-brand));
+}
+
+.cls-tab:active {
+  opacity: 0.85;
+}
+
+/* ===== 3. 概况六格（校园跑 tab：人数 / 活跃 / 达标率 / 班级日均 / 跑分 / 全校名次） ===== */
 .tt-card.cls-overview {
   padding: 12rpx 22rpx 18rpx;
   margin-bottom: 16rpx;
+}
+
+/* 第二行统计：与第一行之间加一条分隔线，避免六个数糊成一片 */
+.cls-overview .tt-stat-row + .tt-stat-row {
+  margin-top: 16rpx;
+  padding-top: 16rpx;
+  border-top: 2rpx solid var(--tt-line);
 }
 
 .cls-overview .tt-stat-value {
@@ -170,7 +203,7 @@
   color: var(--tt-text-3);
 }
 
-/* ===== 3. 排名卡 ===== */
+/* ===== 4. 排名卡 ===== */
 .tt-card.cls-rank {
   padding: 18rpx 20rpx;
   margin-bottom: 16rpx;
@@ -322,7 +355,7 @@
   background: var(--tt-brand-soft-2);
 }
 
-/* 浅色提示条：仅查看视角的「可做什么」 */
+/* 浅色提示条：仅查看视角的「可做什么」/「不参加校园跑」 */
 .cls-tip {
   display: flex;
   align-items: center;
@@ -336,7 +369,850 @@
   color: var(--tt-brand-deep);
 }
 
-/* ===== 4. 搜索 + 可折叠筛选面板（与用户管理页同一套设计语言） ===== */
+.cls-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10rpx;
+  margin: 0 var(--tt-gap) 16rpx;
+  padding: 16rpx 18rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-brand-soft);
+  border: 2rpx solid var(--tt-brand-soft-2);
+  font-size: 22rpx;
+  line-height: 32rpx;
+  color: var(--tt-brand-deep);
+}
+
+/* ===== 5. 学生运动明细入口 ===== */
+.tt-card.cls-entries {
+  padding: 4rpx 22rpx;
+  margin-bottom: 16rpx;
+}
+
+.cls-entry {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 20rpx 0;
+}
+
+.cls-entry + .cls-entry {
+  border-top: 2rpx solid var(--tt-line);
+}
+
+.cls-entry:active {
+  opacity: 0.8;
+}
+
+.cls-entry-icon {
+  width: 64rpx;
+  height: 64rpx;
+  flex-shrink: 0;
+  border-radius: 20rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--tt-brand-soft);
+}
+
+.cls-entry-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.cls-entry-title {
+  font-size: 27rpx;
+  font-weight: 500;
+  color: var(--tt-text-1);
+}
+
+.cls-entry-sub {
+  margin-top: 4rpx;
+  font-size: 21rpx;
+  line-height: 30rpx;
+  color: var(--tt-text-3);
+}
+
+/* ===== 6. 班级考勤（主包 components/attendance 组件）=====
+   组件内部用 .tt-card / .at-periods 自带左右 var(--tt-gap) 外边距（与 banchao-block / class-board 同约定），
+   所以这里只留一个零内距的包裹层：联调时若组件改成不带外边距，只需给 .cls-att 加 padding: 0 var(--tt-gap) */
+.cls-att {
+  padding: 0;
+}
+
+/* ===== 6b. 班超 tab（原 pages/banchao/banchao 的内容并进来）=====
+   视觉语言与原班超页保持一致（同一批令牌与字号），只把 class 前缀从 .bc- 换成 .cls-bc- 避免与其它页冲突。 */
+
+/* 吸顶：周期切换 + 周期选择。留白用 padding 不用 margin —— margin 区域透明，
+   吸顶时下方内容会从两侧缝隙里透出来滚过去（docs/union-ui-b-round.md 记过这条通用规则）。 */
+.cls-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: 0 var(--tt-gap) 8rpx;
+  background: var(--tt-bg-page);
+}
+
+.cls-ranges {
+  display: flex;
+  gap: 12rpx;
+  padding-top: 8rpx;
+}
+
+.cls-range-item {
+  flex: 1;
+  text-align: center;
+  padding: 12rpx 0;
+  font-size: 25rpx;
+  color: var(--tt-text-2);
+  background: var(--tt-card);
+  border-radius: var(--tt-radius-sm);
+  box-shadow: var(--tt-card-shadow);
+}
+
+.cls-range-item.active {
+  color: #ffffff;
+  background: var(--tt-brand);
+  font-weight: 600;
+}
+
+.cls-period {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin-top: 8rpx;
+}
+
+.cls-period-chip {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  padding: 8rpx 16rpx;
+  border-radius: 999rpx;
+  font-size: 23rpx;
+  color: var(--tt-text-1);
+  background: var(--tt-card);
+  box-shadow: var(--tt-card-shadow);
+}
+
+.cls-period-chip:active {
+  background: var(--tt-brand-soft);
+}
+
+/* 总评 hero（紧凑：上下内边距收一档，得分与说明左右同行） */
+.cls-bc-hero {
+  padding: 26rpx 28rpx 24rpx;
+  border-radius: var(--tt-radius);
+}
+
+.cls-bc-hero-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+}
+
+.cls-bc-hero-name {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #ffffff;
+  max-width: 400rpx;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cls-bc-hero-range {
+  flex-shrink: 0;
+  font-size: 22rpx;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.cls-bc-hero-main {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  margin-top: 14rpx;
+}
+
+.cls-bc-hero-score {
+  display: flex;
+  align-items: baseline;
+  gap: 6rpx;
+  flex-shrink: 0;
+}
+
+.cls-bc-hero-score-v {
+  font-size: 60rpx;
+  font-weight: 700;
+  color: #ffffff;
+  line-height: 1;
+}
+
+.cls-bc-hero-score-u {
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.cls-bc-hero-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+  min-width: 0;
+}
+
+.cls-bc-hero-meta {
+  font-size: 23rpx;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.cls-bc-hero-rank {
+  font-size: 23rpx;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.95);
+}
+
+/* 检查明细：单行「名 + 部门 ｜ 值 + 说明」 */
+.cls-bc-modules {
+  margin: 0 var(--tt-gap) var(--tt-gap);
+  padding: 6rpx var(--tt-pad);
+}
+
+.cls-bc-module {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+  padding: 16rpx 0;
+  border-bottom: 1rpx solid var(--tt-line);
+}
+
+.cls-bc-module:last-child {
+  border-bottom: none;
+}
+
+.cls-bc-module-main {
+  display: flex;
+  align-items: baseline;
+  gap: 10rpx;
+  min-width: 0;
+}
+
+.cls-bc-module-name {
+  font-size: 27rpx;
+  color: var(--tt-text-1);
+  font-weight: 500;
+}
+
+.cls-bc-module-dept {
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+}
+
+.cls-bc-module-right {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  min-width: 0;
+}
+
+.cls-bc-module-score {
+  flex-shrink: 0;
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--tt-brand);
+}
+
+.cls-bc-module-score.cls-bc-module-missing {
+  color: var(--tt-text-3);
+  font-size: 25rpx;
+}
+
+.cls-bc-module-score.cls-bc-module-warn {
+  color: var(--td-error-color-6, #d54941);
+}
+
+.cls-bc-module-score.cls-bc-module-skip {
+  color: var(--tt-text-3);
+  font-size: 25rpx;
+}
+
+.cls-bc-module-metric {
+  min-width: 0;
+  font-size: 21rpx;
+  color: var(--tt-text-3);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 得分趋势 */
+.cls-bc-trend {
+  margin: 0 var(--tt-gap) var(--tt-gap);
+  padding: var(--tt-pad);
+}
+
+.cls-bc-trend-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin-bottom: 14rpx;
+}
+
+.cls-bc-trend-row:last-child {
+  margin-bottom: 0;
+}
+
+.cls-bc-trend-label {
+  width: 72rpx;
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+.cls-bc-trend-track {
+  flex: 1;
+  height: 14rpx;
+  border-radius: 8rpx;
+  background: var(--tt-line);
+  overflow: hidden;
+}
+
+.cls-bc-trend-fill {
+  height: 100%;
+  border-radius: 8rpx;
+  background: var(--tt-brand);
+}
+
+.cls-bc-trend-value {
+  width: 64rpx;
+  text-align: right;
+  font-size: 24rpx;
+  color: var(--tt-text-1);
+}
+
+/* 最近记录 */
+.cls-bc-records {
+  margin: 0 var(--tt-gap) var(--tt-gap);
+  padding: 6rpx var(--tt-pad) var(--tt-pad);
+}
+
+.cls-bc-record {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+  padding: 18rpx 0;
+  border-bottom: 1rpx solid var(--tt-line);
+}
+
+.cls-bc-record-main {
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+  min-width: 0;
+}
+
+.cls-bc-record-title {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  min-width: 0;
+}
+
+.cls-bc-record-module {
+  flex-shrink: 0;
+  font-size: 27rpx;
+  color: var(--tt-text-1);
+  font-weight: 500;
+}
+
+.cls-bc-record-target {
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+  max-width: 320rpx;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cls-bc-record-sub {
+  font-size: 21rpx;
+  color: var(--tt-text-3);
+}
+
+.cls-bc-record-deduct {
+  flex-shrink: 0;
+  font-size: 28rpx;
+  color: var(--td-error-color-6, #d54941);
+}
+
+.cls-bc-appeal-tip {
+  margin-top: 16rpx;
+  font-size: 21rpx;
+  color: var(--tt-text-3);
+  text-align: center;
+}
+
+/* 班级榜前三 */
+.cls-bc-top {
+  margin: 0 var(--tt-gap) var(--tt-gap);
+  padding: 6rpx var(--tt-pad);
+}
+
+.cls-bc-top-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 16rpx 0;
+  border-bottom: 1rpx solid var(--tt-line);
+}
+
+.cls-bc-top-row:last-child {
+  border-bottom: none;
+}
+
+.cls-bc-top-no {
+  width: 40rpx;
+  height: 40rpx;
+  line-height: 40rpx;
+  text-align: center;
+  border-radius: 50%;
+  font-size: 22rpx;
+  color: var(--tt-text-2);
+  background: var(--tt-line);
+}
+
+.cls-bc-top-no-1 {
+  color: #ffffff;
+  background: var(--tt-brand);
+}
+
+.cls-bc-top-no-2,
+.cls-bc-top-no-3 {
+  color: var(--tt-brand-deep);
+  background: var(--tt-brand-soft-2);
+}
+
+.cls-bc-top-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4rpx;
+}
+
+.cls-bc-top-name {
+  font-size: 27rpx;
+  color: var(--tt-text-1);
+}
+
+.cls-bc-top-sub {
+  font-size: 21rpx;
+  color: var(--tt-text-3);
+}
+
+.cls-bc-top-score {
+  flex-shrink: 0;
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--tt-brand);
+}
+
+.cls-bc-empty {
+  padding: 36rpx 0;
+  text-align: center;
+  font-size: 25rpx;
+  color: var(--tt-text-3);
+}
+
+/* ===== 7. 班级配置表单 ===== */
+.tt-card.cls-card {
+  padding: 22rpx;
+  margin-bottom: 16rpx;
+}
+
+.cls-card-title {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.cls-card-note {
+  margin-top: 12rpx;
+  padding-top: 12rpx;
+  border-top: 2rpx solid var(--tt-line);
+  font-size: 20rpx;
+  line-height: 30rpx;
+  color: var(--tt-text-3);
+}
+
+/* 表单行：左侧标签 + 说明，右侧开关 / 输入框 */
+.cls-fitem {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 18rpx 0;
+  border-bottom: 2rpx solid var(--tt-line);
+}
+
+.cls-fitem:last-child {
+  border-bottom: none;
+  padding-bottom: 4rpx;
+}
+
+.cls-fitem-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+.cls-flabel {
+  font-size: 27rpx;
+  font-weight: 500;
+  color: var(--tt-text-1);
+}
+
+.cls-fdesc {
+  font-size: 20rpx;
+  line-height: 30rpx;
+  color: var(--tt-text-3);
+}
+
+/* 人数输入：固定宽度，disabled 时降到灰度（只读用户一眼看出不能改） */
+.cls-input {
+  width: 150rpx;
+  flex-shrink: 0;
+  height: 64rpx;
+  padding: 0 18rpx;
+  box-sizing: border-box;
+  border-radius: 16rpx;
+  text-align: center;
+  font-size: 28rpx;
+  color: var(--tt-text-1);
+  background: var(--tt-brand-soft);
+}
+
+.cls-input[disabled] {
+  color: var(--tt-text-3);
+  background: var(--td-bg-color-component);
+}
+
+/* 教室是「文字」（1号教学楼·201），比人数输入宽一档、左对齐，否则长教室名看不全 */
+.cls-input-wide {
+  width: 300rpx;
+  text-align: left;
+  font-size: 25rpx;
+}
+
+/* ===== 卫生区（本班负责的包干区）===== */
+/* 与上面的人数 / 教室同卡：头部一行是说明 + 「选择卫生区」入口，下面是本班区域列表 */
+.cls-areas {
+  margin-top: 18rpx;
+  padding-top: 18rpx;
+  border-top: 2rpx solid var(--tt-line);
+}
+
+.cls-areas-head {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.cls-areas-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  padding: 10rpx 20rpx;
+  border-radius: 999rpx;
+  font-size: 23rpx;
+  color: var(--tt-brand);
+  background: var(--tt-brand-soft);
+}
+
+.cls-areas-btn:active {
+  opacity: 0.8;
+}
+
+/* 区域行：名称 + 类型胶囊，副行是位置与共用提示 */
+.cls-area {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  margin-top: 12rpx;
+  padding: 14rpx 16rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-brand-soft);
+}
+
+.cls-area-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.cls-area-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8rpx;
+}
+
+.cls-area-name {
+  max-width: 340rpx;
+  font-size: 26rpx;
+  font-weight: 500;
+  color: var(--tt-text-1);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cls-area-type {
+  flex-shrink: 0;
+  padding: 2rpx 12rpx;
+  border-radius: 999rpx;
+  font-size: 19rpx;
+  color: var(--tt-brand-deep);
+  background: var(--tt-card);
+}
+
+.cls-area-sub {
+  margin-top: 4rpx;
+  font-size: 21rpx;
+  line-height: 30rpx;
+  color: var(--tt-text-2);
+}
+
+.cls-areas-error {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  margin-top: 12rpx;
+  padding: 12rpx 14rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-brand-soft);
+  font-size: 21rpx;
+  line-height: 30rpx;
+  color: var(--tt-brand-deep);
+}
+
+/* 只有管理端只读权限（不是本班班主任 / 班委）时：卫生区给一行说明，不发必然 403 的请求 */
+.cls-areas-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8rpx;
+  margin-top: 18rpx;
+  padding-top: 18rpx;
+  border-top: 2rpx solid var(--tt-line);
+  font-size: 21rpx;
+  line-height: 30rpx;
+  color: var(--tt-text-3);
+}
+
+/* ===== 卫生区多选抽屉 ===== */
+/* 关键（docs/ui-design.md:79-87，仓库踩过多次）：.tt-sheet-body 是 flex 子项，
+   默认 min-height:auto 会被区域列表撑到内容高度，结果是抽屉被 max-height 裁切、列表滚不动、
+   底部「保存」被推出屏幕。给它一个确定高度（flex:none + min-height:0 + max-height:46vh）：
+   内容短时自适应、内容长时封顶可滚，head(61) + body(≤46vh) + foot(101) 始终 < 80vh。 */
+.cls-sheet {
+  display: flex;
+  flex-direction: column;
+  max-height: 80vh;
+}
+
+.cls-sheet .tt-sheet-body {
+  flex: none;
+  min-height: 0;
+  max-height: 46vh;
+}
+
+/* 底部两个按钮：TDesign 按钮宿主节点不会自动收缩，各自包一层 flex:1 才能等分 */
+.cls-sheet-foot {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.cls-sheet-btn {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 就地新建区域：输入框 + 「添加」（全校卫生区没有独立维护页，不新建就只能对着空列表） */
+.cls-newarea {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-bottom: 6rpx;
+}
+
+.cls-newarea-input {
+  flex: 1;
+  min-width: 0;
+  height: 76rpx;
+  padding: 0 20rpx;
+  box-sizing: border-box;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-bg-page);
+  font-size: 26rpx;
+  color: var(--tt-text-1);
+}
+
+.cls-newarea-btn {
+  flex-shrink: 0;
+  padding: 14rpx 26rpx;
+  border-radius: 999rpx;
+  font-size: 24rpx;
+  color: #fff;
+  background: linear-gradient(135deg, #ff9a3d, var(--tt-brand));
+}
+
+.cls-newarea-btn:active {
+  opacity: 0.85;
+}
+
+/* 可勾选区域行（与公共 .tt-sheet-item 同语言，但这里要多一个「新增」标） */
+.cls-areachip {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 18rpx 0;
+}
+
+.cls-areachip + .cls-areachip {
+  border-top: 2rpx solid var(--tt-line);
+}
+
+.cls-areachip-check {
+  width: 44rpx;
+  height: 44rpx;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 2rpx solid var(--tt-line);
+  background: var(--tt-card);
+}
+
+.cls-areachip-check.on {
+  border-color: var(--tt-brand);
+  background: var(--tt-brand);
+}
+
+.cls-areachip-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4rpx;
+}
+
+.cls-areachip-name {
+  font-size: 27rpx;
+  font-weight: 500;
+  color: var(--tt-text-1);
+}
+
+.cls-areachip-new {
+  margin-left: 10rpx;
+  padding: 2rpx 10rpx;
+  border-radius: 999rpx;
+  font-size: 18rpx;
+  color: var(--tt-brand-deep);
+  background: var(--tt-brand-soft-2);
+}
+
+.cls-areachip-sub {
+  font-size: 21rpx;
+  color: var(--tt-text-3);
+}
+
+/* 只读信息行 */
+.cls-ro {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 16rpx 0;
+  border-bottom: 2rpx solid var(--tt-line);
+}
+
+.cls-ro:last-of-type {
+  border-bottom: none;
+}
+
+.cls-ro-label {
+  width: 130rpx;
+  flex-shrink: 0;
+  font-size: 25rpx;
+  color: var(--tt-text-3);
+}
+
+.cls-ro-value {
+  flex: 1;
+  min-width: 0;
+  font-size: 26rpx;
+  color: var(--tt-text-1);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cls-save-bar {
+  margin: 20rpx var(--tt-gap) 8rpx;
+}
+
+.cls-save-tip {
+  margin-top: 10rpx;
+  text-align: center;
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+}
+
+/* 配置接口异常 / 未就绪：卡片内提示 + 重试 */
+.tt-card.cls-error {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  padding: 20rpx 22rpx;
+  margin-bottom: 16rpx;
+}
+
+.cls-error-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.cls-error-title {
+  font-size: 26rpx;
+  font-weight: 500;
+  color: var(--tt-text-1);
+}
+
+.cls-error-sub {
+  margin-top: 4rpx;
+  font-size: 20rpx;
+  line-height: 30rpx;
+  color: var(--tt-text-3);
+}
+
+.cls-retry {
+  flex-shrink: 0;
+  padding: 10rpx 24rpx;
+  border-radius: 999rpx;
+  font-size: 23rpx;
+  color: var(--tt-brand);
+  background: var(--tt-brand-soft);
+}
+
+.cls-retry:active {
+  opacity: 0.8;
+}
+
+/* ===== 8. 搜索 + 可折叠筛选面板（与用户管理页同一套设计语言） ===== */
 .cls-head {
   margin: 0 var(--tt-gap) 16rpx;
 }
@@ -487,7 +1363,7 @@
   color: var(--tt-brand-deep);
 }
 
-/* ===== 5. 学生名单：与用户管理列表同一套行卡片 ===== */
+/* ===== 9. 学生名单：与用户管理列表同一套行卡片 ===== */
 .cls-list {
   margin: 0 var(--tt-gap);
 }
@@ -597,6 +1473,17 @@
   text-overflow: ellipsis;
 }
 
+/* 宿舍（GET /students 的 roomText，「1号楼·201」）：与「学号」同一信息行。
+   比同行其它文本稍深一档（--tt-text-2），宿舍号是要用来找人的，不能糊成灰底；
+   没住宿的同学这一段整体不渲染（服务端不下发「未分配」占位值）。 */
+.cls-row-dorm {
+  display: flex;
+  align-items: center;
+  gap: 4rpx;
+  flex-shrink: 0;
+  color: var(--tt-text-2);
+}
+
 /* 右侧数值列：今日步数 + 单位，下面是 chevron */
 .cls-row-right {
   flex-shrink: 0;
@@ -704,38 +1591,65 @@
   padding: 120rpx 0;
 }
 
-/* ===== 班主任：底部固定操作条（沿用 .tt-sheet-foot 的柔性投影与安全区） ===== */
-.cls-footbar {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 20;
-  display: flex;
-  align-items: center;
-  gap: 16rpx;
-  padding: 14rpx 24rpx calc(16rpx + env(safe-area-inset-bottom));
-  background: var(--tt-card);
+/* tab 内的加载态：比整页加载紧凑一档 */
+.cls-loading-tab {
+  padding: 70rpx 0;
 }
 
-.cls-footbar-main {
+/* ===== 校园跑 tab：督促未达标入口（原学生名单 tab 的底部固定操作条迁到这里） =====
+   不再是 fixed 底栏：放在概况卡下方一行，卡片间距与本页其它卡片一致（16rpx）。 */
+.tt-card.cls-nudge-bar {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  padding: 16rpx 18rpx;
+  margin-bottom: 16rpx;
+}
+
+.cls-nudge-bar:active {
+  background: var(--tt-brand-soft);
+}
+
+.cls-nudge-bar-icon {
+  width: 60rpx;
+  height: 60rpx;
+  flex-shrink: 0;
+  border-radius: 20rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--tt-brand-soft);
+}
+
+.cls-nudge-bar-main {
   flex: 1;
   min-width: 0;
 }
 
-.cls-footbar-title {
+.cls-nudge-bar-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10rpx;
   font-size: 27rpx;
   font-weight: 600;
   color: var(--tt-text-1);
 }
 
-.cls-footbar-sub {
+.cls-nudge-bar-count {
+  font-size: 32rpx;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--tt-brand);
+}
+
+.cls-nudge-bar-sub {
   margin-top: 4rpx;
   font-size: 20rpx;
+  line-height: 30rpx;
   color: var(--tt-text-3);
 }
 
-.cls-footbar-btn {
+.cls-nudge-bar-btn {
   flex-shrink: 0;
 }
 
@@ -784,3 +1698,45 @@
 }
 
 
+/* ===== 人数卡片：自动识别的只读数值 ===== */
+.cls-count {
+  flex-shrink: 0;
+  font-size: 34rpx;
+  font-weight: 700;
+  color: var(--tt-text-1);
+}
+
+.cls-count-hint {
+  padding-top: 6rpx;
+  font-size: 19rpx;
+  line-height: 1.5;
+  color: var(--tt-text-3);
+}
+
+/* 教室选择入口（用户 2026-10-22）：不再内联输入，点开对话框统一选楼 + 填门号 */
+.cls-room-pick {
+  flex: 0 0 auto;
+  max-width: 52%;
+  display: inline-flex;
+  align-items: center;
+  gap: 8rpx;
+  padding: 14rpx 18rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-brand-soft);
+  box-sizing: border-box;
+}
+
+.cls-room-pick-t {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 25rpx;
+  line-height: 1.35;
+  color: var(--tt-brand);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cls-room-pick-t.is-empty {
+  color: var(--tt-text-2);
+}

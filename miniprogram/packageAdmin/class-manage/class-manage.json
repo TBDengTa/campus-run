@@ -1,0 +1,8 @@
+{
+  "navigationBarTitleText": "班级管理",
+  "enablePullDownRefresh": true,
+  "backgroundTextStyle": "dark",
+  "usingComponents": {
+    "room-dialog": "/components/room-dialog/room-dialog"
+  }
+}

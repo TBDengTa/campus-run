@@ -42,4 +42,32 @@ function validateNewPassword(pwd) {
   return null;
 }
 
-module.exports = { hashPassword, verifyPassword, matchesAnyInitial, last8, validateNewPassword };
+// 异步 scrypt（跑在 libuv 线程池，可并行；导入等大批量建户场景避免同步计算阻塞事件循环）
+function scryptAsync(plain, salt, keylen, options) {
+  return new Promise((resolve, reject) => {
+    crypto.scrypt(String(plain), salt, keylen, options, (err, key) => (err ? reject(err) : resolve(key)));
+  });
+}
+
+async function hashPasswordAsync(plain) {
+  const salt = crypto.randomBytes(16);
+  const hash = await scryptAsync(plain, salt, 32, { N: 16384, r: 8, p: 1 });
+  return `scrypt$${salt.toString('hex')}$${hash.toString('hex')}`;
+}
+
+// 一组初始密码的哈希集合：passwordHash 复用首个初始哈希（同用户内共用同一哈希串无安全损失），
+// resetHashes 与 initialHashes 是同一组密码的同一组哈希，无需重复计算
+async function hashInitialPasswordSet(initials) {
+  const initialHashes = await Promise.all(initials.map((p) => hashPasswordAsync(p)));
+  return { passwordHash: initialHashes[0], initialHashes, resetHashes: initialHashes };
+}
+
+module.exports = {
+  hashPassword,
+  verifyPassword,
+  matchesAnyInitial,
+  last8,
+  validateNewPassword,
+  hashPasswordAsync,
+  hashInitialPasswordSet,
+};

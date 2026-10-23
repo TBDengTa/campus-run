@@ -1,7 +1,7 @@
 <view class="page tt-page ann-page">
   <view class="ann-head">
     <text class="ann-head-text">共 {{list.length}} 条公告</text>
-    <view class="tt-btn-right">
+    <view class="tt-btn-right" wx:if="{{canManage}}">
       <t-button theme="primary" size="small" bind:tap="openCreate">+ 发布公告</t-button>
     </view>
   </view>
@@ -23,7 +23,7 @@
           </view>
           <view class="tt-row-sub">{{item.dateText}} · 权重 <text class="num-font tt-num-brand">{{item.priority}}</text></view>
         </view>
-        <view class="ann-actions">
+        <view class="ann-actions" wx:if="{{canManage}}">
           <view class="ann-btn" catch:tap="openEdit" data-id="{{item._id}}">编辑</view>
           <view class="ann-btn danger" catch:tap="remove" data-id="{{item._id}}">删除</view>
         </view>
@@ -35,8 +35,8 @@
 
   <view class="tt-footer">公告按权重降序展示给用户端</view>
 
-  <!-- ===== 发布 / 编辑（底部弹层） ===== -->
-  <t-popup visible="{{formVisible}}" placement="bottom" bind:visible-change="onFormVisible">
+  <!-- ===== 发布 / 编辑（底部弹层）===== -->
+  <t-popup wx:if="{{canManage}}" visible="{{formVisible}}" placement="bottom" bind:visible-change="onFormVisible">
     <view class="ann-sheet">
       <view class="ann-sheet-head">
         <text class="ann-sheet-title">{{form._id ? '编辑公告' : '发布公告'}}</text>

@@ -1,183 +1,141 @@
 /* ============================================================
-   关于我们（about）· 白橙设计系统
-   字号层级：应用名 44 / 主文案 26~29 / 说明 22~24
-   颜色与圆角全部走 --tt-* / --td-* 令牌，结构优先用 .tt-* 公共类
+   关于我们（about）· 白橙设计系统 · 紧凑版
+   用户 2026-10-23「重新排版设计，请紧凑排版」：
+   原版是 big hero + 2×2 图标卡 + 长文段落，首屏只看得到品牌。
+   现在压成「品牌行 → 能力 chip 行 → 信息行组」，行高与字号统一收敛，
+   一屏能看到品牌、版本、能力、简介、开源、联系、更多。
+
+   排版原则：
+     · 全部用「标签 — 值 — 尾随图标/药丸」的单行结构（.ab-row），
+       同类信息不再各用一套布局（原版有 hero / 表情卡 / 大图标 / 长文 5 种）；
+     · 字号层级只有三档：标题 30 / 正文 25 / 辅助 22；
+     · 颜色与圆角一律 --tt-* / --td-* 令牌，禁止硬编码品牌色。
    ============================================================ */
 
 .about-page {
-  padding-bottom: calc(48rpx + env(safe-area-inset-bottom));
+  padding-bottom: calc(32rpx + env(safe-area-inset-bottom));
 }
 
-/* ===== 品牌头（结构用 .tt-hero） ===== */
-.about-hero {
-  padding: 40rpx 36rpx 34rpx;
+/* ===== 品牌卡 ===== */
+.ab-head {
+  padding: 28rpx var(--tt-pad) 24rpx;
 }
 
-.about-brand {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  gap: 24rpx;
-}
-
-.about-logo {
-  width: 104rpx;
-  height: 104rpx;
-  border-radius: 32rpx;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(255, 255, 255, 0.22);
-  border: 2rpx solid rgba(255, 255, 255, 0.38);
-}
-
-/* 品牌字标（用「唐」字占位，避免依赖图标字体） */
-.about-logo-glyph {
-  font-size: 52rpx;
-  font-weight: 700;
-  line-height: 1;
-  color: var(--td-font-white-1);
-}
-
-.about-brand-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.about-app-name {
-  font-size: 44rpx;
-  font-weight: 700;
-  letter-spacing: 2rpx;
-  line-height: 1.2;
-  color: var(--td-font-white-1);
-}
-
-.about-tagline {
-  margin-top: 10rpx;
-  font-size: 24rpx;
-  line-height: 1.5;
-  color: rgba(255, 255, 255, 0.86);
-}
-
-/* 版本号一行：与品牌信息用细分割线隔开 */
-.about-meta {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 16rpx;
-  margin-top: 28rpx;
-  padding-top: 24rpx;
-  border-top: 2rpx solid rgba(255, 255, 255, 0.22);
-}
-
-.about-version-chip {
-  flex-shrink: 0;
-  padding: 6rpx 22rpx;
-  border-radius: 999rpx;
-  font-size: 22rpx;
-  line-height: 1.5;
-  color: var(--td-font-white-1);
-  background: rgba(255, 255, 255, 0.22);
-  border: 2rpx solid rgba(255, 255, 255, 0.32);
-}
-
-.about-meta-note {
-  font-size: 22rpx;
-  color: rgba(255, 255, 255, 0.8);
-}
-
-/* ===== 核心能力：2 列图标卡 ===== */
-.about-features {
-  display: flex;
-  flex-wrap: wrap;
-  margin: -8rpx -8rpx -16rpx;
-}
-
-.about-feature {
-  width: 50%;
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 20rpx 8rpx 24rpx;
-}
-
-.about-feature-icon {
-  width: 84rpx;
-  height: 84rpx;
-  border-radius: 28rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--tt-brand-soft);
-}
-
-.about-feature-title {
-  margin-top: 16rpx;
-  font-size: 26rpx;
-  font-weight: 600;
-  color: var(--tt-text-1);
-}
-
-.about-feature-desc {
-  margin-top: 6rpx;
-  font-size: 22rpx;
-  line-height: 1.5;
-  text-align: center;
-  color: var(--tt-text-3);
-}
-
-/* ===== 关于产品（完整简介，行距放宽便于阅读） ===== */
-.about-intro {
-  font-size: 26rpx;
-  line-height: 1.85;
-  color: var(--tt-text-2);
-}
-
-/* ===== 开发运营 ===== */
-.about-dev {
+.ab-brand {
   display: flex;
   align-items: center;
   gap: 20rpx;
 }
 
-.about-dev-mark {
-  width: 84rpx;
-  height: 84rpx;
-  border-radius: 28rpx;
+/* 徽标缩到 88rpx（原 104rpx）：仍是视觉焦点，但不再撑高首屏。
+   渐变与 .tt-hero 保持一致（白橙设计系统的品牌主视觉），此处只做小尺寸复用；
+   之所以仍写具体色值：WXSS 不支持在 background-image 里拼接 CSS 变量做渐变端点，
+   与 app.wxss 的 .tt-hero 用的是同一组值（改主视觉时两处一起改）。 */
+.ab-logo {
+  width: 88rpx;
+  height: 88rpx;
+  border-radius: 26rpx;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--tt-brand-soft);
+  background: linear-gradient(135deg, #ff9a3d 0%, #ff6b00 62%, #f25a00 100%);
+  box-shadow: 0 6rpx 16rpx rgba(255, 107, 0, 0.22);
 }
 
-.about-dev-info {
+.ab-logo-glyph {
+  font-size: 44rpx;
+  font-weight: 700;
+  line-height: 1;
+  color: #fff;
+}
+
+.ab-brand-main {
   flex: 1;
   min-width: 0;
 }
 
-.about-dev-name {
-  font-size: 29rpx;
-  font-weight: 600;
+.ab-name-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.ab-name {
+  font-size: 34rpx;
+  font-weight: 700;
+  letter-spacing: 1rpx;
+  line-height: 1.2;
   color: var(--tt-text-1);
 }
 
-.about-dev-sub {
+/* 版本号做成小药丸，紧贴应用名右侧（比原版单独一行省 60rpx） */
+.ab-ver {
+  flex-shrink: 0;
+  padding: 2rpx 14rpx;
+  border-radius: 999rpx;
+  font-size: 20rpx;
+  line-height: 1.7;
+  color: var(--tt-brand-deep);
+  background: var(--tt-brand-soft);
+}
+
+.ab-tagline {
   margin-top: 6rpx;
-  font-size: 23rpx;
+  font-size: 22rpx;
+  line-height: 1.4;
   color: var(--tt-text-3);
 }
 
-/* ===== 联系 / 更多：行内左侧图标 + 右侧药丸 ===== */
-.about-row-icon {
-  width: 72rpx;
-  height: 72rpx;
-  border-radius: 24rpx;
+/* ===== 核心能力：一行 chip（原 2×2 大图标卡 → 单行）===== */
+.ab-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10rpx;
+  margin-top: 18rpx;
+}
+
+.ab-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6rpx;
+  flex: 0 0 auto;
+  padding: 6rpx 16rpx;
+  border-radius: 999rpx;
+  font-size: 21rpx;
+  line-height: 1.5;
+  white-space: nowrap;
+  color: var(--tt-text-2);
+  background: var(--tt-brand-soft-2, var(--tt-brand-soft));
+}
+
+/* ===== 信息行组：标签 — 值 — 尾随 ===== */
+.ab-card {
+  padding: 4rpx var(--tt-pad);
+}
+
+.ab-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 20rpx 0;
+  border-bottom: 2rpx solid var(--tt-line);
+}
+
+.ab-row:last-child {
+  border-bottom: none;
+}
+
+/* 可点击行：轻反馈（不改变布局，避免行高跳动） */
+.ab-row-tap:active {
+  opacity: 0.62;
+}
+
+/* 行首图标（32rpx 级别的软底块）：只有「联系 / 更多 / 开源」组用，信息组不用 */
+.ab-row-icon {
+  width: 56rpx;
+  height: 56rpx;
+  border-radius: 18rpx;
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -185,47 +143,73 @@
   background: var(--tt-brand-soft);
 }
 
-.about-row-pill {
+/* 标签列固定宽度 → 值列左缘对齐（信息组与联系组视觉一致） */
+.ab-label {
   flex-shrink: 0;
-  padding: 10rpx 24rpx;
+  width: 128rpx;
+  font-size: 25rpx;
+  color: var(--tt-text-2);
+}
+
+.ab-value {
+  flex: 1;
+  min-width: 0;
+  font-size: 25rpx;
+  line-height: 1.55;
+  color: var(--tt-text-1);
+  word-break: break-word;
+}
+
+/* 链接样式（GitHub 行）：可识别为「可点/可复制」，用品牌色 */
+.ab-value-link {
+  color: var(--tt-brand-deep);
+}
+
+/* 行尾药丸（复制 / 咨询） */
+.ab-pill {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 6rpx 20rpx;
   border-radius: 999rpx;
-  font-size: 23rpx;
+  font-size: 21rpx;
   line-height: 1.5;
   color: var(--tt-brand-deep);
   background: var(--tt-brand-soft);
 }
 
 /* 客服按钮复用同一外观，去掉 button 组件默认边框与内边距 */
-button.about-row-pill {
+button.ab-pill {
   margin: 0;
   border: none;
 }
-
-button.about-row-pill::after {
+button.ab-pill::after {
   border: none;
 }
 
-/* ===== 页脚声明 ===== */
-.about-footer {
-  margin-top: 40rpx;
-  padding: 0 48rpx;
-  text-align: center;
-}
-
-.about-footer-brand {
-  font-size: 24rpx;
+/* 卡片内说明文字：是「补充信息」而不是正文，字号降一档、不抢视觉 */
+.ab-note {
+  padding: 0 0 18rpx;
+  font-size: 21rpx;
+  line-height: 1.65;
   color: var(--tt-text-3);
 }
 
-.about-footer-copy {
-  margin-top: 8rpx;
+/* ===== 页脚：压成两行（原来三行 + 40rpx 外边距）===== */
+.ab-footer {
+  margin-top: 24rpx;
+  padding: 0 40rpx;
+  text-align: center;
+}
+
+.ab-footer-line {
   font-size: 22rpx;
   color: var(--tt-text-3);
 }
 
-.about-footer-note {
-  margin-top: 20rpx;
-  font-size: 21rpx;
-  line-height: 1.7;
+.ab-footer-note {
+  margin-top: 8rpx;
+  font-size: 20rpx;
+  line-height: 1.6;
   color: var(--tt-text-3);
+  opacity: 0.86;
 }

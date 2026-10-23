@@ -10,12 +10,12 @@
         <text class="cfg-switch-label">启用</text>
         <text class="cfg-fdesc">关闭后用户端隐藏北斗运动入口</text>
       </view>
-      <t-switch value="{{config.rewardVideo.enabled}}" bind:change="onReward" data-field="enabled" />
+      <t-switch disabled="{{!canManage}}" value="{{config.rewardVideo.enabled}}" bind:change="onReward" data-field="enabled" />
     </view>
 
     <view class="cfg-fitem">
       <text class="cfg-flabel">每日观看上限（次）</text>
-      <input class="cfg-input" type="number" value="{{config.rewardVideo.dailyLimit}}" bindinput="onReward" data-field="dailyLimit" />
+      <input class="cfg-input" disabled="{{!canManage}}" type="number" value="{{config.rewardVideo.dailyLimit}}" bindinput="onReward" data-field="dailyLimit" />
     </view>
   </view>
 
@@ -30,7 +30,7 @@
         <text class="rv-flabel-title">步数（步）</text>
         <text class="cfg-fdesc">整数 ≥ 0</text>
       </view>
-      <input class="cfg-input" type="number" value="{{config.rewardVideo.stepsPerWatch}}" bindinput="onReward" data-field="stepsPerWatch" />
+      <input class="cfg-input" disabled="{{!canManage}}" type="number" value="{{config.rewardVideo.stepsPerWatch}}" bindinput="onReward" data-field="stepsPerWatch" />
     </view>
 
     <view class="cfg-fitem">
@@ -38,8 +38,7 @@
         <text class="rv-flabel-title">距离（米）</text>
         <text class="cfg-fdesc">留空按步数换算 · 当前生效 {{config.rewardVideoEffective.distance}} 米</text>
       </view>
-      <input
-        class="cfg-input"
+      <input class="cfg-input" disabled="{{!canManage}}"
         type="digit"
         value="{{config.rewardVideo.distancePerWatch}}"
         placeholder="按步数换算"
@@ -53,8 +52,7 @@
         <text class="rv-flabel-title">卡路里（千卡）</text>
         <text class="cfg-fdesc">留空按步数换算 · 当前生效 {{config.rewardVideoEffective.calories}} 千卡</text>
       </view>
-      <input
-        class="cfg-input"
+      <input class="cfg-input" disabled="{{!canManage}}"
         type="number"
         value="{{config.rewardVideo.caloriesPerWatch}}"
         placeholder="按步数换算"
@@ -68,8 +66,7 @@
         <text class="rv-flabel-title">时长（秒）</text>
         <text class="cfg-fdesc">留空按步数换算 · 当前生效 {{config.rewardVideoEffective.durationSeconds}} 秒</text>
       </view>
-      <input
-        class="cfg-input"
+      <input class="cfg-input" disabled="{{!canManage}}"
         type="number"
         value="{{config.rewardVideo.durationPerWatch}}"
         placeholder="按步数换算"
@@ -95,8 +92,7 @@
         <text class="rv-flabel-title">激励视频广告位 ID</text>
         <text class="cfg-fdesc">留空用客户端内置默认广告位</text>
       </view>
-      <input
-        class="cfg-input"
+      <input class="cfg-input" disabled="{{!canManage}}"
         type="text"
         value="{{config.rewardVideo.adUnitId}}"
         placeholder="默认广告位"
@@ -106,7 +102,7 @@
     </view>
   </view>
 
-  <view class="cfg-save-bar">
+  <view class="cfg-save-bar" wx:if="{{canManage}}">
     <t-button theme="primary" block loading="{{saving}}" bind:tap="save">保存配置</t-button>
   </view>
 

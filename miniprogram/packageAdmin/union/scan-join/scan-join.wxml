@@ -1,0 +1,104 @@
+<view class="page tt-page sj-page">
+  <view class="tt-section">
+    <text>扫码加人</text>
+    <text class="tt-section-extra">先选部门，再扫学生的码</text>
+  </view>
+
+  <!-- 无权限 -->
+  <view class="tt-card sj-card" wx:if="{{!canManage}}">
+    <view class="sj-empty">
+      <t-icon name="lock-on" size="52rpx" color="var(--tt-text-3)" />
+      <text class="sj-empty-t">只有主席团 / 部长 / 副部长可以加人</text>
+      <text class="sj-empty-d">如果你是干部但进不来，请让管理员在「学生会成员」里确认你的职务</text>
+    </view>
+  </view>
+
+  <block wx:else>
+    <!-- ① 先选部门（用户 2026-10-22：「先在扫码页面中设置部门然后直接去扫」） -->
+    <view class="tt-card sj-card">
+      <view class="sj-step">
+        <view class="sj-step-no">1</view>
+        <text class="sj-step-t">选择要加入的部门</text>
+      </view>
+      <block wx:if="{{deptOptions.length}}">
+        <picker
+          mode="selector"
+          range="{{deptOptions}}"
+          range-key="name"
+          value="{{deptIndex}}"
+          bindchange="onDeptChange"
+        >
+          <view class="sj-picker">
+            <view class="sj-picker-main">
+              <text class="sj-picker-name">{{deptOptions[deptIndex].name}}</text>
+              <text class="sj-picker-org">{{deptOptions[deptIndex].levelText}}</text>
+            </view>
+            <t-icon name="chevron-down" size="26rpx" color="var(--tt-text-3)" />
+          </view>
+        </picker>
+        <text class="sj-hint">只能加到自己所在的部门与校区（服务端会再校验一次）</text>
+      </block>
+      <view class="sj-empty" wx:else>
+        <t-icon name="info-circle" size="44rpx" color="var(--td-warning-color-5)" />
+        <text class="sj-empty-t">你在学生会里还没有部门</text>
+        <text class="sj-empty-d">请让管理员先在「学生会成员」里把你加进某个部门</text>
+      </view>
+    </view>
+
+    <!-- ② 扫码：部门选好后才能点 -->
+    <view class="tt-card sj-card">
+      <view class="sj-step">
+        <view class="sj-step-no">2</view>
+        <text class="sj-step-t">扫学生的二维码</text>
+      </view>
+      <view class="sj-scan-wrap">
+        <view class="sj-scan-icon {{deptReady ? '' : 'is-off'}}">
+          <t-icon name="scan" size="72rpx" color="{{deptReady ? 'var(--tt-brand)' : 'var(--tt-text-3)'}}" />
+        </view>
+        <text class="sj-scan-t" wx:if="{{deptReady}}">扫到即加入「{{deptOptions[deptIndex].name}}」</text>
+        <text class="sj-scan-t" wx:else>请先在上面选择部门</text>
+        <view class="sj-scan-btn">
+          <t-button theme="primary" block loading="{{loading}}" disabled="{{!deptReady}}" bind:tap="scan">
+            扫码加人
+          </t-button>
+        </view>
+        <text class="sj-scan-tip">让学生在自己「我的」页点二维码出示</text>
+      </view>
+    </view>
+
+    <!-- 结果：加入成功可当场撤回 -->
+    <view class="tt-card sj-card sj-result" wx:if="{{lastResult}}">
+      <view class="sj-result-head">
+        <t-icon name="check-circle-filled" size="40rpx" color="var(--td-success-color-5)" />
+        <view class="sj-result-main">
+          <text class="sj-result-t">{{lastResult.realName}} 已加入 {{lastResult.deptName}}</text>
+          <text class="sj-result-sub">
+            <text wx:if="{{lastResult.className}}">{{lastResult.className}}</text>
+            <text wx:if="{{lastResult.studentId}}"> · {{lastResult.studentId}}</text>
+          </text>
+        </view>
+      </view>
+      <view class="sj-result-actions">
+        <view class="sj-result-btn" wx:if="{{lastJoined}}">
+          <t-button theme="danger" variant="outline" size="small" block bind:tap="undo">撤回</t-button>
+        </view>
+        <view class="sj-result-btn">
+          <t-button theme="default" variant="outline" size="small" block bind:tap="clearResult">知道了</t-button>
+        </view>
+      </view>
+    </view>
+
+    <!-- 失败 -->
+    <view class="tt-card sj-card" wx:if="{{error}}">
+      <view class="sj-empty">
+        <t-icon name="error-circle" size="52rpx" color="var(--td-error-color-6)" />
+        <text class="sj-empty-t">{{error}}</text>
+        <view class="sj-empty-btn">
+          <t-button theme="primary" block disabled="{{!deptReady}}" bind:tap="scan">再扫一次</t-button>
+        </view>
+      </view>
+    </view>
+  </block>
+
+  <view class="tt-footer">二维码一次性有效，用掉即作废；过期请学生重新打开</view>
+</view>

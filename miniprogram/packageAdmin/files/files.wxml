@@ -4,7 +4,7 @@
     <text>文件总览</text>
     <text class="tt-section-extra" wx:if="{{total}}">{{total}} 个 · {{totalSizeText}}</text>
   </view>
-  <!-- 三列数据行放不下 5 项用途，改为 2 列网格（「全部」在下面的筛选条里） -->
+  <!-- 用途数据行（头像 / 广告 / 徽章 / 检查照片 / 其他）：5 项用 2 列网格，末项独占整行 -->
   <view class="tt-card files-stat-card">
     <view class="files-stat-grid" wx:if="{{statCats.length}}">
       <view class="files-stat-item" wx:for="{{statCats}}" wx:key="key">
@@ -52,5 +52,5 @@
     <t-icon name="add" size="44rpx" color="#ffffff" />
   </view>
 
-  <view class="tt-footer">删除文件会同时清空广告素材 / 头像 / 徽章图标中的引用；徽章图标也可在「徽章管理」里直接上传</view>
+  <view class="tt-footer">删除文件会同时清空广告素材 / 头像 / 徽章图标中的引用，并从检查记录里移除该留证照片；检查照片由学生会在录入台现场拍摄上传（不做旧文件清理）</view>
 </view>

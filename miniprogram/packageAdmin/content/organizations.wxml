@@ -24,7 +24,9 @@
               {{item.typeText}}{{item.childCount ? ' · ' + item.childCount + ' 个下级' : ''}}{{item.expandable ? (item.expanded ? ' · 收起' : ' · 展开') : ''}}
             </view>
           </view>
-          <view class="org-actions">
+          <!-- 组织架构的增删改需要 content.manage（用户 2026-10-21「组织架构只能有有权限的更改」）：
+               只有 content.view 的账号看得到这棵树，但看不到任何改结构的入口。 -->
+          <view class="org-actions" wx:if="{{canManage}}">
             <view class="org-btn" wx:if="{{item.canAddChild}}" catch:tap="openCreate" data-parent-id="{{item._id}}" data-parent-name="{{item.name}}">+ 下级</view>
             <view class="org-btn" catch:tap="openEdit" data-id="{{item._id}}" data-name="{{item.name}}" data-sort="{{item.sort}}" data-parent-name="{{item.parentName}}">编辑</view>
             <view class="org-btn danger" catch:tap="remove" data-id="{{item._id}}" data-name="{{item.name}}">删除</view>
@@ -36,14 +38,14 @@
     <t-loading wx:if="{{loading}}" theme="circular" size="40rpx" class="org-loading" />
   </view>
 
-  <view class="org-add">
+  <view class="org-add" wx:if="{{canManage}}">
     <t-button theme="primary" block bind:tap="openCreateRoot">+ 新增学校</t-button>
   </view>
 
   <view class="tt-footer">删除节点会一并删除其全部下级；节点类型由层级自动决定</view>
 
   <!-- ===== 新增 / 编辑（底部弹层） ===== -->
-  <t-popup visible="{{formVisible}}" placement="bottom" bind:visible-change="onFormVisible">
+  <t-popup wx:if="{{canManage}}" visible="{{formVisible}}" placement="bottom" bind:visible-change="onFormVisible">
     <view class="org-sheet">
       <view class="org-sheet-head">
         <text class="org-sheet-title">{{form._id ? '编辑节点' : '新增节点'}}</text>

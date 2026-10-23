@@ -1,5 +1,7 @@
 const auth = require('../../utils/request');
 const fmt = require('../../utils/format');
+// 写权限（ad.manage）：只有 ad.view 的账号看不到新增/编辑/删除/保存
+const adminPerm = require('../../utils/admin-perm');
 
 const EMPTY = {
   _id: '',
@@ -22,8 +24,10 @@ Page({
     slots: [],
     sponsors: [],
     pages: [],
-    loading: false,
-    form: null,
+    loading: true,
+    saving: false,
+    formVisible: false,
+    form: EMPTY,
     slotIndex: 0,
     sponsorIndex: 0,
     linkTypes: [
@@ -33,6 +37,10 @@ Page({
     ],
     linkTypeIndex: 0,
     pageIdIndex: 0,
+    // 按广告位筛选：chips = 全部 + 各广告位（服务端已支持 ?slotKey=）
+    slotChips: [],
+    activeSlot: '',
+    canManage: false, // ad.manage / '*'：只有查看权限（ad.view）时看不到新增/编辑/删除
   },
 
   onShow() {
@@ -43,8 +51,11 @@ Page({
     this.setData({ loading: true });
     try {
       await getApp().ensureLogin();
+      await adminPerm.applyManage(this, 'ad.manage');
+      const activeSlot = this.data.activeSlot;
+      const contentQuery = activeSlot ? { limit: 100, slotKey: activeSlot } : { limit: 100 };
       const [contents, slots, sponsors, pages] = await Promise.all([
-        auth.get('/api/admin/ads/contents', { limit: 100 }),
+        auth.get('/api/admin/ads/contents', contentQuery),
         auth.get('/api/admin/ads/slots', { limit: 100 }),
         auth.get('/api/admin/ads/sponsors', { limit: 100 }),
         auth.get('/api/admin/ads/pages', { limit: 100 }),
@@ -64,6 +75,7 @@ Page({
         slots: slots.list,
         sponsors: sponsors.list,
         pages: pages.list,
+        slotChips: [{ key: '', name: '全部' }, ...slots.list.map((s) => ({ key: s.key, name: s.name }))],
       });
     } catch (e) {
       wx.showToast({ title: e.message, icon: 'none' });
@@ -72,10 +84,24 @@ Page({
     }
   },
 
+  // 广告位筛选（chips）
+  switchSlot(e) {
+    const key = e.currentTarget.dataset.key || '';
+    if (key === this.data.activeSlot) return;
+    this.setData({ activeSlot: key });
+    this.load();
+  },
+
   openCreate() {
+    // 默认选中当前筛选的广告位，新增完就能在列表里直接看到
+    const { slots, activeSlot } = this.data;
+    const slotIndex = activeSlot ? Math.max(0, slots.findIndex((s) => s.key === activeSlot)) : 0;
+    const slotKey = slots[slotIndex] ? slots[slotIndex].key : '';
     this.setData({
-      form: { ...EMPTY },
-      slotIndex: 0,
+      formVisible: true,
+      saving: false,
+      form: { ...EMPTY, slotKey },
+      slotIndex,
       sponsorIndex: 0,
       linkTypeIndex: 0,
       pageIdIndex: 0,
@@ -84,8 +110,11 @@ Page({
 
   openEdit(e) {
     const item = this.data.list.find((x) => x._id === e.currentTarget.dataset.id);
+    if (!item) return;
     this.setData({
-      form: { ...item },
+      formVisible: true,
+      saving: false,
+      form: { ...EMPTY, ...item },
       slotIndex: Math.max(0, this.data.slots.findIndex((s) => s.key === item.slotKey)),
       sponsorIndex: Math.max(0, this.data.sponsors.findIndex((s) => String(s._id) === String(item.sponsorId))),
       linkTypeIndex: Math.max(0, this.data.linkTypes.findIndex((t) => t.value === item.linkType)),
@@ -93,8 +122,12 @@ Page({
     });
   },
 
+  onFormVisible(e) {
+    this.setData({ formVisible: !!(e.detail && e.detail.visible) });
+  },
+
   closeForm() {
-    this.setData({ form: null });
+    this.setData({ formVisible: false });
   },
 
   onField(e) {
@@ -103,11 +136,13 @@ Page({
 
   onSlot(e) {
     const i = Number(e.detail.value);
+    if (!this.data.slots[i]) return;
     this.setData({ slotIndex: i, 'form.slotKey': this.data.slots[i].key });
   },
 
   onSponsor(e) {
     const i = Number(e.detail.value);
+    if (!this.data.sponsors[i]) return;
     this.setData({ sponsorIndex: i, 'form.sponsorId': this.data.sponsors[i]._id });
   },
 
@@ -142,27 +177,31 @@ Page({
       wx.showToast({ title: '广告位和图片必填', icon: 'none' });
       return;
     }
-    const payload = { ...form };
-    delete payload._id;
-    delete payload.createdAt;
-    delete payload.updatedAt;
-    delete payload.__v;
-    delete payload.slotName;
-    delete payload.sponsorName;
-    delete payload.pageName;
-    delete payload.pvText;
-    delete payload.clickText;
-    if (!payload.sponsorId) payload.sponsorId = null;
-    if (payload.linkType !== 'page') payload.pageId = null;
-    if (!payload.pageId) payload.pageId = null;
+    // 白名单提交：统计字段（totalPv/totalClick）等不参与写库
+    const payload = {
+      slotKey: form.slotKey,
+      sponsorId: form.sponsorId || null,
+      title: String(form.title || '').trim(),
+      imageUrl: form.imageUrl,
+      linkType: form.linkType,
+      linkUrl: form.linkType === 'web' ? String(form.linkUrl || '').trim() : '',
+      pageId: form.linkType === 'page' ? form.pageId || null : null,
+      startDate: form.startDate || '',
+      endDate: form.endDate || '',
+      weight: Number(form.weight) || 1,
+      enabled: !!form.enabled,
+    };
+    this.setData({ saving: true });
     try {
       if (form._id) await auth.put(`/api/admin/ads/contents/${form._id}`, payload);
       else await auth.post('/api/admin/ads/contents', payload);
       wx.showToast({ title: '已保存', icon: 'success' });
-      this.setData({ form: null });
+      this.setData({ formVisible: false });
       this.load();
     } catch (e) {
       wx.showToast({ title: e.message, icon: 'none' });
+    } finally {
+      this.setData({ saving: false });
     }
   },
 

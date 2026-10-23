@@ -1,9 +1,5 @@
 /* ===== 广告素材管理 · 白橙 ===== */
 .adc-page {
-  --td-input-vertical-padding: 0;
-  --td-input-label-min-width: 150rpx;
-  --td-input-label-max-width: 230rpx;
-  --td-input-label-text-color: var(--tt-text-2);
   padding-bottom: calc(32rpx + env(safe-area-inset-bottom));
 }
 
@@ -27,62 +23,44 @@
   color: var(--tt-text-3);
 }
 
-/* 表单 */
-.adc-form-head {
+/* 广告位筛选 chips */
+.adc-chips {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14rpx;
+  padding: 24rpx 24rpx 0;
 }
 
-.adc-form-title {
-  font-size: 30rpx;
-  font-weight: 600;
-  color: var(--tt-text-1);
+/* 底部抽屉表单 */
+/* 滚动区必须给「确定高度」，否则 scroll-view 滚不动（底部按钮被顶出屏幕外面点不到）。
+   与 docs/ui-design.md 的既有写法一致：flex:none + max-height:46vh（内容短时自适应、长时封顶可滚）；
+   head(61) + body(≤46vh) + foot(101) < 80vh，所以主按钮始终在屏内。 */
+.adc-sheet .tt-sheet-body {
+  flex: none;
+  min-height: 0;
+  max-height: 46vh;
 }
 
-.adc-close {
-  width: 56rpx;
-  height: 56rpx;
-  border-radius: 50%;
-  background: var(--td-bg-color-component);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.adc-sheet-gap {
+  margin-bottom: 14rpx;
 }
 
-.adc-close:active {
-  opacity: 0.7;
+.adc-sheet-pick {
+  gap: 12rpx;
 }
 
-.adc-field {
-  /* t-input 的标签与内容统一到 28rpx，和页面内其它表单行一致 */
-  --td-font-size-m: 28rpx;
-  padding: 26rpx 0;
-  border-bottom: 2rpx solid var(--tt-line);
+.adc-inline-label {
+  width: 130rpx;
+  flex-shrink: 0;
+  font-size: 27rpx;
+  color: var(--tt-text-2);
 }
 
-.adc-field:last-child {
-  border-bottom: none;
-}
-
-.adc-field-row {
+.adc-sheet-row {
   display: flex;
   align-items: center;
   gap: 20rpx;
-}
-
-.adc-field-pick {
-  display: flex;
-  align-items: center;
-}
-
-.adc-pick-label {
-  min-width: 150rpx;
-  padding-right: 32rpx;
-}
-
-.adc-pick-body {
-  flex: 1;
+  padding: 22rpx 0;
 }
 
 .adc-field-label {
@@ -96,6 +74,10 @@
   color: var(--tt-text-3);
 }
 
+.adc-pick-body {
+  flex: 1;
+}
+
 .adc-picker {
   display: flex;
   align-items: center;
@@ -106,6 +88,10 @@
 
 .adc-picker-text {
   flex: 1;
+}
+
+.adc-upload-block {
+  padding: 18rpx 0 4rpx;
 }
 
 .adc-upload {
@@ -138,8 +124,7 @@
 .adc-cols {
   display: flex;
   gap: 24rpx;
-  padding: 26rpx 0;
-  border-bottom: 2rpx solid var(--tt-line);
+  padding: 8rpx 0 22rpx;
 }
 
 .adc-col {
@@ -155,12 +140,6 @@
   font-size: 26rpx;
   color: var(--tt-text-1);
   text-align: center;
-}
-
-.adc-form-actions {
-  display: flex;
-  gap: 16rpx;
-  margin-top: 32rpx;
 }
 
 /* 列表 */

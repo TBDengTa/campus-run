@@ -1,4 +1,7 @@
 const auth = require('../../utils/request');
+// 写权限（content.manage）：只有 content.view 的账号能看这棵树，但看不到增删改入口
+// （用户 2026-10-21「组织架构只能有有权限的更改」+ 2026-10-22「只读不显示操作按钮」）
+const adminPerm = require('../../utils/admin-perm');
 
 // 层级类型文案（类型由服务端按父级推导，前端不再手选）
 const TYPE_TEXT = { school: '学校', department: '院系', specialty: '专业' };
@@ -9,6 +12,7 @@ Page({
     nodes: [], // 拍平后的树节点（只含已展开分支）
     schoolCount: 0,
     loading: false,
+    canManage: false,
     expanded: {}, // _id → 是否展开，默认全部收起
     form: null, // { _id, name, parentId, parentName, sort }
     formVisible: false,
@@ -23,6 +27,7 @@ Page({
     this.setData({ loading: true });
     try {
       await getApp().ensureLogin();
+      await adminPerm.applyManage(this, 'content.manage');
       const tree = await auth.get('/api/org/tree');
       this._tree = tree;
       this.setData({ schoolCount: tree.length, nodes: this.flatten() });

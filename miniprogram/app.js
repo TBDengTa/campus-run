@@ -51,13 +51,44 @@ App({
   async ensureLogin() {
     if (auth.isLoggedOut()) return null;
     if (auth.getToken()) {
-      if (!this.globalData.userInfo) {
-        this.globalData.userInfo = auth.getUser();
+      // ⚠️ 每个启动周期向服务端确认一次「我是谁」。
+      //
+      // 它要同时满足两条互相拉扯的需求：
+      //   ① 2026-10-22「登录刘恩琦后依旧是陈宇航」→ 本地残留的**旧令牌**不能继续生效；
+      //   ② 2026-10-23「历史登录一键登录……会出现历史记录失效」→ **一键登录进来的身份不能被顶掉**。
+      //
+      // 关键：确认用 `/api/auth/me`（按 token 校验），**不要**用 `/api/auth/login`（按微信 openid 定身份）。
+      //   · 需求① 现在由**服务端**保证：middlewares/auth.js 会比对令牌里的 openid 与 user.openid，
+      //     解绑 / 换绑过的旧令牌一律 401 → 这里 catch 到后由 request() 自动重登按 openid 重新认定，
+      //     自愈链路依然成立，不需要启动时再按 openid 覆盖身份；
+      //   · 需求② 恰恰要求**不能**按 openid 覆盖：教师在 A 账号一键登录后，这个小程序 token 属于 A，
+      //     而「当前微信」可能绑在 B 上（教师允许换绑）。启动时若按 openid 重新登录，
+      //     就会静默把身份切回 B —— 表现就是「一键登录成功，重启后又是另一个账号」。
+      //     用 /api/auth/me 校验令牌，谁登录的就还是谁，一键登录才真正站得住。
+      if (!this._identityChecked) {
+        if (!this._identityPromise) {
+          this._identityPromise = (async () => {
+            try {
+              // refreshUser() 走 /api/auth/me；401 时 request() 内部会自动重登（尊重「已退出」标记）
+              const user = await this.refreshUser();
+              this.globalData.userInfo = user || null;
+              this._identityChecked = true; // 只有成功才记为已确认；失败下次 onShow 再试
+            } catch (e) {
+              // 网络异常 / 服务不可用：退回本地缓存，不阻塞页面
+              if (!this.globalData.userInfo) this.globalData.userInfo = auth.getUser();
+            } finally {
+              this._identityPromise = null;
+            }
+          })();
+        }
+        await this._identityPromise;
       }
+      if (!this.globalData.userInfo) this.globalData.userInfo = auth.getUser();
       return this.globalData.userInfo;
     }
     const data = await auth.login();
     this.globalData.userInfo = data.userInfo || null;
+    this._identityChecked = true;
     if (data.bound === false) {
       const err = new Error('请先登录账号');
       err.code = 403003;

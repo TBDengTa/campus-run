@@ -8,7 +8,8 @@
   padding: 28rpx 0;
 }
 
-/* 用途共 4 项（头像/广告/徽章/其他）：2 列网格比 4 列等分更易读 */
+/* 用途有 5 项（头像/广告/徽章/检查照片/其他）：2 列网格比等分更易读。
+   项数为奇数时最后一项**独占整行**（`width:100%`），否则它会带着一条右侧分隔线孤零零占半行。 */
 .files-stat-grid {
   display: flex;
   flex-wrap: wrap;
@@ -21,8 +22,14 @@
   text-align: center;
 }
 
+/* 竖分隔线只画在「成对的左列」上：奇数项 + 不是最后一个（最后一个是独占行的那种） */
 .files-stat-item:nth-child(odd) {
   border-right: 2rpx solid var(--tt-line);
+}
+
+.files-stat-item:last-child:nth-child(odd) {
+  width: 100%;
+  border-right: none;
 }
 
 /* ===== 分类筛选 ===== */

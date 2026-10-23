@@ -2,7 +2,8 @@
   <view class="badge-head">
     <text class="badge-head-text">共 {{list.length}} 行 · 等级组 {{tierGroupCount}} 组 / 独立徽章 {{singleCount}} 枚</text>
     <view class="tt-btn-right">
-      <t-button theme="primary" size="small" bind:tap="openCreate">+ 新增徽章</t-button>
+      <!-- 只读用户（仅 content.view）不显示新增入口（用户 2026-10-22） -->
+      <t-button wx:if="{{canManage}}" theme="primary" size="small" bind:tap="openCreate">+ 新增徽章</t-button>
     </view>
   </view>
 
@@ -48,7 +49,9 @@
             <text>{{item.enabledText}}</text>
           </view>
         </view>
-        <view class="badge-actions">
+        <!-- 行内编辑/删除需要 content.manage（用户 2026-10-22「徽章管理中我只有查看权限却还要操作功能」）：
+             只有 content.view 的账号看得到徽章列表，但看不到这几个按钮。 -->
+        <view class="badge-actions" wx:if="{{canManage}}">
           <view wx:if="{{item.kind === 'tier'}}" class="badge-btn" catch:tap="openGroupEdit" data-id="{{item.id}}">编辑整组</view>
           <view wx:else class="badge-btn" catch:tap="openEdit" data-id="{{item.id}}">编辑</view>
           <view wx:if="{{item.kind === 'tier'}}" class="badge-btn danger" catch:tap="removeGroup" data-id="{{item.id}}">删除</view>
@@ -64,7 +67,7 @@
 
   <!-- ===== 新增 / 编辑（底部抽屉，骨架走 app.wxss 的 .tt-sheet*） =====
        两种模式：独立徽章（一条定义）/ 等级徽章组（一次定义整组，级别行可增删） -->
-  <t-popup visible="{{formVisible}}" placement="bottom" bind:visible-change="onFormVisible">
+  <t-popup wx:if="{{canManage}}" visible="{{formVisible}}" placement="bottom" bind:visible-change="onFormVisible">
     <view class="tt-sheet badge-sheet">
       <view class="tt-sheet-grab"></view>
 
@@ -174,7 +177,7 @@
               <text class="badge-switch-title">启用</text>
               <text class="badge-switch-desc">关闭后不再对新达成用户发放（已获得的不受影响）</text>
             </view>
-            <t-switch value="{{form.enabled}}" bind:change="toggleEnabled" />
+            <t-switch value="{{form.enabled}}" disabled="{{!canManage}}" bind:change="toggleEnabled" />
           </view>
         </block>
 
@@ -295,7 +298,7 @@
               />
             </view>
           </view>
-          <view class="badge-level-add" bind:tap="addLevel">
+          <view class="badge-level-add" wx:if="{{canManage}}" bind:tap="addLevel">
             <t-icon name="add" size="30rpx" color="var(--tt-brand)" />
             <text>增加一级（最多 8 级）</text>
           </view>
@@ -325,8 +328,8 @@
       </scroll-view>
 
       <view class="tt-sheet-foot">
-        <t-button wx:if="{{formMode === 'tier'}}" theme="primary" block loading="{{saving}}" bind:tap="save">{{groupLocked ? '保存整组' : '创建整组'}}</t-button>
-        <t-button wx:else theme="primary" block loading="{{saving}}" bind:tap="save">{{form._id ? '保存修改' : '创建徽章'}}</t-button>
+        <t-button wx:if="{{formMode === 'tier' && canManage}}" theme="primary" block loading="{{saving}}" bind:tap="save">{{groupLocked ? '保存整组' : '创建整组'}}</t-button>
+        <t-button wx:elif="{{canManage}}" theme="primary" block loading="{{saving}}" bind:tap="save">{{form._id ? '保存修改' : '创建徽章'}}</t-button>
       </view>
     </view>
   </t-popup>
@@ -335,7 +338,7 @@
        与表单抽屉同款 .tt-sheet* 骨架；滚动区按 ui-design §3 给确定高度（flex:none; min-height:0; max-height:46vh），
        否则 scroll-view 滚不动、内容会把抽屉顶出屏幕。
        z-index 必须高于表单抽屉（t-popup 默认 11500），否则选图层会被压在表单下面点不到 -->
-  <t-popup visible="{{iconVisible}}" placement="bottom" z-index="{{12000}}" bind:visible-change="onIconVisible">
+  <t-popup wx:if="{{canManage}}" visible="{{iconVisible}}" placement="bottom" z-index="{{12000}}" bind:visible-change="onIconVisible">
     <view class="tt-sheet badge-icon-sheet">
       <view class="tt-sheet-grab"></view>
       <view class="tt-sheet-head">

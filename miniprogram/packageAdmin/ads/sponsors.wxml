@@ -5,11 +5,11 @@
       <view class="sponsor-head-title">广告主</view>
       <view class="sponsor-head-sub">共 {{list.length}} 个合作方</view>
     </view>
-    <t-button theme="primary" size="small" icon="add" bind:tap="openCreate">新增</t-button>
+    <t-button wx:if="{{canManage}}" theme="primary" size="small" icon="add" bind:tap="openCreate">新增</t-button>
   </view>
 
   <!-- ===== 新增 / 编辑表单 ===== -->
-  <view class="tt-card" wx:if="{{form}}">
+  <view class="tt-card" wx:if="{{canManage && form}}">
     <view class="sponsor-form-head">
       <text class="sponsor-form-title">{{form._id ? '编辑广告主' : '新增广告主'}}</text>
       <view class="sponsor-close" bind:tap="closeForm">
@@ -113,7 +113,7 @@
         <view class="tt-row-sub" wx:if="{{item.email}}">{{item.email}}</view>
       </view>
 
-      <view class="sponsor-acts">
+      <view class="sponsor-acts" wx:if="{{canManage}}">
         <view class="sponsor-act" catch:tap="openEdit" data-id="{{item._id}}">编辑</view>
         <view class="sponsor-act danger" catch:tap="remove" data-id="{{item._id}}">删除</view>
       </view>

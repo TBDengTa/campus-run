@@ -1,0 +1,77 @@
+/* 管理导航条目浮层（templates/nav-sheet.wxml 的样式，由使用它的页面 wxss @import 引入） */
+.nav-sheet {
+  padding: 32rpx 32rpx calc(40rpx + env(safe-area-inset-bottom));
+  border-radius: 32rpx 32rpx 0 0;
+  background: var(--tt-card);
+}
+
+.nav-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8rpx;
+}
+
+.nav-sheet-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.nav-sheet-close {
+  font-size: 26rpx;
+  color: var(--tt-text-3);
+}
+
+/* 滚动区：确定高度（小程序里 fixed 容器的 overflow 不可靠，统一用 scroll-view + max-height） */
+.nav-sheet-body {
+  max-height: 62vh;
+}
+
+.nav-sheet-item {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding: 24rpx 0;
+  border-bottom: 1rpx solid var(--tt-line);
+}
+
+.nav-sheet-item:last-child {
+  border-bottom: none;
+}
+
+.nav-sheet-icon {
+  flex: 0 0 auto;
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 20rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nav-sheet-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+.nav-sheet-label {
+  font-size: 28rpx;
+  color: var(--tt-text-1);
+  font-weight: 500;
+}
+
+.nav-sheet-desc {
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+.nav-sheet-hint {
+  padding: 40rpx 0;
+  text-align: center;
+  font-size: 24rpx;
+  color: var(--tt-text-3);
+}

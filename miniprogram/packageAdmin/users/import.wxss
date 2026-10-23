@@ -130,7 +130,7 @@
   margin-top: 4rpx;
 }
 
-/* ===== 解析预览表格 ===== */
+/* ===== 解析预览表格（多列横滚，与用户列表字段对齐） ===== */
 .imp-table {
   border: 1rpx solid var(--td-component-stroke);
   border-radius: 12rpx;
@@ -141,10 +141,20 @@
   max-height: 480rpx;
 }
 
+/* 横向滚动容器：表头与列一起滚动 */
+.imp-table-x {
+  width: 100%;
+  background: var(--tt-card);
+}
+
+/* 内容固定宽度以启用横向滚动（表头随列一起滚动） */
+.imp-table-inner {
+  width: 1450rpx;
+}
+
 .imp-tr {
   display: flex;
   align-items: center;
-  padding: 0 16rpx;
   border-bottom: 1rpx solid var(--td-component-stroke);
 }
 
@@ -157,10 +167,10 @@
   font-weight: 600;
 }
 
-.imp-td {
-  flex: 1;
+.imp-col {
+  flex-shrink: 0;
   min-width: 0;
-  padding: 14rpx 8rpx;
+  padding: 14rpx 10rpx;
   font-size: 24rpx;
   color: var(--td-text-color-primary);
   white-space: nowrap;
@@ -169,19 +179,102 @@
   box-sizing: border-box;
 }
 
-.imp-th .imp-td {
-  padding: 12rpx 8rpx;
+.imp-col-status {
+  width: 96rpx;
+  text-align: center;
 }
 
-.imp-td-name {
-  flex: 0 0 160rpx;
+.imp-col-name {
+  width: 130rpx;
 }
 
-.imp-td-sid {
-  flex: 0 0 190rpx;
+.imp-col-sid {
+  width: 180rpx;
+}
+
+.imp-col-gender {
+  width: 80rpx;
+  text-align: center;
+}
+
+.imp-col-birth {
+  width: 175rpx;
+}
+
+.imp-col-school {
+  width: 150rpx;
+}
+
+.imp-col-dept {
+  width: 165rpx;
+}
+
+.imp-col-spec {
+  width: 200rpx;
+}
+
+.imp-col-class {
+  width: 255rpx;
+}
+
+.imp-status {
+  display: inline-block;
+  padding: 0 14rpx;
+  font-size: 20rpx;
+  border-radius: 999rpx;
+}
+
+.imp-status.is-create {
+  color: var(--td-success-color-7);
+  background: var(--td-success-color-1);
+}
+
+.imp-status.is-update {
+  color: var(--tt-brand);
+  background: var(--tt-brand-soft);
 }
 
 .imp-more {
+  margin-top: 12rpx;
+  font-size: 22rpx;
+  color: var(--td-text-color-secondary);
+  text-align: center;
+}
+
+/* ===== 导入进度 ===== */
+.imp-progress {
+  padding: 20rpx 4rpx 4rpx;
+}
+
+.imp-progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 26rpx;
+  color: var(--td-text-color-primary);
+}
+
+.imp-progress-percent {
+  font-weight: 700;
+  color: var(--tt-brand);
+}
+
+.imp-progress-bar {
+  margin-top: 14rpx;
+  height: 16rpx;
+  border-radius: 999rpx;
+  background: var(--td-gray-color-3, #e7e7e7);
+  overflow: hidden;
+}
+
+.imp-progress-fill {
+  height: 100%;
+  border-radius: 999rpx;
+  background: var(--tt-brand);
+  transition: width 0.2s ease;
+}
+
+.imp-progress-sub {
   margin-top: 12rpx;
   font-size: 22rpx;
   color: var(--td-text-color-secondary);

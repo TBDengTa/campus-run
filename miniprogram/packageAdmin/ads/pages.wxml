@@ -5,67 +5,7 @@
       <view class="adp-head-title">落地页</view>
       <view class="adp-head-sub">共 {{list.length}} 个页面</view>
     </view>
-    <t-button theme="primary" size="small" icon="add" bind:tap="openCreate">新增</t-button>
-  </view>
-
-  <!-- ===== 新增 / 编辑表单 ===== -->
-  <view class="tt-card" wx:if="{{form}}">
-    <view class="adp-form-head">
-      <text class="adp-form-title">{{form._id ? '编辑落地页' : '新增落地页'}}</text>
-      <view class="adp-close" bind:tap="closeForm">
-        <t-icon name="close" size="34rpx" color="var(--tt-text-2)" />
-      </view>
-    </view>
-
-    <view class="tt-divider"></view>
-
-    <view class="adp-field">
-      <t-input
-        borderless
-        label="名称"
-        value="{{form.name}}"
-        placeholder="页面名称（必填）"
-        bind:change="onField"
-        data-field="name"
-      />
-    </view>
-
-    <view class="adp-field">
-      <t-input
-        borderless
-        label="Slug"
-        value="{{form.slug}}"
-        placeholder="英文短横线，如 summer-run"
-        bind:change="onField"
-        data-field="slug"
-      />
-      <view class="adp-field-tip">访问路径 /p/{{form.slug || 'xxx'}}</view>
-    </view>
-
-    <view class="adp-field">
-      <t-textarea
-        label="HTML 内容"
-        placeholder="粘贴完整 HTML"
-        maxlength="{{-1}}"
-        value="{{form.htmlContent}}"
-        t-class="adp-html-box"
-        t-class-textarea="adp-html"
-        bind:change="onHtml"
-      />
-    </view>
-
-    <view class="adp-field adp-field-row">
-      <view class="flex-1">
-        <view class="adp-field-label">启用</view>
-        <view class="adp-field-tip">停用后访问该链接将提示页面不存在</view>
-      </view>
-      <t-switch value="{{form.enabled}}" bind:change="toggleEnabled" />
-    </view>
-
-    <view class="adp-form-actions">
-      <t-button theme="primary" block bind:tap="save">保存</t-button>
-      <t-button theme="default" block bind:tap="closeForm">取消</t-button>
-    </view>
+    <t-button wx:if="{{canManage}}" theme="primary" size="small" icon="add" bind:tap="openCreate">新增</t-button>
   </view>
 
   <!-- ===== 列表 ===== -->
@@ -93,10 +33,13 @@
       </view>
 
       <view class="adp-acts">
+        <!-- 预览 / 复制链接是只读动作，只读账号也保留；编辑 / 删除需要 ad.manage -->
         <view class="adp-act" catch:tap="preview" data-url="{{item.url}}">预览</view>
         <view class="adp-act" catch:tap="copyLink" data-url="{{item.url}}">复制</view>
-        <view class="adp-act" catch:tap="openEdit" data-id="{{item._id}}">编辑</view>
-        <view class="adp-act danger" catch:tap="remove" data-id="{{item._id}}">删除</view>
+        <block wx:if="{{canManage}}">
+          <view class="adp-act" catch:tap="openEdit" data-id="{{item._id}}">编辑</view>
+          <view class="adp-act danger" catch:tap="remove" data-id="{{item._id}}">删除</view>
+        </block>
       </view>
     </view>
 
@@ -106,5 +49,79 @@
     </view>
   </view>
 
-  <view class="tt-footer">落地页保存后可通过 /p/ 路径直接访问，支持完整 HTML</view>
+  <view class="tt-footer">落地页保存后可通过 /p/ 路径直接访问，支持完整 HTML（也可导入本地 HTML 文件）</view>
+
+  <!-- ===== 新增 / 编辑（底部抽屉）
+       必须有页面私有 sheet 类（.adp-sheet）：scroll-view 只有拿到确定的 CSS 高度才真的能滚动，
+       只靠 .tt-sheet 的 flex + max-height 分配高度滚不动（docs/ui-design.md 有实测记录） ===== -->
+  <t-popup wx:if="{{canManage}}" visible="{{formVisible}}" placement="bottom" bind:visible-change="onFormVisible">
+    <view class="tt-sheet adp-sheet">
+      <view class="tt-sheet-grab"></view>
+      <view class="tt-sheet-head">
+        <view class="tt-sheet-icon">
+          <t-icon name="file-paste" size="36rpx" color="var(--tt-brand)" />
+        </view>
+        <view class="tt-sheet-title">
+          {{form._id ? '编辑落地页' : '新增落地页'}}
+          <view class="tt-sheet-sub">访问路径 /p/{{form.slug || 'xxx'}}</view>
+        </view>
+        <view class="tt-sheet-close" bind:tap="closeForm">
+          <t-icon name="close" size="32rpx" color="var(--tt-text-2)" />
+        </view>
+      </view>
+
+      <scroll-view scroll-y class="tt-sheet-body">
+        <view class="tt-sheet-label">基本信息</view>
+
+        <view class="tt-sheet-field adp-sheet-gap">
+          <text class="adp-inline-label">名称</text>
+          <input class="tt-sheet-input" value="{{form.name}}" placeholder="页面名称（必填）" placeholder-class="tt-sheet-ph" bindinput="onField" data-field="name" />
+        </view>
+
+        <view class="tt-sheet-field adp-sheet-gap">
+          <text class="adp-inline-label">Slug</text>
+          <input
+            class="tt-sheet-input"
+            value="{{form.slug}}"
+            placeholder="英文短横线，如 summer-run"
+            placeholder-class="tt-sheet-ph"
+            disabled="{{!!form._id}}"
+            bindinput="onField"
+            data-field="slug"
+          />
+        </view>
+        <view class="adp-field-tip">{{form._id ? 'Slug 不可修改（避免已投放链接失效）' : '新建自动生成，可改成更好记的英文短横线'}}</view>
+
+        <view class="tt-sheet-label">HTML 内容</view>
+        <view class="adp-html-head">
+          <text class="adp-html-tip">粘贴完整 HTML，或从聊天记录导入 .html 文件（≤1.5MB）</text>
+          <view class="adp-import" bind:tap="importHtml">
+            <t-icon name="file-import" size="28rpx" color="var(--tt-brand)" />
+            <text class="adp-import-text">{{importing ? '读取中…' : '导入 HTML'}}</text>
+          </view>
+        </view>
+
+        <t-textarea
+          placeholder="粘贴完整 HTML"
+          maxlength="{{-1}}"
+          value="{{form.htmlContent}}"
+          t-class="adp-html-box"
+          t-class-textarea="adp-html"
+          bind:change="onHtml"
+        />
+
+        <view class="adp-sheet-row">
+          <view class="flex-1">
+            <view class="adp-field-label">启用</view>
+            <view class="adp-field-tip">停用后访问该链接将提示页面不存在</view>
+          </view>
+          <t-switch value="{{form.enabled}}" bind:change="toggleEnabled" />
+        </view>
+      </scroll-view>
+
+      <view class="tt-sheet-foot">
+        <t-button theme="primary" block loading="{{saving}}" bind:tap="save">{{form._id ? '保存修改' : '创建落地页'}}</t-button>
+      </view>
+    </view>
+  </t-popup>
 </view>

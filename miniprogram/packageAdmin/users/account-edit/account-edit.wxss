@@ -50,11 +50,9 @@
   color: var(--tt-text-3, rgba(0, 0, 0, 0.42));
 }
 
-/* 手填 → 选已有 */
-.ae-switch {
-  flex-shrink: 0;
-  margin-left: 16rpx;
-  font-size: 24rpx;
+/* 「去组织架构」提示：可点击跳转，所以给成链接色 + 末尾箭头（.ae-note 的灰太弱，
+   看不出可点；组织架构的增删改需要 content.manage，无权限的人点了会被该页拦住） */
+.ae-note-link {
   color: var(--tt-brand, #ff6b00);
 }
 

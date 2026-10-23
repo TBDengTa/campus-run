@@ -7,11 +7,11 @@
         <t-icon name="chevron-down" size="30rpx" color="var(--tt-brand)" />
       </view>
     </picker>
-    <t-button theme="primary" size="small" bind:tap="openCreate">+ 新增</t-button>
+    <t-button wx:if="{{canManage}}" theme="primary" size="small" bind:tap="openCreate">+ 新增</t-button>
   </view>
 
   <!-- ===== 编辑表单 ===== -->
-  <view class="tt-card" wx:if="{{form}}">
+  <view class="tt-card" wx:if="{{canManage && form}}">
     <view class="tt-section holi-form-title">
       <text>{{form._id ? '编辑节假日' : '新增节假日'}}</text>
       <text class="tt-section-extra" bind:tap="closeForm">收起</text>
@@ -52,7 +52,7 @@
           <view class="tt-row-title">{{item.name}}</view>
           <view class="tt-row-sub">{{item.date}}</view>
         </view>
-        <view class="holi-actions">
+        <view class="holi-actions" wx:if="{{canManage}}">
           <view class="holi-btn" catch:tap="openEdit" data-id="{{item._id}}">编辑</view>
           <view class="holi-btn danger" catch:tap="remove" data-id="{{item._id}}">删除</view>
         </view>

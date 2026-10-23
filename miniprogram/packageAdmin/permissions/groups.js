@@ -60,8 +60,10 @@ Page({
     const id = e.currentTarget.dataset.id;
     const g = (this.data.list || []).find((x) => x._id === id);
     if (!g) return;
-    if (g.builtIn) {
-      wx.showToast({ title: '内置权限组由系统维护，不可修改', icon: 'none' });
+    // 内置组可编辑（用户 2026-10-20），但 superadmin 除外：
+    // 它是唯一持 '*' 的组，改坏等于把自己锁在门外（后端也会 400 兜底）。
+    if (g.key === 'superadmin') {
+      wx.showToast({ title: '超级管理员组固定为全部权限，不可修改', icon: 'none' });
       return;
     }
     const selected = [...(g.permissions || [])];

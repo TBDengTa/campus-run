@@ -17,6 +17,10 @@ async function checkAndLoad(page) {
       });
       return;
     }
+    // 只读 / 可写分开（用户 2026-10-22：「只有查看权限时应该不显示操作功能按钮，
+    // 而不是点击后被后端拒绝掉」）。config.view 能进来看，config.manage 才能保存。
+    // 各子页的 WXML 用 canManage 控制保存栏与输入框的 disabled。
+    page.setData({ canManage: perms.includes('*') || perms.includes('config.manage') });
     await load(page);
   } catch (e) {
     wx.showToast({ title: e.message, icon: 'none' });

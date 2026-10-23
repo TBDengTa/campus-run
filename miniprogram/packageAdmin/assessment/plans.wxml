@@ -2,7 +2,7 @@
   <!-- ===== 头部 ===== -->
   <view class="pl-head">
     <text class="pl-head-text">共 {{list.length}} 个计划</text>
-    <view class="pl-btn pl-btn-primary" bind:tap="openCreate">+ 新建计划</view>
+    <view class="pl-btn pl-btn-primary" wx:if="{{canManage}}" bind:tap="openCreate">+ 新建计划</view>
   </view>
 
   <!-- ===== 列表 ===== -->
@@ -16,18 +16,18 @@
         </view>
         <view class="tt-row-sub">每日 {{item.dailyStepsText}} 步 · BMI {{item.bmiText}} · {{item.genderText}} · {{item.levelText}}{{item.refText ? ' · ' + item.refText : ''}}</view>
       </view>
-      <view class="pl-row-actions">
+      <view class="pl-row-actions" wx:if="{{canManage}}">
         <view class="pl-btn" bind:tap="openEdit" data-id="{{item._id}}">编辑</view>
         <view class="pl-btn pl-btn-danger" bind:tap="remove" data-id="{{item._id}}" data-name="{{item.name}}">删除</view>
       </view>
     </view>
   </view>
-  <view class="tt-empty" wx:if="{{!list.length && !loading}}">暂无计划，点击「新建计划」创建</view>
+  <view class="tt-empty" wx:if="{{!list.length && !loading}}">{{canManage ? '暂无计划，点击「新建计划」创建' : '暂无计划'}}</view>
 
   <view class="tt-footer">修改计划不影响已应用用户的当前目标（用户目标为快照）</view>
 
   <!-- ===== 新增 / 编辑（底部弹层） ===== -->
-  <t-popup visible="{{formVisible}}" placement="bottom" bind:visible-change="onFormVisible">
+  <t-popup wx:if="{{canManage}}" visible="{{formVisible}}" placement="bottom" bind:visible-change="onFormVisible">
     <view class="pl-sheet">
       <view class="pl-sheet-head">
         <text class="pl-sheet-title">{{form._id ? '编辑计划' : '新建计划'}}</text>

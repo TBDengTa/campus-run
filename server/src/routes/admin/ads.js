@@ -13,6 +13,23 @@ const router = express.Router();
 
 const MODEL_MAP = { sponsors: AdSponsor, slots: AdSlot, contents: AdContent, pages: AdPage };
 
+// 可写字段白名单：_id / createdAt / updatedAt / __v / 统计数 / builtIn 一律不收
+const WRITABLE_FIELDS = {
+  sponsors: ['name', 'contact', 'phone', 'email', 'logo', 'active'],
+  slots: ['key', 'name', 'type', 'page', 'maxSponsors', 'exclusive', 'enabled'],
+  contents: ['slotKey', 'sponsorId', 'title', 'imageUrl', 'linkType', 'linkUrl', 'pageId', 'startDate', 'endDate', 'weight', 'enabled'],
+  pages: ['name', 'slug', 'htmlContent', 'enabled'],
+};
+
+function pickWritable(name, body = {}) {
+  const allow = WRITABLE_FIELDS[name] || [];
+  const out = {};
+  for (const f of allow) {
+    if (Object.prototype.hasOwnProperty.call(body, f)) out[f] = body[f];
+  }
+  return out;
+}
+
 // 通用 CRUD：/sponsors /slots /contents /pages
 for (const [name, Model] of Object.entries(MODEL_MAP)) {
   router.get(
@@ -25,8 +42,10 @@ for (const [name, Model] of Object.entries(MODEL_MAP)) {
         cond.name = re;
       }
       if (req.query.slotKey) cond.slotKey = req.query.slotKey;
+      // 广告位：内置位靠前且按播种顺序排列，便于运营一眼看到四个固定位
+      const sort = name === 'slots' ? { builtIn: -1, createdAt: 1 } : { createdAt: -1 };
       const [list, total] = await Promise.all([
-        Model.find(cond).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+        Model.find(cond).sort(sort).skip(skip).limit(limit).lean(),
         Model.countDocuments(cond),
       ]);
       ok(res, { list, total, page, limit });
@@ -37,7 +56,11 @@ for (const [name, Model] of Object.entries(MODEL_MAP)) {
     `/${name}`,
     requirePermission('ad.manage'),
     wrap(async (req, res) => {
-      const doc = await Model.create(req.body);
+      const data = pickWritable(name, req.body);
+      if (name === 'slots' && (!data.key || !data.name)) {
+        throw new ApiError(400, 400, 'key 和名称必填');
+      }
+      const doc = await Model.create(data);
       ok(res, doc);
     })
   );
@@ -46,7 +69,18 @@ for (const [name, Model] of Object.entries(MODEL_MAP)) {
     `/${name}/:id`,
     requirePermission('ad.manage'),
     wrap(async (req, res) => {
-      const doc = await Model.findByIdAndUpdate(req.params.id, { $set: req.body }, { new: true, runValidators: true });
+      const data = pickWritable(name, req.body);
+      // 广告位 key 保护：内置位与已被素材引用的位不可改 key
+      if (name === 'slots' && data.key) {
+        const current = await AdSlot.findById(req.params.id).select('key builtIn').lean();
+        if (!current) throw new ApiError(404, 404, '不存在');
+        if (data.key !== current.key) {
+          if (current.builtIn) throw new ApiError(400, 400, '内置广告位不可修改 key');
+          const used = await AdContent.countDocuments({ slotKey: current.key });
+          if (used) throw new ApiError(400, 400, `该广告位已被 ${used} 条素材引用，不可修改 key`);
+        }
+      }
+      const doc = await Model.findByIdAndUpdate(req.params.id, { $set: data }, { new: true, runValidators: true });
       if (!doc) throw new ApiError(404, 404, '不存在');
       ok(res, doc);
     })
@@ -56,8 +90,16 @@ for (const [name, Model] of Object.entries(MODEL_MAP)) {
     `/${name}/:id`,
     requirePermission('ad.manage'),
     wrap(async (req, res) => {
-      const doc = await Model.findByIdAndDelete(req.params.id);
-      if (!doc) throw new ApiError(404, 404, '不存在');
+      let doc;
+      if (name === 'slots') {
+        const slot = await AdSlot.findById(req.params.id).lean();
+        if (!slot) throw new ApiError(404, 404, '不存在');
+        if (slot.builtIn) throw new ApiError(400, 400, '内置广告位不可删除');
+        doc = await AdSlot.findByIdAndDelete(req.params.id);
+      } else {
+        doc = await Model.findByIdAndDelete(req.params.id);
+        if (!doc) throw new ApiError(404, 404, '不存在');
+      }
       // 级联：删除广告位时停用其下素材；删除落地页时素材改回外链
       if (name === 'slots') {
         await AdContent.updateMany({ slotKey: doc.key }, { $set: { enabled: false } });

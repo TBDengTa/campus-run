@@ -1,0 +1,87 @@
+<view class="page tt-page ro-page">
+  <!-- ===== 吸顶搜索 + 院校 / 系部 / 部门筛选 ===== -->
+  <view class="ro-sticky">
+    <view class="ro-search">
+      <t-icon name="search" size="32rpx" color="var(--tt-text-3)" />
+      <input
+        class="ro-search-input"
+        placeholder="搜索姓名 / 班级 / 部门"
+        placeholder-class="ro-search-ph"
+        value="{{keyword}}"
+        bindinput="onKeyword"
+        confirm-type="search"
+      />
+    </view>
+
+    <view class="ro-filter-row">
+      <picker mode="selector" range="{{schools}}" range-key="label" value="{{schoolIndex}}" bindchange="onSchoolChange">
+        <view class="ro-select {{school ? 'on' : ''}}">
+          <text>{{schools[schoolIndex].label}}</text>
+          <t-icon name="chevron-down" size="18rpx" color="var(--tt-text-3)" />
+        </view>
+      </picker>
+      <picker mode="selector" range="{{departments}}" range-key="label" value="{{departmentIndex}}" bindchange="onDepartmentChange">
+        <view class="ro-select {{department ? 'on' : ''}}">
+          <text>{{departments[departmentIndex].label}}</text>
+          <t-icon name="chevron-down" size="18rpx" color="var(--tt-text-3)" />
+        </view>
+      </picker>
+      <picker mode="selector" range="{{deptNames}}" range-key="label" value="{{deptIndex}}" bindchange="onDeptChange">
+        <view class="ro-select {{deptName ? 'on' : ''}}">
+          <text>{{deptNames[deptIndex].label}}</text>
+          <t-icon name="chevron-down" size="18rpx" color="var(--tt-text-3)" />
+        </view>
+      </picker>
+      <view class="ro-reset" wx:if="{{hasFilter}}" bind:tap="resetFilters">重置</view>
+    </view>
+  </view>
+
+  <view class="tt-section">
+    <text>学生会成员</text>
+    <text class="tt-section-extra">{{currentTermLabel || currentTermName}} · {{hasFilter || keyword ? shown : total}} 人</text>
+  </view>
+
+  <!-- ===== 院校 → 部门 → 成员，两级可折叠 ===== -->
+  <block wx:for="{{groups}}" wx:key="key" wx:for-item="org">
+    <view class="ro-org">
+      <view class="ro-org-head" data-key="{{org.key}}" bind:tap="toggleOrg">
+        <view class="ro-org-main">
+          <text class="ro-org-title">{{org.title}}</text>
+          <text class="ro-org-meta">{{org.memberCount}} 人 · {{org.deptCount}} 个部门</text>
+        </view>
+        <t-icon name="{{org.collapsed ? 'chevron-down' : 'chevron-up'}}" size="24rpx" color="var(--tt-text-3)" />
+      </view>
+
+      <block wx:if="{{!org.collapsed}}">
+        <view class="ro-dept" wx:for="{{org.depts}}" wx:key="key" wx:for-item="d">
+          <view class="ro-dept-head" data-key="{{org.key}}|{{d.key}}" bind:tap="toggleDept">
+            <text class="ro-dept-title">{{d.title}}</text>
+            <text class="ro-dept-count">{{d.count}} 人</text>
+            <t-icon name="{{d.collapsed ? 'chevron-down' : 'chevron-up'}}" size="20rpx" color="var(--tt-text-3)" />
+          </view>
+
+          <view class="tt-card ro-members" wx:if="{{!d.collapsed}}">
+            <view class="ro-member" wx:for="{{d.members}}" wx:key="id" wx:for-item="m">
+              <text class="ro-avatar">{{m.initial}}</text>
+              <view class="ro-member-main">
+                <view class="ro-member-line">
+                  <text class="ro-member-name">{{m.realName}}</text>
+                  <text class="ro-role">{{m.roleText}}</text>
+                </view>
+                <text class="ro-member-sub">{{m.subText || '—'}}</text>
+              </view>
+            </view>
+          </view>
+        </view>
+      </block>
+    </view>
+  </block>
+
+  <view class="tt-empty" wx:if="{{loading}}">正在加载通讯录…</view>
+  <view class="tt-empty" wx:elif="{{!groups.length}}">
+    {{keyword || hasFilter ? '没有匹配的成员，换个筛选条件或关键词试试' : '暂无在职学生会成员'}}
+  </view>
+
+  <view class="tt-footer" wx:if="{{groups.length}}">所有学生会成员均可查看通讯录；点院校 / 部门标题可折叠</view>
+  <view class="tt-footer" wx:else>如通讯录为空，请联系学生会主席团确认成员状态</view>
+</view>

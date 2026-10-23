@@ -53,13 +53,16 @@ router.post(
   })
 );
 
-// 更新权限组（内置组由启动播种维护，只读）
+// 更新权限组
+// 内置组（用户 2026-10-20 放开）：**除 superadmin 外可编辑**，保存时打 customized 标记，
+// 启动播种（services/rbac.js）见到该标记就不再覆盖——否则改动会在下次重启被静默抹掉。
+// superadmin 永远只读：它是唯一持 '*' 的组，改坏它等于把自己锁在门外（且引导逻辑依赖它存在）。
 router.put(
   '/:id',
   wrap(async (req, res) => {
     const doc = await PermissionGroup.findById(req.params.id);
     if (!doc) throw new ApiError(404, 404, '权限组不存在');
-    if (doc.builtIn) throw new ApiError(400, 400, '内置权限组由系统播种维护，不能修改');
+    if (doc.key === 'superadmin') throw new ApiError(400, 400, '超级管理员组固定为全部权限，不可修改');
     const { name, description, permissions } = req.body || {};
     if (name !== undefined) {
       const n = String(name).trim();
@@ -72,6 +75,8 @@ router.put(
       await assertPermsExist(list);
       doc.permissions = list;
     }
+    // 内置组一旦被管理员保存，即视为「学校自己维护」：播种从此让位（key 仍不可改，见前端 disabled）
+    if (doc.builtIn) doc.customized = true;
     await doc.save();
     ok(res, doc);
   })

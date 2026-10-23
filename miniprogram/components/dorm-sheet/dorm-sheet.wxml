@@ -1,0 +1,95 @@
+<!-- 宿舍绑定抽屉（两处共用的同一形态）：骨架走 app.wxss 的公共 .tt-sheet*。
+     结构（用户 2026-10-22「楼号只能选择，床号只能是1至8，输入的只有门号」）：
+       ① 楼号 → **只能点选**（来自系统设置里的「宿舍用楼」清单，不允许手打）
+       ② 门号 → 唯一的文本输入（纯数字）
+       ③ 床位号 → 固定 1~8 选择
+     手打楼名会造出「1号楼 / 一教 / 1-201」各写各的，按楼栋统计和查人就对不上 ——
+     所以楼名收进白名单，只保留「门号」这一个自由输入。 -->
+<t-popup visible="{{visible}}" placement="bottom" bind:visible-change="onVisibleChange">
+  <view class="tt-sheet dorm-sheet">
+    <view class="tt-sheet-grab"></view>
+
+    <view class="tt-sheet-head">
+      <view class="tt-sheet-icon">
+        <t-icon name="houses" size="36rpx" color="var(--tt-brand)" />
+      </view>
+      <view class="tt-sheet-title">
+        {{title}}
+        <view class="tt-sheet-sub" wx:if="{{sub}}">{{sub}}</view>
+      </view>
+      <view class="tt-sheet-close" bind:tap="close">
+        <t-icon name="close" size="32rpx" color="var(--tt-text-2)" />
+      </view>
+    </view>
+
+    <scroll-view scroll-y class="tt-sheet-body">
+      <!-- ① 楼号：只能选。没有配置楼名时给出明确指引，而不是退回手打（那等于白做白名单）。 -->
+      <view class="tt-sheet-label">楼号</view>
+      <block wx:if="{{buildings.length}}">
+        <view class="ds-chips">
+          <view
+            class="ds-chip {{pickBuilding === item.name ? 'on' : ''}}"
+            wx:for="{{buildings}}"
+            wx:key="name"
+            data-name="{{item.name}}"
+            bind:tap="tapBuilding"
+          >
+            {{item.name}}
+          </view>
+        </view>
+      </block>
+      <view class="ds-hint" wx:else>还没配置宿舍楼。请到「系统设置 → 楼名管理」添加宿舍用楼后再绑定。</view>
+
+      <!-- ② 门号：唯一的手输项，纯数字 -->
+      <view class="tt-sheet-label">门号</view>
+      <view class="tt-sheet-field">
+        <input
+          class="tt-sheet-input"
+          type="number"
+          value="{{roomNo}}"
+          placeholder="只填数字，如 201"
+          placeholder-class="tt-sheet-ph"
+          bindinput="onRoomInput"
+        />
+      </view>
+
+      <!-- ③ 床位号：固定 1~8 -->
+      <view class="tt-sheet-label">床位号</view>
+      <view class="ds-chips">
+        <view
+          class="ds-chip ds-chip-sm {{bedNo === item + '' ? 'on' : ''}}"
+          wx:for="{{bedOptions}}"
+          wx:key="*this"
+          data-bed="{{item}}"
+          bind:tap="tapBed"
+        >
+          {{item}}
+        </view>
+      </view>
+
+      <block wx:if="{{quickRooms.length}}">
+        <view class="tt-sheet-label">本班已有房间（混宿时复用同一间）</view>
+        <view class="tt-sheet-pills">
+          <view class="tt-sheet-pill" wx:for="{{quickRooms}}" wx:key="*this" data-label="{{item}}" bind:tap="tapRoom">
+            {{item}}
+          </view>
+        </view>
+      </block>
+
+      <t-loading wx:if="{{loading}}" theme="circular" size="36rpx" />
+      <view class="tt-sheet-note" wx:if="{{disabled && disabledText}}">{{disabledText}}</view>
+      <view class="tt-sheet-note" wx:elif="{{pickBuilding && roomNo}}">将绑定到「{{pickBuilding}}·{{roomNo}}」{{bedNo ? '，' + bedNo + ' 号床' : ''}}。房间不存在时会自动新建。</view>
+      <view class="tt-sheet-note" wx:else>先选楼号，再填门号。改绑会把旧记录置为「已换房」，历史保留。</view>
+    </scroll-view>
+
+    <view class="tt-sheet-foot dorm-sheet-foot">
+      <!-- t-button 宿主节点在 flex 行里不收缩，两个按钮各包一层 flex:1 容器才能等分（同 class 页 .cls-sheet-btn） -->
+      <view class="dorm-sheet-btn">
+        <t-button theme="danger" variant="outline" block disabled="{{!canUnbind}}" bind:tap="unbind">{{unbindText}}</t-button>
+      </view>
+      <view class="dorm-sheet-btn">
+        <t-button theme="primary" block loading="{{saving}}" disabled="{{disabled}}" bind:tap="submit">保存</t-button>
+      </view>
+    </view>
+  </view>
+</t-popup>

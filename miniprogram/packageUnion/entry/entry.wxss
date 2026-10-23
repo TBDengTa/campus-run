@@ -1,0 +1,841 @@
+.en-page {
+  padding-bottom: 28rpx;
+}
+
+.en-page .tt-card {
+  margin-bottom: 12rpx;
+}
+
+.en-page .tt-footer {
+  padding: 14rpx 28rpx 28rpx;
+  font-size: 21rpx;
+}
+
+.en-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10rpx;
+  padding: 56rpx var(--tt-pad);
+  text-align: center;
+}
+
+.en-empty-t {
+  font-size: 26rpx;
+  color: var(--tt-text-1);
+}
+
+.en-empty-s {
+  font-size: 21rpx;
+  color: var(--tt-text-3);
+  line-height: 1.55;
+}
+
+/* ===== 吸顶区（B 端：滚列表时模块切换与日期筛选始终可见）=====
+   背景必须不透明，否则下方列表内容会透出来；z-index 高于列表卡片。 */
+.en-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding-top: 8rpx;
+  padding-bottom: 8rpx;
+  background: var(--tt-bg-page);
+}
+
+/* ===== 模块切换 ===== */
+.en-tabs {
+  display: flex;
+  gap: 8rpx;
+  margin: 0 var(--tt-gap) 8rpx;
+  overflow-x: auto;
+}
+
+.en-tab {
+  flex: 0 0 auto;
+  padding: 9rpx 22rpx;
+  border-radius: 999rpx;
+  font-size: 23rpx;
+  color: var(--tt-text-2);
+  background: var(--tt-card);
+  box-shadow: var(--tt-card-shadow);
+}
+
+.en-tab.active {
+  color: #ffffff;
+  background: var(--tt-brand);
+  font-weight: 600;
+}
+
+/* ===== 筛选（吸顶区内的紧凑一行：日期 / 时段）===== */
+.en-filters {
+  display: flex;
+  gap: 12rpx;
+  margin: 0 var(--tt-gap);
+}
+
+.en-filter {
+  flex: 1;
+  min-width: 0;
+}
+
+.en-filter-v {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6rpx;
+  padding: 9rpx 14rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-card);
+  box-shadow: var(--tt-card-shadow);
+  font-size: 23rpx;
+  color: var(--tt-text-1);
+}
+
+/* ===== 进度概览（B 端头部：未录 / 已录 / 已复核 / 受检对象）===== */
+.en-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 4rpx 0;
+  padding: 16rpx 22rpx;
+}
+
+.en-sum {
+  flex: 1 1 25%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3rpx;
+  min-width: 0;
+}
+
+.en-sum-v {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: var(--tt-text-1);
+}
+
+/* 未录是**待办**，用品牌色强调；其余是陈述性数字，保持中性 */
+.en-sum-outstanding {
+  color: var(--tt-brand);
+}
+
+/* 「无迟到」（早八这类只记异常人的模块）：不是待办，用中性色，字号随文案长度收一档 */
+.en-sum-none {
+  font-size: 24rpx;
+  color: var(--tt-text-3);
+}
+
+.en-sum-l {
+  font-size: 19rpx;
+  color: var(--tt-text-3);
+}
+
+.en-sum-tip {
+  flex: 1 1 100%;
+  margin-top: 9rpx;
+  padding-top: 9rpx;
+  border-top: 1rpx solid var(--tt-line);
+  text-align: center;
+  font-size: 21rpx;
+  color: var(--tt-text-2);
+}
+
+.en-sum-tip.done {
+  color: var(--td-success-color-5, #16a34a);
+  font-weight: 600;
+}
+
+/* ===== 搜索 ===== */
+.en-search {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  margin: 9rpx var(--tt-gap) 0;
+  padding: 9rpx 18rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-card);
+  box-shadow: var(--tt-card-shadow);
+}
+
+.en-search-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 24rpx;
+  color: var(--tt-text-1);
+}
+
+.en-search-clear {
+  flex: 0 0 auto;
+  padding: 4rpx 12rpx;
+  border-radius: 999rpx;
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+  background: var(--tt-bg-page);
+}
+
+/* ===== 三级筛选：院校 / 系部 / 年级 =====
+   三列等宽；选项只来自服务端已按分会范围收敛的 targets（分院看不到本校以外的院校/系部）。 */
+.en-cascade {
+  display: flex;
+  gap: 8rpx;
+  margin: 9rpx var(--tt-gap) 0;
+}
+
+.en-cascade-item {
+  flex: 1;
+  min-width: 0;
+}
+
+.en-cascade-v {
+  display: flex;
+  align-items: center;
+  gap: 4rpx;
+  min-width: 0;
+  min-height: 60rpx;
+  padding: 8rpx 10rpx;
+  box-sizing: border-box;
+  border: 2rpx solid transparent;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-card);
+  box-shadow: var(--tt-card-shadow);
+}
+
+.en-cascade-label {
+  flex: 0 0 auto;
+  font-size: 17rpx;
+  color: var(--tt-text-3);
+}
+
+.en-cascade-value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 21rpx;
+  color: var(--tt-text-1);
+}
+
+.en-cascade-v.active {
+  border-color: var(--tt-brand);
+  background: var(--tt-brand-soft);
+}
+
+.en-cascade-v.active .en-cascade-label,
+.en-cascade-v.active .en-cascade-value {
+  color: var(--tt-brand-deep);
+}
+
+.en-cascade-v.active .en-cascade-value {
+  font-weight: 600;
+}
+
+/* 分院身份的范围提示：选项本身已经限制在本院校，再用一行文案说明原因 */
+.en-scope-hint {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  margin: 7rpx var(--tt-gap) 0;
+  font-size: 19rpx;
+  line-height: 1.5;
+  color: var(--tt-text-3);
+}
+
+/* 紧凑分组标题：全局 .tt-section 在录入台偏高，单独压一档 */
+.en-page .tt-section {
+  gap: 10rpx;
+  margin: 4rpx 28rpx 10rpx;
+  font-size: 27rpx;
+}
+
+.en-page .tt-section::before {
+  width: 7rpx;
+  height: 24rpx;
+}
+
+/* 「今年优先」小标签：让默认排序规则一眼可见（选了年级后自动隐藏） */
+.en-priority {
+  padding: 2rpx 10rpx;
+  border-radius: 999rpx;
+  font-size: 18rpx;
+  font-weight: 400;
+  color: var(--tt-brand-deep);
+  background: var(--tt-brand-soft);
+}
+
+/* ===== 受检对象列表（卡片化：整行可点 → 开抽屉；行尾箭头提示可进入）===== */
+.en-targets {
+  padding: 2rpx 22rpx;
+}
+
+.en-target {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  min-height: 76rpx;
+  padding: 13rpx 0;
+  border-bottom: 1rpx solid var(--tt-line);
+}
+
+.en-target:last-child {
+  border-bottom: none;
+}
+
+.en-target-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4rpx;
+  flex: 1;
+  min-width: 0;
+}
+
+/* 行头：对象名 + 右侧状态徽标（B 端卡片列表：主信息与状态同一行，副信息在下方） */
+.en-target-head {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  min-width: 0;
+}
+
+.en-target-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 26rpx;
+  color: var(--tt-text-1);
+  font-weight: 500;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.en-target-sub {
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+}
+
+/* 已录对象的扣分摘要（有值才渲染，避免每行都挂一个「—」） */
+.en-target-sum {
+  font-size: 20rpx;
+  color: var(--tt-brand-deep);
+}
+
+.en-target-status {
+  flex: 0 0 auto;
+  padding: 3rpx 12rpx;
+  border-radius: 999rpx;
+  font-size: 19rpx;
+  color: var(--tt-text-2);
+  background: var(--tt-line);
+}
+
+.en-target-missing {
+  color: var(--tt-brand-deep);
+  background: var(--tt-brand-soft-2);
+}
+
+.en-target-done {
+  color: var(--td-success-color-5, #2ba471);
+  background: rgba(43, 164, 113, 0.12);
+}
+
+.en-target-cancelled,
+.en-target-rejected {
+  color: var(--td-error-color-6, #d54941);
+  background: rgba(213, 73, 65, 0.12);
+}
+
+/* ===== 自动计算卡片（应到 / 实到 / 缺勤 或 应住 / 实到 / 未归） =====
+   第五轮：实到由缺勤名单自动推算，这三个数必须一眼可见、不用在表单里找输入框。 */
+.en-calc {
+  margin-bottom: 16rpx;
+  padding: 14rpx 16rpx 12rpx;
+  border-radius: var(--tt-radius);
+  border: 1rpx solid var(--tt-brand-soft-2);
+  background: linear-gradient(135deg, var(--tt-brand-soft), var(--tt-brand-soft-2));
+}
+
+.en-calc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 9rpx;
+  font-size: 21rpx;
+  font-weight: 600;
+  color: var(--tt-brand-deep);
+}
+
+.en-calc-sub {
+  font-size: 18rpx;
+  font-weight: 400;
+  color: var(--tt-text-3);
+}
+
+.en-calc-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8rpx;
+}
+
+.en-calc-item {
+  flex: 1 1 160rpx;
+  min-width: 0;
+  padding: 9rpx 6rpx 8rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-card);
+  text-align: center;
+}
+
+.en-calc-value-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 3rpx;
+}
+
+.en-calc-value {
+  font-size: 36rpx;
+  line-height: 1.1;
+  font-weight: 700;
+  color: var(--tt-brand-deep);
+}
+
+.en-calc-unit {
+  font-size: 18rpx;
+  color: var(--tt-text-2);
+}
+
+.en-calc-label {
+  display: block;
+  margin-top: 2rpx;
+  font-size: 21rpx;
+  color: var(--tt-text-1);
+}
+
+.en-calc-detail {
+  display: block;
+  margin-top: 2rpx;
+  font-size: 18rpx;
+  line-height: 1.4;
+  color: var(--tt-text-3);
+}
+
+/* ===== 「网课」提示（晚自习 grade='网课'：后续字段整组隐藏） ===== */
+.en-online-tip {
+  margin-bottom: 12rpx;
+  padding: 12rpx 16rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-brand-soft);
+  font-size: 21rpx;
+  line-height: 1.55;
+  color: var(--tt-brand-deep);
+}
+
+/* ===== 留证照片（type='photo'）：网格缩略图 + 加号 ===== */
+.en-photos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+}
+
+/* 三列网格：紧凑后每格 176rpx，三列 + 间距仍在表单可用宽度内 */
+.en-photo,
+.en-photo-add {
+  position: relative;
+  width: 176rpx;
+  height: 176rpx;
+  border-radius: var(--tt-radius-sm);
+  overflow: hidden;
+}
+
+.en-photo-img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  background: var(--tt-bg-page);
+}
+
+/* 上传中的进度遮罩 / 失败的重试遮罩：都是整格蒙层 */
+.en-photo-mask {
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6rpx;
+  background: rgba(0, 0, 0, 0.42);
+}
+
+.en-photo-failed {
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.en-photo-pct {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.en-photo-retry-t {
+  font-size: 22rpx;
+  color: #ffffff;
+}
+
+/* 右上角删除：catch:tap 保证不冒泡到预览 */
+.en-photo-del {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 44rpx;
+  height: 44rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-bottom-left-radius: var(--tt-radius-sm);
+  background: rgba(0, 0, 0, 0.5);
+}
+
+/* 加号按钮：虚线描边，与缩略图同尺寸，视觉上就是「再来一张」 */
+.en-photo-add {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
+  border: 2rpx dashed var(--tt-line);
+  background: var(--tt-bg-page);
+}
+
+.en-photo-add-t {
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+}
+
+.en-photo-tip {
+  margin-top: 8rpx;
+  font-size: 19rpx;
+  color: var(--tt-text-3);
+}
+
+.en-photo-fail-n {
+  color: var(--td-error-color-6, #d54941);
+}
+
+/* ===== 表单 ===== */
+/* 模块未配置字段时的抽屉内空状态：抽屉不能只剩标题 + 按钮（会被误认为页面坏了） */
+.en-sheet-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10rpx;
+  padding: 48rpx 20rpx;
+  text-align: center;
+}
+
+.en-sheet-empty-t {
+  font-size: 25rpx;
+  color: var(--tt-text-1);
+}
+
+.en-sheet-empty-s {
+  max-width: 540rpx;
+  font-size: 21rpx;
+  line-height: 1.55;
+  color: var(--tt-text-3);
+}
+
+.en-form {
+  padding: 24rpx var(--tt-pad) var(--tt-pad);
+}
+
+.en-form-tip {
+  margin-bottom: 12rpx;
+  padding: 12rpx 16rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-brand-soft);
+  font-size: 21rpx;
+  color: var(--tt-brand-deep);
+}
+
+.en-form-link {
+  margin-left: 10rpx;
+  text-decoration: underline;
+}
+
+/* 申诉改判模式提示：比普通提示更显眼一档（这是一次会改动申诉结论的提交） */
+.en-appeal-tip {
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.en-field {
+  padding: 17rpx 0;
+  border-bottom: 1rpx solid var(--tt-line);
+}
+
+.en-field:last-of-type {
+  border-bottom: none;
+  margin-bottom: 2rpx;
+}
+
+/* 字段标题与说明分两行：原来 hint 挤在标题同一行，长说明（如网课口径）会把标题压得很难读 */
+.en-field-label {
+  display: block;
+  margin-bottom: 8rpx;
+}
+
+.en-field-title {
+  display: flex;
+  align-items: baseline;
+  gap: 5rpx;
+  font-size: 25rpx;
+  font-weight: 500;
+  color: var(--tt-text-1);
+}
+
+.en-required {
+  color: var(--td-error-color-6, #d54941);
+}
+
+.en-field-hint {
+  display: block;
+  margin-top: 4rpx;
+  font-size: 19rpx;
+  line-height: 1.45;
+  color: var(--tt-text-3);
+}
+
+.en-input {
+  width: 100%;
+  height: 78rpx;
+  padding: 0 20rpx;
+  box-sizing: border-box;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-bg-page);
+  font-size: 26rpx;
+  color: var(--tt-text-1);
+}
+
+.en-textarea {
+  width: 100%;
+  min-height: 136rpx;
+  padding: 16rpx 20rpx;
+  box-sizing: border-box;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-bg-page);
+  font-size: 25rpx;
+  line-height: 1.55;
+  color: var(--tt-text-1);
+}
+
+/* 评价（必须单选）：四等分大按钮，比小胶囊好点得多；选中态用品牌渐变 */
+.en-grade {
+  display: flex;
+  gap: 8rpx;
+}
+
+.en-grade-item {
+  flex: 1;
+  padding: 15rpx 0;
+  text-align: center;
+  border: 2rpx solid transparent;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-bg-page);
+  font-size: 25rpx;
+  color: var(--tt-text-2);
+}
+
+.en-grade-item.active {
+  color: #ffffff;
+  font-weight: 600;
+  border-color: var(--tt-brand);
+  background: var(--tt-brand);
+  box-shadow: 0 6rpx 16rpx rgba(28, 31, 35, 0.12);
+}
+
+.en-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8rpx;
+}
+
+.en-chip {
+  padding: 8rpx 20rpx;
+  border-radius: 999rpx;
+  font-size: 23rpx;
+  color: var(--tt-text-2);
+  background: var(--tt-bg-page);
+}
+
+.en-chip.active {
+  color: #ffffff;
+  background: var(--tt-brand);
+}
+
+.en-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.en-item {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.en-item-label {
+  flex: 1;
+  font-size: 24rpx;
+  color: var(--tt-text-1);
+}
+
+.en-item-input {
+  width: 104rpx;
+  padding: 8rpx 12rpx;
+  text-align: center;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-bg-page);
+  font-size: 25rpx;
+  color: var(--tt-text-1);
+}
+
+.en-item-max {
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+}
+
+.en-form-actions {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 28rpx;
+  /* 沉底留白：表单很长时手指从屏幕底部往上滑，提交按钮不会正好卡在系统手势区/安全区里 */
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.en-btn-ghost {
+  flex: 1;
+  text-align: center;
+  padding: 18rpx 0;
+  border-radius: 999rpx;
+  font-size: 26rpx;
+  color: var(--tt-text-2);
+  background: var(--tt-bg-page);
+}
+
+.en-btn {
+  flex: 1.4;
+  text-align: center;
+  padding: 18rpx 0;
+  border-radius: 999rpx;
+  font-size: 26rpx;
+  font-weight: 600;
+  color: #ffffff;
+  background: var(--tt-brand);
+}
+
+.en-btn.disabled {
+  opacity: 0.6;
+}
+
+/* ===== 半屏抽屉表单（B 端：填表不离开列表）=====
+   ⚠️ 抽屉用 fixed 定位，页面在它底下**还能滚**：被滚走的话「刚录完的对象」就再也回不到视野，
+   连续录入直接断掉。所以打开抽屉时给页面加 .en-body-locked 锁住滚动（见 entry.js::BODY_LOCK_CLASS）。 */
+.en-body-locked {
+  overflow: hidden;
+  height: 100vh;
+}
+
+.en-mask {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 100;
+}
+
+.en-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 101;
+  border-radius: 32rpx 32rpx 0 0;
+  background: var(--tt-card);
+  transform: translateY(110%);
+  transition: transform 0.24s ease;
+}
+
+.en-sheet.open {
+  transform: translateY(0);
+}
+
+/* 抽屉头部压一档：标题/图标/关闭都缩小，给表单留更多空间 */
+.en-sheet .tt-sheet-grab {
+  margin-top: 12rpx;
+}
+
+.en-sheet .tt-sheet-head {
+  gap: 12rpx;
+  padding: 12rpx 28rpx;
+}
+
+.en-sheet .tt-sheet-icon {
+  width: 60rpx;
+  height: 60rpx;
+  border-radius: 18rpx;
+}
+
+.en-sheet .tt-sheet-title {
+  font-size: 30rpx;
+}
+
+.en-sheet .tt-sheet-sub {
+  margin-top: 2rpx;
+  font-size: 20rpx;
+}
+
+.en-sheet .tt-sheet-close {
+  width: 52rpx;
+  height: 52rpx;
+}
+
+.en-sheet-inner {
+  display: flex;
+  flex-direction: column;
+  max-height: 90vh;
+  padding: 14rpx 28rpx 0;
+  overflow: hidden;
+}
+
+/* ⚠️ 滚动区必须给**确定高度**才真的能滚：只写 min-height:0 / flex:1 在真机上 scrollTop 恒为 0
+   （见 docs/ui-design.md「抽屉滚动区必须给确定高度」）。
+   第五轮把表单压短（实到不再手填）后，56vh 能多露出一屏内容，减少「表单太长不好操作」。 */
+.en-sheet .en-sheet-body {
+  flex: none;
+  min-height: 0;
+  max-height: 56vh;
+  padding: 0 2rpx 8rpx;
+}
+
+.en-sheet-foot {
+  flex-shrink: 0;
+  display: flex;
+  gap: 12rpx;
+  padding: 12rpx 0 calc(16rpx + env(safe-area-inset-bottom));
+}
+
+/* 刚录完的对象：高亮一下，让人知道下一个该录哪个（连续录入场景） */
+.en-target-focus {
+  background: var(--tt-brand-soft);
+  border-radius: var(--tt-radius-sm);
+  margin: 0 -12rpx;
+  padding-left: 12rpx;
+  padding-right: 12rpx;
+}

@@ -97,6 +97,15 @@ function draftLevel(index, type) {
 }
 
 Page({
+  // 权限重算（用户 2026-10-22「登录账户时一定要刷新缓存」）：
+  // 换账号登录后页面 data 里的 canManage 可能还是上一个身份的结论 ——
+  // 表现就是「只读账号仍看到操作按钮」。onShow 与登录回调都会调这里。
+  refreshPermission() {
+    const user = getApp().globalData.userInfo || {};
+    const perms = user.effectivePermissions || [];
+    this.setData({ canManage: perms.includes('*') || perms.includes('content.manage') });
+  },
+
   data: {
     list: [],
     singleCount: 0,
@@ -104,6 +113,10 @@ Page({
     types: TYPES,
     loading: false,
     saving: false,
+    // 写权限（用户 2026-10-22「只有查看权限时应该不显示操作功能按钮，
+    // 而不是点击后被后端拒绝掉」）：content.view 能看，content.manage 才能增删改。
+    // 新增 / 编辑 / 启停 / 保存 按钮与入口都按它隐藏。
+    canManage: false,
     formVisible: false,
     formMode: 'single',
     // 独立徽章表单
@@ -134,6 +147,8 @@ Page({
   },
 
   onShow() {
+    // 权限先重算再拉数据（用户 2026-10-22「登录账户时一定要刷新缓存」）
+    this.refreshPermission();
     this.load();
   },
 
@@ -141,6 +156,10 @@ Page({
     this.setData({ loading: true });
     try {
       await getApp().ensureLogin();
+      // 先算写权限（读接口 200 就说明有 content.view；写权限单独判 content.manage）
+      const user = getApp().globalData.userInfo || {};
+      const perms = user.effectivePermissions || [];
+      this.setData({ canManage: perms.includes('*') || perms.includes('content.manage') });
       const list = await auth.get('/api/admin/content/badges');
       this.setData(this.buildRows(list || []));
     } catch (e) {

@@ -1,0 +1,1303 @@
+/* 班级管理（管理员视角）：只用 app.wxss 的 --tt-* 令牌，与其它管理页同一套语言 */
+.cm-page {
+  padding-bottom: 40rpx;
+}
+
+.cm-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 12rpx;
+  margin: 0 var(--tt-gap) var(--tt-gap);
+  padding: 20rpx var(--tt-pad);
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-brand-soft);
+  font-size: 22rpx;
+  line-height: 1.6;
+  color: var(--tt-brand-deep);
+}
+
+/* 搜索与同步 */
+.cm-search {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  padding: 20rpx var(--tt-pad);
+}
+
+.cm-input {
+  flex: 1;
+  padding: 16rpx 20rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-bg-page);
+  font-size: 26rpx;
+  color: var(--tt-text-1);
+}
+
+.cm-mini-btn {
+  flex: 0 0 auto;
+  padding: 14rpx 24rpx;
+  border-radius: 999rpx;
+  font-size: 24rpx;
+  color: var(--tt-text-2);
+  background: var(--tt-bg-page);
+}
+
+.cm-mini-primary {
+  color: #ffffff;
+  background: var(--tt-brand);
+}
+
+.cm-mini-run {
+  color: var(--tt-brand-deep);
+  background: var(--tt-brand-soft-2);
+}
+
+.cm-mini-btn.disabled {
+  opacity: 0.6;
+}
+
+/* 筛选 */
+.cm-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin: 0 var(--tt-gap) var(--tt-gap);
+}
+
+.cm-pill {
+  padding: 10rpx 26rpx;
+  border-radius: 999rpx;
+  font-size: 24rpx;
+  color: var(--tt-text-2);
+  background: var(--tt-card);
+  box-shadow: var(--tt-card-shadow);
+}
+
+.cm-pill.active {
+  color: #ffffff;
+  background: var(--tt-brand);
+  font-weight: 600;
+}
+
+/* 台账列表 */
+.cm-list {
+  padding: 8rpx var(--tt-pad) var(--tt-pad);
+}
+
+.cm-item {
+  padding: 24rpx 0;
+  border-bottom: 1rpx solid var(--tt-line);
+}
+
+.cm-item:last-child {
+  border-bottom: none;
+}
+
+.cm-item-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12rpx;
+}
+
+.cm-name {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.cm-dept {
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+.cm-sub {
+  display: block;
+  margin-top: 8rpx;
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+/* 三个开关 */
+.cm-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin-top: 16rpx;
+}
+
+.cm-flag {
+  flex: 1 1 0;
+  min-width: 160rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4rpx;
+  padding: 14rpx 8rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-bg-page);
+}
+
+/* on / off 用不同底色：管理员一眼能看出哪些班被关掉了 */
+.cm-flag-on {
+  background: var(--tt-brand-soft);
+}
+
+.cm-flag-off {
+  background: rgba(213, 73, 65, 0.1);
+}
+
+.cm-flag-text {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.cm-flag-off .cm-flag-text {
+  color: var(--td-error-color-6, #d54941);
+}
+
+.cm-flag-action {
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+}
+
+.cm-run-hint {
+  display: block;
+  margin-top: 12rpx;
+  font-size: 21rpx;
+  color: var(--tt-text-3);
+}
+
+.cm-run-hint.cm-run-off {
+  color: var(--tt-brand-deep);
+}
+
+.cm-empty {
+  padding: 40rpx 0;
+  text-align: center;
+  font-size: 24rpx;
+  line-height: 1.7;
+  color: var(--tt-text-3);
+}
+
+/* 分页 */
+.cm-pages {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24rpx;
+  margin: 0 var(--tt-gap);
+}
+
+.cm-page-btn {
+  padding: 14rpx 32rpx;
+  border-radius: 999rpx;
+  font-size: 24rpx;
+  color: var(--tt-brand-deep);
+  background: var(--tt-card);
+  box-shadow: var(--tt-card-shadow);
+}
+
+.cm-page-btn.disabled {
+  color: var(--tt-text-3);
+  opacity: 0.6;
+}
+
+.cm-page-text {
+  font-size: 24rpx;
+  color: var(--tt-text-2);
+}
+
+/* ===== 院校 / 系部 / 专业 / 年级筛选（flex-wrap 两行 2×2）=====
+   四级一行放不下，所以 flex-wrap 成两行、每行两列：flex-basis 用 calc 卡死两列宽度，
+   长院校名 / 长专业名照样省略号，不会把旁边一列挤变形。
+   沿用现有 .cm-picker-box「标签在上、值 + 箭头在下」的两行样式与 --tt-* 令牌。 */
+.cm-pickers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin: 0 var(--tt-gap) 12rpx;
+}
+
+.cm-picker {
+  flex: 0 0 calc((100% - 12rpx) / 2);
+  min-width: 0;
+}
+
+.cm-picker-box {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6rpx;
+  padding: 14rpx 18rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-card);
+  box-shadow: var(--tt-card-shadow);
+}
+
+.cm-picker-line {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  width: 100%;
+  min-width: 0;
+}
+
+.cm-picker-label {
+  flex: 0 0 auto;
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+.cm-picker-value {
+  flex: 1;
+  min-width: 0;
+  font-size: 25rpx;
+  color: var(--tt-text-1);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cm-pill-clear {
+  color: var(--tt-brand-deep);
+  background: var(--tt-brand-soft-2);
+}
+
+/* 院校 / 系部选项为空时的同步引导（空下拉与「没做这功能」看起来一样，必须说出来） */
+.cm-facet-hint {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  margin: 0 var(--tt-gap) 12rpx;
+  padding: 14rpx 20rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-brand-soft);
+  font-size: 22rpx;
+  line-height: 1.5;
+  color: var(--tt-brand-deep);
+}
+
+/* 专业级为空的轻量说明：同一行的语气，但更淡（不当成故障提示，只解释"这一层还没数据"） */
+.cm-spec-hint {
+  background: var(--tt-bg-page);
+  color: var(--tt-text-3);
+}
+
+/* ===== 教室行（点一下即改）===== */
+.cm-line {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-top: 14rpx;
+  padding: 14rpx 18rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-bg-page);
+}
+
+.cm-line-label {
+  flex: 0 0 auto;
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+.cm-line-value {
+  flex: 1;
+  min-width: 0;
+  font-size: 26rpx;
+  color: var(--tt-text-1);
+}
+
+.cm-line-value.cm-line-empty {
+  color: var(--tt-text-3);
+}
+
+/* ===== 卫生区 / 宿舍 入口 ===== */
+.cm-links {
+  display: flex;
+  gap: 12rpx;
+  margin-top: 14rpx;
+}
+
+.cm-link {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  padding: 16rpx 20rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-brand-soft);
+}
+
+.cm-link-text {
+  font-size: 25rpx;
+  color: var(--tt-brand-deep);
+}
+
+/* ===== 卫生区多选抽屉 =====
+     与 dorms 页的抽屉同一套结构：抽屉自身 fixed + flex 列 + max-height，
+     滚动区必须给确定高度（scroll-view 在 fixed 容器里靠 flex 分配高度是滚不动的，
+     见 docs/ui-design.md「抽屉滚动区必须给确定高度」）。 */
+.cm-mask {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 20;
+}
+
+.cm-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 21;
+  display: flex;
+  flex-direction: column;
+  max-height: 82vh;
+  overflow: hidden;
+  padding: 28rpx 32rpx calc(32rpx + env(safe-area-inset-bottom));
+  border-radius: 32rpx 32rpx 0 0;
+  background: var(--tt-card);
+  transform: translateY(110%);
+  transition: transform 0.24s ease;
+}
+
+.cm-sheet.open {
+  transform: translateY(0);
+}
+
+.cm-sheet-head {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16rpx;
+}
+
+.cm-sheet-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.cm-sheet-close {
+  font-size: 26rpx;
+  color: var(--tt-text-3);
+}
+
+.cm-sheet-body {
+  flex: none;
+  min-height: 0;
+  max-height: 52vh;
+}
+
+.cm-sheet-hint {
+  margin-bottom: 14rpx;
+  font-size: 21rpx;
+  line-height: 1.6;
+  color: var(--tt-text-3);
+}
+
+.cm-area {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 20rpx 0;
+  border-bottom: 1rpx solid var(--tt-line);
+}
+
+.cm-area:last-child {
+  border-bottom: none;
+}
+
+.cm-area-check {
+  flex: 0 0 auto;
+  width: 40rpx;
+  height: 40rpx;
+  border-radius: 50%;
+  border: 2rpx solid var(--tt-line);
+  background: var(--tt-card);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cm-area-check.on {
+  border-color: var(--tt-brand);
+  background: var(--tt-brand);
+}
+
+.cm-area-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4rpx;
+}
+
+.cm-area-name {
+  font-size: 27rpx;
+  color: var(--tt-text-1);
+}
+
+/* 「新增」标记：区分就地新建的区域与已有区域（保存前管理员要能看出哪些是新的） */
+.cm-area-new {
+  margin-left: 10rpx;
+  padding: 2rpx 12rpx;
+  border-radius: 999rpx;
+  font-size: 19rpx;
+  color: #ffffff;
+  background: var(--tt-brand);
+}
+
+/* 就地新建区域（全校卫生区没有独立维护页，空列表时必须能在这一页建） */
+.cm-newarea {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-bottom: 16rpx;
+}
+
+.cm-newarea-input {
+  flex: 1;
+  padding: 16rpx 20rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-bg-page);
+  font-size: 26rpx;
+  color: var(--tt-text-1);
+}
+
+.cm-newarea-btn {
+  flex: 0 0 auto;
+  padding: 14rpx 28rpx;
+  border-radius: 999rpx;
+  font-size: 25rpx;
+  font-weight: 600;
+  color: #ffffff;
+  background: var(--tt-brand);
+}
+
+.cm-area-sub {
+  font-size: 21rpx;
+  color: var(--tt-text-3);
+}
+
+.cm-sheet-empty {
+  padding: 40rpx 0;
+  text-align: center;
+  font-size: 23rpx;
+  color: var(--tt-text-3);
+}
+
+.cm-sheet-actions {
+  flex-shrink: 0;
+  display: flex;
+  gap: 16rpx;
+  margin-top: 22rpx;
+}
+
+.cm-btn-ghost {
+  flex: 1;
+  text-align: center;
+  padding: 22rpx 0;
+  border-radius: 999rpx;
+  font-size: 28rpx;
+  color: var(--tt-text-2);
+  background: var(--tt-bg-page);
+}
+
+.cm-btn {
+  flex: 1.4;
+  text-align: center;
+  padding: 22rpx 0;
+  border-radius: 999rpx;
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #ffffff;
+  background: var(--tt-brand);
+}
+
+
+/* ===== 紧凑改版：顶部搜索 + 批量条 + 双列元信息 + 单行 chip ===== */
+.cm-top {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  padding: 10rpx var(--tt-gap);
+}
+
+.cm-search-box {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  height: 64rpx;
+  padding: 0 16rpx;
+  border-radius: 999rpx;
+  background: var(--tt-card);
+}
+
+.cm-search-box .cm-input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  background: transparent;
+  font-size: 23rpx;
+}
+
+.cm-clear {
+  flex-shrink: 0;
+  font-size: 19rpx;
+  color: var(--tt-text-3);
+}
+
+.cm-top-actions {
+  flex-shrink: 0;
+  display: flex;
+  gap: 6rpx;
+}
+
+.cm-mini-btn {
+  padding: 0 16rpx;
+  height: 64rpx;
+  line-height: 64rpx;
+  border-radius: 999rpx;
+  font-size: 21rpx;
+  color: var(--tt-text-2);
+  background: var(--tt-card);
+}
+
+.cm-mini-btn.active {
+  color: #ffffff;
+  background: var(--tt-brand);
+}
+
+/* 批量条 */
+.cm-bulk-bar {
+  margin: 0 var(--tt-gap) 8rpx;
+  padding: 12rpx 14rpx;
+  border-radius: var(--tt-radius);
+  background: var(--tt-brand-soft);
+}
+
+.cm-bulk-row {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+}
+
+.cm-bulk-l {
+  flex: 1;
+  min-width: 0;
+  font-size: 21rpx;
+  font-weight: 600;
+  color: var(--tt-brand-deep);
+}
+
+.cm-bulk-link {
+  font-size: 19rpx;
+  color: var(--tt-brand-deep);
+}
+
+.cm-bulk-btns {
+  display: flex;
+  gap: 8rpx;
+  margin-top: 10rpx;
+}
+
+.cm-bulk-btn {
+  flex: 1;
+  text-align: center;
+  padding: 12rpx 0;
+  border-radius: 10rpx;
+  font-size: 21rpx;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.cm-bulk-btn.normal {
+  background: var(--tt-brand);
+}
+
+.cm-bulk-btn.intern {
+  background: var(--td-warning-color-6, #d98a0b);
+}
+
+.cm-bulk-btn.graduated {
+  background: var(--td-error-color-6, #d54941);
+}
+
+.cm-bulk-hint {
+  display: block;
+  margin-top: 8rpx;
+  font-size: 17rpx;
+  line-height: 1.5;
+  color: var(--tt-brand-deep);
+}
+
+/* 四联筛选 */
+.cm-pickers {
+  display: flex;
+  gap: 6rpx;
+  padding: 0 var(--tt-gap);
+}
+
+.cm-picker {
+  flex: 1;
+  min-width: 0;
+}
+
+.cm-picker-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2rpx;
+  padding: 8rpx 9rpx;
+  border-radius: 10rpx;
+  background: var(--tt-card);
+}
+
+.cm-picker-value {
+  flex: 1;
+  min-width: 0;
+  font-size: 19rpx;
+  color: var(--tt-text-2);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cm-filters {
+  gap: 7rpx;
+  padding: 8rpx var(--tt-gap);
+}
+
+.cm-pill {
+  padding: 6rpx 14rpx;
+  font-size: 19rpx;
+}
+
+.cm-list {
+  padding: 2rpx var(--tt-gap) var(--tt-gap);
+}
+
+.cm-item {
+  margin-bottom: 8rpx;
+  padding: 12rpx 14rpx;
+  border-radius: var(--tt-radius);
+  border-bottom: none;
+  background: var(--tt-card);
+  box-shadow: var(--tt-card-shadow);
+}
+
+.cm-item-head {
+  align-items: center;
+  gap: 8rpx;
+}
+
+.cm-check {
+  flex-shrink: 0;
+  width: 34rpx;
+  height: 34rpx;
+  border: 2rpx solid var(--tt-line);
+  border-radius: 8rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cm-check.on {
+  border-color: var(--tt-brand);
+  background: var(--tt-brand);
+}
+
+.cm-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 25rpx;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cm-status {
+  flex-shrink: 0;
+  padding: 1rpx 8rpx;
+  border-radius: 999rpx;
+  font-size: 17rpx;
+}
+
+.cm-status-normal {
+  color: var(--tt-brand-deep);
+  background: var(--tt-brand-soft);
+}
+
+.cm-status-intern {
+  color: var(--td-warning-color-6, #d98a0b);
+  background: rgba(217, 138, 11, 0.14);
+}
+
+.cm-status-graduated {
+  color: var(--td-error-color-6, #d54941);
+  background: rgba(213, 73, 65, 0.12);
+}
+
+.cm-dept {
+  flex-shrink: 1;
+  max-width: 44%;
+  font-size: 18rpx;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cm-meta {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  margin-top: 6rpx;
+}
+
+.cm-meta-item {
+  font-size: 18rpx;
+  color: var(--tt-text-3);
+}
+
+.cm-meta-class {
+  margin-left: auto;
+  max-width: 50%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--tt-text-2);
+}
+
+.cm-flags {
+  gap: 6rpx;
+  margin-top: 8rpx;
+}
+
+.cm-flag {
+  flex: 0 0 auto;
+  min-width: 0;
+  flex-direction: row;
+  gap: 0;
+  padding: 5rpx 12rpx;
+  border-radius: 999rpx;
+  font-size: 18rpx;
+  font-weight: 500;
+  color: var(--tt-text-2);
+}
+
+.cm-flag-on {
+  color: var(--tt-brand-deep);
+  background: var(--tt-brand-soft);
+}
+
+.cm-flag-off {
+  color: var(--td-error-color-6, #d54941);
+  background: rgba(213, 73, 65, 0.1);
+}
+
+.cm-flag-link {
+  color: var(--tt-text-2);
+  background: var(--tt-bg-page);
+}
+
+.cm-flag-status {
+  margin-left: auto;
+  color: var(--tt-brand-deep);
+  background: var(--tt-brand-soft-2);
+}
+
+.cm-run-hint {
+  margin-top: 6rpx;
+  font-size: 18rpx;
+}
+
+.cm-page .tt-section {
+  margin: 10rpx var(--tt-gap) 6rpx;
+  font-size: 25rpx;
+}
+
+.cm-page .tt-section::before {
+  width: 6rpx;
+  height: 22rpx;
+}
+
+.cm-facet-hint {
+  margin: 4rpx var(--tt-gap) 0;
+  font-size: 18rpx;
+}
+
+.cm-page .tt-footer {
+  padding: 12rpx 28rpx 24rpx;
+  font-size: 19rpx;
+}
+
+
+/* ===== 改版：工具栏 + 批量面板 + 新卡片结构 ===== */
+.cm-top {
+  padding: 8rpx var(--tt-gap) 6rpx;
+}
+
+.cm-search-box {
+  height: 60rpx;
+}
+
+.cm-mini-btn {
+  height: 60rpx;
+  line-height: 60rpx;
+  padding: 0 20rpx;
+  font-size: 21rpx;
+}
+
+.cm-pickers {
+  padding: 0 var(--tt-gap);
+  gap: 6rpx;
+}
+
+.cm-picker-box {
+  padding: 7rpx 8rpx;
+}
+
+.cm-picker-value {
+  font-size: 18rpx;
+}
+
+.cm-filters {
+  padding: 8rpx var(--tt-gap) 4rpx;
+  gap: 6rpx;
+}
+
+.cm-pill {
+  padding: 5rpx 12rpx;
+  font-size: 18rpx;
+}
+
+/* 工具栏 */
+.cm-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8rpx;
+  padding: 8rpx var(--tt-gap) 4rpx;
+}
+
+.cm-toolbar-t {
+  font-size: 25rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.cm-toolbar-n {
+  font-size: 19rpx;
+  color: var(--tt-text-3);
+}
+
+.cm-toolbar-link {
+  font-size: 19rpx;
+  color: var(--tt-brand-deep);
+}
+
+.cm-toolbar-sel {
+  padding: 1rpx 8rpx;
+  border-radius: 999rpx;
+  font-size: 17rpx;
+  color: #ffffff;
+  background: var(--tt-brand);
+}
+
+.cm-toolbar-sync {
+  margin-left: auto;
+  padding: 5rpx 12rpx;
+  border-radius: 999rpx;
+  background: var(--tt-brand-soft);
+}
+
+.cm-toolbar-sync.disabled {
+  opacity: 0.6;
+}
+
+/* 批量面板 */
+.cm-bulk-panel {
+  margin: 4rpx var(--tt-gap) 6rpx;
+  padding: 12rpx 14rpx;
+  border-radius: var(--tt-radius);
+  background: var(--tt-card);
+  box-shadow: var(--tt-card-shadow);
+}
+
+.cm-bulk-scope {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  padding-bottom: 10rpx;
+  border-bottom: 1rpx solid var(--tt-line);
+}
+
+.cm-bulk-scope-l {
+  font-size: 19rpx;
+  color: var(--tt-text-3);
+}
+
+.cm-bulk-scope-v {
+  font-size: 20rpx;
+  font-weight: 600;
+  color: var(--tt-brand-deep);
+}
+
+.cm-bulk-group {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  padding: 9rpx 0;
+  border-bottom: 1rpx solid var(--tt-line);
+}
+
+.cm-bulk-group:last-of-type {
+  border-bottom: none;
+}
+
+.cm-bulk-title {
+  flex-shrink: 0;
+  width: 96rpx;
+  font-size: 19rpx;
+  color: var(--tt-text-2);
+}
+
+.cm-bulk-chips {
+  display: flex;
+  flex: 1;
+  gap: 6rpx;
+}
+
+.cm-bulk-chip {
+  flex: 1;
+  text-align: center;
+  padding: 8rpx 0;
+  border-radius: 9rpx;
+  font-size: 19rpx;
+  font-weight: 500;
+  color: var(--tt-text-2);
+  background: var(--tt-bg-page);
+}
+
+.cm-bulk-chip.s-normal,
+.cm-bulk-chip.f-on {
+  color: var(--tt-brand-deep);
+  background: var(--tt-brand-soft);
+}
+
+.cm-bulk-chip.s-intern {
+  color: var(--td-warning-color-6, #d98a0b);
+  background: rgba(217, 138, 11, 0.14);
+}
+
+.cm-bulk-chip.s-graduated,
+.cm-bulk-chip.f-off {
+  color: var(--td-error-color-6, #d54941);
+  background: rgba(213, 73, 65, 0.1);
+}
+
+.cm-bulk-hint {
+  display: block;
+  padding-top: 9rpx;
+  font-size: 17rpx;
+  line-height: 1.5;
+  color: var(--tt-text-3);
+}
+
+/* 卡片 */
+.cm-list {
+  padding: 2rpx var(--tt-gap) var(--tt-gap);
+}
+
+.cm-item {
+  margin-bottom: 7rpx;
+  padding: 11rpx 13rpx;
+}
+
+.cm-item.checked {
+  box-shadow: 0 0 0 2rpx var(--tt-brand) inset;
+}
+
+.cm-head-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2rpx;
+}
+
+.cm-head-line {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  min-width: 0;
+}
+
+.cm-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 24rpx;
+  font-weight: 600;
+}
+
+.cm-dept {
+  max-width: 100%;
+  font-size: 17rpx;
+}
+
+.cm-count {
+  flex-shrink: 0;
+  font-size: 28rpx;
+  font-weight: 700;
+  color: var(--tt-text-1);
+}
+
+.cm-meta {
+  gap: 6rpx;
+  margin-top: 5rpx;
+}
+
+.cm-meta-item {
+  font-size: 17rpx;
+}
+
+.cm-meta-sep {
+  font-size: 17rpx;
+  color: var(--tt-line);
+}
+
+.cm-meta-class {
+  font-size: 17rpx;
+}
+
+.cm-flags {
+  gap: 5rpx;
+  margin-top: 7rpx;
+}
+
+.cm-flag {
+  padding: 4rpx 11rpx;
+  font-size: 17rpx;
+}
+
+.cm-flag-more {
+  margin-left: auto;
+  color: var(--tt-text-2);
+  background: var(--tt-bg-page);
+}
+
+.cm-run-hint {
+  margin-top: 5rpx;
+  font-size: 17rpx;
+  color: var(--tt-brand-deep);
+}
+
+.cm-page .tt-section {
+  display: none;
+}
+
+.cm-facet-hint {
+  padding: 2rpx var(--tt-gap);
+  font-size: 17rpx;
+}
+
+
+/* ===== 极简列表：两行信息 + 一行标记 ===== */
+.cm-pickers {
+  display: flex;
+  gap: 6rpx;
+  padding: 0 var(--tt-gap);
+  margin-top: 6rpx;
+}
+
+.cm-pickers-2 {
+  margin-top: 6rpx;
+}
+
+.cm-pickers-2 .cm-picker {
+  flex: 1.1;
+}
+
+.cm-picker {
+  flex: 1;
+  min-width: 0;
+}
+
+.cm-picker-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2rpx;
+  padding: 9rpx 10rpx;
+  border-radius: 10rpx;
+  border: 1rpx solid transparent;
+  background: var(--tt-card);
+}
+
+.cm-picker-box.on {
+  border-color: var(--tt-brand);
+  background: var(--tt-brand-soft);
+}
+
+.cm-picker-value {
+  flex: 1;
+  min-width: 0;
+  font-size: 20rpx;
+  color: var(--tt-text-2);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cm-picker-box.on .cm-picker-value {
+  color: var(--tt-brand-deep);
+  font-weight: 600;
+}
+
+.cm-reset {
+  flex-shrink: 0;
+  padding: 9rpx 12rpx;
+  font-size: 19rpx;
+  color: var(--tt-brand-deep);
+}
+
+.cm-toolbar {
+  padding: 10rpx var(--tt-gap) 4rpx;
+}
+
+.cm-toolbar-t {
+  font-size: 24rpx;
+  font-weight: 600;
+}
+
+.cm-toolbar-n {
+  font-size: 18rpx;
+}
+
+.cm-list {
+  padding: 0 var(--tt-gap) var(--tt-gap);
+}
+
+.cm-item {
+  margin-bottom: 7rpx;
+  padding: 11rpx 13rpx;
+  background: var(--tt-card);
+}
+
+.cm-row-main {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+}
+
+.cm-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3rpx;
+}
+
+.cm-line1 {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  min-width: 0;
+}
+
+.cm-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 24rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cm-line2 {
+  font-size: 18rpx;
+  color: var(--tt-text-3);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cm-open {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 54rpx;
+  height: 54rpx;
+}
+
+.cm-flags {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5rpx;
+  margin-top: 7rpx;
+}
+
+.cm-flag {
+  padding: 3rpx 10rpx;
+  border-radius: 999rpx;
+  font-size: 17rpx;
+  font-weight: 500;
+  color: var(--tt-text-2);
+  background: var(--tt-bg-page);
+}
+
+.cm-flag.on {
+  color: var(--tt-brand-deep);
+  background: var(--tt-brand-soft);
+}
+
+.cm-flag.off {
+  color: var(--td-error-color-6, #d54941);
+  background: rgba(213, 73, 65, 0.1);
+}
+
+.cm-flag-class {
+  margin-left: auto;
+  max-width: 46%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cm-check {
+  width: 32rpx;
+  height: 32rpx;
+  border-radius: 7rpx;
+}
+
+.cm-status {
+  padding: 1rpx 7rpx;
+  font-size: 16rpx;
+}
+
+.cm-page .tt-footer {
+  padding: 10rpx 28rpx 22rpx;
+  font-size: 18rpx;
+}
+
+
+/* 批量模式下整卡可点：给一点点击反馈与手型暗示 */
+.cm-item.selectable:active {
+  background: var(--tt-brand-soft);
+}
+
+.cm-item.checked {
+  background: var(--tt-brand-soft);
+}

@@ -1,0 +1,75 @@
+<view class="page tt-page cd-page">
+  <!-- ===== 顶部：绑定进度（压成一行）===== -->
+  <view class="cd-hero">
+    <view class="cd-hero-top">
+      <text class="cd-hero-title">{{className}}</text>
+      <text class="cd-hero-sub">宿舍绑定</text>
+    </view>
+    <view class="cd-hero-stats">
+      <view class="cd-hero-stat">
+        <text class="num-font cd-hero-v">{{assigned}}</text>
+        <text class="cd-hero-l">已绑定</text>
+      </view>
+      <view class="cd-hero-stat">
+        <text class="num-font cd-hero-v">{{unassigned}}</text>
+        <text class="cd-hero-l">未分配</text>
+      </view>
+      <view class="cd-hero-stat">
+        <text class="num-font cd-hero-v">{{buildings.length}}</text>
+        <text class="cd-hero-l">楼栋</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- ===== 搜索 + 只看未分配（一行）===== -->
+  <view class="cd-tools">
+    <view class="cd-search">
+      <t-icon name="search" size="24rpx" color="var(--tt-text-3)" />
+      <input class="cd-input" placeholder="搜索姓名 / 学号 / 房间" value="{{keyword}}" bindinput="onKeyword" />
+      <text class="cd-clear" wx:if="{{keyword}}" bind:tap="clearKeyword">清空</text>
+    </view>
+    <view class="cd-pill {{onlyUnassigned ? 'active' : ''}}" bind:tap="toggleUnassigned">只看未分配</view>
+  </view>
+
+  <!-- ===== 学生列表：双列 ===== -->
+  <view class="cd-grid">
+    <view
+      class="cd-stu {{item.assigned ? 'done' : ''}}"
+      wx:for="{{shown}}"
+      wx:key="userId"
+      data-id="{{item.userId}}"
+      bind:tap="openBind"
+    >
+      <view class="cd-stu-line1">
+        <text class="cd-stu-name">{{item.name}}</text>
+        <t-icon name="chevron-right" size="22rpx" color="var(--tt-text-3)" />
+      </view>
+      <text class="cd-stu-sub">{{item.studentId || '—'}}</text>
+      <view class="cd-stu-room {{item.assigned ? '' : 'cd-stu-none'}}">
+        <text>{{item.roomText}}</text>
+        <text class="cd-stu-bed" wx:if="{{item.bedNo}}">{{item.bedNo}}床</text>
+      </view>
+    </view>
+    <view class="cd-empty" wx:if="{{!loading && !shown.length}}">没有符合条件的学生</view>
+  </view>
+
+  <view class="tt-footer">{{shown.length}} 人 · 点学生即可绑定或改绑宿舍；查宿与宿舍卫生按「学生住哪间」计算</view>
+
+  <!-- ===== 绑定抽屉：公共组件 dorm-sheet ===== -->
+  <dorm-sheet
+    visible="{{sheetVisible}}"
+    title="{{sheet ? sheet.name + ' 的宿舍' : '所住房间'}}"
+    sub="{{sheetSub}}"
+    room-text="{{sheetForm.roomText}}"
+    bed-no="{{sheetForm.bedNo}}"
+    buildings="{{buildings}}"
+    quick-rooms="{{quickRooms}}"
+    saving="{{saving}}"
+    can-unbind="{{sheetCanUnbind}}"
+    unbind-text="退宿"
+    bind:change="onSheetChange"
+    bind:save="submitBind"
+    bind:unbind="unbind"
+    bind:close="closeSheet"
+  />
+</view>

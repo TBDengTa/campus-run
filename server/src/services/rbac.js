@@ -90,7 +90,13 @@ async function seedPermissions() {
   }
 
   // 2. 内置权限组
+  // ⚠️ customized=true 的组**跳过覆盖**（用户 2026-10-20 放开内置组编辑后必须配套改这里）：
+  //   播种每次启动都 $set 全量字段，若管理员改过的组仍被播种，改动会在下次重启**静默消失**——
+  //   比"不能改"更糟（当下生效、之后没效果，没人会想到是重启抹的）。
+  //   customized 标记由 PUT /permission-groups/:id 在保存内置组时写入；superadmin 不可编辑，永远走播种。
   for (const g of PermissionGroup.DEFAULT_GROUPS) {
+    const exists = await PermissionGroup.findOne({ key: g.key }).lean();
+    if (exists && exists.customized) continue;
     await PermissionGroup.updateOne(
       { key: g.key },
       { $set: { name: g.name, permissions: g.permissions, description: g.description, builtIn: true } },

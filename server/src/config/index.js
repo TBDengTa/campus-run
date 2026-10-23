@@ -1,4 +1,10 @@
-require('dotenv').config();
+// 显式指定 .env 路径（server/.env），而不是依赖 process.cwd()：
+//   · systemd 下 cwd 是 WorkingDirectory，正常；
+//   · 手工从别的目录 `node /opt/campus-run/server/src/index.js` 启动时 cwd 不是 server/，
+//     默认解析会读不到 .env → 表现为「JWT_SECRET 未配置」或连错数据库。
+// path.resolve(__dirname, '../../.env') = server/.env（本文件在 server/src/config/ 下）。
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 
 const config = {
   port: Number(process.env.PORT || 3000),

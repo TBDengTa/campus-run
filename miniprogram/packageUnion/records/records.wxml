@@ -1,0 +1,87 @@
+<view class="page tt-page rs-page">
+  <!-- ===== 吸顶筛选（紧凑版：模块/状态 + 高频/日期快捷 + 精确日期） ===== -->
+  <view class="rs-filters">
+    <view class="rs-filter-card">
+      <view class="rs-row">
+        <!-- 模块筛选：/api/union/mine 对**所有人**都下发模块清单（非成员的 canEnter 为 false），
+             所以班主任/班委也能按模块筛本班记录 —— 这个筛选是**有用**的，不要跟着「仅我的」一起藏。 -->
+        <picker wx:if="{{modules.length > 1}}" mode="selector" range="{{modules}}" range-key="label" value="{{moduleIndex}}" bindchange="onModuleChange">
+          <view class="rs-pill {{moduleIndex ? 'on' : ''}}">
+            <t-icon name="app" size="22rpx" />
+            <text>{{modules[moduleIndex].label}}</text>
+          </view>
+        </picker>
+        <picker mode="selector" range="{{statuses}}" range-key="label" value="{{statusIndex}}" bindchange="onStatusChange">
+          <view class="rs-pill {{statusIndex ? 'on' : ''}}">
+            <t-icon name="filter" size="22rpx" />
+            <text>{{statuses[statusIndex].label}}</text>
+          </view>
+        </picker>
+        <view
+          class="rs-pill rs-pill-clear"
+          wx:if="{{moduleIndex || statusIndex || fromDate || toDate || mine || pendingAppeal}}"
+          bind:tap="resetFilters"
+        >重置</view>
+      </view>
+
+      <!-- 高频筛选 + 日期快捷合并一行：少占一行，现场高频操作仍在第一屏。
+           「仅我的」「待复核」是**学生会专属**（我提交的 / 等我复核的）：
+           班主任与班委既不提交也不复核，这两项对他们恒为空 → 不渲染，改给「申诉中」。 -->
+      <view class="rs-row rs-row-chips">
+        <view class="rs-quick {{mine ? 'on' : ''}}" wx:if="{{isMember}}" bind:tap="toggleMine">仅我的</view>
+        <view class="rs-quick {{statuses[statusIndex].key === 'submitted' ? 'on' : ''}}" wx:if="{{canReview}}" bind:tap="togglePending">待复核</view>
+        <view class="rs-quick {{pendingAppeal ? 'on' : ''}}" wx:if="{{classView || !canReview || pendingAppeal}}" bind:tap="toggleAppeal">申诉中</view>
+        <view
+          class="rs-quick {{activePreset === item.key ? 'on' : ''}}"
+          wx:for="{{datePresets}}"
+          wx:key="key"
+          data-key="{{item.key}}"
+          bind:tap="onPresetDate"
+        >{{item.label}}</view>
+        <view class="rs-quick rs-quick-ghost" wx:if="{{fromDate || toDate}}" bind:tap="clearDates">清除日期</view>
+      </view>
+
+      <!-- 精确日期 -->
+      <view class="rs-row rs-row-dates">
+        <picker class="rs-picker" mode="date" value="{{fromDate}}" bindchange="onFromDate">
+          <view class="rs-date {{fromDate ? 'on' : ''}}">{{fromDate || '开始日期'}}</view>
+        </picker>
+        <text class="rs-date-sep">~</text>
+        <picker class="rs-picker" mode="date" value="{{toDate}}" bindchange="onToDate">
+          <view class="rs-date {{toDate ? 'on' : ''}}">{{toDate || '结束日期'}}</view>
+        </picker>
+      </view>
+
+      <view class="rs-tip">{{filterTip}}</view>
+    </view>
+  </view>
+
+  <!-- ===== 双列记录卡片 ===== -->
+  <view class="tt-section">
+    <text>{{title}}</text>
+    <text class="tt-section-extra">{{total}} 条</text>
+  </view>
+  <view class="rs-grid">
+    <view class="rs-card" wx:for="{{list}}" wx:key="id" data-id="{{item.id}}" bind:tap="goRecord">
+      <view class="rs-card-head">
+        <text class="rs-module">{{item.moduleName}}</text>
+        <text class="rs-status rs-status-{{item.statusClass}}">{{item.statusText}}</text>
+      </view>
+      <text class="rs-card-target">{{item.targetName}}</text>
+      <text class="rs-card-sub">{{item.dateText}} · {{item.inspectorName || '—'}}</text>
+      <view class="rs-card-foot">
+        <text class="num-font rs-deduct">{{item.deductText}}</text>
+        <view class="rs-appeal rs-appeal-{{item.appealClass}}" wx:if="{{item.appealText}}">
+          <t-icon name="chat" size="18rpx" />
+          <text>{{item.appealText}}</text>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view class="rs-empty" wx:if="{{!loading && !list.length}}">没有符合条件的记录</view>
+  <view class="rs-more" wx:if="{{loadingMore}}">加载中…</view>
+  <view class="rs-more" wx:elif="{{!hasMore && list.length}}">没有更多了</view>
+
+  <view class="tt-footer">扣分为该条记录计入班级班超总评的分值</view>
+</view>

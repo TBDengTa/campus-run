@@ -110,12 +110,16 @@ Page({
     days: { list: [], total: 0, page: 1, loading: false, done: false },
     // 每周记录
     weeks: { list: [], loading: false },
+    // 广告卡刷新信号（记录页卡片位）
+    adRefreshAt: 0,
   },
 
   onShow() {
     // 未登录 / 已退出 / 游客：统一跳登录页，不执行任何业务逻辑
     if (!getApp().requireLogin()) return;
     this.syncTabBar();
+    // 让记录页广告卡跟着页面一起刷新
+    this.setData({ adRefreshAt: Date.now() });
     this.reload();
   },
 

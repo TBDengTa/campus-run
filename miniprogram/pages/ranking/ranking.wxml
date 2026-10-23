@@ -93,7 +93,7 @@
     <view class="me-skel me-skel-cell"></view>
     <view class="me-skel me-skel-cell"></view>
   </view>
-  <!-- 班级榜的「我的」= 我的班级 -->
+  <!-- 班级榜的「我的」= 我所在的班（班主任 / 班委看本班详情请用「我的班级」页） -->
   <view class="tt-card me-card" wx:elif="{{rank && kind === 'class'}}">
     <view class="me-rank">
       <text class="me-rank-label">我的班级</text>
@@ -133,6 +133,9 @@
 
   <!-- 教师提示（班级榜是聚合值，不适用个人排除说明） -->
   <view class="rank-excluded" wx:if="{{rank.excluded && kind === 'person'}}">{{rank.excludedReason}}</view>
+
+  <!-- ===== 广告位（排行榜卡片位；无素材时整块不渲染） ===== -->
+  <ad-card slot-key="ranking_card" refresh-at="{{adRefreshAt}}" />
 
   <!-- ===== 加载中：骨架屏（微光扫过就是加载动画，不再放文案） ===== -->
   <view class="tt-card rank-card" wx:if="{{loading}}">

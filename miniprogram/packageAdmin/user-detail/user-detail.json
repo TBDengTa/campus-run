@@ -2,6 +2,7 @@
   "navigationBarTitleText": "用户详情",
   "usingComponents": {
     "ban-sheet": "/components/ban-sheet/ban-sheet",
+    "dorm-sheet": "/components/dorm-sheet/dorm-sheet",
     "t-checkbox-group": "tdesign-miniprogram/checkbox-group/checkbox-group"
   }
 }

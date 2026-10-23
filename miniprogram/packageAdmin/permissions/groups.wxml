@@ -10,15 +10,20 @@
         <view class="pg-name">
           <text class="pg-name-text">{{item.name}}</text>
           <t-tag wx:if="{{item.builtIn}}" theme="primary" variant="light" size="small">内置</t-tag>
+          <!-- 改过的内置组：播种不再覆盖它（用户 2026-10-20），必须标出来，
+               否则管理员会以为它还是"系统默认"，排查权限异常时被误导。 -->
+          <t-tag wx:if="{{item.customized}}" theme="warning" variant="light" size="small">已自定义</t-tag>
         </view>
         <view class="pg-meta">标识 {{item.key}} · {{item.permissionText}} · {{item.userCount}} 个账号</view>
         <view class="pg-perms" wx:if="{{item.permNames}}">{{item.permNames}}</view>
         <view class="pg-desc" wx:if="{{item.description}}">{{item.description}}</view>
       </view>
       <view class="pg-actions">
-        <view class="pg-btn" wx:if="{{!item.builtIn}}" bind:tap="openEdit" data-id="{{item._id}}">编辑</view>
+        <!-- 内置组可编辑（superadmin 除外：它固定 '*'，改坏等于把自己锁在门外）；
+             内置组仍不可删除（删除会让引用它的账号静默失去整组权限）。 -->
+        <view class="pg-btn" wx:if="{{item.key !== 'superadmin'}}" bind:tap="openEdit" data-id="{{item._id}}">编辑</view>
         <view class="pg-btn danger" wx:if="{{!item.builtIn}}" bind:tap="remove" data-id="{{item._id}}" data-name="{{item.name}}">删除</view>
-        <text class="pg-locked" wx:else>系统维护</text>
+        <text class="pg-locked" wx:if="{{item.key === 'superadmin'}}">系统维护</text>
       </view>
     </view>
     <view class="tt-empty" wx:if="{{!list.length && !loading}}">暂无权限组</view>
@@ -29,7 +34,7 @@
     <t-button theme="primary" block bind:tap="openCreate">+ 新增权限组</t-button>
   </view>
 
-  <view class="tt-footer">内置权限组由系统播种（每次启动重置）、不可修改或删除；仍被账号使用的组不可删除</view>
+  <view class="tt-footer">内置组可编辑（超级管理员组除外）；改过的内置组标「已自定义」，系统启动不再重置它。内置组不可删除，仍被账号使用的组不可删除</view>
 
   <!-- ===== 新增 / 编辑（底部抽屉 + 权限多选） ===== -->
   <t-popup visible="{{formVisible}}" placement="bottom" bind:visible-change="onFormVisible">

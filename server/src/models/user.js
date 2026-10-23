@@ -96,9 +96,14 @@ userSchema.methods.toSafeJSON = function () {
   return obj;
 };
 
-// 有效权限 = 直接授予 + 权限组展开；'*' 通配全部
+// 有效权限 = 直接授予 + 权限组展开 + 权限蕴含展开；'*' 通配全部
+//
+// ⚠️ 这里是**唯一**计算有效权限的地方：管理端中间件、/api/auth/me 的 effectivePermissions、
+// 前端导航显隐全部读它的结果。新增「持 A 即自动拥有 B」这类蕴含，只在
+// Permission.PERM_IMPLIES 里声明，然后在这里展开一次 —— 三条链路自动一致。
 userSchema.methods.getEffectivePermissions = async function () {
   const PermissionGroup = require('./permission-group');
+  const Permission = require('./permission');
   const direct = Array.isArray(this.permissions) ? this.permissions : [];
   if (direct.includes('*')) return ['*'];
   const groupKeys = Array.isArray(this.permissionGroups) ? this.permissionGroups : [];
@@ -110,7 +115,7 @@ userSchema.methods.getEffectivePermissions = async function () {
       set.add(p);
     }
   }
-  return [...set];
+  return Permission.expandImplies([...set]);
 };
 
 userSchema.methods.isManager = async function () {

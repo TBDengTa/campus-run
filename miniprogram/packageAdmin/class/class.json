@@ -1,5 +1,9 @@
 {
-  "navigationBarTitleText": "班级管理",
+  "navigationBarTitleText": "我的班级",
   "enablePullDownRefresh": true,
-  "backgroundTextStyle": "dark"
+  "backgroundTextStyle": "dark",
+  "usingComponents": {
+    "attendance": "/components/attendance/attendance",
+    "room-dialog": "/components/room-dialog/room-dialog"
+  }
 }

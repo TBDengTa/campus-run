@@ -1,0 +1,9 @@
+{
+  "navigationBarTitleText": "学生会成员",
+  "enablePullDownRefresh": true,
+  "backgroundTextStyle": "dark",
+  "usingComponents": {
+    "person-picker": "/components/person-picker/person-picker",
+    "t-swipe-cell": "tdesign-miniprogram/swipe-cell/swipe-cell"
+  }
+}

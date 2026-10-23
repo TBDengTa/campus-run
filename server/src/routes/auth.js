@@ -9,6 +9,9 @@ const ClassMonitor = require('../models/class-monitor');
 const wechat = require('../services/wechat');
 const pwd = require('../services/password');
 const deviceSvc = require('../services/login-device');
+// 学生会身份（只读装饰）：给 userInfo 补 isUnionMember / unionRoles / unionText，
+// 供首页「学生会块」与自定义 tabBar 决定导航项。不落库、不建缓存字段，避免换届后客户端读到老身份。
+const unionSvc = require('../services/union');
 
 const router = express.Router();
 
@@ -31,7 +34,10 @@ function signGuest(openid) {
 router.post(
   '/login',
   wrap(async (req, res) => {
-    const { code } = req.body || {};
+    // silent=true：小程序启动时用来「确认我是谁」的静默调用，只要身份，不要再发设备令牌。
+    // 为什么要这个开关：启动确认每次都会跑一遍，若无条件签发 deviceToken，
+    // login_devices 单用户上限 5 条会被这些静默调用挤满，把真正的「历史登录一键登录」记录挤掉。
+    const { code, silent } = req.body || {};
     if (!code) throw new ApiError(400, 400, '缺少 code');
 
     let openid;
@@ -96,12 +102,16 @@ router.post(
       const effective = await user.getEffectivePermissions();
       return ok(res, {
         token: signToken(user),
-        // 设备令牌：客户端存本地，用于「历史登录一键登录」
-        deviceToken: await deviceSvc.issue(user, req),
+        // 设备令牌：客户端存本地，用于「历史登录一键登录」（silent 静默确认时不签发）
+        deviceToken: silent ? undefined : await deviceSvc.issue(user, req),
         bound: true,
         mustChangePassword: !!user.mustChangePassword,
         isNew: false,
-        userInfo: { ...user.toSafeJSON(), effectivePermissions: effective, isManager: effective.length > 0 },
+        userInfo: await unionSvc.decorateUser(user, {
+          ...user.toSafeJSON(),
+          effectivePermissions: effective,
+          isManager: effective.length > 0,
+        }),
       });
     }
 
@@ -111,48 +121,139 @@ router.post(
 );
 
 // 登录第二步：姓名 + 密码 绑定/登录（游客 token）
-// 规则：账号未被绑定 → 绑定当前微信；已被其他微信绑定 → 拒绝；不可解绑
+// 规则：账号未被绑定 → 绑定当前微信；
+//      已被其他微信绑定 → **学生拒绝、教师允许换绑**（见下面的绑定校验，用户 2026-10-22）；
+//      不可由用户自己解绑（解绑走管理端 user.manage）。
+//
+// ⚠️ 同名账号（学生×教师、或两个同名学生）的消歧口径（用户 2026-10-20「学生与教师账号重名」）：
+//   姓名唯一性只按「姓名 + 类型」（routes/admin/users.js），所以重名是**允许共存**的，
+//   不能改成全局唯一（现实中同名师生大量存在，且存量已有 41 组同名）。
+//   因此这里必须做到三件事，否则会串号 / 误锁：
+//   ① 失败计数**只计入本次真正针对的那个账号**：旧实现给所有同名候选都 +1，
+//      学生输错 5 次会把同名的教师一起锁掉（一个人手滑锁掉另一个人）。
+//   ② 多个候选都能匹配密码时**绝不盲选第一个**（旧实现 matched[0] 会静默登进别人的身份）。
+//   ③ 有歧义就要求补学号（400902），由前端展开学号输入框精确匹配。
+//   代价：同名且未提供学号时不做失败计数（无法确定该惩罚哪个账号），
+//   但攻击者要真登录成功仍必须猜中学号，届时该账号照常计数锁定。
+const NEED_STUDENT_ID = 400902;
+
 router.post(
   '/bind',
   auth,
   wrap(async (req, res) => {
-    const { account, password } = req.body || {};
-    if (!req.guestOpenid) throw new ApiError(403, 403003, '请先通过微信登录');
+    const { account, password, studentId } = req.body || {};
+    // 当前微信的 openid 有两个来源（用户 2026-10-22「用另一个教师账号登录」）：
+    //   · 游客令牌 → req.guestOpenid（正常的「首次绑定」路径）；
+    //   · **已登录账号**的令牌 → 它自己的 openid。用途：登录页发现「这个微信已绑刘恩琦，
+    //     但我要登陈宇航」，用户可以选「用陈宇航登录」，此时就是把同一个微信换绑到另一个账号。
+    //   没有这条，教师换账号只能靠管理员解绑，测试时直接被卡死（截图里那个死胡同弹窗）。
+    const openid = req.guestOpenid || (req.user && req.user.openid) || '';
+    if (!openid) throw new ApiError(403, 403003, '请先通过微信登录');
     if (!account || !password) throw new ApiError(400, 400, '请输入姓名和密码');
 
     const now = new Date();
-    const candidates = await User.find({ account: String(account).trim() });
+    const all = await User.find({ account: String(account).trim() });
+    if (!all.length) throw new ApiError(400, 400, '账号或密码不正确');
+
+    // 学号收窄：给了就按学号精确锁定唯一账号（同名场景的唯一可靠区分依据）
+    const sid = String(studentId || '').trim();
+    const candidates = sid ? all.filter((u) => String(u.studentId || '') === sid) : all;
     if (!candidates.length) throw new ApiError(400, 400, '账号或密码不正确');
+    const ambiguous = candidates.length > 1;
 
-    const locked = candidates.find((u) => u.lockUntil && u.lockUntil > now);
-    if (locked) {
-      throw new ApiError(429, 429, `失败次数过多，账号已锁定，请 ${Math.ceil((locked.lockUntil - now) / 60000)} 分钟后再试`);
-    }
+    const lockedRow = (list) => list.find((u) => u.lockUntil && u.lockUntil > now);
 
-    // 在同名候选中按密码匹配
-    const matched = candidates.filter(
+    // ⚠️ 锁定判断必须在密码匹配**之后**（按「未被锁的候选」匹配）：
+    //   旧实现先对全部候选查 lockUntil 就直接 429，于是「学生张三被锁」会让同名的「教师张三」
+    //   也登录不了 —— 别人的失败连累到自己，且报错文案还误导他去猜密码。
+    const unlocked = candidates.filter((u) => !(u.lockUntil && u.lockUntil > now));
+    const matched = unlocked.filter(
       (u) => pwd.verifyPassword(password, u.passwordHash) || pwd.matchesAnyInitial(password, u.initialHashes)
     );
+
     if (!matched.length) {
-      for (const u of candidates) {
-        u.failedLogins = (u.failedLogins || 0) + 1;
-        if (u.failedLogins >= MAX_FAILED) {
-          u.lockUntil = new Date(now.getTime() + LOCK_MINUTES * 60000);
-          u.failedLogins = 0;
-        }
-        await u.save();
+      // 没匹配上时，若有被锁的候选 → 报锁定（无法区分是不是他在试，宁可给出可行动的提示）
+      const locked = lockedRow(candidates);
+      if (locked) {
+        throw new ApiError(429, 429, `失败次数过多，账号已锁定，请 ${Math.ceil((locked.lockUntil - now) / 60000)} 分钟后再试`);
       }
+      // 只在「能确定针对哪个账号」时计数：唯一候选，或已按学号收窄到唯一。
+      // 同名且未给学号 → 交给下面的 NEED_STUDENT_ID，不惩罚任何一个人。
+      if (!ambiguous) {
+        for (const u of candidates) {
+          u.failedLogins = (u.failedLogins || 0) + 1;
+          if (u.failedLogins >= MAX_FAILED) {
+            u.lockUntil = new Date(now.getTime() + LOCK_MINUTES * 60000);
+            u.failedLogins = 0;
+          }
+          await u.save();
+        }
+      }
+      if (ambiguous) throw new ApiError(400, NEED_STUDENT_ID, '存在多个同名账号，请输入学号区分');
       throw new ApiError(400, 400, '账号或密码不正确');
     }
 
+    // 多个同名账号密码都能匹配 → 必须让用户补学号，绝不静默挑一个（会登进别人的身份）
+    if (matched.length > 1) {
+      throw new ApiError(400, NEED_STUDENT_ID, '存在多个同名账号且密码相同，请输入学号区分');
+    }
+
     const user = matched[0];
-    // 绑定校验：一个账号只认第一个绑定的微信
-    if (user.openid && user.openid !== req.guestOpenid) {
+
+    // 微信绑定校验。三条规则，按「谁占着这个微信」与「目标账号是什么角色」交叉判定：
+    //
+    // ① 学生账号**自己已绑的微信不能换**（一个账号只认第一个绑定的微信）——
+    //    否则别人可以用自己微信顶掉学生身份、代跑代签。
+    // ② 教师账号不限制换绑（用户 2026-10-22「教师账户不限制微信绑定的登录」）：
+    //    换手机、换微信、用另一台设备的微信都能登录同一个教师账号，绑定随之更新。
+    //    教师不产生运动数据、不参与排名，绑定只是「这台设备是谁」的标记，卡死它只会让
+    //    换了微信的老师永远登不进来（实测撞到：解绑后没有管理员在场就进不去）。
+    // ③ **这个微信当前绑在谁身上**（openid 唯一索引，一个微信只能登一个账号）：
+    //    · 绑在另一个**教师**账号 → 允许顶替换绑（截图里的场景：同一台手机从刘恩琦切到陈宇航；
+    //      两个都是教职工账号，不存在冒名学生身份；原账号令牌因 openid 不一致自动失效）；
+    //    · 绑在**学生**账号 → 一律拒绝（学生微信不能被任何账号顶掉）。
+    //
+    // ⚠️ ③ 的判定**不能只在 rebinding 时做**：目标账号自己还没有 openid（rebinding=false）时
+    //    也会撞上「这个微信已经属于别人」，旧实现直接赋值 → Mongo 抛 E11000（500），
+    //    而且学生账号能借这条路径抢走教师的微信。所以先查占用方，再决定。
+    const isTeacherAccount = user.role === 'teacher';
+    const rebinding = !!user.openid && user.openid !== openid;
+    const holder = await User.findOne({ openid, _id: { $ne: user._id } })
+      .select('account realName role')
+      .lean();
+    const holderName = holder ? holder.account || holder.realName || '其他账号' : '';
+
+    if (holder) {
+      if (!isTeacherAccount) {
+        const roleText = holder.role === 'teacher' ? '教师' : '学生';
+        throw new ApiError(403, 403004, `当前微信已绑定${roleText}账号「${holderName}」，学生账号不能用它登录`);
+      }
+      if (holder.role !== 'teacher') {
+        throw new ApiError(
+          403,
+          403004,
+          `当前微信已绑定学生账号「${holderName}」，学生账号的微信不能被更换`
+        );
+      }
+      // 教师之间换绑：把「这个微信」从原账号摘掉（openid 有唯一索引，必须先解绑再绑）。
+      //
+      // ⚠️ 这里**不能**调 revokeAllForUser(holder._id)（用户 2026-10-23 报障：
+      //    「历史登录支持一键登录……现在虽然不限制绑定微信，但是会出现历史记录失效」）。
+      //    原因：设备令牌（login_devices）是**按账号**签发的、与微信无关 ——
+      //    原账号在**其它手机 / 其它微信**上的「一键登录」依然完全合法。
+      //    一刀切吊销会把那位老师在别的设备上的历史登录记录全部作废，
+      //    而客户端 `quickLogin` 一旦失败就会**删掉本地那条记录**，再也回不来。
+      //    真正需要失效的只是「刚才这台设备」的 JWT —— 它由 middlewares/auth.js 的
+      //    openid 比对自然判 401，随后 /api/auth/login 按当前微信重新认定身份，无需额外处理。
+      await User.updateOne({ _id: holder._id }, { $unset: { openid: 1, openidBoundAt: 1 } });
+    } else if (rebinding && !isTeacherAccount) {
+      // 学生账号自己已经绑了另一个微信 → 不允许换（规则 ①）
       throw new ApiError(403, 403004, '该账号已绑定其他微信，禁止登录。如为本人操作，请联系管理员处理');
     }
 
-    user.openid = req.guestOpenid;
-    user.openidBoundAt = user.openidBoundAt || now;
+    user.openid = openid;
+    // 首次绑定记当时时间；教师换绑则更新为「当前微信的绑定时间」（旧绑定已失效）
+    user.openidBoundAt = rebinding ? now : user.openidBoundAt || now;
     user.failedLogins = 0;
     user.lockUntil = null;
     if (!user.account) user.account = String(account).trim();
@@ -166,7 +267,11 @@ router.post(
       bound: true,
       mustChangePassword: !!user.mustChangePassword,
       isNew: false,
-      userInfo: { ...user.toSafeJSON(), effectivePermissions: effective, isManager: effective.length > 0 },
+      userInfo: await unionSvc.decorateUser(user, {
+        ...user.toSafeJSON(),
+        effectivePermissions: effective,
+        isManager: effective.length > 0,
+      }),
     });
   })
 );
@@ -220,12 +325,12 @@ router.get(
     if (req.guestOpenid) throw new ApiError(403, 403003, '请先绑定账号');
     const monitor = await ClassMonitor.findOne({ openid: req.user.openid }).lean();
     const effective = await req.user.getEffectivePermissions();
-    const data = {
+    const data = await unionSvc.decorateUser(req.user, {
       ...req.user.toSafeJSON(),
       effectivePermissions: effective,
       isManager: effective.length > 0,
       isClassMonitor: !!monitor,
-    };
+    });
     ok(res, data);
   })
 );

@@ -10,24 +10,24 @@
         <text class="cfg-switch-label">启用自动检测</text>
         <text class="cfg-fdesc">关闭后不再自动判定异常步数与配速</text>
       </view>
-      <t-switch value="{{config.anticheat.enabled}}" bind:change="onAnticheat" data-field="enabled" />
+      <t-switch disabled="{{!canManage}}" value="{{config.anticheat.enabled}}" bind:change="onAnticheat" data-field="enabled" />
     </view>
 
     <view class="cfg-fitem">
       <text class="cfg-flabel">单次同步步数暴增阈值（步）</text>
-      <input class="cfg-input" type="number" value="{{config.anticheat.maxStepJumpPerSync}}" bindinput="onAnticheat" data-field="maxStepJumpPerSync" />
+      <input class="cfg-input" disabled="{{!canManage}}" type="number" value="{{config.anticheat.maxStepJumpPerSync}}" bindinput="onAnticheat" data-field="maxStepJumpPerSync" />
     </view>
     <view class="cfg-fitem">
       <text class="cfg-flabel">最低配速阈值（秒/公里）</text>
-      <input class="cfg-input" type="number" value="{{config.anticheat.minPaceSecondsPerKm}}" bindinput="onAnticheat" data-field="minPaceSecondsPerKm" />
+      <input class="cfg-input" disabled="{{!canManage}}" type="number" value="{{config.anticheat.minPaceSecondsPerKm}}" bindinput="onAnticheat" data-field="minPaceSecondsPerKm" />
     </view>
     <view class="cfg-fitem">
       <text class="cfg-flabel">自动封禁天数</text>
-      <input class="cfg-input" type="number" value="{{config.anticheat.banDays}}" bindinput="onAnticheat" data-field="banDays" />
+      <input class="cfg-input" disabled="{{!canManage}}" type="number" value="{{config.anticheat.banDays}}" bindinput="onAnticheat" data-field="banDays" />
     </view>
   </view>
 
-  <view class="cfg-save-bar">
+  <view class="cfg-save-bar" wx:if="{{canManage}}">
     <t-button theme="primary" block loading="{{saving}}" bind:tap="save">保存配置</t-button>
   </view>
 

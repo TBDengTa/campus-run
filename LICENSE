@@ -1,0 +1,33 @@
+MIT License
+
+Copyright (c) 2026 河北唐博科技有限公司 (Hebei Tangbo Technology Co., Ltd.)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+补充说明（非 MIT 条款的一部分，仅供使用者了解）：
+
+1. 本项目为校园运动记录与管理系统，使用前请确认符合所在学校的
+   数据保护与学生隐私相关规定。
+2. 仓库不包含任何真实服务器地址、数据库凭据或密钥，
+   部署时请自行配置 server/.env 与 miniprogram/config/env.js，
+   并确保这些文件不被提交到任何公开仓库。
+3. 微信小程序上线需自行完成主体认证、类目申请（含「微信运动」类目）
+   与合法域名配置。

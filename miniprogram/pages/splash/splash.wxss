@@ -1,0 +1,99 @@
+/* ===== 开屏广告（全屏） ===== */
+.splash-page {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: #0f1115;
+}
+
+/* 未出图时的品牌渐变底 */
+.splash-bg {
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(180deg, #ffb066 0%, var(--tt-brand) 58%, #d95300 100%);
+}
+
+.splash-img {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100vw;
+  height: 100vh;
+}
+
+/* 跳过：左侧，与右上角胶囊同高对齐（top/height 由 JS 按状态栏 + 胶囊实测值写入内联 style） */
+.splash-skip {
+  position: absolute;
+  left: 24rpx;
+  top: 96rpx; /* 兜底值，实际由内联 style 覆盖 */
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 24rpx;
+  border-radius: 999rpx;
+  background: rgba(0, 0, 0, 0.36);
+}
+
+.splash-skip:active {
+  opacity: 0.7;
+}
+
+.splash-skip-text {
+  font-size: 24rpx;
+  color: #ffffff;
+}
+
+/* 广告标识：跳过按钮下方 */
+.splash-flag {
+  position: absolute;
+  left: 24rpx;
+  top: 176rpx; /* 兜底值，实际由内联 style 覆盖 */
+  z-index: 3;
+  padding: 4rpx 14rpx;
+  border-radius: 8rpx;
+  font-size: 20rpx;
+  line-height: 28rpx;
+  letter-spacing: 2rpx;
+  color: #ffffff;
+  background: rgba(0, 0, 0, 0.28);
+  pointer-events: none;
+}
+
+/* 底部品牌信息条：整行只负责居中定位，胶囊本身自适应宽度 */
+.splash-foot {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(28rpx + env(safe-area-inset-bottom));
+  z-index: 3;
+  display: flex;
+  justify-content: center;
+  padding: 0 24rpx;
+}
+
+.splash-foot-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10rpx;
+  max-width: 100%;
+  padding: 10rpx 26rpx;
+  border-radius: 999rpx;
+  background: rgba(0, 0, 0, 0.42);
+}
+
+.splash-foot-brand {
+  font-size: 21rpx;
+  font-weight: 600;
+  white-space: nowrap;
+  color: #ffffff;
+}
+
+.splash-foot-sub {
+  font-size: 20rpx;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.78);
+}

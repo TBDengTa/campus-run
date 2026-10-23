@@ -25,6 +25,13 @@
       <text class="form-label">密码</text>
       <input class="form-input" password value="{{password}}" placeholder="初始密码为学号/身份证后8位" bindinput="inputPassword" />
     </view>
+    <!-- 同名账号消歧：只有服务端返回 400902 后才出现（教师账号无学号，留空即可）。
+         平时不显示，避免绝大多数用户多填一格。 -->
+    <view class="form-row" wx:if="{{needStudentId}}">
+      <text class="form-label">学号</text>
+      <input class="form-input" value="{{studentId}}" placeholder="存在同名账号，请填写你的学号" placeholder-class="form-ph" type="number" bindinput="inputStudentId" />
+    </view>
+    <view class="tip-line text-secondary" wx:if="{{needStudentId}}">· 存在同名账号，需按学号精确区分（教师账号无学号，留空后重试）</view>
     <t-button theme="primary" block loading="{{submitting}}" bind:tap="submit" class="mt-24">登录并绑定微信</t-button>
   </view>
 
@@ -63,7 +70,7 @@
     <view class="tip-title text-secondary">登录说明</view>
     <view class="tip-line text-secondary">· 初始密码为学号后 8 位或身份证后 8 位</view>
     <view class="tip-line text-secondary">· 首次登录后需修改密码</view>
-    <view class="tip-line text-secondary">· 账号绑定微信后不可更换，其他微信登录该账号将被拒绝</view>
+    <view class="tip-line text-secondary">· 学生账号绑定微信后不可更换（其他微信登录会被拒绝）；教师账号可在任意微信登录，绑定随之更新</view>
     <view class="tip-line text-secondary">· 没有账号？请联系学校/老师导入名单</view>
   </view>
 

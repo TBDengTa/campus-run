@@ -74,6 +74,10 @@ Page({
     stats: null,
     monitor: null,
     isTeacher: false,
+    // 角色是否已确认（/api/auth/me 回来过）：首帧 isTeacher 恒为 false，
+    // 直接用它判断显隐会让教师账号**先闪一下学生的菜单项**（隐私设置 / 我的申诉）。
+    // 与下面的 showAd 同一个思路：角色确认后才按角色渲染。
+    roleReady: false,
     // 广告位闸门：只有「角色已确认为学生」才渲染原生模板广告。
     // 首帧 isTeacher 还是默认 false（/api/auth/me 未回来），若直接用 !isTeacher，
     // 教师账号会先渲染出广告节点并可能产生一次曝光 —— 所以单独用 showAd 兜住这个窗口。
@@ -82,7 +86,16 @@ Page({
     banned: false,
     // 跑分（学生端展示，来自 /api/points/me；教师或未开启时为 null）
     points: null,
+    // 学生会（仅成员渲染）与班超（仅班主任 / 班委渲染）：见 refresh() 里的赋值
+    union: null,
+    banchao: null,
     devMode: !!auth.env.DEV_LOGIN, // 本地测试登录：登录的是 dev_* 账号，不是真实学籍
+    // 我的二维码（用户 2026-10-22）：所有用户都有码，含教师。
+    // 学生/教师出示，学生会干部扫码后把本人加进自己部门。凭证一次性、10 分钟有效。
+    qrVisible: false,
+    qrLoading: false,
+    qrError: '',
+    qr: { token: '', qrImage: '', expiresText: '' },
   },
 
   onLoad() {
@@ -145,10 +158,20 @@ Page({
         enroll,
         heroMeta: heroMetaOf(user, enroll, isTeacher),
         isTeacher,
+        roleReady: true, // 角色已确认：教师专属的「隐藏项」（隐私设置 / 我的申诉）从这里开始生效
         showAd: !isTeacher, // 角色已确认是学生：广告位才渲染（教师 / 加载失败都不渲染）
         points,
         roleText: isTeacher ? '教师' : '学生',
         banned,
+        // 学生会（仅成员渲染整块）：身份字段由 /api/auth/me 下发（services/union.js::decorateUser）
+        union: user.isUnionMember
+          ? { roleText: user.unionText || '', roleCount: user.unionRoleCount || (user.unionRoles || []).length }
+          : null,
+        // 班超（仅班主任 / 班委渲染整块）：普通学生不显示，与首页「班超块」同一口径
+        banchao:
+          (user.homeroomClasses || []).length || user.isClassOfficer
+            ? { classText: (user.homeroomClasses || [])[0] || user.className || '' }
+            : null,
         stats: {
           totalSteps: fmt.formatNumber(user.totalSteps || 0),
           totalDistance: fmt.formatDistance(user.totalDistance || 0),
@@ -160,6 +183,12 @@ Page({
       if (e.code === 403001) {
         // 封禁用户仍可看基本页
         this.setData({ banned: true, user: getApp().globalData.userInfo });
+      } else if (e.code === 401) {
+        // 登录失效：**绝不能留在页面上继续显示上一个账号**（用户 2026-10-22
+        // 「登录刘恩琦后依旧是陈宇航」的观感来源之一 —— 刷新失败只弹个 toast，
+        // data.user 还是旧账号，看上去就像"换号没生效"）。直接回登录页重新确定身份。
+        auth.logout();
+        getApp().goLogin();
       } else {
         wx.showToast({ title: e.message || '加载失败', icon: 'none' });
       }
@@ -199,6 +228,48 @@ Page({
     } catch (e) {
       wx.showToast({ title: e.message, icon: 'none' });
     }
+  },
+
+  // ===== 我的二维码（用户 2026-10-22）=====
+  // 所有用户都有码（含教师账号）：教师不是学生会成员，但可以出示码做身份识别；
+  // 干部扫码后若试图把教师加进学生会，服务端会明确拒绝（routes/union.js::accept 里的教师拦截）。
+  //
+  // 不传 userId —— 这个接口默认就是「当前登录者」，正是这里需要的。
+  async openMyQr() {
+    this.setData({ qrVisible: true, qrLoading: true, qrError: '' });
+    await this.loadMyQr();
+  },
+
+  async loadMyQr() {
+    this.setData({ qrLoading: true, qrError: '' });
+    try {
+      const res = await auth.get('/api/union/invite/mine');
+      const exp = res && res.expiresAt ? new Date(res.expiresAt) : null;
+      const pad = (n) => String(n).padStart(2, '0');
+      const expiresText = exp
+        ? `${pad(exp.getMonth() + 1)}-${pad(exp.getDate())} ${pad(exp.getHours())}:${pad(exp.getMinutes())}`
+        : '';
+      this.setData({
+        qrLoading: false,
+        qr: {
+          token: (res && res.token) || '',
+          // 后端生成的二维码 PNG dataURL；空 = 生成失败，页面回退显示凭证串
+          qrImage: (res && res.qrImage) || '',
+          expiresText,
+        },
+      });
+    } catch (e) {
+      this.setData({ qrLoading: false, qrError: e.message || '生成失败' });
+    }
+  },
+
+  async refreshMyQr() {
+    if (this.data.qrLoading) return;
+    await this.loadMyQr();
+  },
+
+  closeMyQr() {
+    this.setData({ qrVisible: false });
   },
 
   // 学籍信息由学校名单同步，不可自行修改
@@ -249,6 +320,40 @@ Page({
 
   go(e) {
     wx.navigateTo({ url: e.currentTarget.dataset.url });
+  },
+
+  // ===== 学生会（仅成员可见的整块）=====
+  // 命名与「学生会配置 / 学生会成员」两个管理入口同一口径；本页只放成员自用的入口，
+  // 不放任何管理端页面（普通学生看不到管理入口）。
+  goUnion() {
+    wx.navigateTo({ url: '/pages/union/union' });
+  },
+
+  goUnionEntry() {
+    wx.navigateTo({ url: '/packageUnion/entry/entry' });
+  },
+
+  goUnionRecords() {
+    wx.navigateTo({ url: '/packageUnion/records/records?mine=1' });
+  },
+
+  goUnionRoster() {
+    wx.navigateTo({ url: '/packageUnion/roster/roster' });
+  },
+
+  // ===== 班超（仅班主任 / 班委可见的整块）=====
+  // 命名口径（2026-10-19 用户澄清）：「班超」= 班级检查评比域的产品名，「班超排名」保持这个叫法；
+  // 教师 / 班委管自己名下班级的那页**页面名与入口名都叫「我的班级」**
+  //（/packageAdmin/class/class；其页内第三个 tab 叫「班超联赛」，已并入原班超详细页的内容），
+  // 「班级管理」留给管理员管全校台账（/packageAdmin/class-manage）—— 本页不给普通学生放管理入口。
+  goBanChao() {
+    wx.navigateTo({ url: '/packageAdmin/class/class' });
+  },
+
+  // 本班检查记录的申诉入口：先看记录列表（班委 / 班主任对本班记录可申诉）
+  goBanChaoRecords() {
+    const className = (this.data.banchao && this.data.banchao.classText) || (this.data.user && this.data.user.className) || '';
+    wx.navigateTo({ url: `/packageUnion/records/records?className=${encodeURIComponent(className)}` });
   },
 
   goBanned() {

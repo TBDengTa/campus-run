@@ -11,6 +11,9 @@ Page({
   sectionKeys: ['points'],
 
   data: {
+    // 写权限（用户 2026-10-22）：由 section.js 在 checkAndLoad 里 setData 注入；
+    // 只读用户（仅 config.view）看不到保存按钮、输入框禁用。
+    canManage: false,
     config: null,
     saving: false,
     loading: true,
@@ -151,8 +154,9 @@ Page({
       return (steps >= goal ? weeklyGoal : 0) + (weekCap > 0 ? Math.min(extra, weekCap) : extra);
     };
     this.setData({
-      unitHint: extraPercent > 0 ? `目标 6000 步 → 每 ${unitText(6000)} 步一档` : '请填 1~100 的整数',
-      weeklyUnitHint: weeklyExtraPercent > 0 ? `周目标 25000 步 → 每 ${weekUnitText(25000)} 步一档` : '请填 1~100 的整数',
+      // 档位换算提示压成短句（双列卡片里一行放得下），完整公式在页脚说明
+      unitHint: extraPercent > 0 ? `6000 步目标 → 每 ${unitText(6000)} 步一档` : '需 1~100 整数',
+      weeklyUnitHint: weeklyExtraPercent > 0 ? `25000 步目标 → 每 ${weekUnitText(25000)} 步一档` : '需 1~100 整数',
       preview: [
         { key: 'a', label: '日目标 5000 步 · 恰好达标', value: calc(5000, 5000) },
         { key: 'b', label: `日目标 6000 步 · 超出 ${unitText(6000)} 步（一档）`, value: calc(6000 + unit(6000), 6000) },

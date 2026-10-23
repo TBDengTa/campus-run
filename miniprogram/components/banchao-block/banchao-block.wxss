@@ -1,0 +1,363 @@
+/* 班超块 / 学生会块：只用 app.wxss 的 --tt-* 令牌，与首页其它卡片同一套语言。
+   ⚠️ 卡片外观（白底 / 圆角 / 阴影 / 外边距）**在本文件里自己兜住**，不依赖全局 `.tt-card`：
+   组件存在样式隔离，真机上出现过「全局 class 未命中 → 卡片没有白底、文字浮在页面底色上」。
+   （json 里虽已声明 styleIsolation: apply-shared，但根节点命中仍不可靠，别再依赖它。） */
+.bc-block {
+  margin: 0 var(--tt-gap) var(--tt-gap);
+  padding: var(--tt-pad);
+  background: var(--tt-card);
+  border-radius: var(--tt-radius);
+  box-shadow: var(--tt-card-shadow);
+}
+
+.bc-head {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+}
+
+.bc-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.bc-range {
+  flex-shrink: 0;
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+}
+
+/* 多班圆点指示器（在头部行内，不额外占一行） */
+.bc-dots {
+  flex-shrink: 0;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+}
+
+.bc-dot {
+  width: 10rpx;
+  height: 10rpx;
+  border-radius: 999rpx;
+  background: var(--tt-line);
+}
+
+.bc-dot.active {
+  width: 24rpx;
+  background: var(--tt-brand);
+}
+
+/* ===== 班超块：卡片主体（<swiper> 拿到确定高度才渲染；高度由 JS 量一次写入） ===== */
+.bc-swiper {
+  overflow: hidden;
+}
+
+.bc-swiper-box {
+  height: 100%;
+}
+
+.bc-panel {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+}
+
+/* 得分行：大数字 + 「班级得分」 + 右侧名次 */
+.bc-score-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8rpx;
+  margin-top: 8rpx;
+}
+
+.bc-score {
+  display: flex;
+  align-items: baseline;
+  gap: 6rpx;
+}
+
+.bc-score-v {
+  font-size: 46rpx;
+  font-weight: 700;
+  color: var(--tt-brand);
+  line-height: 1.1;
+}
+
+.bc-score-l {
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+}
+
+.bc-rank {
+  margin-left: auto;
+  font-size: 20rpx;
+  color: var(--tt-text-2);
+}
+
+.bc-rank-empty {
+  color: var(--tt-text-3);
+}
+
+/* 模块：一行平铺 5 个小格（旧版 4 + 1 的大色块 → 单行，卡片高度少一半），值在上、名在下。
+   指标文案（如「出勤率 98.5%」）比格子宽：**允许折成两行**（line-clamp 2）而不是省略号 ——
+   省略号会把「出勤率 9…」这种关键数字截掉，折行只多 20rpx，信息不丢。 */
+.bc-modules {
+  display: flex;
+  align-items: stretch;
+  gap: 8rpx;
+  margin-top: 10rpx;
+}
+
+.bc-module {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 8rpx 4rpx;
+  border-radius: 12rpx;
+  background: var(--tt-brand-soft);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4rpx;
+}
+
+.bc-module-v {
+  max-width: 100%;
+  font-size: 19rpx;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  color: var(--tt-text-1);
+  /* 不要用 word-break: break-all —— 它会把「出勤率 98.5%」从数字中间断开（98. / 5%）。
+     默认的 CJK 折行规则会在「出勤率」与「98.5%」之间的空格处换行，数字保持完整。 */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.bc-module-n {
+  font-size: 18rpx;
+  color: var(--tt-text-3);
+}
+
+.bc-module-missing .bc-module-v {
+  color: var(--tt-text-3);
+}
+
+.bc-module-warn .bc-module-v {
+  color: var(--td-error-color-6, #d54941);
+}
+
+.bc-module-skip .bc-module-v {
+  color: var(--tt-text-3);
+}
+
+.bc-empty-row {
+  flex: 1;
+  padding: 16rpx 0;
+  text-align: center;
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+/* ===== 学生会块（紧凑版）=====
+   ⚠️ **卡片白底必须写在这里**，不能只依赖全局 `.tt-card`：
+   组件默认样式隔离下，全局 class 对组件根节点的命中不可靠（真机上表现就是
+   「没有白底、文字直接浮在页面底色上」—— 已实际踩到）。这里把卡片外观自己兜住。 */
+.union-block {
+  background: var(--tt-card);
+  border-radius: var(--tt-radius);
+  box-shadow: var(--tt-card-shadow);
+  /* 紧凑：内边距比标准卡片小一档，让一屏能放下更多信息 */
+  padding: 22rpx 24rpx 18rpx;
+}
+
+.ub-head {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+}
+
+.ub-name {
+  flex: 0 0 auto;
+  font-size: 27rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+/* 职务串（校学生会 · 主席团 · 主席）可能很长：吃掉剩余宽度并省略 */
+.ub-role {
+  flex: 1;
+  min-width: 0;
+  font-size: 19rpx;
+  color: var(--tt-text-3);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 概览行：今日录入 N / 应录 M + 待复核徽标 */
+.ub-sum {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  margin-top: 8rpx;
+}
+
+.ub-sum-k {
+  margin-right: 2rpx;
+  font-size: 19rpx;
+  color: var(--tt-text-3);
+}
+
+.ub-sum-v {
+  font-size: 28rpx;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--tt-brand);
+}
+
+.ub-sum-t {
+  font-size: 19rpx;
+  color: var(--tt-text-3);
+}
+
+/* 待复核：可点的待办徽标（有 N 条时一眼看见，点了直接去复核） */
+.ub-todo {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4rpx;
+  padding: 2rpx 10rpx;
+  border-radius: 999rpx;
+  background: var(--tt-brand-soft-2);
+}
+
+.ub-todo-n {
+  font-size: 20rpx;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--tt-brand-deep);
+}
+
+.ub-todo-l {
+  font-size: 18rpx;
+  color: var(--tt-brand-deep);
+}
+
+/* 完成度细进度条（应录 > 0 才渲染），紧贴概览行，不再单独占一段间距 */
+.ub-track {
+  height: 4rpx;
+  margin-top: 8rpx;
+  border-radius: 999rpx;
+  background: var(--tt-line);
+  overflow: hidden;
+}
+
+.ub-track-fill {
+  height: 100%;
+  border-radius: 999rpx;
+  background: linear-gradient(90deg, #ff9a3d 0%, #ff6b00 100%);
+  transition: width 0.24s ease;
+}
+
+/* 模块入口：双列小卡（首页块高度再压一档） */
+.ub-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  margin-top: 8rpx;
+}
+
+.ub-item {
+  width: 48.5%;
+  margin-bottom: 8rpx;
+  box-sizing: border-box;
+  padding: 8rpx 10rpx;
+  border: 1rpx solid var(--tt-line);
+  border-radius: 12rpx;
+  background: var(--tt-bg-page);
+}
+
+.ub-item:active {
+  background: var(--tt-brand-soft);
+}
+
+.ub-item-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6rpx;
+}
+
+.ub-item-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 21rpx;
+  font-weight: 500;
+  color: var(--tt-text-1);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ub-item-n {
+  flex-shrink: 0;
+  font-size: 18rpx;
+  color: var(--tt-text-3);
+}
+
+.ub-item-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 4rpx;
+}
+
+.ub-item-btn {
+  font-size: 18rpx;
+  font-weight: 600;
+  color: var(--tt-brand-deep);
+}
+
+.ub-item-btn.done {
+  color: var(--td-success-color-5, #16a34a);
+}
+
+/* 「无迟到」（早八这类只记异常人的模块）：不是待办，用中性色，不抢「去录入」的视觉 */
+.ub-item-btn.optional {
+  font-weight: 500;
+  color: var(--tt-text-3);
+}
+
+/* 底部操作：记录 / 复核 —— 收成两个**文字链**（不铺底色），把最重的视觉留给模块入口 */
+.ub-actions {
+  display: flex;
+  align-items: center;
+  margin-top: 4rpx;
+}
+
+.ub-action {
+  display: flex;
+  align-items: center;
+  gap: 4rpx;
+  padding: 10rpx 0;
+}
+
+.ub-action + .ub-action {
+  margin-left: auto;
+}
+
+.ub-action-l {
+  font-size: 20rpx;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--tt-brand-deep);
+}

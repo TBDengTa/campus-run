@@ -1,12 +1,14 @@
 {
   "darkmode": true,
   "pages": [
+    "pages/splash/splash",
     "pages/home/home",
     "pages/hub/hub",
     "pages/run/index",
     "pages/records/records",
     "pages/ranking/ranking",
     "pages/profile/profile",
+    "pages/union/union",
     "pages/password/change",
     "pages/goal-plan/goal-plan",
     "pages/auth-login/auth-login",
@@ -38,26 +40,40 @@
         "user-detail/user-detail",
         "user-detail/period-detail/period-detail",
         "class/class",
+        "class-manage/class-manage",
+        "class-manage/dorms/dorms",
         "appeals/appeals",
         "ads/sponsors",
         "ads/slots",
         "ads/contents",
         "ads/pages",
         "ads/stats",
-        "content/index",
         "content/announcements",
         "content/changelogs",
         "content/holidays",
         "content/organizations",
         "content/badges",
-        "config/config",
+        "config/buildings",
         "config/points",
         "config/anticheat",
         "config/reward-video",
-        "assessment/index",
         "assessment/goals",
         "assessment/plans",
-        "files/files"
+        "files/files",
+        "union/members/members",
+        "union/config/config",
+        "union/scan-join/scan-join"
+      ]
+    },
+    {
+      "root": "packageUnion",
+      "pages": [
+        "entry/entry",
+        "records/records",
+        "record/record",
+        "stats/stats",
+        "roster/roster",
+        "members/manage"
       ]
     }
   ],

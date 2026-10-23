@@ -1,4 +1,7 @@
 const auth = require('../../utils/request');
+// 写权限（content.manage）与读权限（content.view）分开：只有查看权限的账号看不到任何
+// 新增/编辑/删除/保存入口（用户 2026-10-22「只有查看权限时应该不显示操作功能按钮」）
+const adminPerm = require('../../utils/admin-perm');
 
 const EMPTY = { _id: '', title: '', content: '', type: 'notice', priority: 0, enabled: true };
 
@@ -6,6 +9,7 @@ Page({
   data: {
     list: [],
     loading: false,
+    canManage: false, // content.manage / '*'
     form: null,
     formVisible: false,
     saving: false,
@@ -19,6 +23,7 @@ Page({
     this.setData({ loading: true });
     try {
       await getApp().ensureLogin();
+      await adminPerm.applyManage(this, 'content.manage');
       const list = await auth.get('/api/admin/content/announcements');
       this.setData({
         list: list.map((a) => ({ ...a, dateText: (a.createdAt || '').slice(0, 10) })),

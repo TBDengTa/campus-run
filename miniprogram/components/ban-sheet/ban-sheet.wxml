@@ -1,5 +1,6 @@
 <t-popup visible="{{visible}}" placement="bottom" bind:visible-change="onVisibleChange">
-  <view class="tt-sheet">
+  <!-- 私有 sheet 类 .ban-sheet：scroll-view 需要确定的 CSS 高度才会滚动（见 docs/ui-design.md） -->
+  <view class="tt-sheet ban-sheet">
     <view class="tt-sheet-grab"></view>
 
     <view class="tt-sheet-head">

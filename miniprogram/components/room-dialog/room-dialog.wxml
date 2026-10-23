@@ -1,0 +1,103 @@
+<!-- 房间填写对话框（教室 / 宿舍共用）：**一个对话框里一次填完**
+     用户 2026-10-22：「尽量使用 Dialog 对话框完整的…直接让用户一次输入完。」
+
+     布局分三段（这是截图里塌掉的地方，务必保持结构）：
+       head  —— 图标 + 标题 + 副标题 + 关闭按钮（横向一行）
+       body  —— 可滚动：楼号点选 / 门号输入 / 床位号 / 预览
+       foot  —— 固定底部：清空 + 保存（横向等分）
+
+     ⚠️ 本组件 json 必须含 "styleIsolation": "apply-shared"，
+        否则 app.wxss 的 .tt-sheet* 公共骨架不生效 —— 表现就是内容塌成一列、
+        关闭按钮跑到中间、底部按钮拉满整行（正是这次截图的样子）。 -->
+<t-popup visible="{{visible}}" placement="bottom" bind:visible-change="onVisibleChange">
+  <view class="tt-sheet rd-sheet">
+    <view class="tt-sheet-grab"></view>
+
+    <view class="tt-sheet-head">
+      <view class="tt-sheet-icon">
+        <t-icon name="{{icon}}" size="36rpx" color="var(--tt-brand)" />
+      </view>
+      <view class="tt-sheet-title">
+        {{title}}
+        <view class="tt-sheet-sub" wx:if="{{sub}}">{{sub}}</view>
+      </view>
+      <view class="tt-sheet-close" bind:tap="close">
+        <t-icon name="close" size="32rpx" color="var(--tt-text-2)" />
+      </view>
+    </view>
+
+    <scroll-view scroll-y class="tt-sheet-body">
+      <!-- ① 楼号：只能从白名单里点选（无输入框） -->
+      <view class="rd-block">
+        <view class="tt-sheet-label">{{buildingLabel}}</view>
+        <block wx:if="{{buildings.length}}">
+          <view class="rd-chips">
+            <view
+              class="rd-chip {{pickBuilding === item ? 'on' : ''}}"
+              wx:for="{{buildings}}"
+              wx:key="*this"
+              data-name="{{item}}"
+              bind:tap="tapBuilding"
+            >
+              <text class="rd-chip-t">{{item}}</text>
+              <t-icon wx:if="{{pickBuilding === item}}" name="check" size="22rpx" color="var(--tt-brand)" />
+            </view>
+          </view>
+        </block>
+        <view class="rd-hint" wx:else>
+          <t-icon name="info-circle" size="26rpx" color="var(--td-warning-color-5)" />
+          <text class="rd-hint-t">还没有可选楼名，请先到「系统设置 → 楼名管理」添加{{kind === 'dorm' ? '宿舍用楼' : '教学用楼'}}。</text>
+        </view>
+      </view>
+
+      <!-- ② 门号：同一次填写完成，不再二次弹窗 -->
+      <view class="rd-block">
+        <view class="tt-sheet-label">门号</view>
+        <view class="tt-sheet-field">
+          <input
+            class="tt-sheet-input"
+            type="number"
+            value="{{roomNo}}"
+            placeholder="只填数字，如 201"
+            placeholder-class="tt-sheet-ph"
+            bindinput="onRoomInput"
+            disabled="{{!pickBuilding}}"
+          />
+        </view>
+      </view>
+
+      <!-- ③ 床位号：仅宿舍显示，固定 1~8 -->
+      <view class="rd-block" wx:if="{{showBed}}">
+        <view class="tt-sheet-label">床位号（可选）</view>
+        <view class="rd-chips">
+          <view
+            class="rd-chip rd-chip-sm {{bedNo === item + '' ? 'on' : ''}}"
+            wx:for="{{bedOptions}}"
+            wx:key="*this"
+            data-bed="{{item}}"
+            bind:tap="tapBed"
+          >
+            {{item}}
+          </view>
+        </view>
+      </view>
+
+      <!-- 实时预览：保存前就能确认最终存成什么，避免存完才发现楼选错 -->
+      <view class="rd-preview" wx:if="{{pickBuilding && roomNo}}">
+        <t-icon name="check-circle" size="28rpx" color="var(--tt-brand)" />
+        <text class="rd-preview-t">{{pickBuilding}} · {{roomNo}}{{showBed && bedNo ? '，' + bedNo + ' 号床' : ''}}</text>
+      </view>
+      <view class="tt-sheet-note" wx:elif="{{!buildings.length}}">配置好楼名后再回来填写。</view>
+      <view class="tt-sheet-note" wx:else>先选楼号，再填门号。</view>
+    </scroll-view>
+
+    <view class="tt-sheet-foot rd-foot">
+      <view class="rd-btn" wx:if="{{canClear && canManage}}">
+        <t-button theme="danger" variant="outline" block bind:tap="clear">清空</t-button>
+      </view>
+      <view class="rd-btn">
+        <t-button theme="primary" block loading="{{saving}}" disabled="{{!canSave}}" bind:tap="submit">保存</t-button>
+      </view>
+    </view>
+  </view>
+</t-popup>

@@ -40,9 +40,13 @@
         </view>
       </view>
     </view>
-    <!-- ===== 我的班级 chips（班主任 / 班委）：并入本分类，紧跟「我的班级」标题显示 =====
+    <!-- ===== 我的班级 chips（班主任 / 班委）：并入班级分类卡，紧跟其标题显示 =====
          产品要求：这块要在管理中枢标题下面，而不是页面最底部。
-         它必须与上面的分类卡共用同一个标题，否则页面会出现两个「我的班级」。 -->
+         它必须与上面的分类卡共用同一个标题，否则页面会出现两个同名标题。
+         注意分类标题按人群动态取（utils/nav-groups.js::groupTitle）：
+         只有教师侧条目时叫「我的班级」，含管理员的全校台账时叫「班级管理」。
+         （入口名与页面名都是「我的班级」；页面内承载班超评比的第三个 tab 才叫「班超联赛」——
+          两者是不同层面，别把入口一起改掉，见 nav-groups.js 注释） -->
     <view class="tt-card hub-card" wx:if="{{group.key === 'class' && classRole}}">
       <view class="hub-classes">
         <view class="hub-classes-head">
@@ -61,7 +65,7 @@
             data-class="{{item}}"
           >{{item}}</view>
         </view>
-        <view class="hub-classes-tip" wx:if="{{classFold && !classExpanded}}">点「班级管理」会先让你选择要进入的班级</view>
+        <view class="hub-classes-tip" wx:if="{{classFold && !classExpanded}}">点「我的班级」会先让你选择要进入的班级</view>
       </view>
     </view>
   </block>
@@ -74,7 +78,7 @@
 
   <view class="tt-footer">管理操作均以服务端权限校验为准</view>
 
-  <!-- ===== 班级选择：多个班时必须先选一个再进班级管理 ===== -->
+  <!-- ===== 班级选择：多个班时必须先选一个再进「我的班级」 ===== -->
   <t-popup visible="{{classPickVisible}}" placement="bottom" bind:visible-change="onClassPickVisible">
     <view class="tt-sheet hub-sheet">
       <view class="tt-sheet-grab"></view>

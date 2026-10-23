@@ -9,6 +9,11 @@ const permissionGroupSchema = new mongoose.Schema(
     permissions: { type: [String], default: [] },
     description: { type: String, default: '' },
     builtIn: { type: Boolean, default: false }, // 内置组不可删除
+    // 管理员改过内置组 → true：**启动播种不再覆盖它**（用户 2026-10-20 口径）。
+    // 为什么需要这个标记：旧规则是「内置组只读、每次启动按默认值重播种」，
+    // 若只放开编辑不改播种，管理员改完当下生效、**下次重启被静默抹掉**（假生效，比不能改更糟）。
+    // superadmin 组例外：恒 false（不可编辑，见 routes/admin/permission-groups.js）。
+    customized: { type: Boolean, default: false },
   },
   { timestamps: true, collection: 'permission_groups' }
 );

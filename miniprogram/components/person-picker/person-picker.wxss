@@ -1,0 +1,242 @@
+/* 通用选人组件：只用 --tt-* 令牌，与页面卡片语言一致 */
+.pp-root {
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+}
+
+.pp-search {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  min-height: 66rpx;
+  padding: 0 16rpx;
+  box-sizing: border-box;
+  border: 1rpx solid var(--tt-line);
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-card);
+}
+
+.pp-input {
+  flex: 1;
+  font-size: 24rpx;
+  color: var(--tt-text-1);
+}
+
+.pp-limit {
+  flex: 0 0 auto;
+  font-size: 18rpx;
+  color: var(--tt-text-3);
+}
+
+.pp-search-clear {
+  flex: 0 0 auto;
+  padding: 4rpx 12rpx;
+  border-radius: 999rpx;
+  font-size: 18rpx;
+  color: var(--tt-text-3);
+  background: var(--tt-bg-page);
+}
+
+/* 已选：姓名/学号一行，原因在第二行；原因按钮改成「浅橙底 + 橙描边」，
+   不再用整块实心橙（原来四个人挤一行，选中态太重、点击区域也小）。 */
+.pp-picked {
+  padding: 13rpx;
+  border-radius: var(--tt-radius);
+  background: var(--tt-brand-soft);
+}
+
+.pp-picked-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8rpx;
+}
+
+.pp-picked-title {
+  font-size: 21rpx;
+  font-weight: 600;
+  color: var(--tt-brand-deep);
+}
+
+.pp-clear {
+  padding: 4rpx 12rpx;
+  border-radius: 999rpx;
+  font-size: 19rpx;
+  color: var(--tt-text-2);
+  background: var(--tt-card);
+}
+
+.pp-picked-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.pp-picked-item {
+  display: block;
+  padding: 12rpx 14rpx;
+  border: 1rpx solid rgba(28, 31, 35, 0.05);
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-card);
+}
+
+.pp-picked-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10rpx;
+}
+
+.pp-picked-main {
+  display: flex;
+  align-items: baseline;
+  gap: 10rpx;
+  flex: 1;
+  min-width: 0;
+}
+
+.pp-picked-name {
+  font-size: 25rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.pp-picked-sub {
+  font-size: 19rpx;
+  color: var(--tt-text-3);
+}
+
+.pp-reasons {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8rpx;
+  margin-top: 10rpx;
+  padding-top: 8rpx;
+  border-top: 1rpx dashed var(--tt-line);
+}
+
+.pp-reason-label {
+  font-size: 18rpx;
+  color: var(--tt-text-3);
+  margin-right: 2rpx;
+}
+
+.pp-reason {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 90rpx;
+  min-height: 54rpx;
+  padding: 0 16rpx;
+  box-sizing: border-box;
+  border: 2rpx solid transparent;
+  border-radius: 999rpx;
+  font-size: 20rpx;
+  color: var(--tt-text-2);
+  background: var(--tt-bg-page);
+}
+
+.pp-reason.active {
+  color: var(--tt-brand-deep);
+  font-weight: 600;
+  border-color: var(--tt-brand);
+  background: var(--tt-brand-soft);
+}
+
+.pp-remove {
+  flex: 0 0 auto;
+  padding: 6rpx 12rpx;
+  border-radius: 999rpx;
+  font-size: 19rpx;
+  color: var(--tt-text-2);
+  background: var(--tt-bg-page);
+}
+
+/* 结果
+   高度刻意压到 400rpx（原来是 620rpx）：这个组件会被**两种容器**包住 ——
+   ① 普通页面（entry 录入表单）：内层过高会把页面撑得很长；
+   ② 固定定位抽屉（members 添加成员）：抽屉里再套一个高滚动区，两层都抢手势，真机容易「都滚不动」。
+   压到 400rpx（≈215px）后，抽屉里内层几乎不触发滚动，超长时先滚内层、到底自然冒泡给外层，
+   既保住了「列表区可控」的体验，也不会出现两层同时可滚的尴尬。 */
+.pp-results {
+  border: 1rpx solid var(--tt-line);
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-bg-page);
+  max-height: 300rpx;
+  overflow-y: auto;
+}
+
+.pp-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+  padding: 13rpx 16rpx;
+  border-bottom: 1rpx solid var(--tt-line);
+}
+
+.pp-row:last-child {
+  border-bottom: none;
+}
+
+.pp-row.picked {
+  background: var(--tt-brand-soft);
+}
+
+.pp-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+  min-width: 0;
+}
+
+.pp-row-title {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+}
+
+.pp-name {
+  font-size: 25rpx;
+  color: var(--tt-text-1);
+  font-weight: 500;
+}
+
+.pp-tag {
+  padding: 2rpx 12rpx;
+  border-radius: 999rpx;
+  font-size: 19rpx;
+  color: var(--tt-brand-deep);
+  background: var(--tt-brand-soft-2);
+}
+
+.pp-sub {
+  font-size: 19rpx;
+  color: var(--tt-text-3);
+}
+
+.pp-check {
+  flex: 0 0 auto;
+  width: 36rpx;
+  height: 36rpx;
+  border-radius: 50%;
+  border: 2rpx solid var(--tt-line);
+  background: var(--tt-card);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pp-check.on {
+  border-color: var(--tt-brand);
+  background: var(--tt-brand);
+}
+
+.pp-hint {
+  padding: 22rpx 0;
+  text-align: center;
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+}

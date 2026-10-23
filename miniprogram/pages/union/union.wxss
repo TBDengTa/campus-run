@@ -1,0 +1,541 @@
+.un-guard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10rpx;
+  padding: 48rpx var(--tt-pad);
+  text-align: center;
+}
+
+.un-guard-text {
+  font-size: 26rpx;
+  color: var(--tt-text-1);
+  font-weight: 500;
+}
+
+.un-guard-sub {
+  font-size: 21rpx;
+  color: var(--tt-text-3);
+  line-height: 1.55;
+}
+
+/* ===== 身份卡：整体压一档 ===== */
+.un-page .tt-hero {
+  margin-bottom: 10rpx;
+  padding: 22rpx 26rpx 20rpx;
+  border-radius: 28rpx;
+}
+
+.un-hero {
+  display: flex;
+  flex-direction: column;
+}
+
+.un-hero-role {
+  font-size: 28rpx;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.un-hero-role-more {
+  margin-left: 6rpx;
+  font-size: 18rpx;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.un-hero-date {
+  margin-top: 3rpx;
+  font-size: 20rpx;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.un-hero-stats {
+  display: flex;
+  margin-top: 12rpx;
+  padding: 8rpx 0;
+  border-radius: 14rpx;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.un-hero-stat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2rpx;
+  min-width: 0;
+}
+
+.un-hero-stat + .un-hero-stat {
+  border-left: 1rpx solid rgba(255, 255, 255, 0.22);
+}
+
+.un-hero-stat-v {
+  font-size: 30rpx;
+  font-weight: 700;
+  line-height: 1.15;
+  color: #ffffff;
+}
+
+.un-hero-stat-l {
+  font-size: 17rpx;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+/* ===== 待办：一张卡里的紧凑行 ===== */
+.un-todo-panel {
+  margin: 0 var(--tt-gap) 10rpx;
+  border-radius: var(--tt-radius);
+  background: var(--tt-card);
+  box-shadow: var(--tt-card-shadow);
+  overflow: hidden;
+}
+
+.un-todo-row {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  min-height: 64rpx;
+  padding: 11rpx 16rpx;
+  border-bottom: 1rpx solid var(--tt-line);
+}
+
+.un-todo-row:last-child {
+  border-bottom: none;
+}
+
+.un-todo-row.primary {
+  background: var(--tt-brand-soft);
+}
+
+.un-todo-icon {
+  width: 40rpx;
+  height: 40rpx;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12rpx;
+  background: var(--tt-brand-soft);
+}
+
+.un-todo-row.primary .un-todo-icon {
+  background: var(--tt-card);
+}
+
+.un-todo-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.un-todo-title {
+  font-size: 24rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.un-todo-n {
+  font-size: 27rpx;
+  font-weight: 700;
+  color: var(--tt-brand);
+  margin: 0 4rpx;
+}
+
+.un-todo-sub {
+  margin-top: 2rpx;
+  font-size: 18rpx;
+  color: var(--tt-text-3);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* ===== 模块进度：两行紧凑行（标题/进度 + 提示/操作） ===== */
+.un-modules {
+  padding: 2rpx 18rpx 6rpx;
+}
+
+.un-module {
+  padding: 12rpx 0;
+  border-bottom: 1rpx solid var(--tt-line);
+}
+
+.un-module:active {
+  background: var(--tt-brand-soft);
+}
+
+.un-module:last-child {
+  border-bottom: none;
+}
+
+.un-module-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10rpx;
+}
+
+.un-module-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8rpx;
+  flex: 1;
+  min-width: 0;
+}
+
+.un-module-name {
+  font-size: 25rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.un-module-dept {
+  font-size: 19rpx;
+  color: var(--tt-text-3);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.un-module-right {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  flex-shrink: 0;
+}
+
+.un-module-progress {
+  font-size: 22rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.un-module-state {
+  padding: 2rpx 10rpx;
+  border-radius: 999rpx;
+  font-size: 18rpx;
+  color: var(--tt-text-3);
+  background: var(--tt-line);
+}
+
+.un-module-state.todo {
+  color: var(--tt-brand-deep);
+  background: var(--tt-brand-soft-2);
+}
+
+.un-module-state.done {
+  color: var(--td-success-color-5, #2ba471);
+  background: rgba(43, 164, 113, 0.12);
+}
+
+.un-module-sub {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  margin-top: 4rpx;
+}
+
+.un-module-hint {
+  flex: 1;
+  min-width: 0;
+  font-size: 19rpx;
+  line-height: 1.45;
+  color: var(--tt-text-3);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.un-module-cta {
+  flex-shrink: 0;
+  font-size: 20rpx;
+  font-weight: 600;
+  color: var(--tt-brand-deep);
+}
+
+/* ===== 快捷入口：一张卡、一行一个 ===== */
+.un-rows {
+  padding: 2rpx 18rpx 6rpx;
+}
+
+.un-rows .tt-row {
+  gap: 12rpx;
+  padding: 14rpx 0;
+  border-bottom-width: 1rpx;
+}
+
+.un-rows .tt-row-title {
+  font-size: 25rpx;
+}
+
+.un-rows .tt-row-sub {
+  margin-top: 3rpx;
+  font-size: 19rpx;
+}
+
+.un-row-icon {
+  width: 44rpx;
+  height: 44rpx;
+  flex-shrink: 0;
+  border-radius: 14rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--tt-brand-soft);
+}
+
+.un-row-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.un-row-badge {
+  flex-shrink: 0;
+  padding: 2rpx 10rpx;
+  border-radius: 999rpx;
+  font-size: 18rpx;
+  font-weight: 600;
+  color: #ffffff;
+  background: var(--tt-brand);
+}
+
+.un-empty {
+  padding: 24rpx 0;
+  text-align: center;
+  font-size: 21rpx;
+  color: var(--tt-text-3);
+}
+
+/* 页面级紧凑间距 */
+.un-page .tt-card {
+  margin-bottom: 10rpx;
+}
+
+.un-page .tt-section {
+  gap: 10rpx;
+  margin: 6rpx 28rpx 10rpx;
+  font-size: 27rpx;
+}
+
+.un-page .tt-section::before {
+  width: 7rpx;
+  height: 24rpx;
+}
+
+.un-page .tt-footer {
+  padding: 14rpx 28rpx 28rpx;
+  font-size: 21rpx;
+}
+
+
+/* ===== 模块进度改双列（如各个类录入入口）===== */
+.un-modules {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  padding: 10rpx;
+}
+
+.un-module {
+  width: 48.5%;
+  margin-bottom: 10rpx;
+  box-sizing: border-box;
+  padding: 11rpx 12rpx;
+  border: 1rpx solid var(--tt-line);
+  border-radius: 14rpx;
+  border-bottom: 1rpx solid var(--tt-line);
+}
+
+.un-module:last-child {
+  border-bottom: 1rpx solid var(--tt-line);
+}
+
+.un-module-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6rpx;
+}
+
+.un-module-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 23rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.un-module-state {
+  flex-shrink: 0;
+  padding: 2rpx 8rpx;
+  border-radius: 999rpx;
+  font-size: 17rpx;
+}
+
+.un-module-bottom {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  margin-top: 7rpx;
+}
+
+.un-module-progress {
+  flex-shrink: 0;
+  font-size: 23rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.un-module-dept {
+  flex: 1;
+  min-width: 0;
+  font-size: 17rpx;
+  color: var(--tt-text-3);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.un-module-cta {
+  flex-shrink: 0;
+  font-size: 19rpx;
+  font-weight: 600;
+  color: var(--tt-brand-deep);
+}
+
+.un-modules .un-empty {
+  width: 100%;
+}
+
+
+/* ===== 待办也改双列小卡 ===== */
+.un-todo-panel {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  padding: 10rpx;
+}
+
+.un-todo-row {
+  width: 48.5%;
+  box-sizing: border-box;
+  margin-bottom: 8rpx;
+  padding: 10rpx 12rpx;
+  border: 1rpx solid var(--tt-line);
+  border-bottom: 1rpx solid var(--tt-line);
+  border-radius: 14rpx;
+  background: var(--tt-card);
+  gap: 8rpx;
+}
+
+.un-todo-row.primary {
+  border-color: var(--tt-brand-soft-2);
+  background: var(--tt-brand-soft);
+}
+
+.un-todo-row.ok {
+  width: 100%;
+  margin-bottom: 0;
+}
+
+.un-todo-icon {
+  width: 38rpx;
+  height: 38rpx;
+}
+
+.un-todo-title {
+  font-size: 22rpx;
+}
+
+.un-todo-sub {
+  font-size: 18rpx;
+}
+
+.un-todo-n {
+  font-size: 26rpx;
+}
+
+/* ===== 快捷入口也改双列小卡 ===== */
+.un-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  padding: 10rpx;
+}
+
+.un-shortcut {
+  position: relative;
+  width: 48.5%;
+  box-sizing: border-box;
+  margin-bottom: 8rpx;
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  padding: 12rpx;
+  border: 1rpx solid var(--tt-line);
+  border-radius: 14rpx;
+  background: var(--tt-card);
+}
+
+.un-shortcut:active {
+  background: var(--tt-brand-soft);
+}
+
+.un-shortcut-t {
+  flex: 1;
+  min-width: 0;
+  font-size: 22rpx;
+  font-weight: 500;
+  color: var(--tt-text-1);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.un-shortcut-b {
+  flex-shrink: 0;
+  min-width: 28rpx;
+  height: 28rpx;
+  padding: 0 7rpx;
+  border-radius: 999rpx;
+  background: var(--tt-brand);
+  color: #fff;
+  font-size: 17rpx;
+  line-height: 28rpx;
+  text-align: center;
+}
+
+
+/* ===== 头部学年徽标（2026学年）===== */
+.un-hero-term {
+  display: inline-block;
+  margin-right: 6rpx;
+  padding: 1rpx 9rpx;
+  border-radius: 999rpx;
+  font-size: 17rpx;
+  color: var(--tt-brand-deep);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+
+/* ===== 头部届次徽标（第24届）===== */
+.un-hero-session {
+  display: inline-block;
+  margin-right: 6rpx;
+  padding: 1rpx 9rpx;
+  border-radius: 999rpx;
+  font-size: 17rpx;
+  font-weight: 600;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.26);
+}

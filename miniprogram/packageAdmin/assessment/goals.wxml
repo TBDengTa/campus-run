@@ -1,40 +1,40 @@
 <view class="page tt-page cfg-page" wx:if="{{defaults}}">
   <view class="tt-section">
     <text>默认目标</text>
-    <text class="tt-section-extra">未匹配到计划时生效</text>
+    <text class="tt-section-extra">{{canManage ? '未匹配到计划时生效' : '只读：需运动考核管理权限才能修改'}}</text>
   </view>
 
   <view class="tt-card cfg-card">
     <view class="cfg-sublabel">每日目标</view>
     <view class="cfg-fitem">
       <text class="cfg-flabel">每日步数</text>
-      <input class="cfg-input" type="number" value="{{defaults.daily.steps}}" bindinput="onDaily" data-field="steps" />
+      <input class="cfg-input" type="number" disabled="{{!canManage}}" value="{{defaults.daily.steps}}" bindinput="onDaily" data-field="steps" />
     </view>
     <view class="cfg-fitem">
       <text class="cfg-flabel">每日距离（米）</text>
-      <input class="cfg-input" type="number" value="{{defaults.daily.distance}}" bindinput="onDaily" data-field="distance" />
+      <input class="cfg-input" type="number" disabled="{{!canManage}}" value="{{defaults.daily.distance}}" bindinput="onDaily" data-field="distance" />
     </view>
     <view class="cfg-fitem">
       <text class="cfg-flabel">每日千卡</text>
-      <input class="cfg-input" type="number" value="{{defaults.daily.calories}}" bindinput="onDaily" data-field="calories" />
+      <input class="cfg-input" type="number" disabled="{{!canManage}}" value="{{defaults.daily.calories}}" bindinput="onDaily" data-field="calories" />
     </view>
 
     <view class="cfg-sublabel cfg-sublabel-gap">每周目标</view>
     <view class="cfg-fitem">
       <text class="cfg-flabel">每周步数</text>
-      <input class="cfg-input" type="number" value="{{defaults.weekly.steps}}" bindinput="onWeekly" data-field="steps" />
+      <input class="cfg-input" type="number" disabled="{{!canManage}}" value="{{defaults.weekly.steps}}" bindinput="onWeekly" data-field="steps" />
     </view>
     <view class="cfg-fitem">
       <text class="cfg-flabel">每周距离（米）</text>
-      <input class="cfg-input" type="number" value="{{defaults.weekly.distance}}" bindinput="onWeekly" data-field="distance" />
+      <input class="cfg-input" type="number" disabled="{{!canManage}}" value="{{defaults.weekly.distance}}" bindinput="onWeekly" data-field="distance" />
     </view>
     <view class="cfg-fitem">
       <text class="cfg-flabel">每周千卡</text>
-      <input class="cfg-input" type="number" value="{{defaults.weekly.calories}}" bindinput="onWeekly" data-field="calories" />
+      <input class="cfg-input" type="number" disabled="{{!canManage}}" value="{{defaults.weekly.calories}}" bindinput="onWeekly" data-field="calories" />
     </view>
   </view>
 
-  <view class="cfg-save-bar">
+  <view class="cfg-save-bar" wx:if="{{canManage}}">
     <t-button theme="primary" block loading="{{saving}}" bind:tap="save">保存默认目标</t-button>
   </view>
 

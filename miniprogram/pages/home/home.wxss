@@ -1,3 +1,6 @@
+/* 分类条目浮层样式（共用模板 templates/nav-sheet.wxml） */
+@import "/templates/nav-sheet.wxss";
+
 .home-page {
   padding: 0 0 calc(160rpx + env(safe-area-inset-bottom));
 }
@@ -623,6 +626,20 @@
 .mgr-head-sub {
   margin-top: 8rpx;
   padding-top: 16rpx;
+}
+
+/* 快捷操作的分类小标题（班级管理 / 学生会 / 更多管理）：
+   比 .mgr-title 轻一档，只做宫格分组，不抢「数据概况」「快捷操作」的层级 */
+.mgr-sub {
+  margin: 4rpx 0 10rpx;
+  font-size: 23rpx;
+  font-weight: 600;
+  color: var(--tt-text-2);
+}
+
+/* 「快捷操作」独立卡（班主任 / 班委也看得到）：标题是卡内第一行，不像管理面板里那样需要上间距 */
+.mgr-head-card {
+  margin-top: 0;
 }
 
 .rank-cols {

@@ -1,0 +1,120 @@
+<!-- 班超块 / 学生会块（同一个组件，mode 区分；无身份时整块不渲染） -->
+<view wx:if="{{show}}">
+  <!-- ===== 班超块：仅班委 / 班主任 =====
+       紧凑版：一行头部（班名 + 「今日班超」+ 班级圆点）+ 一行得分/排名 + 一行模块，
+       整卡约 200rpx（旧版是「大得分 + 一行 5 个大色块」的两段式，约 300rpx）。
+       多班：卡片主体可左右滑动切换班级（与首页「我的班级」卡同一交互），
+       头部与圆点在 swiper 之外固定不动；单班时不显示圆点。 -->
+  <block wx:if="{{mode === 'banchao'}}">
+    <view class="tt-card bc-block">
+      <view class="bc-head">
+        <text class="bc-name">{{className}}</text>
+        <text class="bc-range">{{rangeLabel}}班超</text>
+        <!-- 多班：圆点指示器（可点选切班）；箭头始终保留 —— 卡片整体是可点进班超页的 -->
+        <view class="bc-dots" wx:if="{{multi}}">
+          <view
+            class="bc-dot {{swipeIndex === index ? 'active' : ''}}"
+            wx:for="{{classes}}"
+            wx:key="*this"
+            data-index="{{index}}"
+            bind:tap="goClass"
+          ></view>
+        </view>
+        <t-icon name="chevron-right" size="26rpx" color="var(--tt-text-3)" />
+      </view>
+
+      <!-- 卡片主体：<swiper> 必须拿到确定高度（cardHeight 由首屏量一次后写入） -->
+      <view class="bc-swiper" style="height: {{cardHeight}}rpx">
+        <swiper
+          class="bc-swiper-box"
+          current="{{classIndex}}"
+          bindchange="onSwipeChange"
+          bindanimationfinish="onSwipeSettled"
+          duration="240"
+          easing-function="easeOutCubic"
+        >
+          <swiper-item wx:for="{{cards}}" wx:key="className">
+            <view class="bc-panel" bind:tap="goBanChao">
+              <view class="bc-score-row">
+                <view class="bc-score">
+                  <text class="num-font bc-score-v">{{item.scoreText}}</text>
+                  <text class="bc-score-l">班级得分</text>
+                </view>
+                <text class="bc-rank" wx:if="{{item.rankText}}">{{item.rankText}}</text>
+                <text class="bc-rank bc-rank-empty" wx:else>本校排名暂无数据</text>
+              </view>
+
+              <!-- 模块：一行平铺（不再是 4+1 的大色块），值在上、名在下 -->
+              <view class="bc-modules">
+                <view class="bc-module" wx:for="{{item.modules}}" wx:for-item="mod" wx:key="key">
+                  <text class="bc-module-v bc-module-{{mod.state}}">{{mod.valueText}}</text>
+                  <text class="bc-module-n">{{mod.name}}</text>
+                </view>
+                <view class="bc-empty-row" wx:if="{{!item.modules.length}}">暂无检查模块</view>
+              </view>
+            </view>
+          </swiper-item>
+        </swiper>
+      </view>
+    </view>
+  </block>
+
+  <!-- ===== 学生会块：仅学生会成员 =====
+       紧凑版：标题 / 概览 / 双列模块入口 / 底部操作四段压到一张小卡里，
+       一屏看完「今日录入 + 待复核 + 每个模块的去录入」。 -->
+  <block wx:else>
+    <view class="tt-card bc-block union-block">
+      <view class="ub-head" bind:tap="goUnion">
+        <text class="ub-name">学生会</text>
+        <text class="ub-role">{{roleText}}</text>
+        <t-icon name="chevron-right" size="24rpx" color="var(--tt-text-3)" />
+      </view>
+
+      <!-- 概览行：今日录入 + 应录（与待复核同排，不再各占一行） -->
+      <view class="ub-sum">
+        <text class="ub-sum-k">今日录入</text>
+        <text class="ub-sum-v num-font">{{enteredTotal}}</text>
+        <text class="ub-sum-t" wx:if="{{expectedTotal}}">/ {{expectedTotal}}</text>
+        <view class="ub-todo" wx:if="{{canReview && pendingReview}}" catch:tap="goReview">
+          <text class="ub-todo-n num-font">{{pendingReview}}</text>
+          <text class="ub-todo-l">待复核</text>
+        </view>
+      </view>
+
+      <!-- 完成度细进度条：应录 > 0 才渲染 -->
+      <view class="ub-track" wx:if="{{expectedTotal}}">
+        <view class="ub-track-fill" style="width: {{progressPercent}}%"></view>
+      </view>
+
+      <!-- 模块入口：双列小卡（首页块高度再压一档） -->
+      <view class="ub-grid" wx:if="{{entryModules.length}}">
+        <view class="ub-item" wx:for="{{entryModules}}" wx:key="key" catch:tap="goEntry" data-key="{{item.key}}">
+          <view class="ub-item-top">
+            <text class="ub-item-name">{{item.name}}录入</text>
+            <text class="ub-item-n">{{item.text}}</text>
+          </view>
+          <view class="ub-item-bottom">
+            <!-- 早八这类「只记异常人」的模块：没记录 = 无迟到，显示中性的「无迟到」而不是
+                 「去录入」（读起来像还没干活）/「已录完」（读起来像已完成一项任务） -->
+            <text class="ub-item-btn {{item.optionalWhenMissing ? 'optional' : item.done ? 'done' : ''}}">
+              {{item.optionalWhenMissing ? '无迟到' : item.done ? '已录完' : '去录入'}}
+            </text>
+            <t-icon name="chevron-right" size="18rpx" color="var(--tt-text-3)" />
+          </view>
+        </view>
+      </view>
+
+      <!-- 底部操作：记录 / 复核，收成两个文字链，不与模块行抢视觉 -->
+      <view class="ub-actions">
+        <view class="ub-action" catch:tap="goRecords">
+          <t-icon name="file-paste" size="24rpx" color="var(--tt-brand)" />
+          <text class="ub-action-l">我的记录</text>
+        </view>
+        <view class="ub-action" wx:if="{{canReview}}" catch:tap="goReview">
+          <t-icon name="check-circle" size="24rpx" color="var(--tt-brand)" />
+          <text class="ub-action-l">待复核{{pendingReview ? ' ' + pendingReview : ''}}</text>
+        </view>
+      </view>
+    </view>
+  </block>
+</view>

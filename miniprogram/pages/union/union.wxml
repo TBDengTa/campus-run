@@ -1,0 +1,151 @@
+<view class="page tt-page tt-page-tab un-page">
+  <!-- ===== 非成员兜底 ===== -->
+  <view class="tt-card un-guard" wx:if="{{!loading && !isMember}}">
+    <t-icon name="info-circle" size="40rpx" color="var(--tt-text-3)" />
+    <view class="un-guard-text">你还不是学生会成员</view>
+    <view class="un-guard-sub">如需录入检查数据，请联系学生处或学生会主席团在管理端添加成员</view>
+  </view>
+
+  <block wx:if="{{isMember}}">
+    <!-- ===== 身份卡：压成一行身份 + 一行统计 ===== -->
+    <view class="tt-hero">
+      <view class="tt-hero-body un-hero">
+        <view class="un-hero-role">
+          {{roleText}}<text class="un-hero-role-more" wx:if="{{roles.length > 1}}">等{{roles.length}}职</text>
+        </view>
+        <view class="un-hero-date">
+          <text class="un-hero-term" wx:if="{{termName}}">{{termName}}</text>
+          <text class="un-hero-session" wx:if="{{termSessionName}}">{{termSessionName}}</text>
+          <text>{{dateText}} · 检查录入工作台</text>
+        </view>
+        <view class="un-hero-stats">
+          <view class="un-hero-stat">
+            <text class="num-font un-hero-stat-v">{{myToday}}</text>
+            <text class="un-hero-stat-l">今日录入</text>
+          </view>
+          <view class="un-hero-stat">
+            <text class="num-font un-hero-stat-v">{{pendingReview}}</text>
+            <text class="un-hero-stat-l">待复核</text>
+          </view>
+          <view class="un-hero-stat">
+            <text class="num-font un-hero-stat-v">{{myTotal}}</text>
+            <text class="un-hero-stat-l">累计录入</text>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <!-- ===== 待办：合并成一张紧凑清单 ===== -->
+    <view
+      class="un-todo-panel"
+      wx:if="{{(missingTotal > 0 && firstEntryKey) || pendingReview > 0 || (canReview && myPendingAppeal > 0) || allDone}}"
+    >
+      <view class="un-todo-row primary" wx:if="{{missingTotal > 0 && firstEntryKey}}" bind:tap="goEntry" data-key="{{firstEntryKey}}">
+        <view class="un-todo-icon">
+          <t-icon name="file-paste" size="26rpx" color="var(--tt-brand)" />
+        </view>
+        <view class="un-todo-main">
+          <view class="un-todo-title">今日未录 <text class="num-font un-todo-n">{{missingTotal}}</text> 项</view>
+          <view class="un-todo-sub">先去「{{firstEntryName}}」</view>
+        </view>
+        <t-icon name="chevron-right" size="22rpx" color="var(--tt-text-3)" />
+      </view>
+
+      <view class="un-todo-row" wx:if="{{canReview && pendingReview > 0}}" bind:tap="goReviewList">
+        <view class="un-todo-icon">
+          <t-icon name="task-checked" size="26rpx" color="var(--tt-brand)" />
+        </view>
+        <view class="un-todo-main">
+          <view class="un-todo-title">待复核 <text class="num-font un-todo-n">{{pendingReview}}</text> 条</view>
+          <view class="un-todo-sub">复核后计入班级班超总评</view>
+        </view>
+        <t-icon name="chevron-right" size="22rpx" color="var(--tt-text-3)" />
+      </view>
+
+      <view class="un-todo-row" wx:if="{{canReview && myPendingAppeal > 0}}" bind:tap="goAppeals">
+        <view class="un-todo-icon">
+          <t-icon name="chat" size="26rpx" color="var(--tt-brand)" />
+        </view>
+        <view class="un-todo-main">
+          <view class="un-todo-title">待处理申诉 <text class="num-font un-todo-n">{{myPendingAppeal}}</text> 条</view>
+          <view class="un-todo-sub">班级对检查结果有异议</view>
+        </view>
+        <t-icon name="chevron-right" size="22rpx" color="var(--tt-text-3)" />
+      </view>
+
+      <view class="un-todo-row ok" wx:if="{{allDone}}">
+        <view class="un-todo-icon">
+          <t-icon name="check-circle" size="26rpx" color="var(--tt-brand)" />
+        </view>
+        <view class="un-todo-main">
+          <view class="un-todo-title">今日录入已完成</view>
+          <view class="un-todo-sub">等待主席团复核</view>
+        </view>
+      </view>
+    </view>
+
+    <!-- ===== 今日检查进度：双列小卡（名称/进度/状态/操作） ===== -->
+    <view class="tt-section">
+      <text>今日检查进度</text>
+      <text class="tt-section-extra">{{dateText}}</text>
+    </view>
+    <view class="tt-card un-modules">
+      <view
+        class="un-module"
+        wx:for="{{modules}}"
+        wx:key="key"
+        data-key="{{item.key}}"
+        data-enter="{{item.canEnter ? '1' : '0'}}"
+        bind:tap="goEntry"
+      >
+        <view class="un-module-top">
+          <text class="un-module-name">{{item.name}}</text>
+          <text class="un-module-state {{item.stateClass}}">{{item.stateText}}</text>
+        </view>
+        <view class="un-module-bottom">
+          <text class="num-font un-module-progress">{{item.progressText}}</text>
+          <text class="un-module-dept">{{item.ownerDeptName}}</text>
+          <text class="un-module-cta" wx:if="{{item.canEnter}}">{{item.missing > 0 ? '去录入' : '查看'}} ›</text>
+        </view>
+      </view>
+      <view class="un-empty" wx:if="{{!modules.length}}">暂无启用的检查模块</view>
+    </view>
+
+    <!-- ===== 快捷入口：双列小卡 ===== -->
+    <view class="tt-section">快捷入口</view>
+    <view class="tt-card un-shortcuts">
+      <view class="un-shortcut" bind:tap="goRecords">
+        <t-icon name="file-paste" size="30rpx" color="var(--tt-brand)" />
+        <text class="un-shortcut-t">我的记录</text>
+      </view>
+      <view class="un-shortcut" wx:if="{{canReview}}" bind:tap="goReviewList">
+        <t-icon name="check-circle" size="30rpx" color="var(--tt-brand)" />
+        <text class="un-shortcut-t">待复核</text>
+        <text class="un-shortcut-b" wx:if="{{pendingReview > 0}}">{{pendingReview}}</text>
+      </view>
+      <view class="un-shortcut" wx:if="{{canReview}}" bind:tap="goAppeals">
+        <t-icon name="chat" size="30rpx" color="var(--tt-brand)" />
+        <text class="un-shortcut-t">申诉处理</text>
+        <text class="un-shortcut-b" wx:if="{{myPendingAppeal > 0}}">{{myPendingAppeal}}</text>
+      </view>
+      <view class="un-shortcut" wx:if="{{canReview}}" bind:tap="goAllRecords">
+        <t-icon name="file-paste" size="30rpx" color="var(--tt-brand)" />
+        <text class="un-shortcut-t">全部记录</text>
+      </view>
+      <view class="un-shortcut" wx:if="{{canManageMembers}}" bind:tap="goManageMembers">
+        <t-icon name="usergroup" size="30rpx" color="var(--tt-brand)" />
+        <text class="un-shortcut-t">成员管理</text>
+      </view>
+      <view class="un-shortcut" bind:tap="goStats">
+        <t-icon name="chart-bar" size="30rpx" color="var(--tt-brand)" />
+        <text class="un-shortcut-t">班级排名</text>
+      </view>
+      <view class="un-shortcut" bind:tap="goRoster">
+        <t-icon name="usergroup" size="30rpx" color="var(--tt-brand)" />
+        <text class="un-shortcut-t">通讯录</text>
+      </view>
+    </view>
+  </block>
+
+  <view class="tt-footer">检查记录由各部门录入，主席团复核后计入班级班超总评</view>
+</view>

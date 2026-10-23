@@ -1,0 +1,125 @@
+/* 班级考勤汇总（只读组件）：只用 app.wxss 的 --tt-* 令牌与 .tt-* 公共类，不硬编码品牌色
+   （组件开了 styleIsolation: apply-shared，所以 .tt-card / .tt-stat / .num-font 这些公共类可以直接用） */
+
+.at-root {
+  padding-top: 8rpx;
+}
+
+/* ===== 周期切换（今日 / 本周 / 本月）===== */
+.at-periods {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin: 0 var(--tt-gap) 20rpx;
+}
+
+.at-period {
+  flex: 0 0 auto;
+  padding: 14rpx 32rpx;
+  border-radius: 999rpx;
+  font-size: 26rpx;
+  color: var(--tt-text-2);
+  background: var(--tt-card);
+  box-shadow: var(--tt-card-shadow);
+}
+
+.at-period.active {
+  color: #ffffff;
+  background: var(--tt-brand);
+  font-weight: 600;
+}
+
+.at-range {
+  flex: 1;
+  min-width: 200rpx;
+  text-align: right;
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+/* 父页面驱动区间时只留一行区间说明（周期条已由页面提供）：左对齐、不占整行高度 */
+.at-periods-driven {
+  margin-bottom: 12rpx;
+}
+
+.at-periods-driven .at-range {
+  text-align: left;
+}
+
+/* ===== 概览卡 ===== */
+.at-card {
+  padding: 28rpx var(--tt-pad);
+}
+
+.at-loading {
+  padding: 40rpx 0;
+  text-align: center;
+  font-size: 24rpx;
+  color: var(--tt-text-3);
+}
+
+.at-error {
+  padding-top: 10rpx;
+  text-align: center;
+  font-size: 26rpx;
+  color: var(--tt-text-2);
+}
+
+.at-error-s {
+  padding: 10rpx 0 16rpx;
+  text-align: center;
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+/* 各模块区间平均出勤率 */
+.at-mods {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin-top: 26rpx;
+}
+
+.at-mod {
+  display: flex;
+  align-items: baseline;
+  gap: 8rpx;
+  padding: 12rpx 20rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-bg-page);
+}
+
+.at-mod-name {
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+.at-mod-rate {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: var(--tt-text-1);
+}
+
+/* 满勤 / 无该模块：满勤用品牌色，无早操等长文案弱化成说明文字 */
+.at-mod-rate.is-full {
+  color: var(--tt-brand-deep);
+}
+
+.at-mod-rate.is-muted {
+  font-size: 22rpx;
+  font-weight: 400;
+  color: var(--tt-text-3);
+}
+
+.at-note {
+  margin-top: 16rpx;
+  font-size: 21rpx;
+  line-height: 1.6;
+  color: var(--tt-text-3);
+}
+
+/* 「每日明细」相关样式（.at-list / .at-row / .at-cell…）已随该区块一起下线：
+   用户口径「不需要每日啊，咱们已经有筛选了」——页面顶部已有周期选择器，
+   组件再列一遍按日明细既重复、又与概览卡的「该区间暂无考勤记录」自相矛盾。 */
+

@@ -1,0 +1,202 @@
+/* 本班宿舍绑定：紧凑版（一行搜索 + 双列学生卡） */
+.cd-page {
+  padding-bottom: 32rpx;
+}
+
+/* ===== 顶部进度：浅色小卡，不占半屏 ===== */
+.cd-hero {
+  margin: 10rpx var(--tt-gap) 8rpx;
+  padding: 14rpx 16rpx;
+  border-radius: var(--tt-radius);
+  background: var(--tt-brand-soft);
+}
+
+.cd-hero-top {
+  display: flex;
+  align-items: baseline;
+  gap: 8rpx;
+}
+
+.cd-hero-title {
+  font-size: 26rpx;
+  font-weight: 700;
+  color: var(--tt-text-1);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cd-hero-sub {
+  flex-shrink: 0;
+  font-size: 19rpx;
+  color: var(--tt-brand-deep);
+}
+
+.cd-hero-stats {
+  display: flex;
+  gap: 8rpx;
+  margin-top: 10rpx;
+}
+
+.cd-hero-stat {
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 5rpx;
+  padding: 8rpx 0;
+  border-radius: 10rpx;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.cd-hero-v {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: var(--tt-brand-deep);
+}
+
+.cd-hero-l {
+  font-size: 18rpx;
+  color: var(--tt-text-3);
+}
+
+/* ===== 搜索行 ===== */
+.cd-tools {
+  display: flex;
+  align-items: center;
+  gap: 7rpx;
+  padding: 0 var(--tt-gap) 8rpx;
+}
+
+.cd-search {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7rpx;
+  height: 62rpx;
+  padding: 0 16rpx;
+  border-radius: 999rpx;
+  background: var(--tt-card);
+}
+
+.cd-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 23rpx;
+  color: var(--tt-text-1);
+  background: transparent;
+  padding: 0;
+}
+
+.cd-clear {
+  flex-shrink: 0;
+  font-size: 19rpx;
+  color: var(--tt-text-3);
+}
+
+.cd-pill {
+  flex-shrink: 0;
+  height: 62rpx;
+  line-height: 62rpx;
+  padding: 0 18rpx;
+  border-radius: 999rpx;
+  font-size: 20rpx;
+  color: var(--tt-text-2);
+  background: var(--tt-card);
+}
+
+.cd-pill.active {
+  color: #ffffff;
+  background: var(--tt-brand);
+}
+
+/* ===== 学生双列 ===== */
+.cd-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  padding: 0 var(--tt-gap);
+}
+
+.cd-stu {
+  width: 48.7%;
+  box-sizing: border-box;
+  margin-bottom: 8rpx;
+  padding: 10rpx 12rpx;
+  border-radius: 12rpx;
+  background: var(--tt-card);
+  box-shadow: var(--tt-card-shadow);
+}
+
+.cd-stu:active {
+  background: var(--tt-brand-soft);
+}
+
+.cd-stu-line1 {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+}
+
+.cd-stu-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 24rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cd-stu-sub {
+  display: block;
+  margin-top: 2rpx;
+  font-size: 17rpx;
+  color: var(--tt-text-3);
+}
+
+.cd-stu-room {
+  display: flex;
+  align-items: center;
+  gap: 5rpx;
+  margin-top: 7rpx;
+  padding: 4rpx 9rpx;
+  border-radius: 999rpx;
+  background: var(--tt-brand-soft);
+  font-size: 18rpx;
+  color: var(--tt-brand-deep);
+  overflow: hidden;
+}
+
+.cd-stu-room text {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cd-stu-none {
+  background: var(--tt-bg-page);
+  color: var(--tt-text-3);
+}
+
+.cd-stu-bed {
+  flex-shrink: 0;
+  font-size: 16rpx;
+  color: var(--tt-text-3);
+}
+
+.cd-empty {
+  width: 100%;
+  padding: 32rpx 0;
+  text-align: center;
+  font-size: 21rpx;
+  color: var(--tt-text-3);
+}
+
+.cd-page .tt-footer {
+  padding: 10rpx 28rpx 22rpx;
+  font-size: 18rpx;
+  line-height: 1.55;
+}

@@ -1,5 +1,7 @@
 const auth = require('../../utils/request');
 const fmt = require('../../utils/format');
+// 写权限（assessment.manage）：只有 assessment.view 的账号看不到新增/编辑/删除/保存
+const adminPerm = require('../../utils/admin-perm');
 
 const EMPTY = {
   _id: '',
@@ -29,6 +31,7 @@ Page({
   data: {
     list: [],
     loading: false,
+    canManage: false, // assessment.manage / '*'：只有 assessment.view 时不显示新增/编辑/删除/保存
     form: null,
     formVisible: false,
     saving: false,
@@ -56,6 +59,8 @@ Page({
         });
         return;
       }
+      // 只读 / 可写分开：assessment.view 能看计划库，assessment.manage 才能增删改
+      await adminPerm.applyManage(this, 'assessment.manage');
       this.load();
     } catch (e) {
       wx.showToast({ title: e.message, icon: 'none' });

@@ -537,6 +537,11 @@
   color: var(--tt-text-1);
 }
 
+/* ===== 4.6 宿舍（学生 ↔ 房间；混宿时一间房会有几个班的学生，所以按人维护）=====
+   绑定抽屉已抽成公共组件 components/dorm-sheet（主包），与「班级管理 → 宿舍」共用同一份：
+   原来的 .ud-dorm-sheet / .ud-dorm-body / .ud-dorm-foot / .ud-dorm-field / .ud-dorm-input /
+   .ud-dorm-quick* 一套私有样式已随组件化删除，这里不再保留任何 ud-dorm-* 死样式 */
+
 .udetail-loading {
   display: flex;
   justify-content: center;
@@ -711,4 +716,430 @@
 .ud-bg-tag.is-add {
   color: #fff;
   background: linear-gradient(135deg, #ff9a3d, var(--tt-brand));
+}
+
+
+/* ===== 学生会身份 ===== */
+.ud-union-tag {
+  flex-shrink: 0;
+  padding: 2rpx 10rpx;
+  border-radius: 999rpx;
+  font-size: 17rpx;
+  color: var(--tt-brand-deep);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.ud-union-row {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  padding: 11rpx 0;
+  border-bottom: 1rpx solid var(--tt-line);
+}
+
+.ud-union-row:last-of-type {
+  border-bottom: none;
+}
+
+.ud-union-dept {
+  flex: 1;
+  min-width: 0;
+  font-size: 24rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.ud-union-org {
+  flex-shrink: 0;
+  padding: 2rpx 9rpx;
+  border-radius: 999rpx;
+  font-size: 17rpx;
+  color: var(--tt-text-2);
+  background: var(--tt-bg-page);
+}
+
+.ud-union-term {
+  flex-shrink: 0;
+  font-size: 17rpx;
+  color: var(--tt-brand-deep);
+}
+
+/* ===== 整体再压一档（紧凑排版）===== */
+.ud-page .tt-section {
+  gap: 10rpx;
+  margin: 12rpx var(--tt-gap) 8rpx;
+  font-size: 25rpx;
+}
+
+.ud-page .tt-section::before {
+  width: 6rpx;
+  height: 22rpx;
+}
+
+.ud-card {
+  padding: 14rpx 18rpx;
+}
+
+.ud-hero {
+  padding: 20rpx 24rpx 16rpx;
+}
+
+.ud-name-text {
+  font-size: 30rpx;
+}
+
+.ud-hero-meta {
+  font-size: 20rpx;
+}
+
+.ud-hero-stats {
+  margin-top: 14rpx;
+  padding: 12rpx 0 2rpx;
+}
+
+.ud-hero-stat-v {
+  font-size: 25rpx;
+}
+
+.ud-hero-stat-l {
+  font-size: 18rpx;
+}
+
+.ud-quick {
+  padding: 12rpx 6rpx;
+  margin-bottom: 12rpx;
+}
+
+.ud-quick-item {
+  gap: 5rpx;
+  font-size: 19rpx;
+}
+
+.ud-kv {
+  padding: 9rpx 0;
+  font-size: 21rpx;
+}
+
+.ud-grid-item {
+  padding: 8rpx 0;
+}
+
+.ud-note {
+  padding: 8rpx 10rpx;
+  font-size: 18rpx;
+  line-height: 1.5;
+}
+
+.ud-tabs {
+  gap: 4rpx;
+}
+
+.ud-tab {
+  padding: 8rpx 0;
+  font-size: 20rpx;
+}
+
+.ud-log {
+  padding: 12rpx 0;
+}
+
+.ud-page .tt-footer {
+  padding: 12rpx 28rpx 20rpx;
+  font-size: 18rpx;
+}
+
+
+/* ===== 主 Tab（概览 / 运动 / 班级 / 账号）：吸顶分段 ===== */
+.ud-maintabs {
+  position: sticky;
+  top: 0;
+  z-index: 9;
+  display: flex;
+  gap: 6rpx;
+  margin: 0 var(--tt-gap) 10rpx;
+  padding: 8rpx;
+  border-radius: 999rpx;
+  background: var(--tt-card);
+  box-shadow: var(--tt-card-shadow);
+}
+
+.ud-maintab {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  padding: 12rpx 0;
+  border-radius: 999rpx;
+  font-size: 22rpx;
+  font-weight: 500;
+  color: var(--tt-text-2);
+}
+
+.ud-maintab.active {
+  color: #ffffff;
+  font-weight: 600;
+  background: var(--tt-brand);
+}
+
+.ud-page .tt-section:first-of-type {
+  margin-top: 4rpx;
+}
+
+
+/* ===== 运动明细：Tab / 空态 / 分页 重做（覆盖上方旧规则）===== */
+/* 二级 Tab：等宽分段（不再挤成一团药丸），选中用浅底 + 品牌字，克制不抢视觉 */
+.ud-tabs {
+  display: flex;
+  gap: 0;
+  padding: 10rpx 0 8rpx;
+  border-bottom: 1rpx solid var(--tt-line);
+  overflow: visible;
+}
+
+.ud-tab {
+  flex: 1;
+  min-width: 0;
+  flex-shrink: 1;
+  text-align: center;
+  padding: 9rpx 0;
+  border-radius: 10rpx;
+  background: transparent;
+  font-size: 22rpx;
+  color: var(--tt-text-2);
+}
+
+.ud-tab.active {
+  color: var(--tt-brand-deep);
+  font-weight: 600;
+  background: var(--tt-brand-soft);
+}
+
+/* 空态：一行小字（不再撑高卡片） */
+.ud-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6rpx;
+  padding: 26rpx 0;
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+}
+
+/* 底部状态条：加载 / 分页只占一行；只有一页时不显示翻页 */
+.ud-foot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 56rpx;
+  margin-top: 4rpx;
+  padding-top: 8rpx;
+  border-top: 1rpx solid var(--tt-line);
+}
+
+.ud-foot-loading {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  font-size: 19rpx;
+  color: var(--tt-text-3);
+}
+
+.ud-foot-page {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+}
+
+.ud-foot-text {
+  font-size: 20rpx;
+  color: var(--tt-text-2);
+}
+
+.ud-foot-single {
+  font-size: 19rpx;
+  color: var(--tt-text-3);
+}
+
+.ud-page-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64rpx;
+  height: 44rpx;
+  padding: 0;
+  border-radius: 999rpx;
+  background: var(--tt-bg-page);
+}
+
+.ud-page-btn.is-disabled {
+  opacity: 0.5;
+}
+
+/* ===== 加入学生会二维码弹层（用户 2026-10-22）===== */
+.ud-invite-row {
+  margin-top: 16rpx;
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.ud-invite-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8rpx;
+  padding: 12rpx 22rpx;
+  border-radius: 999rpx;
+  background: var(--tt-brand-soft);
+}
+
+.ud-invite-t {
+  font-size: 24rpx;
+  color: var(--tt-brand);
+}
+
+.ud-invite-hint {
+  flex: 1;
+  min-width: 0;
+  font-size: 21rpx;
+  color: var(--tt-text-3);
+}
+
+.ud-qr-mask {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 1020;
+}
+
+.ud-qr-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  /* 高于自定义 tabBar(999)：虽然本页不是 tabBar 页，但统一用同一层级，
+     避免从 tabBar 页跳进来时视觉层级不一致。 */
+  z-index: 1021;
+  display: flex;
+  flex-direction: column;
+  /* 本页无 tabBar，底部只需安全区（不像 profile 页要额外留 140rpx） */
+  padding: 0 28rpx calc(28rpx + env(safe-area-inset-bottom));
+  border-radius: 28rpx 28rpx 0 0;
+  background: var(--tt-card);
+  transform: translateY(110%);
+  transition: transform 0.24s ease;
+  max-height: 84vh;
+}
+
+.ud-qr-sheet.open {
+  transform: translateY(0);
+}
+
+.ud-qr-grab {
+  width: 72rpx;
+  height: 8rpx;
+  margin: 16rpx auto 0;
+  border-radius: 999rpx;
+  background: var(--tt-line);
+}
+
+.ud-qr-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20rpx 0 8rpx;
+}
+
+.ud-qr-title {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: var(--tt-text-1);
+}
+
+.ud-qr-close {
+  width: 56rpx;
+  height: 56rpx;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999rpx;
+  background: var(--tt-bg-page);
+}
+
+.ud-qr-body {
+  padding: 10rpx 0 6rpx;
+  text-align: center;
+}
+
+.ud-qr-name {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.ud-qr-meta {
+  margin-top: 6rpx;
+  font-size: 23rpx;
+  color: var(--tt-text-3);
+}
+
+/* 凭证串展示区：等宽字体、可换行、深色底更醒目 */
+.ud-qr-code {
+  margin: 22rpx 0;
+  padding: 24rpx 20rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-bg-page);
+  border: 2rpx dashed var(--tt-line);
+}
+
+/* 有二维码图时去掉虚线框、改白底（扫码识别率更高）。
+   不用 :has()（小程序 WXSS 支持不可靠），改用并列修饰类。 */
+.ud-qr-code.has-img {
+  padding: 0;
+  background: transparent;
+  border: 0;
+}
+
+.ud-qr-img {
+  display: block;
+  width: 460rpx;
+  height: 460rpx;
+  margin: 0 auto;
+  border-radius: 12rpx;
+  background: #ffffff;
+}
+
+.ud-qr-code-t {
+  font-size: 22rpx;
+  line-height: 34rpx;
+  color: var(--tt-text-1);
+  word-break: break-all;
+  font-family: Menlo, Consolas, monospace;
+}
+
+.ud-qr-loading,
+.ud-qr-error {
+  margin: 30rpx 0;
+  font-size: 25rpx;
+  color: var(--tt-text-3);
+}
+
+.ud-qr-error {
+  color: var(--td-error-color-6);
+}
+
+.ud-qr-tip {
+  margin-top: 8rpx;
+  font-size: 22rpx;
+  line-height: 32rpx;
+  color: var(--tt-text-3);
+}
+
+.ud-qr-foot {
+  padding-top: 18rpx;
+}
+
+.ud-qr-btn {
+  width: 100%;
 }

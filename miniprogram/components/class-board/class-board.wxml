@@ -5,7 +5,7 @@
 <view class="cb-wrap" wx:if="{{show}}">
   <view class="tt-section">
     <text>{{title}}</text>
-    <text class="tt-section-extra" wx:if="{{showManage}}" bind:tap="goManage">班级管理 ›</text>
+    <text class="tt-section-extra" wx:if="{{showManage}}" bind:tap="goManage">我的班级 ›</text>
   </view>
 
   <!-- 卡片高度：首屏量一次当前可见卡的真实高度后**冻结**（量不到用兜底常量）；单班/多班同一个值，
@@ -74,7 +74,7 @@
       </view>
 
       <view class="cb-manage" wx:if="{{showManage}}" bind:tap="goManage">
-        <text>进入班级管理</text>
+        <text>进入我的班级</text>
         <text class="cb-manage-hint">{{currentCard.canNudge ? '查看名单 · 督促未达标' : '仅查看名单与榜单'}}</text>
         <t-icon name="chevron-right" size="28rpx" color="var(--tt-brand)" />
       </view>
@@ -145,7 +145,7 @@
               </view>
 
               <view class="cb-manage" wx:if="{{showManage}}" bind:tap="goManage">
-                <text>进入班级管理</text>
+                <text>进入我的班级</text>
                 <text class="cb-manage-hint">{{item.canNudge ? '查看名单 · 督促未达标' : '仅查看名单与榜单'}}</text>
                 <t-icon name="chevron-right" size="28rpx" color="var(--tt-brand)" />
               </view>

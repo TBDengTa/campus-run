@@ -21,6 +21,15 @@ tmp/
 .DS_Store
 Thumbs.db
 
+# 部署产物（打包出来的 tar.gz 含全量源码，不入库；用 tools/make-linux-bundle.js 现场生成）
+dist/
+
+# 现场部署脚本与站点配置（含**真实域名**与服务器路径）
+# ⚠️ 本仓库已在 GitHub 公开，AGENTS.md 安全红线要求「被跟踪文件不得出现真实域名」，
+#    所以 deploy/ 只留在本机/服务器上自用，不入库。
+#    要给他人复用请改造成占位符版本（example.com）后单独放到 docs/ 或 examples/。
+deploy/
+
 # ZCode 会话工作目录
 .zcode/
 

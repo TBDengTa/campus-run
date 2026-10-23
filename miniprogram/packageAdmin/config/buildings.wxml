@@ -1,0 +1,107 @@
+<view class="page tt-page bd-page">
+  <!-- 顶部说明卡：一次讲清「为什么只能选楼」 -->
+  <view class="bd-hero">
+    <view class="bd-hero-icon">
+      <t-icon name="city" size="40rpx" color="var(--tt-brand)" />
+    </view>
+    <view class="bd-hero-main">
+      <text class="bd-hero-title">楼名管理</text>
+      <text class="bd-hero-desc">填教室 / 宿舍时先选这里的楼，只需再填门号，全系统口径统一</text>
+    </view>
+  </view>
+
+  <!-- 教学用楼 -->
+  <view class="bd-card">
+    <view class="bd-card-head">
+      <view class="bd-card-icon bd-icon-teach">
+        <t-icon name="book" size="34rpx" color="var(--td-warning-color-5)" />
+      </view>
+      <view class="bd-card-title">
+        <text class="bd-card-name">教学用楼</text>
+        <text class="bd-card-hint">填「教室」时选这里的楼</text>
+      </view>
+      <view class="bd-badge num-font">{{teaching.length}}</view>
+    </view>
+
+    <view class="bd-input-row" wx:if="{{canManage}}">
+      <input
+        class="bd-input"
+        value="{{teachingInput}}"
+        placeholder="如 1号教学楼"
+        placeholder-class="bd-ph"
+        maxlength="20"
+        bindinput="onTeachingInput"
+        confirm-type="done"
+        bindconfirm="addTeaching"
+      />
+      <view class="bd-add" bind:tap="addTeaching">
+        <t-icon name="add" size="26rpx" color="#ffffff" />
+        <text class="bd-add-t">添加</text>
+      </view>
+    </view>
+
+    <view class="bd-tags" wx:if="{{teaching.length}}">
+      <view class="bd-tag bd-tag-teach" wx:for="{{teaching}}" wx:key="*this">
+        <text class="bd-tag-t">{{item}}</text>
+        <view class="bd-tag-x" wx:if="{{canManage}}" data-field="teaching" data-name="{{item}}" bind:tap="removeBuilding">
+          <t-icon name="close" size="20rpx" color="var(--td-warning-color-5)" />
+        </view>
+      </view>
+    </view>
+    <view class="bd-empty" wx:else>
+      <t-icon name="book" size="44rpx" color="var(--tt-text-3)" />
+      <text class="bd-empty-t">还没有教学用楼</text>
+      <text class="bd-empty-d">添加后，设置教室时才能选楼名</text>
+    </view>
+  </view>
+
+  <!-- 宿舍用楼 -->
+  <view class="bd-card">
+    <view class="bd-card-head">
+      <view class="bd-card-icon bd-icon-dorm">
+        <t-icon name="houses" size="34rpx" color="var(--tt-brand)" />
+      </view>
+      <view class="bd-card-title">
+        <text class="bd-card-name">宿舍用楼</text>
+        <text class="bd-card-hint">填「宿舍号」时选这里的楼</text>
+      </view>
+      <view class="bd-badge num-font">{{dorm.length}}</view>
+    </view>
+
+    <view class="bd-input-row" wx:if="{{canManage}}">
+      <input
+        class="bd-input"
+        value="{{dormInput}}"
+        placeholder="如 1号宿舍楼"
+        placeholder-class="bd-ph"
+        maxlength="20"
+        bindinput="onDormInput"
+        confirm-type="done"
+        bindconfirm="addDorm"
+      />
+      <view class="bd-add" bind:tap="addDorm">
+        <t-icon name="add" size="26rpx" color="#ffffff" />
+        <text class="bd-add-t">添加</text>
+      </view>
+    </view>
+
+    <view class="bd-tags" wx:if="{{dorm.length}}">
+      <view class="bd-tag bd-tag-dorm" wx:for="{{dorm}}" wx:key="*this">
+        <text class="bd-tag-t">{{item}}</text>
+        <view class="bd-tag-x" wx:if="{{canManage}}" data-field="dorm" data-name="{{item}}" bind:tap="removeBuilding">
+          <t-icon name="close" size="20rpx" color="var(--tt-brand)" />
+        </view>
+      </view>
+    </view>
+    <view class="bd-empty" wx:else>
+      <t-icon name="houses" size="44rpx" color="var(--tt-text-3)" />
+      <text class="bd-empty-t">还没有宿舍用楼</text>
+      <text class="bd-empty-d">添加后，绑定宿舍时才能选楼名</text>
+    </view>
+  </view>
+
+  <view class="bd-note">
+    <t-icon name="info-circle" size="26rpx" color="var(--tt-text-3)" />
+    <text class="bd-note-t">两份清单分开维护：教学楼不会出现在查宿里，反之亦然。删掉某个楼名不会改动已用它填过的教室 / 宿舍。</text>
+  </view>
+</view>

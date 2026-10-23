@@ -1,15 +1,17 @@
 <view class="page tt-page ae-page">
-  <!-- ===== 账户类型 ===== -->
-  <view class="tt-section">账户类型</view>
-  <view class="tt-card ae-type-card">
-    <view class="ae-type-seg">
-      <view class="ae-type-item {{role === 'student' ? 'active' : ''}}" bind:tap="pickRole" data-value="student">学生账户</view>
-      <view class="ae-type-item {{role === 'teacher' ? 'active' : ''}}" bind:tap="pickRole" data-value="teacher">教师账户</view>
+  <!-- ===== 账户类型 =====（班主任视角不可改账户类型，整块不渲染） -->
+  <block wx:if="{{!classScope}}">
+    <view class="tt-section">账户类型</view>
+    <view class="tt-card ae-type-card">
+      <view class="ae-type-seg">
+        <view class="ae-type-item {{role === 'student' ? 'active' : ''}}" bind:tap="pickRole" data-value="student">学生账户</view>
+        <view class="ae-type-item {{role === 'teacher' ? 'active' : ''}}" bind:tap="pickRole" data-value="teacher">教师账户</view>
+      </view>
+      <view class="ae-type-hint">{{role === 'student' ? '学生参与运动记录与排名，需填写学籍信息' : '教师不参与运动记录与排名'}}</view>
+      <view class="ae-type-hint ae-type-warn" wx:if="{{mode === 'edit' && !canManagePerms}}">调整账户类型需要「管理用户权限」权限</view>
+      <view class="ae-type-hint ae-type-warn" wx:if="{{mode === 'edit' && isSuper}}">该账号是超级管理员，改账户类型不会移除其超级管理员权限组</view>
     </view>
-    <view class="ae-type-hint">{{role === 'student' ? '学生参与运动记录与排名，需填写学籍信息' : '教师不参与运动记录与排名'}}</view>
-    <view class="ae-type-hint ae-type-warn" wx:if="{{mode === 'edit' && !canManagePerms}}">调整账户类型需要「管理用户权限」权限</view>
-    <view class="ae-type-hint ae-type-warn" wx:if="{{mode === 'edit' && isSuper}}">该账号是超级管理员，改账户类型不会移除其超级管理员权限组</view>
-  </view>
+  </block>
 
   <!-- ===== 基本信息 ===== -->
   <view class="tt-section">基本信息</view>
@@ -39,72 +41,95 @@
         <view class="ae-picker {{birthdate ? '' : 'ae-ph'}}">{{birthdate || '选择出生日期'}}</view>
       </picker>
     </view>
-    <view class="ae-divider"></view>
-    <view class="ae-row">
-      <text class="ae-label">学号</text>
-      <input class="ae-input" value="{{studentId}}" placeholder="选填" placeholder-class="ae-ph" bindinput="inputStudentId" />
-    </view>
-    <view class="ae-divider"></view>
-    <view class="ae-row">
-      <text class="ae-label">年级</text>
-      <text class="ae-static {{gradeText ? '' : 'ae-ph'}}">{{gradeText ? gradeText + '级' : '按学号前 4 位自动识别'}}</text>
-    </view>
+    <!-- 学号 / 年级是**学生专属**（教师没有学号，且 studentId 是唯一稀疏索引，给教师落值会污染）。
+         性别、出生日期是通用人属性，教师保留。整段（含前置分隔线）按 role 隐藏，
+         否则教师表单末尾会多一条没有下家的分隔线。
+         班主任视角（classScope）学籍字段只读：改学号会连带改年级/班级，属于学籍维护，交管理员。 -->
+    <block wx:if="{{role === 'student' && !classScope}}">
+      <view class="ae-divider"></view>
+      <view class="ae-row">
+        <text class="ae-label">学号</text>
+        <input class="ae-input" value="{{studentId}}" placeholder="选填" placeholder-class="ae-ph" bindinput="inputStudentId" />
+      </view>
+      <view class="ae-divider"></view>
+      <view class="ae-row">
+        <text class="ae-label">年级</text>
+        <text class="ae-static {{gradeText ? '' : 'ae-ph'}}">{{gradeText ? gradeText + '级' : '按学号前 4 位自动识别'}}</text>
+      </view>
+    </block>
   </view>
 
-  <!-- ===== 学籍信息（学生） ===== -->
-  <block wx:if="{{role === 'student'}}">
-    <view class="tt-section">学籍信息</view>
+  <!-- ===== 学籍信息（班主任视角只读展示；管理端可改） =====
+       院校 / 系部 / 专业**只能从组织架构里选**（用户 2026-10-21「这个手动输入是什么鬼
+       组织架构只能有有权限的更改」）：组织架构的增删改挂 content.manage，
+       这里再放手填就等于给只读权限的人开后门。某级没配时给提示 + 跳转，不给输入框。 -->
+  <block wx:if="{{role === 'student' && classScope}}">
+    <view class="tt-section">学籍信息（只读）</view>
     <view class="tt-card ae-form">
       <view class="ae-row">
+        <text class="ae-label">学号</text>
+        <text class="ae-static {{studentId ? '' : 'ae-ph'}}">{{studentId || '未登记'}}</text>
+      </view>
+      <view class="ae-divider"></view>
+      <view class="ae-row">
         <text class="ae-label">院校</text>
-        <picker
-          wx:if="{{!manual.school && optSchool.length}}"
-          mode="selector"
-          range="{{optSchool}}"
-          value="{{schoolIndex < 0 ? 0 : schoolIndex}}"
-          bindchange="onSchoolPick"
-        >
-          <view class="ae-picker {{school ? '' : 'ae-ph'}}">{{school || '选择院校'}}</view>
-        </picker>
-        <input wx:else class="ae-input" value="{{school}}" placeholder="手填院校" placeholder-class="ae-ph" bindinput="input" data-field="school" />
-        <text wx:if="{{manual.school && optSchool.length}}" class="ae-switch" bind:tap="usePicker" data-field="school">选已有</text>
+        <text class="ae-static {{school ? '' : 'ae-ph'}}">{{school || '未登记'}}</text>
       </view>
       <view class="ae-divider"></view>
       <view class="ae-row">
         <text class="ae-label">系部</text>
-        <picker
-          wx:if="{{!manual.department && optDepartment.length}}"
-          mode="selector"
-          range="{{optDepartment}}"
-          value="{{departmentIndex < 0 ? 0 : departmentIndex}}"
-          bindchange="onDepartmentPick"
-        >
-          <view class="ae-picker {{department ? '' : 'ae-ph'}}">{{department || '选择系部'}}</view>
-        </picker>
-        <input wx:else class="ae-input" value="{{department}}" placeholder="手填系部" placeholder-class="ae-ph" bindinput="input" data-field="department" />
-        <text wx:if="{{manual.department && optDepartment.length}}" class="ae-switch" bind:tap="usePicker" data-field="department">选已有</text>
+        <text class="ae-static {{department ? '' : 'ae-ph'}}">{{department || '未登记'}}</text>
       </view>
       <view class="ae-divider"></view>
       <view class="ae-row">
         <text class="ae-label">专业</text>
-        <picker
-          wx:if="{{!manual.specialty && optSpecialty.length}}"
-          mode="selector"
-          range="{{optSpecialty}}"
-          value="{{specialtyIndex < 0 ? 0 : specialtyIndex}}"
-          bindchange="onSpecialtyPick"
-        >
+        <text class="ae-static {{specialty ? '' : 'ae-ph'}}">{{specialty || '未登记'}}</text>
+      </view>
+      <view class="ae-divider"></view>
+      <view class="ae-row">
+        <text class="ae-label">班级</text>
+        <text class="ae-static {{className ? '' : 'ae-ph'}}">{{className || '未分班'}}</text>
+      </view>
+      <view class="ae-note">学籍字段（学号 / 院校 / 系部 / 专业 / 班级）来自学校名单与组织架构，班主任不能修改；确有错误请联系管理员</view>
+    </view>
+  </block>
+
+  <block wx:if="{{role === 'student' && !classScope}}">
+    <view class="tt-section">学籍信息</view>
+    <view class="tt-card ae-form">
+      <view class="ae-row">
+        <text class="ae-label">院校</text>
+        <picker wx:if="{{optSchool.length}}" mode="selector" range="{{optSchool}}" value="{{schoolIndex < 0 ? 0 : schoolIndex}}" bindchange="onSchoolPick">
+          <view class="ae-picker {{school ? '' : 'ae-ph'}}">{{school || '选择院校'}}</view>
+        </picker>
+        <text wx:else class="ae-static ae-ph">{{school || '暂无可选院校'}}</text>
+      </view>
+      <view class="ae-note ae-note-link" wx:if="{{orgHints.school}}" bind:tap="goOrganizations">{{orgHints.school}} ›</view>
+      <view class="ae-divider"></view>
+      <view class="ae-row">
+        <text class="ae-label">系部</text>
+        <picker wx:if="{{optDepartment.length}}" mode="selector" range="{{optDepartment}}" value="{{departmentIndex < 0 ? 0 : departmentIndex}}" bindchange="onDepartmentPick">
+          <view class="ae-picker {{department ? '' : 'ae-ph'}}">{{department || '选择系部'}}</view>
+        </picker>
+        <!-- 无可选项时**仍要把已有值显示出来**（存量数据可能不在组织架构里），绝不因隐藏而丢值 -->
+        <text wx:else class="ae-static ae-ph">{{department || '暂无可选系部'}}</text>
+      </view>
+      <view class="ae-note ae-note-link" wx:if="{{orgHints.department}}" bind:tap="goOrganizations">{{orgHints.department}} ›</view>
+      <view class="ae-divider"></view>
+      <view class="ae-row">
+        <text class="ae-label">专业</text>
+        <picker wx:if="{{optSpecialty.length}}" mode="selector" range="{{optSpecialty}}" value="{{specialtyIndex < 0 ? 0 : specialtyIndex}}" bindchange="onSpecialtyPick">
           <view class="ae-picker {{specialty ? '' : 'ae-ph'}}">{{specialty || '选择专业（可选）'}}</view>
         </picker>
-        <input wx:else class="ae-input" value="{{specialty}}" placeholder="手填专业（可选）" placeholder-class="ae-ph" bindinput="input" data-field="specialty" />
-        <text wx:if="{{manual.specialty && optSpecialty.length}}" class="ae-switch" bind:tap="usePicker" data-field="specialty">选已有</text>
+        <text wx:else class="ae-static ae-ph">{{specialty || '暂无可选专业'}}</text>
       </view>
+      <view class="ae-note ae-note-link" wx:if="{{orgHints.specialty}}" bind:tap="goOrganizations">{{orgHints.specialty}} ›</view>
       <view class="ae-divider"></view>
       <view class="ae-row">
         <text class="ae-label">班级</text>
         <text class="ae-static {{className ? '' : 'ae-ph'}}">{{className || '按学号 + 专业自动生成'}}</text>
       </view>
-      <view class="ae-note">班级由「学号前 4 位（年级）+ 专业」自动识别，无需填写；选择器末位可选「手动输入」</view>
+      <view class="ae-note">班级由「学号前 4 位（年级）+ 专业」自动识别，无需填写；院校 / 系部 / 专业来自「组织架构」，需相应权限才能维护</view>
     </view>
   </block>
 
@@ -188,11 +213,13 @@
     </t-popup>
   </block>
 
-  <!-- ===== 保存（固定底部） ===== -->
+  <!-- ===== 保存（固定底部） =====
+       班主任视角（classScope）也能保存：只提交 姓名 / 性别 / 生日（学籍字段服务端会拒绝）。 -->
   <view class="ae-submit">
-    <t-button theme="primary" block loading="{{submitting}}" bind:tap="submit">
-      {{mode === 'create' ? '创建账户' : '保存修改'}}
+    <t-button wx:if="{{canManagePerms || classScope}}" theme="primary" block loading="{{submitting}}" bind:tap="submit">
+      {{mode === 'create' ? '创建账户' : (classScope ? '保存资料' : '保存修改')}}
     </t-button>
     <view class="ae-submit-tip" wx:if="{{mode === 'create'}}">创建后用户以「姓名 + 初始密码」登录，首次登录需修改密码并绑定微信</view>
+    <view class="ae-submit-tip" wx:elif="{{classScope}}">班主任只能改姓名 / 性别 / 出生日期；学号、院校、系部、专业、班级与密码请走「重置密码」或联系管理员</view>
   </view>
 </view>

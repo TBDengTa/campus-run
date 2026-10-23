@@ -161,6 +161,12 @@
   width: 100%;
 }
 
+/* 触发器标题的省略号**不用我们写**：组件自带
+   .t-dropdown-menu__title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap }，
+   长值（如「商务数据分析与应用」）会自动收尾。
+   也别指望用 .t-dropdown-menu__item--active 给「已选」上色 —— 那个类是「当前展开的菜单」，
+   收起就没了，与是否设了筛选值无关。 */
+
 .users-panel-foot {
   display: flex;
   align-items: center;
@@ -172,6 +178,11 @@
 }
 
 .users-panel-tip {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   font-size: 22rpx;
   color: var(--tt-text-3);
 }
@@ -288,14 +299,21 @@
   min-width: 0;
 }
 
+/* 姓名 + 标签：必须单行不折行（用户多次截图反馈标签被甩到第二行）。
+   ⚠️ 刻意**不用 flex 布局**：之前是 display:flex + flex-wrap:nowrap，
+   真机上标签仍然换行（<text> 是 inline 元素，作为 flex 子项时各基础库 blockify 行为不一致，
+   nowrap 不被遵守）—— 又是「Chromium 预览正常、真机不同」的一类。
+   改用**最普适的文本布局机制**：块容器 white-space:nowrap（禁止在空白处折行，纯文本规则、
+   不经 flex 引擎）+ 子项 display:inline-block（padding/背景/尺寸才可靠）。
+   子项之间用 margin-left 撑开（没有 flex gap 了）。 */
 .users-name {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8rpx;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .user-row-name {
+  display: inline-block;
+  vertical-align: middle;
   max-width: 300rpx;
   overflow: hidden;
   white-space: nowrap;
@@ -309,22 +327,240 @@
   color: var(--tt-text-3);
 }
 
-.user-row-sub {
+/* 元信息一行（学号 · 班级 · 宿舍 · 计划名）：替代原来三行 .user-row-sub 的铺排。
+   刻意**允许换行而不是 ellipsis 截断**：截断会把宿舍/计划名从管理员眼前直接弄丢
+   （实测带前缀时第 0、2 行就被截掉了），换行只是极少数长行多占一行，信息不丢。
+   配合 JS 去掉「学号/宿舍」前缀，绝大多数行仍是一行放下。 */
+.user-row-meta {
+  margin-top: 4rpx;
+  font-size: 22rpx;
+  line-height: 1.45;
+  color: var(--tt-text-3);
+  word-break: break-all;
+}
+
+/* ===== 行内身份标签 =====
+   刻意不用 t-tag：一屏 20 行、每行最多 4 个标签，组件实例开销太大；
+   纯 CSS 胶囊足够，且能精确控制「只有实习/毕业才着色」的层级。
+/* 统一标签基线：所有标签共用同一字号/内距/圆角，并排不会高低错落
+   （错位感的来源是 t-tag 与自绘标签混用，两者字号内距都不同）。
+   ⚠️ 两条真机才暴露的坑，都别改回去：
+   ① **不能用固定 height**：标签挂在 <text> 上，<text> 作 flex 子项会被 blockify，
+      固定 height 会把文字整块裁掉（只剩纯色块）—— 用户截图「为什么空白啊」就是它。
+   ② **display: inline-block 是必需的**：<text> 默认 inline，inline 元素上
+      padding / background / vertical-align 各机型表现不一致；转 inline-block 盒模型才确定，
+      也才能和姓名在同一基线上对齐（配合容器 white-space:nowrap 实现单行不折行）。
+   等高靠「同字号 + 同 line-height + 同 padding」自然得到，不依赖 height。
+   间距用 margin-left（容器已不是 flex，没有 gap 了）。 */
+.users-chip {
+  display: inline-block;
+  vertical-align: middle;
+  margin-left: 8rpx;
+  padding: 4rpx 10rpx;
+  border-radius: 8rpx;
+  font-size: 19rpx;
+  line-height: 1.4;
+  white-space: nowrap;
+  color: var(--tt-text-2);
+  background: var(--td-bg-color-component);
+}
+
+/* 管理员：品牌橙实心（最重的身份，且与下面几类拉开层级） */
+.users-chip-role {
+  color: #fff;
+  background: var(--tt-brand);
+}
+
+/* 教师 / 毕业：中性弱化 */
+.users-chip-neutral {
+  color: var(--tt-text-3);
+  background: var(--td-gray-color-2, #eee);
+}
+
+/* 生效中的限制：语义是「警告/危险」，用 TDesign 的 danger 色板而不是品牌色 */
+.users-chip-danger {
+  color: var(--td-error-color-7, #d54941);
+  background: var(--td-error-color-1, #fef3f2);
+}
+
+/* 「+N」折叠标记：被折掉的标签数量（比正常标签更弱一档）。
+   类名刻意用 -fold 而不是 -more：`.users-chip-more` 已被「union 标签内的 +N（多部门）」占用，
+   同名会让两个不同含义的东西共用一套样式。
+   描边用 inset box-shadow 而不是 border：border 会给盒子额外加 4rpx，
+   破坏「所有标签等高」；inset 阴影不改变盒尺寸。 */
+.users-chip-fold {
+  color: var(--tt-text-3);
+  background: transparent;
+  box-shadow: inset 0 0 0 2rpx var(--tt-line);
+}
+
+/* 实习：影响班超与校园跑统计，必须跳出来。
+   用 warning 琥珀而不是品牌橙 —— 本仓库的 primary 整套是橙色，
+   用 primary 会和「学生会」撞色、和「实习/班委」也分不开。 */
+.users-chip-warn {
+  color: var(--td-warning-color-7, #b06e00);
+  background: var(--td-warning-color-1, #fff8e6);
+}
+
+/* 班委 / 班主任：班级域身份，用 success 绿与上面几类区分 */
+.users-chip-info {
+  color: var(--td-success-color-7, #0e6e33);
+  background: var(--td-success-color-1, #e9f9f0);
+}
+
+/* 学生会：品牌橙渐变（一行里最醒目的身份，保留原设计） */
+.users-chip-union {
+  max-width: 300rpx;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: #fff;
+  background: linear-gradient(135deg, #ffa94d, var(--tt-brand));
+}
+
+.users-chip-more {
+  margin-left: 4rpx;
+  font-size: 17rpx;
+  opacity: 0.85;
+}
+
+/* ===== 批量模式：勾选框与选中态 ===== */
+.users-check {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+/* 勾选区本身就是 36rpx 图标 + 行内 gap，整行可点（不必精准点图标） */
+.user-row.is-batch {
+  gap: 12rpx;
+}
+
+.user-row.is-checked {
+  background: var(--tt-brand-soft-2);
+}
+
+/* 列表标题右侧：批量模式下的「已选 N / 本页 M」+ 全选链接 */
+.users-sec-right {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.users-sec-tip {
+  font-size: 22rpx;
+  font-weight: 400;
+  color: var(--tt-text-3);
+}
+
+.users-sec-link {
+  font-size: 22rpx;
+  font-weight: 500;
+  color: var(--tt-brand);
+}
+
+/* ===== 批量动作条（固定底部）=====
+   动作多（7 个）→ 横向滚动，不折行：折行会把列表最后一行永久遮住。
+   padding-bottom 带 safe-area，iPhone 底部横条不会压在按钮上。 */
+.users-batch-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
   display: flex;
   align-items: center;
   gap: 12rpx;
-  margin-top: 4rpx;
+  padding: 14rpx var(--tt-gap) calc(14rpx + env(safe-area-inset-bottom));
+  background: var(--tt-card);
+  box-shadow: 0 -8rpx 24rpx rgba(28, 31, 35, 0.08);
+}
+
+.users-batch-count {
+  flex-shrink: 0;
+  padding: 8rpx 16rpx;
+  border-radius: 999rpx;
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+  background: var(--td-bg-color-component);
+}
+
+.users-batch-count.is-on {
+  font-weight: 600;
+  color: var(--tt-brand-deep);
+  background: var(--tt-brand-soft);
+}
+
+.users-batch-actions {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.users-batch-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 60rpx;
+  margin-right: 12rpx;
+  padding: 0 22rpx;
+  border-radius: 999rpx;
+  font-size: 23rpx;
+  color: var(--tt-text-2);
+  background: var(--tt-bg-page);
+  border: 2rpx solid var(--tt-line);
+}
+
+.users-batch-btn:active {
+  opacity: 0.8;
+}
+
+.users-batch-btn.is-danger {
+  color: var(--td-error-color-6, #d54941);
+  border-color: var(--td-error-color-2, #fdeceb);
+  background: var(--td-error-color-1, #fef3f2);
+}
+
+.users-batch-clear {
+  flex-shrink: 0;
+  padding: 8rpx 16rpx;
   font-size: 22rpx;
   color: var(--tt-text-3);
 }
 
-.user-row-goal {
-  padding: 2rpx 12rpx;
-  border-radius: 999rpx;
-  font-size: 20rpx;
-  color: var(--tt-brand);
-  background: var(--tt-brand-soft);
-  white-space: nowrap;
+/* ===== 批量转移抽屉 =====
+   高度写法照搬 packageAdmin/permissions/groups.wxss 的实测结论：
+   .tt-sheet-body 是 flex 列的子项，默认 min-height:auto 会被内容撑高 →
+   抽屉被 max-height 裁切、滚动不动、底部主按钮被顶出屏幕。
+   必须 flex:none + min-height:0 + max-height:46vh（内容短自适应、内容长封顶可滚）。 */
+.users-transfer-sheet {
+  display: flex;
+  flex-direction: column;
+  max-height: 80vh;
+}
+
+.users-transfer-sheet .tt-sheet-body {
+  flex: none;
+  min-height: 0;
+  max-height: 46vh;
+}
+
+/* 行内 label：不能用 .tt-sheet-label（那是带橙色短竖条的**分组标题**样式），
+   与 groups.wxss 的 .pg-inline-label 同一口径。 */
+.users-transfer-label {
+  width: 96rpx;
+  flex-shrink: 0;
+  font-size: 26rpx;
+  color: var(--tt-text-2);
+}
+
+.users-transfer-sheet .tt-sheet-field + .tt-sheet-field {
+  margin-top: 12rpx;
+}
+
+/* 批量模式下给底部动作条留出空间，否则最后几行永远点不到。
+   用独立修饰类而不是直接改 .users-page：非批量模式不该白留 120rpx 空档。 */
+.users-page.is-batching {
+  padding-bottom: calc(140rpx + env(safe-area-inset-bottom));
 }
 
 .users-loading {

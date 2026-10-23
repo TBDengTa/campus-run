@@ -1,4 +1,6 @@
 {
   "navigationBarTitleText": "管理中枢",
-  "usingComponents": {}
+  "usingComponents": {
+    "t-popup": "tdesign-miniprogram/popup/popup"
+  }
 }

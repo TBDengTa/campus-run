@@ -1,0 +1,209 @@
+<view class="page tt-page rd-page {{hasActions ? 'rd-page-actions' : ''}}">
+  <block wx:if="{{record}}">
+    <!-- ===== 基本信息 ===== -->
+    <view class="tt-section">基本信息</view>
+    <view class="tt-card rd-head">
+      <view class="rd-head-top">
+        <text class="rd-module">{{module.name || record.moduleName || record.moduleKey}}</text>
+        <text class="rd-status rd-status-{{record.statusClass}}">{{record.statusText}}</text>
+      </view>
+      <view class="rd-basic-grid">
+        <view class="rd-basic-item {{item.wide ? 'wide' : ''}}" wx:for="{{basicRows}}" wx:key="key">
+          <text class="rd-basic-l">{{item.label}}</text>
+          <text class="rd-basic-v">{{item.value}}</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- ===== 扣分与指标 ===== -->
+    <view class="tt-section">扣分与指标</view>
+    <view class="tt-card rd-score-card">
+      <view class="rd-score-box">
+        <text class="num-font rd-deduct">{{record.deduct || 0}}</text>
+        <text class="rd-score-l">{{record.status === 'cancelled' ? '扣分（已作废，不计入）' : '扣分（计入班超总评）'}}</text>
+      </view>
+      <view class="rd-score-box">
+        <text class="num-font rd-score-v">{{record.score || 0}}</text>
+        <text class="rd-score-l">检查得分</text>
+      </view>
+    </view>
+    <!-- 作废 / 改判后要让数字「看起来变了」，否则用户会以为申诉没生效 -->
+    <view class="tt-card rd-voidnote" wx:if="{{record.status === 'cancelled'}}">
+      <text class="rd-voidnote-t">该记录已作废，不再计入班级班超总评</text>
+      <text class="rd-voidnote-s" wx:if="{{record.cancelReason}}">原因：{{record.cancelReason}}</text>
+    </view>
+    <view class="tt-card rd-voidnote" wx:elif="{{record.source === 'appeal'}}">
+      <text class="rd-voidnote-t">申诉改判：已按更正后的内容重算扣分</text>
+      <text class="rd-voidnote-s">具体改动见下方「复核与修改留痕」</text>
+    </view>
+
+    <block wx:if="{{metricRows.length}}">
+      <view class="tt-section">关键指标</view>
+      <view class="tt-card rd-metrics">
+        <view class="rd-metric" wx:for="{{metricRows}}" wx:key="key">
+          <text class="num-font rd-metric-v">{{item.text}}</text>
+          <text class="rd-metric-l">{{item.label}}</text>
+        </view>
+      </view>
+    </block>
+
+    <!-- ===== 明细数据 ===== -->
+    <view class="tt-section">检查明细</view>
+    <view class="tt-card rd-details">
+      <view class="rd-row" wx:for="{{detailRows}}" wx:key="key">
+        <text class="rd-row-l">{{item.label}}</text>
+        <view class="rd-row-r">
+          <text class="rd-row-v">{{item.text}}</text>
+          <view class="rd-row-list" wx:if="{{item.list && item.list.length}}">
+            <text class="rd-row-li" wx:for="{{item.list}}" wx:for-item="li" wx:key="*this">{{li}}</text>
+          </view>
+        </view>
+      </view>
+      <view class="rd-empty" wx:if="{{!detailRows.length}}">没有明细数据</view>
+    </view>
+
+    <!-- ===== 留证照片 ===== -->
+    <view class="tt-section">留证照片</view>
+    <view class="tt-card rd-photos">
+      <block wx:if="{{record.photos.length}}">
+        <image
+          class="rd-photo"
+          wx:for="{{record.photos}}"
+          wx:key="*this"
+          src="{{item}}"
+          mode="aspectFill"
+          data-url="{{item}}"
+          bind:tap="previewPhoto"
+        />
+      </block>
+      <!-- 宿舍照片被服务端裁剪（photos=[] + photosBlurred + photoCount）：给出可读原因，不留白 -->
+      <view class="rd-photo-mask" wx:elif="{{record.photosBlurred}}">
+        <t-icon name="secured" size="52rpx" color="var(--tt-text-3)" />
+        <view class="rd-photo-mask-title">{{photoMaskTitle}}</view>
+        <view class="rd-photo-mask-text">{{photoMaskText}}</view>
+      </view>
+      <view class="rd-empty" wx:else>本条记录没有留证照片</view>
+    </view>
+
+    <!-- ===== 说明 ===== -->
+    <block wx:if="{{record.remark || record.cancelReason || record.rejectReason}}">
+      <view class="tt-section">说明</view>
+      <view class="tt-card rd-note">
+        <view class="rd-note-row" wx:if="{{record.remark}}">
+          <text class="rd-note-l">备注</text>
+          <text class="rd-note-v">{{record.remark}}</text>
+        </view>
+        <view class="rd-note-row" wx:if="{{record.cancelReason}}">
+          <text class="rd-note-l">取消原因</text>
+          <text class="rd-note-v">{{record.cancelReason}}</text>
+        </view>
+        <view class="rd-note-row" wx:if="{{record.rejectReason}}">
+          <text class="rd-note-l">退回原因</text>
+          <text class="rd-note-v">{{record.rejectReason}}</text>
+        </view>
+      </view>
+    </block>
+
+    <!-- ===== 申诉 ===== -->
+    <block wx:if="{{record.appeal}}">
+      <view class="tt-section">申诉</view>
+      <view class="tt-card rd-appeal">
+        <view class="rd-note-row">
+          <text class="rd-note-l">状态</text>
+          <text class="rd-note-v">
+            {{record.appeal.status === 'pending' ? '待处理' : (record.appeal.status === 'approved' ? '申诉成立' : '申诉未通过')}}
+          </text>
+        </view>
+        <view class="rd-note-row">
+          <text class="rd-note-l">理由</text>
+          <text class="rd-note-v">{{record.appeal.reason}}</text>
+        </view>
+        <!-- 申诉人 / 时间：留痕要能看出「谁、什么时候提的」，只写理由等于半条痕迹 -->
+        <view class="rd-note-row" wx:if="{{record.appeal.byName}}">
+          <text class="rd-note-l">申诉人</text>
+          <text class="rd-note-v">{{record.appeal.byName}}<text wx:if="{{record.appeal.byRole === 'homeroom'}}" class="rd-tag">班主任</text><text wx:elif="{{record.appeal.byRole === 'officer'}}" class="rd-tag">班委</text></text>
+        </view>
+        <view class="rd-note-row" wx:if="{{appealAtText}}">
+          <text class="rd-note-l">申诉时间</text>
+          <text class="rd-note-v">{{appealAtText}}</text>
+        </view>
+        <view class="rd-note-row" wx:if="{{record.appeal.result}}">
+          <text class="rd-note-l">处理意见</text>
+          <text class="rd-note-v">{{record.appeal.result}}</text>
+        </view>
+        <!-- 处理人 / 处理时间：申诉结果同样要留下「谁判的」 -->
+        <view class="rd-note-row" wx:if="{{record.appeal.reviewedBy}}">
+          <text class="rd-note-l">处理人</text>
+          <text class="rd-note-v">{{record.appeal.reviewedBy}}</text>
+        </view>
+        <view class="rd-note-row" wx:if="{{appealReviewedAtText}}">
+          <text class="rd-note-l">处理时间</text>
+          <text class="rd-note-v">{{appealReviewedAtText}}</text>
+        </view>
+      </view>
+    </block>
+
+    <!-- ===== 复核与修改留痕 ===== -->
+    <view class="tt-section">复核与修改留痕</view>
+    <!-- 「我是提交人、又不能自审」时把原因写出来：
+         否则页面只有一个「提交修改」，用户会以为复核按钮丢了（用户报障原话）。
+         主席团可自审，所以这条提示只对部长/副部长出现。 -->
+    <view class="tt-card rd-selfnote" wx:if="{{selfReviewBlocked}}">
+      <text class="rd-selfnote-t">你是这条记录的提交人，不能复核自己提交的记录</text>
+      <text class="rd-selfnote-s">复核由其他部长或主席团完成；如需改动内容，点下方「提交修改」。</text>
+    </view>
+    <view class="tt-card rd-history">
+      <!-- 复核人 + 复核时间：服务端在 /records/:id/review 里两个都写了（reviewedByName / reviewedAt），
+           这里必须都展示 —— 只显示「复核人」而不显示「什么时候复核的」等于留痕不完整。 -->
+      <view class="rd-note-row" wx:if="{{record.reviewedByName}}">
+        <text class="rd-note-l">复核人</text>
+        <text class="rd-note-v">{{record.reviewedByName}}</text>
+      </view>
+      <view class="rd-note-row" wx:if="{{record.reviewedAt}}">
+        <text class="rd-note-l">复核时间</text>
+        <text class="rd-note-v">{{reviewedAtText}}</text>
+      </view>
+      <view class="rd-note-row" wx:if="{{record.rejectReason}}">
+        <text class="rd-note-l">退回原因</text>
+        <text class="rd-note-v">{{record.rejectReason}}</text>
+      </view>
+      <view class="rd-note-row" wx:if="{{record.revision > 1}}">
+        <text class="rd-note-l">当前版本</text>
+        <text class="rd-note-v">第 {{record.revision}} 版（共 {{history.length}} 条留痕）</text>
+      </view>
+      <view class="rd-history-item" wx:for="{{history}}" wx:key="revision">
+        <view class="rd-history-head">
+          <text class="rd-history-t">第 {{item.revision}} 版 · {{item.byName}}</text>
+          <text class="rd-history-at">{{item.atText}}</text>
+        </view>
+        <text class="rd-history-s">{{item.changeText}}</text>
+        <!-- 逐项列出改了哪些字段（复核 / 取消这类「状态变化」也在这里可读） -->
+        <view class="rd-history-changes" wx:if="{{item.lines.length}}">
+          <text class="rd-history-line" wx:for="{{item.lines}}" wx:for-item="ln" wx:key="*this">{{ln}}</text>
+        </view>
+      </view>
+      <view class="rd-empty" wx:if="{{!history.length && !record.reviewedByName}}">暂无复核或修改记录</view>
+    </view>
+  </block>
+
+  <view class="tt-footer" wx:elif="{{!loading}}">记录不存在或你没有查看权限</view>
+</view>
+
+<!-- ===== 底部固定操作栏（主操作不随内容滚走；次操作走 ghost 样式） =====
+     主/次各只显示一个，但**不丢任何既有操作**：复核通过 / 退回 / 申诉成立 / 驳回申诉 / 提交修改 / 发起申诉。
+     复核与修改可同时可用（主席团复核自己代录的记录）：此时复核占主/次，
+     另给一个轻量「修改」入口（barEdit）—— 否则放开了复核就没了改内容的入口。 -->
+<view class="rd-bar" wx:if="{{record && hasActions}}">
+  <view class="rd-bar-ghost" wx:if="{{barGhost === 'reject'}}" data-approve="0" bind:tap="review">退回</view>
+  <view class="rd-bar-ghost" wx:elif="{{barGhost === 'rejectAppeal'}}" data-approve="0" bind:tap="reviewAppeal">驳回申诉</view>
+  <view class="rd-bar-ghost" wx:elif="{{barGhost === 'appeal'}}" bind:tap="appeal">发起申诉</view>
+
+  <!-- 轻量「修改」：仅当同时具备复核与修改权时出现。
+       做成 88rpx 高的实体按钮（不是文字链）—— 文字链高度只够 36rpx，手指点不准。 -->
+  <view class="rd-bar-edit" wx:if="{{barEdit}}" bind:tap="edit" hover-class="rd-bar-edit-hover">修改</view>
+
+  <view class="rd-bar-main" wx:if="{{barMain === 'approve'}}" data-approve="1" bind:tap="review">复核通过</view>
+  <view class="rd-bar-main" wx:elif="{{barMain === 'approveAppeal'}}" data-approve="1" bind:tap="reviewAppeal">申诉成立</view>
+  <view class="rd-bar-main" wx:elif="{{barMain === 'edit'}}" bind:tap="edit">提交修改</view>
+  <view class="rd-bar-main" wx:elif="{{barMain === 'appeal'}}" bind:tap="appeal">发起申诉</view>
+</view>

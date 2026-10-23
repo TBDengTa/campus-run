@@ -1,5 +1,5 @@
 const express = require('express');
-const { wrap, ok } = require('../../utils/response');
+const { wrap, ok, ApiError } = require('../../utils/response');
 const { requirePermission } = require('../../middlewares/admin');
 const GoalConfig = require('../../models/goal-config');
 const pointsSvc = require('../../services/points');
@@ -7,8 +7,34 @@ const rewardVideoSvc = require('../../services/reward-video');
 
 const router = express.Router();
 
+/**
+ * 楼名清单规范化（用户 2026-10-21）：
+ * 去掉首尾空白、丢掉空项、按原顺序去重、单个楼名截断到 20 字、每类最多 60 个。
+ * 为什么要在这里统一清洗：楼名会与门牌号拼成「楼名·门牌号」落库，
+ * 带空格或重复项会直接污染存量数据（「1号教学楼」与「1号教学楼 」变成两个楼）。
+ */
+function normalizeBuildings(input) {
+  const clean = (arr) => {
+    const out = [];
+    const seen = new Set();
+    for (const raw of Array.isArray(arr) ? arr : []) {
+      const name = String(raw == null ? '' : raw).trim().slice(0, 20);
+      if (!name || seen.has(name)) continue;
+      seen.add(name);
+      out.push(name);
+      if (out.length >= 60) break;
+    }
+    return out;
+  };
+  return { teaching: clean(input && input.teaching), dorm: clean(input && input.dorm) };
+}
+
 router.get(
   '/',
+  // 整份配置（含反作弊阈值 / 跑分参数 / 北斗奖励）——必须 config.view。
+  // 楼名清单另走 GET /buildings（building.view），不复用本接口：
+  // 前缀上不再统一挂权限，所以这里必须显式声明，否则会变成「无权限也能读全局配置」。
+  requirePermission('config.view'),
   wrap(async (req, res) => {
     const doc = await GoalConfig.getSingleton();
     const out = typeof doc.toObject === 'function' ? doc.toObject() : doc;
@@ -57,11 +83,21 @@ router.get(
 
 router.put(
   '/',
-  requirePermission('config.manage'),
+  // 楼名管理页只回传 buildings，宿管/学生处持 building.manage 就该能保存；
+  // 其余字段（反作弊/跑分/北斗）仍要 config.manage，见下方的分字段守卫。
+  requirePermission('config.manage', 'building.manage'),
   wrap(async (req, res) => {
     const doc = await GoalConfig.getSingleton();
     // 默认目标（daily/weekly）已移交 /api/admin/assessment/defaults
-    const { anticheat, rewardVideo, points } = req.body || {};
+    const { anticheat, rewardVideo, points, buildings } = req.body || {};
+    // 分字段守卫：只有 building.manage 的账号（如宿管老师）**只能**改楼名，
+    // 不能顺手带上 points/anticheat 把计分口径也改掉。
+    const perms = req.userPermissions || [];
+    const canConfig = perms.includes('*') || perms.includes('config.manage');
+    const wantsOthers = !!(anticheat || rewardVideo || points);
+    if (wantsOthers && !canConfig) {
+      throw new ApiError(403, 403002, '无权限修改计分/反作弊/北斗配置（需要 config.manage）');
+    }
     if (anticheat) {
       doc.anticheat.enabled = anticheat.enabled !== false;
       if (anticheat.maxStepJumpPerSync != null) doc.anticheat.maxStepJumpPerSync = Number(anticheat.maxStepJumpPerSync);
@@ -111,11 +147,39 @@ router.put(
       if (dailyExtraCap != null) doc.points.dailyExtraCap = dailyExtraCap;
       if (weeklyExtraCap != null) doc.points.weeklyExtraCap = weeklyExtraCap;
     }
+    // 楼名白名单（用户 2026-10-21）：两份清单分别维护，整体覆盖（不按项增删，避免前后端顺序打架）
+    if (buildings) {
+      const normalized = normalizeBuildings(buildings);
+      doc.buildings = { teaching: normalized.teaching, dorm: normalized.dorm };
+    }
     await doc.save();
     const out = typeof doc.toObject === 'function' ? doc.toObject() : doc;
     out.pointsLegacy = null; // 保存即完成迁移：不再提示旧字段换算
     out.rewardVideoEffective = rewardVideoSvc.resolvePerWatch(out.rewardVideo);
     ok(res, out);
+  })
+);
+
+/**
+ * 楼名清单（只读，给「填教室 / 填宿舍」的选择器用）。
+ *
+ * 权限用 **building.view**（用户 2026-10-22 要求独立权限项），不再用 config.view：
+ * config.view 覆盖反作弊阈值、跑分参数等全局计分口径，
+ * 而班委/宿管只需要「选楼名」，不该因此获得看那些配置的权力。
+ * 写（PUT /）仍走 config.manage 或 building.manage（见下方守卫）。
+ */
+router.get(
+  '/buildings',
+  // 「能管理就必须能查看」：building.manage 也要放行读，否则会出现
+  // 「保存成功但列表刷不出来」——宿管改完楼名，页面却 403 空着，比不能改更糟。
+  requirePermission('building.view', 'building.manage', 'config.view'),
+  wrap(async (req, res) => {
+    const doc = await GoalConfig.getSingleton();
+    const b = (doc && doc.buildings) || {};
+    ok(res, {
+      teaching: Array.isArray(b.teaching) ? b.teaching : [],
+      dorm: Array.isArray(b.dorm) ? b.dorm : [],
+    });
   })
 );
 

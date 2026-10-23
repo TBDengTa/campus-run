@@ -1,9 +1,5 @@
 /* ===== 广告落地页管理 · 白橙 ===== */
 .adp-page {
-  --td-input-vertical-padding: 0;
-  --td-input-label-min-width: 150rpx;
-  --td-input-label-max-width: 230rpx;
-  --td-input-label-text-color: var(--tt-text-2);
   padding-bottom: calc(32rpx + env(safe-area-inset-bottom));
 }
 
@@ -27,48 +23,24 @@
   color: var(--tt-text-3);
 }
 
-/* 表单 */
-.adp-form-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+/* 底部抽屉表单 */
+/* 滚动区必须给「确定高度」，否则 scroll-view 滚不动（底部按钮被顶出屏幕点不到）；
+   写法与 docs/ui-design.md 一致：flex:none + max-height:46vh（内容短自适应、长封顶可滚） */
+.adp-sheet .tt-sheet-body {
+  flex: none;
+  min-height: 0;
+  max-height: 46vh;
 }
 
-.adp-form-title {
-  font-size: 30rpx;
-  font-weight: 600;
-  color: var(--tt-text-1);
+.adp-sheet-gap {
+  margin-bottom: 14rpx;
 }
 
-.adp-close {
-  width: 56rpx;
-  height: 56rpx;
-  border-radius: 50%;
-  background: var(--td-bg-color-component);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.adp-close:active {
-  opacity: 0.7;
-}
-
-.adp-field {
-  /* t-input 的标签与内容统一到 28rpx，和页面内其它表单行一致 */
-  --td-font-size-m: 28rpx;
-  padding: 26rpx 0;
-  border-bottom: 2rpx solid var(--tt-line);
-}
-
-.adp-field:last-child {
-  border-bottom: none;
-}
-
-.adp-field-row {
-  display: flex;
-  align-items: center;
-  gap: 20rpx;
+.adp-inline-label {
+  width: 120rpx;
+  flex-shrink: 0;
+  font-size: 27rpx;
+  color: var(--tt-text-2);
 }
 
 .adp-field-label {
@@ -77,14 +49,55 @@
 }
 
 .adp-field-tip {
-  margin-top: 6rpx;
+  margin-top: 8rpx;
   font-size: 22rpx;
   color: var(--tt-text-3);
 }
 
+.adp-sheet-row {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding: 26rpx 0 0;
+}
+
+/* HTML 内容区 */
+.adp-html-head {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding-bottom: 14rpx;
+}
+
+.adp-html-tip {
+  flex: 1;
+  min-width: 0;
+  font-size: 22rpx;
+  line-height: 32rpx;
+  color: var(--tt-text-3);
+}
+
+.adp-import {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  padding: 10rpx 22rpx;
+  border-radius: 999rpx;
+  background: var(--tt-brand-soft);
+  flex-shrink: 0;
+}
+
+.adp-import:active {
+  opacity: 0.7;
+}
+
+.adp-import-text {
+  font-size: 23rpx;
+  color: var(--tt-brand);
+}
+
 /* HTML 编辑器（t-textarea 外部类） */
 .adp-html-box {
-  margin-top: 16rpx;
   border-radius: var(--tt-radius-sm);
   border: 2rpx solid var(--tt-line);
   background: var(--td-bg-color-component);
@@ -98,12 +111,6 @@
   font-size: 24rpx;
   line-height: 40rpx;
   color: var(--tt-text-1);
-}
-
-.adp-form-actions {
-  display: flex;
-  gap: 16rpx;
-  margin-top: 32rpx;
 }
 
 /* 列表 */

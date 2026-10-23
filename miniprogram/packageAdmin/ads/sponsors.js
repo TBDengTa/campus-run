@@ -1,4 +1,6 @@
 const auth = require('../../utils/request');
+// 写权限（ad.manage）：只有 ad.view 的账号看不到新增/编辑/删除/保存
+const adminPerm = require('../../utils/admin-perm');
 
 const EMPTY = { _id: '', name: '', contact: '', phone: '', email: '', logo: '', active: true };
 
@@ -6,6 +8,7 @@ Page({
   data: {
     list: [],
     loading: false,
+    canManage: false,
     form: null, // null=关闭
   },
 
@@ -17,6 +20,7 @@ Page({
     this.setData({ loading: true });
     try {
       await getApp().ensureLogin();
+      await adminPerm.applyManage(this, 'ad.manage');
       const res = await auth.get('/api/admin/ads/sponsors', { limit: 100 });
       this.setData({ list: res.list });
     } catch (e) {

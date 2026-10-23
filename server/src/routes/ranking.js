@@ -414,7 +414,15 @@ async function rankClassRows({ metric, startKey, endKey, scopeFilter: scopedMatc
     { $sort: { value: -1, steps: -1, _id: 1 } },
     { $limit: 200 },
   ]).allowDiskUse(true);
-  return rows;
+  // 实习 / 毕业班不参加任何校园跑统计：整班从班级榜剔除（不是记 0）
+  const names = rows.map((r) => r._id).filter(Boolean);
+  if (!names.length) return rows;
+  const ClassProfile = require('../models/class-profile');
+  const profiles = await ClassProfile.find({ className: { $in: names } }).select('className status').lean();
+  const excluded = new Set(
+    profiles.filter((p) => ClassProfile.normalizeStatus(p.status) !== 'normal').map((p) => p.className)
+  );
+  return excluded.size ? rows.filter((r) => !excluded.has(r._id)) : rows;
 }
 
 // GET /api/ranking?metric=steps|goal|water|points&range=today|week|total&scope=class|department|school|all

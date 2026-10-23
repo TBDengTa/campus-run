@@ -1,4 +1,6 @@
 const auth = require('../../utils/request');
+// 写权限（content.manage）：只有查看权限的账号不显示新增/编辑/删除/保存
+const adminPerm = require('../../utils/admin-perm');
 
 const EMPTY = { _id: '', version: '', title: '', content: '', date: '' };
 
@@ -6,6 +8,7 @@ Page({
   data: {
     list: [],
     loading: false,
+    canManage: false,
     form: null,
     formVisible: false,
     saving: false,
@@ -19,6 +22,7 @@ Page({
     this.setData({ loading: true });
     try {
       await getApp().ensureLogin();
+      await adminPerm.applyManage(this, 'content.manage');
       const list = await auth.get('/api/admin/content/changelogs');
       this.setData({ list });
     } catch (e) {
