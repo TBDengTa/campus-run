@@ -222,6 +222,7 @@ Page({
     // 写权限（由 syncProfileCapability 计算）：canManageDorms / canManageAreas
     canManageDorms: false,
     canManageAreas: false,
+    canManageClassroom: false,
     profileReadonlyTip: '',
     profileReadonlyFoot: '',
     classes: [],
@@ -369,12 +370,15 @@ Page({
       canViewAdminProfile,
       // 卫生区没有管理端等价端点：只有班级身份那条路径能读（见 data.canViewAreas 的说明）
       canViewAreas: classRole,
-      // ===== 用户 2026-10-23：班委也有本班「宿舍 / 卫生区」的管理权限 =====
-      // 注意与 canManageProfile 的差别 —— 那是**班级配置**（早操/早八/晚自习/教室/备注），
-      // 仍然只给班主任；宿舍与卫生区是班委的本职工作，单独开两个写标志。
-      // 服务端对应：宿舍走 loadClassStudentTarget（班委放行）、卫生区 PUT 允许班委勾选已有区域。
+      // ===== 用户 2026-10-23：班委也有本班「宿舍 / 卫生区 / 教室」的管理权限 =====
+      // 注意与 canManageProfile 的差别 —— 那是**班级配置**（早操/早八/晚自习/备注），
+      // 仍然只给班主任；宿舍 / 卫生区 / 教室属于「本班在哪、谁住哪」的班级事务，对班委开放。
+      // 服务端对应：宿舍 loadClassStudentTarget（班委放行）、卫生区 PUT 允许班委勾选已有区域、
+      // 教室走独立的 PUT /api/class/classroom（只接受 classroom 一个字段）。
       canManageDorms: canEditAdminProfile || profileCanEdit || isOfficer,
       canManageAreas: canEditAdminProfile || classRole,
+      // 教室：班主任 + 班委（用户 2026-10-23「班委目前没有操作教室的权限」）
+      canManageClassroom: canEditAdminProfile || classRole,
       profileSource: source,
       canViewProfile: !!source,
       // 可改 = 管理端给了写权限，或班级域接口回 canEdit:true（班主任）
@@ -980,8 +984,8 @@ Page({
   // 由页面底部的「保存班级配置」统一提交 —— 不在这里单独发请求，
   // 否则会出现「改教室立刻生效、改早操要再点保存」两套心智模型。
   async openClassroom() {
-    if (!this.data.canManageProfile) {
-      wx.showToast({ title: '没有修改本班配置的权限', icon: 'none' });
+    if (!this.data.canManageClassroom) {
+      wx.showToast({ title: '没有修改本班教室的权限', icon: 'none' });
       return;
     }
     // 楼名清单按需加载（页面其它地方用不到，启动时不请求）
@@ -998,17 +1002,46 @@ Page({
     this.setData({ roomValue: String(this.data.profile.classroom || ''), roomVisible: true });
   },
 
-  onRoomConfirm(e) {
+  // 教室确认：**班委也走这里**（用户 2026-10-23「班委目前没有操作教室的权限」）。
+  // 关键差别——班委没有「保存班级配置」权限，所以不能像班主任那样等表单统一提交：
+  //   · 班主任：写进 data.profile.classroom，随「保存班级配置」一起提交（原有心智模型不变）；
+  //   · 班委：直接调 PUT /api/class/classroom 落库（该接口只接受 classroom 一个字段，
+  //           不会顺带改早操/备注），并回填本地状态。
+  async onRoomConfirm(e) {
     const d = (e && e.detail) || {};
     const value = String(d.roomText || '').trim().slice(0, 40);
+    const prev = String(this.data.profile.classroom || '');
     this.setData({ 'profile.classroom': value, roomVisible: false });
-    // 变更需要用户再点「保存班级配置」——给一句提示，避免以为已经存好了
-    wx.showToast({ title: '已填入，记得点「保存班级配置」', icon: 'none', duration: 2200 });
+    if (this.data.canManageProfile) {
+      // 班主任：等统一保存（与早操/备注同一套心智模型）
+      wx.showToast({ title: '已填入，记得点「保存班级配置」', icon: 'none', duration: 2200 });
+      return;
+    }
+    // 班委：立即落库
+    try {
+      await auth.put('/api/class/classroom', { className: this.data.className, classroom: value });
+      wx.showToast({ title: value ? '教室已保存' : '教室已清空', icon: 'success' });
+    } catch (err) {
+      wx.showToast({ title: err.message || '保存失败', icon: 'none' });
+      // 失败回滚，避免界面显示一个其实没存进去的教室
+      this.setData({ 'profile.classroom': prev });
+    }
   },
 
-  onRoomClear() {
+  async onRoomClear() {
+    const prev = String(this.data.profile.classroom || '');
     this.setData({ 'profile.classroom': '', roomVisible: false });
-    wx.showToast({ title: '已清空，记得点「保存班级配置」', icon: 'none', duration: 2200 });
+    if (this.data.canManageProfile) {
+      wx.showToast({ title: '已清空，记得点「保存班级配置」', icon: 'none', duration: 2200 });
+      return;
+    }
+    try {
+      await auth.put('/api/class/classroom', { className: this.data.className, classroom: '' });
+      wx.showToast({ title: '教室已清空', icon: 'success' });
+    } catch (err) {
+      wx.showToast({ title: err.message || '清空失败', icon: 'none' });
+      this.setData({ 'profile.classroom': prev });
+    }
   },
 
   closeRoomDialog() {

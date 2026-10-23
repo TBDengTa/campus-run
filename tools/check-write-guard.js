@@ -122,16 +122,23 @@ function walk(dir) {
 walk(ADMIN);
 
 // 额外校验：WXML 里用到 caps.* 的页面，JS 必须有 caps 字段（否则 {{caps.x}} 恒 undefined，
-// 整排按钮会静默消失 —— 比报错更难发现）。caps 的两处赋值：
+// 整排按钮会静默消失 —— 比报错更难发现）。caps 的来源（任一即可）：
 //   ① 管理端视角：load() 按权限项换算成同一套字段；
-//   ② 班级域视角：服务端 capabilities 直接落 data。
+//   ② 班级域视角：服务端 capabilities 直接落 data；
+//   ③ 两路合并：caps: mergeCaps(overview.capabilities, manage.capabilities)
+//      （2026-10-23 起 user-detail 用这种 —— 班主任两份都通，班委只有 overview）。
 for (const rel of scanned) {
   const wxmlPath = path.join(ADMIN, rel);
   const jsPath = wxmlPath.replace(/\.wxml$/, '.js');
   const wxmlSrc = stripComments(fs.readFileSync(wxmlPath, 'utf8'));
   if (!/\bcaps\./.test(wxmlSrc)) continue;
   const jsSrc = fs.readFileSync(jsPath, 'utf8');
-  if (!/\bcaps\s*:/.test(jsSrc) || !/caps:\s*\(manage && manage\.capabilities\)/.test(jsSrc)) {
+  const defined = /\bcaps\s*:/.test(jsSrc);
+  const fromServer =
+    /caps:\s*\(?\s*manage\s*&&\s*manage\.capabilities/.test(jsSrc) ||
+    /caps:\s*\(?\s*overview\s*&&\s*overview\.capabilities/.test(jsSrc) ||
+    /caps:\s*mergeCaps\(/.test(jsSrc);
+  if (!defined || !fromServer) {
     bad.push({ file: rel, line: 0, action: 'caps 未在 JS 中定义（模板用了 caps.*）', tag: 'js' });
   }
 }

@@ -700,12 +700,19 @@
               </view>
               <!-- 用户 2026-10-22「教室设置也是只能选择不是手动输入，输入的只有门号」
                    + 「尽量使用 Dialog 对话框完整的…一次输入完」：
-                   这里不再内联输入（那样等于允许手打楼名），改成点开对话框选楼 + 填门号。 -->
-              <view class="cls-room-pick" bind:tap="openClassroom">
+                   这里不再内联输入（那样等于允许手打楼名），改成点开对话框选楼 + 填门号。
+                   用户 2026-10-23：**班委也能改教室**（canManageClassroom），
+                   班委走独立的 PUT /api/class/classroom 立即保存（他们无法点「保存班级配置」）。 -->
+              <view class="cls-room-pick" wx:if="{{canManageClassroom}}" bind:tap="openClassroom">
                 <text class="cls-room-pick-t {{profile.classroom ? '' : 'is-empty'}}">
                   {{profile.classroom || '选择教学楼 · 填门号'}}
                 </text>
                 <t-icon name="chevron-right" size="26rpx" color="var(--tt-text-3)" />
+              </view>
+              <view class="cls-room-pick" wx:else>
+                <text class="cls-room-pick-t {{profile.classroom ? '' : 'is-empty'}}">
+                  {{profile.classroom || '未设置'}}
+                </text>
               </view>
             </view>
 
@@ -872,7 +879,7 @@
     buildings="{{teachingBuildings}}"
     show-bed="{{false}}"
     can-clear="{{profile.classroom}}"
-    can-manage="{{canManageProfile}}"
+    can-manage="{{canManageClassroom}}"
     saving="{{roomSaving}}"
     bind:confirm="onRoomConfirm"
     bind:clear="onRoomClear"

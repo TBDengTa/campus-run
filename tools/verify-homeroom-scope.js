@@ -189,6 +189,37 @@ const TMP_TAG = `homeroom_verify_${Date.now()}`;
     const dormDel = await call('teacher', 'DELETE', `/api/class/student/${tmp._id}/dorm${q()}`);
     assert(dormDel.status === 200 && dormDel.data.checkedOut === true, '班主任退宿 → 200', dormDel);
 
+    // ---- 5b2) 教室：班主任与班委都能改，其它班级配置仍只给班主任（用户 2026-10-23） ----
+    const roomTeacher = await call('teacher', 'PUT', `/api/class/classroom${q()}`, { className, classroom: '1号教学楼·101' });
+    assert(roomTeacher.status === 200 && roomTeacher.data.classroom === '1号教学楼·101', '班主任改教室 → 200', roomTeacher);
+    const roomOfficer = await call('officer', 'PUT', `/api/class/classroom${q()}`, { className, classroom: '2号教学楼·202' });
+    assert(roomOfficer.status === 200 && roomOfficer.data.classroom === '2号教学楼·202', '班委改教室 → 200（用户 2026-10-23 放开）', roomOfficer);
+    // 落库复核
+    const roomRead = await call('officer', 'GET', `/api/class/profile${q()}`);
+    assert(roomRead.data.classroom === '2号教学楼·202', '教室已落库（班委再读得到）', roomRead.data.classroom);
+    // 教室接口只接受 classroom：带其它配置字段必须明确拒绝（不能静默忽略，也不能顺带改掉）
+    const roomExtra = await call('officer', 'PUT', `/api/class/classroom${q()}`, {
+      className,
+      classroom: '2号教学楼·202',
+      hasNightStudy: false,
+    });
+    assert(roomExtra.status === 400, '教室接口带其它配置字段 → 400（不静默忽略）', roomExtra);
+    // 班级配置整体仍只给班主任
+    const profOfficer = await call('officer', 'PUT', `/api/class/profile${q()}`, { className, hasNightStudy: false });
+    assert(profOfficer.status === 403, '班委改班级配置（早操/晚自习等）→ 403', profOfficer);
+
+    // ---- 5b3) 班委能拿到「宿舍面板」：靠 /overview（班委调 /manage 是 403） ----
+    const ovOfficer = await call('officer', 'GET', `/api/class/student/${tmp._id}/overview${q()}`);
+    assert(ovOfficer.status === 200, '班委读学生 overview → 200（详情页据此渲染宿舍入口）', ovOfficer);
+    const ovCaps = (ovOfficer.data && ovOfficer.data.capabilities) || {};
+    assert(ovCaps.dorm === true, 'overview：班委可管宿舍（dorm=true）', ovCaps);
+    assert(
+      ovCaps.studentAccount === false && ovCaps.resetPassword === false && ovCaps.unbindWechat === false,
+      'overview：班委无学生账号能力（编辑/重置/解绑等全 false）',
+      ovCaps
+    );
+    assert(!!ovOfficer.data.dorm && Array.isArray(ovOfficer.data.dorm.buildings), 'overview 自带宿舍面板与楼名', ovOfficer.data.dorm);
+
     // ---- 5c) 卫生区：班主任与班委都能勾选已有区域，但**只有班主任**能新建 ----
     const areaTeacher = await call('teacher', 'GET', `/api/class/sanitary${q()}`);
     assert(areaTeacher.status === 200, '班主任读本班卫生区 → 200', areaTeacher);

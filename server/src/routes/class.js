@@ -427,19 +427,36 @@ async function unionTextByStudents(students) {
 // ===== 接口 =====
 
 // 我的班级身份（身份探测：无班级身份时也返回 200 + role:null，供客户端/导航判断）
-// 返回 { role: 'homeroom' | 'officer' | null, homeroomClasses, officerClass, classes, readonly, className, name }
+// 返回 { role, homeroomClasses, officerClass, classes, readonly, capabilities, className, name }
+//
+// ⚠️ `readonly` 的历史含义是「班委不能写任何东西」，用户 2026-10-23 修订后已**不成立**：
+//   班委可以管宿舍 / 卫生区 / 教室。所以这里同时下发一份逐项能力表 capabilities，
+//   前端按项渲染（别再拿一个 readonly 布尔值去关掉整页）。
+//   readonly 仍保留 = 「不能改**班级配置**（早操/早八/晚自习/备注）」，供老调用方判断。
 router.get(
   '/mine',
   wrap(async (req, res) => {
     const { homeroom, officer, all } = accessibleClasses(req.user);
     const role = homeroom.length ? 'homeroom' : officer.length ? 'officer' : null;
+    const isHomeroom = role === 'homeroom';
     ok(res, {
       role,
       homeroomClasses: homeroom,
       officerClass: officer.length ? officer[0] : '',
       classes: all,
-      // 班委仅查看：服务端没有任何写接口，前端据此隐藏全部操作入口
+      // 「不能改班级配置」（早操/早八/晚自习/备注）—— 班委 true、班主任 false。
+      // 注意它**不再**等于「班委只读」：宿舍/卫生区/教室对班委开放，见 capabilities。
       readonly: role === 'officer',
+      // 逐项能力（唯一来源，前端照此画入口）
+      capabilities: {
+        classProfile: isHomeroom, // 班级配置（早操/早八/晚自习/备注）
+        classroom: !!role, // 教室：班主任 + 班委
+        sanitary: !!role, // 卫生区（勾选本班归属）：班主任 + 班委
+        sanitaryCreateArea: isHomeroom, // 就地新建全校区域：仅班主任
+        dorms: !!role, // 学生宿舍：班主任 + 班委
+        studentAccount: isHomeroom, // 编辑资料/重置/限制/解绑/发徽章：仅班主任
+        nudge: isHomeroom, // 督促未达标：仅班主任
+      },
       className: req.user.className || '',
       name: req.user.realName || req.user.nickname || '',
     });
@@ -556,9 +573,46 @@ router.put(
   })
 );
 
-// ===== 本班的卫生区（包干区）=====
+// ===== 教室（班委也能改，用户 2026-10-23）=====
 //
-// 为什么单独成一组端点、而不是塞进 PROFILE_FIELDS：卫生区是**独立资源**（一张 sanitary_areas 表，
+// 为什么单开一个端点，而不是放宽 PUT /profile：
+//   那个端点的白名单里还有 hasMorningExercise / hasNightStudy / hasMorningRun / remark ——
+//   早操/晚自习/校园跑开关会进班超与校园跑的统计口径，备注是老师的私人记录，
+//   放开整条 PUT 就等于连它们一起给了班委。用户明确只给「教室」，所以这里只接受 classroom 一个字段。
+// 权限：班主任 + 班委（resolveScope 已保证是本班），与宿舍/卫生区同一档「班级事务」。
+router.put(
+  '/classroom',
+  wrap(async (req, res) => {
+    const scope = resolveScope(req.user, req.body && req.body.className);
+    const body = req.body || {};
+    // 白名单：只允许 classroom，其它字段一律明确拒绝（不静默忽略 —— 静默会让调用方以为改成功了）
+    const extra = Object.keys(body).filter((k) => k !== 'className' && k !== 'classroom');
+    if (extra.length) {
+      throw new ApiError(
+        400,
+        400,
+        `教室接口只接受 classroom 字段（收到：${extra.join('、')}）；其它班级配置仍需班主任权限`
+      );
+    }
+    const profile = await loadOrInitProfile(scope.className);
+    if (!profile) throw new ApiError(404, 404, '班级台账生成失败，请稍后重试');
+    const next = String(body.classroom || '').trim().slice(0, 40);
+    const changed = (profile.classroom || '') !== next;
+    if (changed) {
+      profile.classroom = next;
+      await profile.save();
+      clearClassCaches();
+    }
+    const live = await liveCount(scope.className);
+    ok(res, {
+      ...presentProfile(profile, scope.className, live),
+      role: scope.isHomeroom ? 'homeroom' : 'officer',
+      classroom: next,
+      changed,
+    });
+  })
+);
+
 // 多班共管 + 按班权重），不是班级台账上的标量字段。放进白名单的话，PUT /profile 就得接收数组并
 // 在这里写另一张表 —— 一个端点两套语义，前端「保存配置」也会把配置和区域绑定混成一次提交。
 //
@@ -1482,8 +1536,7 @@ function homeroomCapabilities() {
 router.get(
   '/student/:userId/manage',
   wrap(async (req, res) => {
-    const { scope, target } = await loadHomeroomTarget(req);
-    const [badgeList, restrictions, dorm] = await Promise.all([
+    const { scope, target } = await loadHomeroomTarget(req);    const [badgeList, restrictions, dorm] = await Promise.all([
       manualBadges.earnedBadgeRows(target.openid),
       Promise.resolve(anticheat.activeRestrictions(target)),
       // 宿舍面板（当前在住 + 楼名 + 本班已用房间）：**由服务端下发楼名清单**，
@@ -1517,6 +1570,56 @@ router.get(
       // 班主任可限制的类型：三类都给（用户 2026-10-23 明确「都要」，含限制登录）。
       // ban-sheet 组件按这个数组收敛选项，所以前端不会摆出会被 403 的按钮。
       banScopes: ['login', 'sync', 'gps'],
+    });
+  })
+);
+
+// ===== 班委视角的学生面板（用户 2026-10-23）=====
+//
+// 背景：用户详情页在班级域分支里先调 /manage（仅班主任）来决定画哪些按钮。
+// 班委拿到 403 → caps 全 false → **连宿舍入口都不渲染**，
+// 于是「班委能改宿舍」在服务端成立、在界面上却完全看不到（用户报的就是这个）。
+//
+// 这个端点给班委：只回「宿舍面板 + 能否改宿舍」，不含任何学生账号能力
+// （编辑资料 / 重置密码 / 限制 / 解绑 / 徽章 —— 那些仍然只有班主任能做）。
+// 班主任也调得通（返回完全相同结构），前端可以统一走这一条；
+// /manage 继续保留给「账户编辑页回填 + 完整能力表」那条路径。
+router.get(
+  '/student/:userId/overview',
+  wrap(async (req, res) => {
+    const { scope, target } = await loadClassStudentTarget(req);
+    const isHomeroom = scope.isHomeroom;
+    const dorm = await studentDorm.buildDormPayload(target);
+    ok(res, {
+      className: scope.className,
+      role: isHomeroom ? 'homeroom' : 'officer',
+      // 逐项能力：与服务端实际校验一一对应，前端照此画按钮
+      capabilities: {
+        dorm: true, // 宿舍：班主任 + 班委（loadClassStudentTarget 都放行）
+        // 以下仅班主任（班委调对应接口会 403，所以这里必须是 false）
+        studentAccount: isHomeroom,
+        editProfile: isHomeroom,
+        resetPassword: isHomeroom,
+        badges: isHomeroom,
+        ban: isHomeroom,
+        unban: isHomeroom,
+        unbindWechat: isHomeroom,
+        deleteAccount: isHomeroom ? HOMEROOM_CAN_DELETE : false,
+      },
+      // 学生基础资料（只读展示：班委也需要看到是谁）
+      student: {
+        _id: String(target._id),
+        realName: target.realName || '',
+        account: target.account || '',
+        studentId: target.studentId || '',
+        gender: Number(target.gender) || 0,
+        className: target.className || '',
+        isClassOfficer: !!target.isClassOfficer,
+      },
+      dorm,
+      // 徽章 / 限制只有班主任能改，班委视角不查（省两次查询，也避免误导）
+      restrictions: isHomeroom ? anticheat.activeRestrictions(target) : [],
+      badges: isHomeroom ? await manualBadges.earnedBadgeRows(target.openid) : [],
     });
   })
 );

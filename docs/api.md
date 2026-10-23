@@ -112,6 +112,8 @@
 | GET | /buildings | **只读**楼名清单 `{ teaching: [], dorm: [] }`（来自系统设置）。填教室 / 宿舍要先选楼，但**不需要 `building.view`**（那是维护楼名清单的权限）；增删改仍走 `PUT /api/admin/config` + `building.manage` |
 | GET | /students?className&page&keyword | 本班学生名单（含今日/本周达标、宿舍、学生会身份）。响应带 `canManage`（班主任 true / 班委 false） |
 | GET | /student/:id/manage?className | **班主任专属**：`capabilities`（能做什么，见下）+ 可编辑资料 + 已获徽章 + 生效限制 + 宿舍面板 + `banScopes:['login','sync','gps']`。班委调用返回 `403 403002`（学生账号操作仅班主任） |
+| GET | /student/:id/overview?className | **班主任与班委都通**：宿舍面板 + 逐项 `capabilities` + 学生基础资料。用户详情页的班级域分支用这一条判断「宿舍入口要不要画」（班委调 `/manage` 会 403，旧实现因此连宿舍都看不到） |
+| PUT | /classroom | 改本班教室：**只接受 `className` + `classroom`**，其它字段 → `400`（早操/晚自习/校园跑/备注仍只归班主任）。**班主任与班委都可写** |
 | PUT | /student/:id/profile | 编辑资料：**只接受 姓名 / 性别 / 出生日期**；提交学号/院校/系部/专业/班级 → `403 403005`（学籍由名单同步） |
 | GET | /student/:id/dorm | 宿舍面板：当前在住 + **楼名清单** + 本班已住房间 + `wechatBound`（班主任**与班委**都可读） |
 | PUT | /student/:id/dorm | 安排/换房：`{ roomLabel: '1号楼·201' }` 或 `{ roomId }` + 可选 `bedNo`；房间不存在自动建档，换房旧记录置「已换房」（**班主任与班委都可写**） |
@@ -136,11 +138,13 @@
 | 学生宿舍（安排 / 换房 / 退宿） | ✅ | ✅ |
 | 卫生区（勾选本班归属） | ✅ | ✅ |
 | 卫生区（就地新建全校区域） | ✅ | ❌ |
+| 教室 | ✅ | ✅ |
+| 班级配置（早操/早八/晚自习/备注） | ✅ | ❌ |
 | 删除账户 | ❌（校级处置） | ❌ |
-| 班级配置（早操/早八/晚自习/教室/备注） | ✅ | ❌ |
 
 判定实现：学生账号操作走 `loadHomeroomTarget`（班主任专属 + 目标不得持管理权限）；
-宿舍与卫生区走 `loadClassStudentTarget`（班主任与班委都放行，不检查目标权限 —— 只写宿舍/区域，不碰账号与权限）。
+宿舍走 `loadClassStudentTarget`（班主任与班委都放行，不检查目标权限 —— 只写宿舍，不碰账号与权限）；
+卫生区与教室走 `resolveScope`（本班即可，但教室端点只接受 classroom 一个字段）。
 
 约束（实现：`services/student-scope.js`，路由与判定都只有一份）：
 ① **学生账号操作**只有班主任能写，班委 `403`；宿舍与卫生区班委也可以（见上表）；

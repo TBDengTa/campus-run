@@ -112,6 +112,27 @@ function buildBadgeItems(definitions, prevItems) {
   return entries.map((e) => e.item);
 }
 
+// 合并两份能力表（/overview 面向班委可看的宿舍场景，/manage 是班主任的完整能力表）。
+// 规则：**任一为 true 即 true**（取并集）。
+// 为什么安全：两个来源都来自服务端、都做了同样的成员资格校验；
+// 班主任两份都通，班委只有 /overview，所以并集恰好等于「这个人真实能做的事」。
+// 字段名两边刻意统一（dorm / editProfile / resetPassword / badges / ban / unban / unbindWechat / deleteAccount）。
+const CAP_KEYS = [
+  'editProfile',
+  'resetPassword',
+  'badges',
+  'ban',
+  'unban',
+  'dorm',
+  'unbindWechat',
+  'deleteAccount',
+];
+function mergeCaps(a, b) {
+  const out = {};
+  for (const k of CAP_KEYS) out[k] = !!(a && a[k]) || !!(b && b[k]);
+  return out;
+}
+
 // 在抽屉行里按 badgeKey 找目标（独立徽章直接命中；等级徽章命中组内某一级）
 function findBadgeItem(items, key) {
   for (const it of items || []) {
@@ -447,7 +468,18 @@ Page({
     } catch (e) {
       row = null;
     }
-    // 管理权探测（班主任专属接口；班委 403 → canManageStudent=false，保持只读视图）
+    // 能力探测（用户 2026-10-23 修正）：
+    //   旧实现只调 /manage（**仅班主任**），班委拿到 403 → caps 全 false →
+    //   连「宿舍」入口都不渲染，于是「班委能改宿舍」在服务端成立、界面上完全看不见。
+    //   现在改调 /overview（班主任与班委都通）：它回宿舍面板 + 逐项能力，
+    //   studentAccount 类能力对班委恒 false。
+    let overview = null;
+    try {
+      overview = await auth.get(`/api/class/student/${id}/overview?className=${encodeURIComponent(cls)}`);
+    } catch (e) {
+      overview = null;
+    }
+    // 班主任额外再取 /manage（用于账户编辑页回填与限制类型；班委 403 → 静默忽略）
     let manage = null;
     try {
       manage = await auth.get(`/api/class/student/${id}/manage?className=${encodeURIComponent(cls)}`);
@@ -475,17 +507,11 @@ Page({
       canManageUser: false,
       canManageClass: false,
       canManageBadges: false,
-      canManageStudent: !!manage,
-      caps: (manage && manage.capabilities) || {
-        editProfile: false,
-        resetPassword: false,
-        badges: false,
-        ban: false,
-        unban: false,
-        dorm: false,
-        unbindWechat: false,
-        deleteAccount: false,
-      },
+      canManageStudent: !!(overview && overview.capabilities && overview.capabilities.studentAccount),
+      // 能力表：以 /overview 为准（班主任与班委都通），并合并 /manage 的完整能力（班主任才有）。
+      // 为什么合并而不是二选一：/overview 面向「班委也看」的宿舍场景，
+      // /manage 才是班主任的完整能力表（含徽章/限制/解绑）。班主任两者都通，取并集最准确。
+      caps: mergeCaps((overview && overview.capabilities) || {}, (manage && manage.capabilities) || {}),
       // 限制类型：服务端给（班主任可限制 login/sync/gps；班委无此能力）
       banScopes: (manage && manage.banScopes) || [],
       badgeSheetVisible: false,
