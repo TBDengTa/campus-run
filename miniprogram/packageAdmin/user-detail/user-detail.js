@@ -153,7 +153,16 @@ Page({
     // 用户 2026-10-23：「有的功能显示按钮，你像删除账户，他没有这个权限请你不要显示」。
     // 前端不再自己判断哪几个动作能开，服务端说能做什么就画什么 —— 两边判断一漂移就会出现
     // 「按钮能点、点了 403」。管理端视角没有 capabilities，按权限项算（见 canPermsOf）。
-    caps: { editProfile: false, resetPassword: false, badges: false, ban: false, unban: false, dorm: false, deleteAccount: false },
+    caps: {
+      editProfile: false,
+      resetPassword: false,
+      badges: false,
+      ban: false,
+      unban: false,
+      dorm: false,
+      unbindWechat: false,
+      deleteAccount: false,
+    },
     // 班主任只能限制这两个类型（限制登录是校级处置，服务端会拒绝 login）
     banScopes: [],
     // 徽章发放 / 回收需 badge.manage（服务端 requirePermission('badge.manage') 同步拦，前端只控显隐）
@@ -272,6 +281,8 @@ Page({
           ban: canUser,
           unban: canUser,
           dorm: canUser,
+          // 解绑微信在管理端是 user.manage
+          unbindWechat: canUser,
           // 删除账户在管理端是 permission.manage（与「编辑资料」同权限项）
           deleteAccount: canPerms,
         },
@@ -472,8 +483,10 @@ Page({
         ban: false,
         unban: false,
         dorm: false,
+        unbindWechat: false,
         deleteAccount: false,
       },
+      // 限制类型：服务端给（班主任可限制 login/sync/gps；班委无此能力）
       banScopes: (manage && manage.banScopes) || [],
       badgeSheetVisible: false,
       badgeItems: [],
@@ -659,8 +672,11 @@ Page({
   },
 
   // 解绑微信：二次确认后清除绑定（可被新微信重新绑定）
+  // 路径随权限来源走：管理端（user.manage）→ /api/admin/users/:id/unbind-wechat；
+  // 本班班主任 → /api/class/student/:id/unbind-wechat（成员资格校验，用户 2026-10-23）。
   unbindWechat() {
     const that = this;
+    if (!this.data.caps.unbindWechat) return;
     wx.showModal({
       title: '解绑微信',
       content: '解绑后该账号将被此微信退出登录，可由任意微信重新绑定姓名密码；其运动等数据保留。确认解绑？',
@@ -669,7 +685,8 @@ Page({
         if (!res.confirm) return;
         that.setData({ unbinding: true });
         try {
-          await auth.post(`/api/admin/users/${that.data.id}/unbind-wechat`);
+          const { head, q } = that.apiFor('ban'); // 与限制同一来源：能限制就能解绑
+          await auth.post(`${head}/unbind-wechat${q}`);
           wx.showToast({ title: '已解绑', icon: 'success' });
           that.load();
         } catch (err) {

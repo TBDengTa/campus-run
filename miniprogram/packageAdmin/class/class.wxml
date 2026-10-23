@@ -687,9 +687,10 @@
             <view class="cls-count-hint">两项均由学籍与住宿名单自动识别，不支持手工设置。</view>
           </view>
 
-          <!-- 教室 + 卫生区：都是「本班在哪里」的信息，放同一张卡。
+          <!-- 教室 + 卫生区 + 宿舍：都是「本班在哪里」的信息，放同一张卡。
                教室是班级台账上的标量字段（与早操 / 校园跑同一次「保存班级配置」提交）；
-               卫生区是**独立资源**（多班共管 + 按班权重），有自己的抽屉与保存动作，不跟上面一起提交。 -->
+               卫生区是**独立资源**（多班共管 + 按班权重），有自己的抽屉与保存动作，不跟上面一起提交；
+               宿舍是「学生 ↔ 房间」的关系，进独立页维护（用户 2026-10-23：班委也可管）。 -->
           <view class="tt-card cls-card">
             <view class="cls-card-title">教室与卫生区</view>
             <view class="cls-fitem">
@@ -708,7 +709,22 @@
               </view>
             </view>
 
-            <!-- 本班负责的卫生区（班主任 / 班委都可读；班委只读列表，不给「选择卫生区」入口）。
+            <!-- 学生宿舍：班主任与班委都可维护（用户 2026-10-23「班委有本班学生宿舍的管理权限」）。
+                 走「宿舍绑定」独立页的**班级域**入口（scope=class）：成员资格校验，
+                 不需要 class.manage —— 查宿本来就是班委的本职工作。 -->
+            <view class="cls-fitem" wx:if="{{canManageDorms}}">
+              <view class="cls-fitem-col">
+                <text class="cls-flabel">学生宿舍</text>
+                <text class="cls-fdesc">按「学生住哪间」记录，混宿同间可住几个班 · 查宿与宿舍卫生据此计算</text>
+              </view>
+              <view class="cls-room-pick" bind:tap="openDorms">
+                <text class="cls-room-pick-t is-empty">宿舍绑定</text>
+                <t-icon name="chevron-right" size="26rpx" color="var(--tt-text-3)" />
+              </view>
+            </view>
+
+            <!-- 本班负责的卫生区：班主任与班委都可读**可写**（用户 2026-10-23「班委有本班的卫生区管理权限」）。
+                 差别：班委只能勾选已有区域，新建区域仍只给班主任（服务端会明确 403）。
                  卫生区只有班级域这一条读路径（/api/class/sanitary 走成员资格校验，管理端没有等价端点），
                  所以纯管理端只读用户（class.view、不是本班班主任/班委）这里给说明，**不发必然 403 的请求** -->
             <view class="cls-areas" wx:if="{{canViewAreas}}">
@@ -717,7 +733,7 @@
                   <text class="cls-flabel">卫生区（包干区）</text>
                   <text class="cls-fdesc">一个区域可由多个班共管，共管时本班只按权重分摊</text>
                 </view>
-                <view class="cls-areas-btn" wx:if="{{canManageProfile}}" bind:tap="openAreas">
+                <view class="cls-areas-btn" wx:if="{{canManageAreas}}" bind:tap="openAreas">
                   <t-icon name="location" size="28rpx" color="var(--tt-brand)" />
                   <text>选择卫生区</text>
                 </view>
@@ -741,7 +757,7 @@
                 <text>{{areasError}} · 点此重试</text>
               </view>
               <view class="tt-empty" wx:if="{{!myAreas.length && !areasLoading && !areasError}}">
-                {{canManageProfile ? '本班还没设置卫生区，点右上角「选择卫生区」勾选或新建' : '本班还没设置卫生区'}}
+                {{canManageAreas ? '本班还没设置卫生区，点右上角「选择卫生区」勾选或新建' : '本班还没设置卫生区'}}
               </view>
             </view>
             <view class="cls-areas-note" wx:else>
@@ -785,7 +801,7 @@
            改的是「本班加入哪些区域」；共管区域只改本班的加入关系与权重，不动别的班的归属。
            骨架用公共 .tt-sheet*，滚动区高度在 class.wxss 里给确定值（flex:none; min-height:0; max-height:46vh）——
            见 docs/ui-design.md:79-87，仓库踩过多次「滚动区没确定高度 → 滚不动、底部按钮被顶出屏幕」。 -->
-    <t-popup wx:if="{{canManageProfile}}" visible="{{areaSheetVisible}}" placement="bottom" bind:visible-change="onAreasVisible">
+    <t-popup wx:if="{{canManageAreas}}" visible="{{areaSheetVisible}}" placement="bottom" bind:visible-change="onAreasVisible">
       <view class="tt-sheet cls-sheet" wx:if="{{areaSheet}}">
         <view class="tt-sheet-grab"></view>
         <view class="tt-sheet-head">
@@ -804,11 +820,13 @@
         <scroll-view scroll-y class="tt-sheet-body">
           <view class="tt-sheet-note">一个区域可由多个班级共管（按权重分摊得分）。这里只改本班的归属，不动别的班。</view>
 
-          <!-- 就地新建区域：全校卫生区没有独立维护页，没有这里就只能对着空列表发愣 -->
-          <view class="cls-newarea">
+          <!-- 就地新建区域：只有班主任能建（班委传 newAreas 会被服务端 403）。
+               班委打开这个抽屉时整块不渲染 —— 他们只能在已有区域里勾选本班归属。 -->
+          <view class="cls-newarea" wx:if="{{canManageProfile}}">
             <input class="cls-newarea-input" placeholder="新区域名称，如 教学楼东侧" value="{{newAreaName}}" bindinput="onNewAreaInput" />
             <view class="cls-newarea-btn" bind:tap="addNewArea">添加</view>
           </view>
+          <view class="tt-sheet-note" wx:else>班委可在已有区域里勾选本班归属；新建区域请由班主任操作。</view>
 
           <view
             class="cls-areachip {{a.checked ? 'on' : ''}}"
@@ -835,7 +853,7 @@
             <t-button theme="default" block bind:tap="closeAreas">取消</t-button>
           </view>
           <view class="cls-sheet-btn">
-            <t-button wx:if="{{canManageProfile}}" theme="primary" block bind:tap="saveAreas">保存</t-button>
+            <t-button wx:if="{{canManageAreas}}" theme="primary" block bind:tap="saveAreas">保存</t-button>
           </view>
         </view>
       </view>

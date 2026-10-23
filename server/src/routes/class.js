@@ -626,30 +626,39 @@ router.get(
   })
 );
 
-// 设置本班负责的卫生区（**仅班主任**）：{ className, areaIds: [], newAreas: [{ name, areaType, location }] }
+// 设置本班负责的卫生区：{ className, areaIds: [], newAreas: [{ name, areaType, location }] }
 // · 只增删**本班**在 classNames 里的存在与 weights，其他班的归属与权重一概不动；
 // · newAreas 是「就地新建并绑定」：全校卫生区目前没有独立维护页（管理端那边也一样支持就地新建），
 //   不支持的话新学校老师打开就是一个空列表 —— 想给班级设卫生区却无处可设；
 // · 同名区域复用已有的（不重复建），新建区域默认 classNames: [本班]。
+//
+// 用户 2026-10-23：**班委也可以管卫生区**（「班委有本班的……卫生区的管理权限」）。
+// 但「新建全校区域」属于配置性质，仍留给班主任 —— 班委只能在已有区域里勾选本班归属，
+// 传 newAreas 会被明确拒绝（不是静默忽略，避免他们以为加上去了）。
 router.put(
   '/sanitary',
   wrap(async (req, res) => {
     const scope = resolveScope(req.user, req.body && req.body.className);
-    if (!scope.isHomeroom) throw new ApiError(403, 403002, '只有班主任可以设置本班卫生区');
     const className = scope.className;
     const body = req.body || {};
-
-    // 新建区域要带上院校 / 系部归属：只读台账，缺失时留空（**不**在这里触发台账初始化，
-    // 卫生区不该因为台账还没生成就不能设）
-    const profile = await ClassProfile.findOne({ className }).lean();
-
+    const news = (Array.isArray(body.newAreas) ? body.newAreas : []).slice(0, 20);
+    if (!scope.isHomeroom && news.length) {
+      throw new ApiError(
+        403,
+        403002,
+        '班委只能在已有卫生区里勾选本班归属；新建区域请由班主任或管理员操作'
+      );
+    }
     const created = [];
     const wanted = [...new Set((Array.isArray(body.areaIds) ? body.areaIds : []).map((x) => String(x)))].filter((x) =>
       mongoose.isValidObjectId(x)
     );
 
+    // 新建区域要带上院校 / 系部归属：只读台账，缺失时留空（**不**在这里触发台账初始化，
+    // 卫生区不该因为台账还没生成就不能设）。只有班主任会走到这里（班委已在上面被拦）。
+    const profile = scope.isHomeroom ? await ClassProfile.findOne({ className }).lean() : null;
+
     // 新建区域：同名区域已存在就不重复建（老师手打很容易撞上已有名字）
-    const news = (Array.isArray(body.newAreas) ? body.newAreas : []).slice(0, 20);
     for (const raw of news) {
       const name = String((raw && raw.name) || '').trim().slice(0, 40);
       if (!name) continue;
@@ -1409,6 +1418,32 @@ async function loadHomeroomTarget(req) {
   return { scope, target };
 }
 
+/**
+ * 取出「本班某个学生」，**班主任与班委都允许**（用户 2026-10-23）。
+ *
+ * 用于「宿舍」与「卫生区」这两类**班级事务**：班委的职责就是查宿、盯卫生区，
+ * 让他们只能看不能改等于把工作推回班主任。
+ *
+ * 与 loadHomeroomTarget 的差别（刻意的）：
+ *   · 不要求 isHomeroom —— 班委在自己的班里同样有效；
+ *   · **不**检查「目标是否持管理权限」：那条护栏是为了防止班主任重置/删除一个
+ *     学生身份的管理员；而这里只写宿舍/卫生区，不涉及账号与权限，无需该护栏。
+ * 学生账号操作（编辑资料 / 重置密码 / 限制 / 解绑微信 / 发徽章）仍只走 loadHomeroomTarget。
+ */
+async function loadClassStudentTarget(req) {
+  const raw = (req.query && req.query.className) || (req.body && req.body.className) || '';
+  const scope = resolveScope(req.user, raw);
+  const { userId } = req.params;
+  if (!mongoose.isValidObjectId(userId)) throw new ApiError(404, 404, '学生不存在');
+  const target = await User.findById(userId);
+  if (!target) throw new ApiError(404, 404, '学生不存在');
+  if (target.role !== 'student') throw new ApiError(403, 403002, '只能管理学生账号');
+  if (!target.className || target.className !== scope.className) {
+    throw new ApiError(403, 403002, NO_ACCESS);
+  }
+  return { scope, target };
+}
+
 // ===== 班主任能做什么：**由服务端逐项下发**，前端只照着渲染 =====
 //
 // 用户 2026-10-23：「在班主任的教师账户中的本班学生用户详细页，有的功能显示按钮，
@@ -1425,14 +1460,19 @@ async function loadHomeroomTarget(req) {
 const HOMEROOM_CAN_DELETE = false;
 
 // 班级域 /manage 返回的能力表（唯一来源）
+//
+// 用户 2026-10-23 修订班主任能力：「班主任有本班的所有的管理权限外还能管理本班学生基础操作
+// 如解绑微信、限制功能、编辑资料(基础信息)、重置密码」——所以 ban 现在**含限制登录**，
+// 并新增 unbindWechat。删除账户仍不放给班主任（见 HOMEROOM_CAN_DELETE）。
 function homeroomCapabilities() {
   return {
     editProfile: true, // 姓名 / 性别 / 生日（学籍字段仍归管理员）
     resetPassword: true,
     badges: true, // 发放 / 回收
-    ban: true, // 限制同步 / GPS
+    ban: true, // 限制（含限制登录，用户 2026-10-23 明确「都要」）
     unban: true,
-    dorm: true, // 安排 / 退宿（用户 2026-10-22）
+    dorm: true, // 安排 / 退宿
+    unbindWechat: true, // 解绑本班学生的微信（用户 2026-10-23 新增）
     deleteAccount: HOMEROOM_CAN_DELETE,
   };
 }
@@ -1474,7 +1514,9 @@ router.get(
       restrictions,
       dorm,
       // 班主任只能限制「同步 / GPS」这类功能；限制登录属于校级处置（保留给管理员）
-      banScopes: ['sync', 'gps'],
+      // 班主任可限制的类型：三类都给（用户 2026-10-23 明确「都要」，含限制登录）。
+      // ban-sheet 组件按这个数组收敛选项，所以前端不会摆出会被 403 的按钮。
+      banScopes: ['login', 'sync', 'gps'],
     });
   })
 );
@@ -1494,14 +1536,14 @@ router.get(
   })
 );
 
-// ===== 宿舍（班主任给本班学生安排住宿）=====
-// 用户 2026-10-22：「班主任可以给本班学生设置宿舍」。
+// ===== 宿舍（本班学生安排住宿）：班主任 + 班委都可写（用户 2026-10-23）=====
 // 楼名清单由 GET /dorm 与 /manage 一起下发 —— 不从 /api/admin/config/buildings 取，
 // 那条路径要 building.view / config.view（宿管维护楼名的权限，不该发给所有教师）。
+// 权限用 loadClassStudentTarget（班主任与班委都放行）：查宿是班委的本职工作。
 router.get(
   '/student/:userId/dorm',
   wrap(async (req, res) => {
-    const { target } = await loadHomeroomTarget(req);
+    const { target } = await loadClassStudentTarget(req);
     ok(res, await studentDorm.buildDormPayload(target));
   })
 );
@@ -1510,7 +1552,7 @@ router.get(
 router.put(
   '/student/:userId/dorm',
   wrap(async (req, res) => {
-    const { target } = await loadHomeroomTarget(req);
+    const { target } = await loadClassStudentTarget(req);
     ok(res, await studentDorm.assignDorm(target, req.body || {}));
   })
 );
@@ -1519,7 +1561,7 @@ router.put(
 router.delete(
   '/student/:userId/dorm',
   wrap(async (req, res) => {
-    const { target } = await loadHomeroomTarget(req);
+    const { target } = await loadClassStudentTarget(req);
     ok(res, await studentDorm.checkoutDorm(target));
   })
 );
@@ -1565,17 +1607,16 @@ router.post(
   })
 );
 
-// 限制功能（班主任只能限制 同步 / GPS；限制登录需要管理端权限）
+// 限制功能：login / sync / gps 三类都允许。
+// 用户 2026-10-23 修订：「班主任……还能管理本班学生基础操作如……限制功能」并明确选择「都要」，
+// 所以**限制登录也对班主任开放**（此前只给 sync / gps，属校级处置）。
+// 唯一保留的护栏在 service 里：超级管理员不可被限制（任何人都不行，否则等于锁死系统）。
 router.post(
   '/student/:userId/ban',
   wrap(async (req, res) => {
     const { target } = await loadHomeroomTarget(req);
-    const scope = String((req.body || {}).scope || '');
-    if (scope === 'login') {
-      throw new ApiError(403, 403002, '班主任只能限制「微信同步 / GPS」，限制登录需要管理端权限');
-    }
     const info = await accountAdmin.banUser(target, {
-      scope,
+      scope: (req.body || {}).scope,
       reason: (req.body || {}).reason,
       days: (req.body || {}).days,
       operator: req.user.openid,
@@ -1591,6 +1632,18 @@ router.post(
     const { target } = await loadHomeroomTarget(req);
     const r = await accountAdmin.unbanUser(target, { scope: (req.body || {}).scope, operator: req.user.openid });
     ok(res, { success: true, ...r });
+  })
+);
+
+// 解绑微信（用户 2026-10-23 新增）：班主任可为本班学生解绑，用于
+// 「学生换了微信 / 换手机后登不进原来绑定的账号」这类现场处置。
+// 实现复用 services/user-account-admin.js::unbindWechat（与管理端同一份）。
+router.post(
+  '/student/:userId/unbind-wechat',
+  wrap(async (req, res) => {
+    const { target } = await loadHomeroomTarget(req);
+    const r = await accountAdmin.unbindWechat(target);
+    ok(res, { success: true, openid: r.openid });
   })
 );
 

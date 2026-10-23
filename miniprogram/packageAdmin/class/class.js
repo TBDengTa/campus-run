@@ -203,7 +203,11 @@ Page({
     profileSource: '', // '' | 'admin' | 'class'（决定读写的接口路径）
     profileCanEdit: false, // 班级域接口下发的 canEdit（班主任 true / 班委 false）
     canViewProfile: false, // 能读本班配置（两条路径任一可通）
-    canManageProfile: false, // 能改（admin 写权限 || 班级域 canEdit）
+    canManageProfile: false, // 能改**班级配置**（admin 写权限 || 班级域 canEdit=班主任）
+    // 用户 2026-10-23：宿舍与卫生区对**班委也开放**（班主任当然也有）。
+    // 与 canManageProfile 刻意分开：班级配置（早操/早八/晚自习/教室/备注）仍只给班主任，
+    // 而查宿、盯卫生区本来就是班委的本职工作。服务端同口径（宿舍走班委放行的 loader、
+    // 卫生区 PUT 允许班委勾选已有区域）。
     // 教室：改用「一个完整对话框」填（用户 2026-10-22：楼名只能选、只有门号能填，且要一次填完）
     teachingBuildings: [], // 教学用楼白名单（系统设置 → 楼名管理）
     roomVisible: false,
@@ -215,6 +219,9 @@ Page({
     // 所以只有真有班级身份（班主任 / 班委）才发请求。纯管理端只读用户（class.view）在这里看不到卫生区，
     // 但不会收到一个必然 403 的请求 —— 页面里给一行说明指向「班级管理」页。
     canViewAreas: false,
+    // 写权限（由 syncProfileCapability 计算）：canManageDorms / canManageAreas
+    canManageDorms: false,
+    canManageAreas: false,
     profileReadonlyTip: '',
     profileReadonlyFoot: '',
     classes: [],
@@ -354,6 +361,7 @@ Page({
     const canViewAdminProfile = canEditAdminProfile || perms.includes('class.view');
     // 班级身份来自 /api/class/mine 的 role（班主任 / 班委），与权限项无关
     const classRole = this.data.role === 'homeroom' || this.data.role === 'officer';
+    const isOfficer = this.data.role === 'officer';
     const source = canEditAdminProfile ? 'admin' : classRole ? 'class' : canViewAdminProfile ? 'admin' : '';
     const profileCanEdit = this.data.profileCanEdit === true;
     this.setData({
@@ -361,6 +369,12 @@ Page({
       canViewAdminProfile,
       // 卫生区没有管理端等价端点：只有班级身份那条路径能读（见 data.canViewAreas 的说明）
       canViewAreas: classRole,
+      // ===== 用户 2026-10-23：班委也有本班「宿舍 / 卫生区」的管理权限 =====
+      // 注意与 canManageProfile 的差别 —— 那是**班级配置**（早操/早八/晚自习/教室/备注），
+      // 仍然只给班主任；宿舍与卫生区是班委的本职工作，单独开两个写标志。
+      // 服务端对应：宿舍走 loadClassStudentTarget（班委放行）、卫生区 PUT 允许班委勾选已有区域。
+      canManageDorms: canEditAdminProfile || profileCanEdit || isOfficer,
+      canManageAreas: canEditAdminProfile || classRole,
       profileSource: source,
       canViewProfile: !!source,
       // 可改 = 管理端给了写权限，或班级域接口回 canEdit:true（班主任）
@@ -1188,9 +1202,11 @@ Page({
     }
   },
 
-  // 「选择卫生区」入口：仅班主任（班委只读列表，不给入口；服务端 PUT 也会 403）
+  // 「选择卫生区」入口：班主任与班委都可以（用户 2026-10-23）。
+  // 差别在**能做什么**：班委只能在已有区域里勾选/取消本班归属，
+  // 新建区域仍只给班主任（服务端对班委传 newAreas 会明确 403）。
   async openAreas() {
-    if (!this.data.canManageProfile) return;
+    if (!this.data.canManageAreas) return;
     if (this.data.areaSheetVisible) return;
     const className = this.data.className;
     if (!className) return;
@@ -1265,8 +1281,20 @@ Page({
     // 抽屉用页面内自绘（cm-sheet 同款），没有 t-popup 的 visible-change；保留此方法供以后换 t-popup
   },
 
+  // 学生宿舍（班级域入口）：班主任与班委都能进，走 scope=class 的独立页。
+  // 该页在班级域模式下调用 /api/class/student/:id/dorm（成员资格校验），
+  // 不需要 class.manage，也不会因为缺少班级台账 id 而进不去。
+  openDorms() {
+    if (!this.data.canManageDorms) return;
+    wx.navigateTo({
+      url:
+        `/packageAdmin/class-manage/dorms/dorms?scope=class` +
+        `&className=${encodeURIComponent(this.data.className || '')}`,
+    });
+  },
+
   async saveAreas() {
-    if (!this.data.canManageProfile) return;
+    if (!this.data.canManageAreas) return;
     const sheet = this.data.areaSheet;
     if (!sheet) return;
     const checked = (sheet.options || []).filter((a) => a.checked);

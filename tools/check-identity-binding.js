@@ -98,15 +98,31 @@ must(
   'logout() 必须同时 clearAuth() 与 markLoggedOut()'
 );
 
-// ⑤ 解绑微信的接口必须撤销服务端可撤销的凭据（JWT 由 ② 兜住）
+// ⑤ 解绑微信必须撤销服务端可撤销的凭据（JWT 由 ② 兜住）
+//
+// ⚠️ 2026-10-23 起实现已收敛到 services/user-account-admin.js::unbindWechat
+// （管理端 user.manage 与班级域「班主任解绑本班学生」共用同一份）。
+// 所以这里查 **service**，并额外断言两条路径都调它 —— 只查路由文件的话，
+// 「班主任解绑忘了清 wx_sessions」这类分裂会漏过去。
 const adminUsers = read('server/src/routes/admin/users.js');
-const unbindBlock = (adminUsers.match(/unbind-wechat[\s\S]{0,1400}/) || [''])[0];
-must(!!unbindBlock, 'server/src/routes/admin/users.js 必须保留解绑微信接口');
-if (unbindBlock) {
-  must(/\$unset:\s*\{\s*openid/.test(unbindBlock), '解绑微信必须清掉 user.openid');
-  must(/revokeAllForUser/.test(unbindBlock), '解绑微信必须撤销该账号的全部设备令牌（login_devices）');
-  must(/WxSession\.deleteMany/.test(unbindBlock), '解绑微信必须清掉 wx_sessions');
+const accountAdminSvc = read('server/src/services/user-account-admin.js');
+const unbindSvc = (accountAdminSvc.match(/async function unbindWechat[\s\S]*?\n\}/) || [''])[0];
+must(!!unbindSvc, 'services/user-account-admin.js 必须有 unbindWechat（唯一实现）');
+if (unbindSvc) {
+  must(/\$unset:\s*\{\s*openid/.test(unbindSvc), '解绑微信必须清掉 user.openid');
+  must(/revokeAllForUser/.test(unbindSvc), '解绑微信必须撤销该账号的全部设备令牌（login_devices）');
+  must(/WxSession\.deleteMany/.test(unbindSvc), '解绑微信必须清掉 wx_sessions');
 }
+must(
+  /router\.post\(\s*'\/:id\/unbind-wechat'/.test(adminUsers) && /accountAdmin\.unbindWechat\(/.test(adminUsers),
+  '管理端解绑微信必须复用同一份 service'
+);
+const classRoutesForUnbind = read('server/src/routes/class.js');
+must(
+  /'\/student\/:userId\/unbind-wechat'/.test(classRoutesForUnbind) &&
+    /accountAdmin\.unbindWechat\(/.test(classRoutesForUnbind),
+  '班级域「班主任解绑本班学生微信」必须存在且复用同一份 service（用户 2026-10-23）'
+);
 
 // ⑥ 微信绑定规则：学生「一账号一微信」，教师可换绑（用户 2026-10-22「教师账户不限制微信绑定的登录」）
 must(

@@ -15,6 +15,8 @@ Page({
   data: {
     id: '',
     className: '',
+    // 进入路径：班级域（班主任/班委，走 /api/class/*）或管理端（class.manage，走 /api/admin/*）
+    classScope: false,
     loading: true,
     canManage: false,
     students: [],
@@ -38,10 +40,19 @@ Page({
     if (!getApp().requireLogin()) return;
     const user = getApp().globalData.userInfo || {};
     const perms = user.effectivePermissions || [];
+    // 两条进入路径（用户 2026-10-23「班委有本班宿舍管理权限」）：
+    //   · 管理端：从「班级管理」台账进，需要 class.manage（读也走 /api/admin/*）；
+    //   · 班级域：从「班级 → 校园跑/班级配置」的宿舍入口进，班主任与班委都能用
+    //     （membership 校验，不需要任何管理权限）。
+    // 用 scope=class 显式区分，避免班委误调管理端接口收到 403。
+    const classScope = options.scope === 'class';
     this.setData({
       id: options.id || '',
       className: options.className ? decodeURIComponent(options.className) : '',
-      canManage: perms.includes('*') || perms.includes('class.manage'),
+      classScope,
+      canManage: classScope
+        ? true // 班级域：能进来就说明是班主任/班委，服务端会再按成员资格校验
+        : perms.includes('*') || perms.includes('class.manage'),
     });
     if (this.data.className) wx.setNavigationBarTitle({ title: `${this.data.className} · 宿舍` });
   },
@@ -56,15 +67,12 @@ Page({
   },
 
   async load() {
-    if (!this.data.id) {
-      this.setData({ loading: false });
-      wx.showToast({ title: '缺少班级参数', icon: 'none' });
-      return;
-    }
     this.setData({ loading: true });
     try {
       await getApp().ensureLogin();
-      const data = await auth.get(`/api/admin/class/profiles/${this.data.id}/dorms`);
+      // 班级域（班主任 / 班委）走 /api/class/students：成员资格校验，无需管理权限；
+      // 管理端走台账接口（含应住人数等统计）。两者字段都含 roomText，页面呈现一致。
+      const data = await (this.data.classScope ? this.loadClassDorms() : this.loadAdminDorms());
       const students = (data.students || []).map((s) => ({ ...s, roomText: s.roomText || '未分配' }));
       // 常用房间：本班已经住进去的房间去重列出（混宿时给下一个学生复用同一间）
       const seen = new Set();
@@ -102,6 +110,49 @@ Page({
       this.setData({ loading: false });
       wx.showToast({ title: e.message || '加载失败', icon: 'none' });
     }
+  },
+
+  // 管理端：班级台账的宿舍视图（含应住人数统计）
+  async loadAdminDorms() {
+    if (!this.data.id) {
+      wx.showToast({ title: '缺少班级参数', icon: 'none' });
+      return {};
+    }
+    return auth.get(`/api/admin/class/profiles/${this.data.id}/dorms`);
+  },
+
+  // 班级域：班主任 / 班委用。班级域没有「整班宿舍视图」端点，
+  // 用 /api/class/students 分页拉全本班（班级规模有限，一次 200 足够），
+  // 由 roomText 是否为空推导已绑定 / 未分配。
+  async loadClassDorms() {
+    const className = this.data.className;
+    if (!className) {
+      wx.showToast({ title: '缺少班级参数', icon: 'none' });
+      return {};
+    }
+    const res = await auth.get('/api/class/students', { className, page: 1, limit: 200, sort: 'name' });
+    const list = (res && res.list) || [];
+    const students = list.map((s) => ({
+      userId: s.userId,
+      name: s.name,
+      studentId: s.studentId,
+      roomText: s.roomText || '',
+      assigned: !!s.roomText,
+      bedNo: '',
+    }));
+    // 楼栋候选：从已入住房间的楼名聚合（班级域拿不到全校房间表，只回本班真实用过的楼）
+    const bmap = new Map();
+    for (const s of students) {
+      if (!s.roomText) continue;
+      const b = s.roomText.split('·')[0];
+      if (b) bmap.set(b, (bmap.get(b) || 0) + 1);
+    }
+    return {
+      students,
+      assigned: students.filter((s) => s.assigned).length,
+      unassigned: students.filter((s) => !s.assigned).length,
+      buildings: [...bmap.entries()].map(([name, rooms]) => ({ name, rooms })),
+    };
   },
 
   filter(list) {
@@ -174,11 +225,14 @@ Page({
     }
     this.setData({ saving: true });
     try {
-      // 床位号一并提交（后端 assignStudentRoom 支持 bedNo，与用户详情页同一口径）
-      const res = await auth.put(`/api/admin/class/profiles/${this.data.id}/dorms/${s.userId}`, {
-        roomLabel: label,
-        bedNo,
-      });
+      // 床位号一并提交（后端 assignStudentRoom 支持 bedNo，与用户详情页同一口径）。
+      // 两条路径：班级域（班主任 / 班委）走成员资格校验接口；管理端走台账接口。
+      const res = this.data.classScope
+        ? await auth.put(
+            `/api/class/student/${s.userId}/dorm?className=${encodeURIComponent(this.data.className)}`,
+            { roomLabel: label, bedNo }
+          )
+        : await auth.put(`/api/admin/class/profiles/${this.data.id}/dorms/${s.userId}`, { roomLabel: label, bedNo });
       const extra = res && res.createdRoom ? '（已新建房间）' : res && res.movedFrom ? `（原 ${res.movedFrom}）` : '';
       wx.showToast({ title: `已绑定 ${s.name}${extra}`, icon: 'none' });
       // 同样只收 visible（理由同 closeSheet），随后重拉列表刷新房间/床位显示
@@ -195,7 +249,7 @@ Page({
     const s = this.data.sheet;
     if (!s) return;
     if (!this.data.canManage) {
-      wx.showToast({ title: '没有修改权限（需要 class.manage）', icon: 'none' });
+      wx.showToast({ title: '没有修改本班宿舍的权限', icon: 'none' });
       return;
     }
     const that = this;
@@ -205,7 +259,11 @@ Page({
       success: async (r) => {
         if (!r.confirm) return;
         try {
-          await auth.del(`/api/admin/class/profiles/${that.data.id}/dorms/${s.userId}`);
+          if (that.data.classScope) {
+            await auth.del(`/api/class/student/${s.userId}/dorm?className=${encodeURIComponent(that.data.className)}`);
+          } else {
+            await auth.del(`/api/admin/class/profiles/${that.data.id}/dorms/${s.userId}`);
+          }
           wx.showToast({ title: '已退宿', icon: 'none' });
           that.setData({ sheetVisible: false });
           await that.load();

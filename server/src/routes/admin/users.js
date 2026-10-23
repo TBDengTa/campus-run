@@ -1867,22 +1867,14 @@ router.get(
 );
 
 // 解绑微信（需 user.manage）：清绑定字段 + 微信会话 + 记住我设备令牌；运动等业务数据保留
-//
-// ⚠️ 这里清掉的只是**服务端可撤销**的三样东西；小程序侧的 JWT 无法撤销，
-// 因此 `middlewares/auth.js` 用「令牌里的 openid ≠ user.openid」判定把旧令牌判 401。
-// 少了那一道，解绑后旧设备还能继续用 30 天，测试时表现为
-// 「已经解绑了陈宇航，手机端还是陈宇航的超级管理员界面」（用户 2026-10-22 实测撞到）。
+// 实现见 services/user-account-admin.js::unbindWechat（班级域「班主任对本班学生解绑」共用同一份）
 router.post(
   '/:id/unbind-wechat',
   requirePermission('user.manage'),
   wrap(async (req, res) => {
     const user = await User.findById(req.params.id);
     if (!user) throw new ApiError(404, 404, '用户不存在');
-    if (!user.openid) throw new ApiError(400, 400, '该账号未绑定微信');
-    const openid = user.openid;
-    await User.updateOne({ _id: user._id }, { $unset: { openid: 1, openidBoundAt: 1 } });
-    await WxSession.deleteMany({ openid });
-    await deviceSvc.revokeAllForUser(user._id);
+    await accountAdmin.unbindWechat(user);
     ok(res, { success: true });
   })
 );

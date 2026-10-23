@@ -118,7 +118,11 @@ const TMP_TAG = `homeroom_verify_${Date.now()}`;
     const mg = await call('teacher', 'GET', `/api/class/student/${tmp._id}/manage${q()}`);
     assert(mg.status === 200 && mg.data.canManage === true, '班主任 GET /manage → canManage:true', mg);
     assert(mg.data.profile && mg.data.profile.realName === '临时验证学生', '返回可编辑资料（姓名）', mg.data.profile);
-    assert(Array.isArray(mg.data.banScopes) && mg.data.banScopes.join(',') === 'sync,gps', '班主任可限制的类型 = sync,gps', mg.data.banScopes);
+    assert(
+      Array.isArray(mg.data.banScopes) && mg.data.banScopes.join(',') === 'login,sync,gps',
+      '班主任可限制的类型 = login,sync,gps（用户 2026-10-23「都要」）',
+      mg.data.banScopes
+    );
 
     // 班委（学生身份）调用同一接口 → 403（只读）
     const off = await call('officer', 'GET', `/api/class/student/${tmp._id}/manage${q()}`);
@@ -170,12 +174,41 @@ const TMP_TAG = `homeroom_verify_${Date.now()}`;
     const dormAfter = await call('teacher', 'GET', `/api/class/student/${tmp._id}/dorm${q()}`);
     assert(dormAfter.data.roomText === dormRoomLabel, '宿舍已落库（再读得到同一间）', dormAfter.data.roomText);
 
-    // 班委不能动宿舍
+    // 用户 2026-10-23：「班委有本班的学生宿舍管理权限」——班委现在**可以**改本班宿舍
     const offDorm = await call('officer', 'PUT', `/api/class/student/${tmp._id}/dorm${q()}`, { roomLabel: '1号楼·999' });
-    assert(offDorm.status === 403, '班委改宿舍 → 403', offDorm);
+    assert(offDorm.status === 200, '班委改本班宿舍 → 200（用户 2026-10-23 放开）', offDorm);
+    // 但跨班仍不行：用别的班名请求
+    const offCross = await call(
+      'officer',
+      'PUT',
+      `/api/class/student/${tmp._id}/dorm?className=${encodeURIComponent('不存在的班级')}`,
+      { roomLabel: '1号楼·998' }
+    );
+    assert(offCross.status === 403, '班委用别的班名改宿舍 → 403', offCross);
 
     const dormDel = await call('teacher', 'DELETE', `/api/class/student/${tmp._id}/dorm${q()}`);
     assert(dormDel.status === 200 && dormDel.data.checkedOut === true, '班主任退宿 → 200', dormDel);
+
+    // ---- 5c) 卫生区：班主任与班委都能勾选已有区域，但**只有班主任**能新建 ----
+    const areaTeacher = await call('teacher', 'GET', `/api/class/sanitary${q()}`);
+    assert(areaTeacher.status === 200, '班主任读本班卫生区 → 200', areaTeacher);
+    const areaOfficer = await call('officer', 'GET', `/api/class/sanitary${q()}`);
+    assert(areaOfficer.status === 200, '班委读本班卫生区 → 200', areaOfficer);
+
+    const areaIds = ((areaTeacher.data && areaTeacher.data.options) || []).slice(0, 1).map((a) => a.id);
+    if (areaIds.length) {
+      const offArea = await call('officer', 'PUT', `/api/class/sanitary${q()}`, { className, areaIds });
+      assert(offArea.status === 200, '班委勾选本班卫生区 → 200（用户 2026-10-23 放开）', offArea);
+    } else {
+      console.log('（库里没有卫生区，跳过班委勾选用例）');
+    }
+    // 班委不能就地新建全校区域（属配置性质，留给班主任/管理员）
+    const offNew = await call('officer', 'PUT', `/api/class/sanitary${q()}`, {
+      className,
+      areaIds: [],
+      newAreas: [{ name: `${TMP_TAG}_班委新建区`, areaType: 'outdoor' }],
+    });
+    assert(offNew.status === 403, '班委新建卫生区 → 403（仅班主任）', offNew);
 
     // ---- 6) 重置密码 ----
     const rp = await call('teacher', 'POST', `/api/class/student/${tmp._id}/reset-password${q()}`);
@@ -183,9 +216,13 @@ const TMP_TAG = `homeroom_verify_${Date.now()}`;
     const afterReset = await User.findById(tmp._id);
     assert(afterReset.mustChangePassword === true, '重置后要求下次登录改密', afterReset.mustChangePassword);
 
-    // ---- 7) 限制功能：只能 sync / gps ----
+    // ---- 7) 限制功能：三类都允许（用户 2026-10-23「都要」，含限制登录） ----
     const banLogin = await call('teacher', 'POST', `/api/class/student/${tmp._id}/ban${q()}`, { scope: 'login', days: 7 });
-    assert(banLogin.status === 403, '班主任限制登录 → 403（校级处置）', banLogin);
+    assert(banLogin.status === 200, '班主任限制登录 → 200（用户 2026-10-23 放开）', banLogin);
+    const afterLoginBan = await User.findById(tmp._id);
+    assert(afterLoginBan.status === 'banned', '限制登录已落库（status=banned）', afterLoginBan.status);
+    const unbanLogin = await call('teacher', 'POST', `/api/class/student/${tmp._id}/unban${q()}`, { scope: 'login' });
+    assert(unbanLogin.status === 200, '班主任解除限制登录 → 200', unbanLogin);
 
     const banSync = await call('teacher', 'POST', `/api/class/student/${tmp._id}/ban${q()}`, { scope: 'sync', days: 3, reason: '验证' });
     assert(banSync.status === 200, '班主任限制微信同步 → 200', banSync);
@@ -195,6 +232,16 @@ const TMP_TAG = `homeroom_verify_${Date.now()}`;
 
     const unban = await call('teacher', 'POST', `/api/class/student/${tmp._id}/unban${q()}`, { scope: 'sync' });
     assert(unban.status === 200 && (unban.data.lifted || []).length === 1, '班主任解除同步限制 → 200 且 lifted=1', unban);
+
+    // ---- 7b) 解绑微信（用户 2026-10-23 新增给班主任） ----
+    const unbind = await call('teacher', 'POST', `/api/class/student/${tmp._id}/unbind-wechat${q()}`);
+    assert(unbind.status === 200 && unbind.data.success === true, '班主任解绑本班学生微信 → 200', unbind);
+    const afterUnbind = await User.findById(tmp._id);
+    assert(!afterUnbind.openid, '微信绑定已清除', afterUnbind.openid);
+    const unbindAgain = await call('teacher', 'POST', `/api/class/student/${tmp._id}/unbind-wechat${q()}`);
+    assert(unbindAgain.status === 400, '重复解绑 → 400（该账号未绑定微信）', unbindAgain);
+    // 复绑回测试 openid，后续步骤（住宿按 openid 记录）依赖它
+    await User.updateOne({ _id: tmp._id }, { $set: { openid: `${TMP_TAG}_target` } });
 
     // ---- 8) 徽章：发放 / 回收 ----
     const sheet = await call('teacher', 'GET', `/api/class/student/${tmp._id}/badges${q()}`);
@@ -218,11 +265,30 @@ const TMP_TAG = `homeroom_verify_${Date.now()}`;
     assert(caps.editProfile === true && caps.resetPassword === true, '能力表：编辑资料 / 重置密码 = 允许', caps);
     assert(caps.badges === true && caps.ban === true && caps.unban === true, '能力表：徽章 / 限制 / 解除 = 允许', caps);
     assert(caps.dorm === true, '能力表：宿舍 = 允许', caps);
+    assert(caps.unbindWechat === true, '能力表：解绑微信 = 允许（用户 2026-10-23 新增）', caps);
+    const scopes = (mgAgain.data && mgAgain.data.banScopes) || [];
+    assert(
+      scopes.includes('login') && scopes.includes('sync') && scopes.includes('gps'),
+      '能力表：限制类型含 login / sync / gps（「都要」）',
+      scopes
+    );
     assert(
       caps.deleteAccount === false,
       '能力表：**删除账户 = 不允许**（班主任不该看到这个按钮）',
       caps
     );
+
+    // ---- 9a) 班委：能管宿舍/卫生区，但**不能**管学生账号（编辑/重置/限制/解绑/发徽章） ----
+    const offMg = await call('officer', 'GET', `/api/class/student/${tmp._id}/manage${q()}`);
+    assert(offMg.status === 403, '班委调 /manage → 403（学生账号操作仅班主任）', offMg);
+    const offReset = await call('officer', 'POST', `/api/class/student/${tmp._id}/reset-password${q()}`);
+    assert(offReset.status === 403, '班委重置密码 → 403', offReset);
+    const offBan = await call('officer', 'POST', `/api/class/student/${tmp._id}/ban${q()}`, { scope: 'sync', days: 1 });
+    assert(offBan.status === 403, '班委限制功能 → 403', offBan);
+    const offUnbind = await call('officer', 'POST', `/api/class/student/${tmp._id}/unbind-wechat${q()}`);
+    assert(offUnbind.status === 403, '班委解绑微信 → 403（仅班主任）', offUnbind);
+    const offProfile = await call('officer', 'PUT', `/api/class/student/${tmp._id}/profile${q()}`, { gender: 1 });
+    assert(offProfile.status === 403, '班委编辑资料 → 403', offProfile);
 
     // ---- 9b) 删除账户：班主任 403（前端不画按钮，后端也必须真的拦） ----
     const del = await call('teacher', 'DELETE', `/api/class/student/${tmp._id}${q()}`);

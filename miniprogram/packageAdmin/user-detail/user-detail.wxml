@@ -76,7 +76,9 @@
       <view class="ud-quick-icon"><t-icon name="refresh" size="38rpx" color="var(--tt-brand)" /></view>
       <text>重置密码</text>
     </view>
-    <view class="ud-quick-item" wx:if="{{loginInfo && loginInfo.wechatBound && canManageUser}}" bind:tap="unbindWechat">
+    <!-- 解绑微信：管理端 user.manage，或本班班主任（用户 2026-10-23「班主任……还能管理本班学生
+         基础操作如解绑微信」）。班级域走 POST /api/class/student/:id/unbind-wechat。 -->
+    <view class="ud-quick-item" wx:if="{{caps.unbindWechat && loginInfo && loginInfo.wechatBound}}" bind:tap="unbindWechat">
       <view class="ud-quick-icon is-warn"><t-icon name="logo-wechat-stroke" size="38rpx" color="var(--td-warning-color-6)" /></view>
       <text>解绑微信</text>
     </view>

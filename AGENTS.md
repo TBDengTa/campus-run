@@ -122,21 +122,30 @@
 - **班主任**：教师可被分配多个班级 —— `user.homeroomClasses: [String]`（存班级名，与 `className` 同口径）。
   班主任**不需要任何管理权限**即可查看/督促自己班的学生数据。
 - **班委**：学生可被设为班委 —— `user.isClassOfficer: Boolean`（同班可多人）。
-  班委**只读**本班数据，没有任何写操作。
+  **班委可写：本班学生宿舍 + 本班卫生区**（用户 2026-10-23「班委有本班的教师、学生宿舍、卫生区的管理权限」）；
+  其余一律只读 —— 不能编辑资料 / 重置密码 / 限制 / 解绑微信 / 发徽章 / 改班级配置 / 删号。
+  ⚠️ 「教师宿舍」系统里**不存在**：宿舍台账只有「学生 ↔ 房间」，班委管的是「本班学生住哪间」。
+  卫生区的「新建全校区域」也仅班主任（班委只能在已有区域里勾选本班归属，传 `newAreas` → 403）。
 - **权限模型（重要）**：班级域接口在 `/api/class/*`（`server/src/routes/class.js`），
   **不使用 `requirePermission`**，而用成员资格校验：
   ① 班主任 = `user.homeroomClasses.includes(className)` → 可读该班全部数据；
-  ② 班委 = `user.isClassOfficer === true && user.className === className` → 只读且仅限本班；
+  ② 班委 = `user.isClassOfficer === true && user.className === className` → 读本班 + 写宿舍/卫生区；
   ③ 其余一律 403。
+  两个 loader，别混用（混用就会「班委改不了宿舍」或「班委能重置密码」）：
+  · `loadHomeroomTarget` —— **学生账号操作**（编辑/重置/限制/解绑/徽章/删号），仅班主任，
+    且目标不得持有任何管理权限；
+  · `loadClassStudentTarget` —— **宿舍**，班主任与班委都放行（不查目标权限：不碰账号与权限）。
   新增任何 `/api/class/*` 接口**都必须先校验「目标学生属于该 className」**，防止跨班越权。
 - 分配入口在管理端用户详情页（需 `user.manage`）。
-- **班主任可以管理本班学生（不需要任何管理权限，用户 2026-10-22）**：
-  编辑资料 / 重置密码 / 发放徽章 / 限制功能 / 排宿舍；**删除账户不给班主任**（用户 2026-10-23）。
+- **班主任可以管理本班学生（不需要任何管理权限，用户 2026-10-22 / 2026-10-23 修订）**：
+  编辑资料 / 重置密码 / 发放徽章 / 限制功能（**含限制登录**）/ 解绑微信 / 排宿舍；
+  **删除账户不给班主任**（用户 2026-10-23）。
   三个硬约束，改这里之前先读 `services/student-scope.js`：
-  ① 只有**班主任**能写（`role === 'teacher'` 且目标 `className` 在其 `homeroomClasses` 里），**班委一律只读**；
+  ① 只有**班主任**能写这些账号操作（`role === 'teacher'` 且目标 `className` 在其 `homeroomClasses` 里），**班委一律只读**；
   ② 目标必须是**普通学生**：持任何管理权限的学生交管理员处理（否则班主任能重置/删除一个学生身份的管理员）；
-  ③ 编辑资料只允许 姓名/性别/出生日期（学籍字段 `403 403005`），限制功能只允许 `sync`/`gps`
-     （限制登录是校级处置，`403`）。
+  ③ 编辑资料只允许 姓名/性别/出生日期（学籍字段 `403 403005`）；
+     限制功能 `login`/`sync`/`gps` **三类都允许**（2026-10-23 用户明确「都要」，此前只给 sync/gps）——
+     唯一护栏是「超级管理员不可被限制」，在 `services/user-account-admin.js::banUser` 里。
   **「能做什么」由服务端下发能力表**（`GET /api/class/student/:id/manage` 的 `capabilities`，
   开关在 `routes/class.js::HOMEROOM_CAN_DELETE`）：前端 `user-detail.wxml` 只读 `caps.*` 画按钮，
   **不要**在模板里各写一遍 `canManagePerms || canManageStudent` 之类的组合 ——
@@ -149,9 +158,11 @@
   前端：`packageAdmin/user-detail`（`canManageStudent` 决定按钮，管理端详情与班级域两条读路径都要给）
   + `account-edit?scope=class`（只读学籍 + 只提交三个字段）。
   回归：`tools/check-server-contract.js`（单一实现）+ `tools/verify-homeroom-scope.js`（端到端，含清理核对）。
-- **班主任也能给本班学生安排宿舍**（用户 2026-10-22「班主任可以给本班学生设置宿舍」）：
-  班级域 `/api/class/student/:id/dorm`（GET/PUT/DELETE，成员资格校验 + `services/student-dorm.js`），
-  与管理端 `/api/admin/users/:id/dorm`（`user.manage`）**共用同一份实现**。
+- **班主任与班委都能给本班学生安排宿舍**（班主任 2026-10-22 / 班委 2026-10-23）：
+  班级域 `/api/class/student/:id/dorm`（GET/PUT/DELETE，成员资格校验 + `services/student-dorm.js`，
+  走 `loadClassStudentTarget`），与管理端 `/api/admin/users/:id/dorm`（`user.manage`）**共用同一份实现**。
+  前端入口两处：班级页「学生宿舍 → 宿舍绑定」（`?scope=class`，班主任/班委都可用）、
+  管理端「班级管理 → 宿舍」（`class.manage`）。
 - **楼名清单不是权限**（用户 2026-10-22「为什么教师权限组无法获取楼名」）：
   填教室 / 宿舍需要「先选楼」，但 `GET /api/admin/config/buildings` 挂在
   `building.view|building.manage|config.view` 下 —— 那是**宿管维护楼名清单**的权限，

@@ -111,26 +111,44 @@
 | GET | /mine | 我的班级身份与候选班级（`role: homeroom \| officer`） |
 | GET | /buildings | **只读**楼名清单 `{ teaching: [], dorm: [] }`（来自系统设置）。填教室 / 宿舍要先选楼，但**不需要 `building.view`**（那是维护楼名清单的权限）；增删改仍走 `PUT /api/admin/config` + `building.manage` |
 | GET | /students?className&page&keyword | 本班学生名单（含今日/本周达标、宿舍、学生会身份）。响应带 `canManage`（班主任 true / 班委 false） |
-| GET | /student/:id/manage?className | **班主任专属**：`capabilities`（能做什么，见下）+ 可编辑资料 + 已获徽章 + 生效限制 + 宿舍面板 + `banScopes:['sync','gps']`。班委调用返回 `403 403002`（`canManage` 的权威来源） |
+| GET | /student/:id/manage?className | **班主任专属**：`capabilities`（能做什么，见下）+ 可编辑资料 + 已获徽章 + 生效限制 + 宿舍面板 + `banScopes:['login','sync','gps']`。班委调用返回 `403 403002`（学生账号操作仅班主任） |
 | PUT | /student/:id/profile | 编辑资料：**只接受 姓名 / 性别 / 出生日期**；提交学号/院校/系部/专业/班级 → `403 403005`（学籍由名单同步） |
-| GET | /student/:id/dorm | 宿舍面板：当前在住 + **楼名清单** + 本班已住房间 + `wechatBound`（楼名随面板下发，不依赖 `building.view`） |
-| PUT | /student/:id/dorm | 安排/换房：`{ roomLabel: '1号楼·201' }` 或 `{ roomId }` + 可选 `bedNo`；房间不存在自动建档，换房旧记录置「已换房」 |
+| GET | /student/:id/dorm | 宿舍面板：当前在住 + **楼名清单** + 本班已住房间 + `wechatBound`（班主任**与班委**都可读） |
+| PUT | /student/:id/dorm | 安排/换房：`{ roomLabel: '1号楼·201' }` 或 `{ roomId }` + 可选 `bedNo`；房间不存在自动建档，换房旧记录置「已换房」（**班主任与班委都可写**） |
 | DELETE | /student/:id/dorm | 退宿（在住记录置 `checked_out`，历史保留） |
 | POST | /student/:id/reset-password | 重置为该生初始密码（无初始数据时生成随机码，`message` 里返回） |
-| POST | /student/:id/ban | 限制功能：**只允许 `sync` / `gps`**；`login` → `403`（限制登录是校级处置） |
-| POST | /student/:id/unban | 解除限制：`sync` / `gps` / `all` |
+| POST | /student/:id/ban | 限制功能：`login` / `sync` / `gps` **三类都允许**（用户 2026-10-23「都要」）；超级管理员仍不可限制 |
+| POST | /student/:id/unban | 解除限制：`login` / `sync` / `gps` / `all` |
+| POST | /student/:id/unbind-wechat | **解绑微信**（用户 2026-10-23 新增）：清 openid / wx_sessions / deviceToken，运动等业务数据保留；未绑定 → `400` |
 | GET | /student/:id/badges | 徽章抽屉数据源（已获得 + 全部启用中的定义） |
 | POST | /student/:id/badges | 发放徽章（幂等；教师账号与未绑微信的账号会被拒绝） |
 | DELETE | /student/:id/badges/:key | 回收徽章（幂等） |
+| PUT | /sanitary | 本班卫生区归属：**班主任与班委都能勾选已有区域**；`newAreas`（就地新建全校区域）仅班主任，班委传 → `403 403002` |
 | DELETE | /student/:id | 删除账户及其全部运动/饮水/徽章/住宿数据（不可恢复）。**班主任默认 `403 403002`**（见 `HOMEROOM_CAN_DELETE`）：级联删除属校级处置，班主任应改用「转移」把学生调出本班 |
 
+### 班主任 / 班委的权限分界（用户 2026-10-23）
+
+| 能力 | 班主任 | 班委 |
+|---|---|---|
+| 编辑资料（基础信息） | ✅ | ❌ |
+| 重置密码 / 解绑微信 / 限制·解除 | ✅（含限制登录） | ❌ |
+| 发放 / 回收徽章 | ✅ | ❌ |
+| 学生宿舍（安排 / 换房 / 退宿） | ✅ | ✅ |
+| 卫生区（勾选本班归属） | ✅ | ✅ |
+| 卫生区（就地新建全校区域） | ✅ | ❌ |
+| 删除账户 | ❌（校级处置） | ❌ |
+| 班级配置（早操/早八/晚自习/教室/备注） | ✅ | ❌ |
+
+判定实现：学生账号操作走 `loadHomeroomTarget`（班主任专属 + 目标不得持管理权限）；
+宿舍与卫生区走 `loadClassStudentTarget`（班主任与班委都放行，不检查目标权限 —— 只写宿舍/区域，不碰账号与权限）。
+
 约束（实现：`services/student-scope.js`，路由与判定都只有一份）：
-① 只有**班主任**能写，班委 `403`；
+① **学生账号操作**只有班主任能写，班委 `403`；宿舍与卫生区班委也可以（见上表）；
 ② 目标必须是**普通学生** —— 持任何管理权限的学生由管理员处置（否则班主任可重置/删除一个学生身份的管理员）；
-③ 目标班级必须在 `homeroomClasses` 里，跨班 `403`；
+③ 目标班级必须在 `homeroomClasses` / 班委自己的班里，跨班 `403`；
 ④ 实现与管理端**共用同一份 service**（`user-account-admin` / `user-badges-manual` / `student-dorm`），
    不允许在班级域另写一套（否则会出现「管理端吊销设备令牌、班级域不吊销」这类分裂）。
-⑤ **楼名不是权限**：班主任/教务处填教室与宿舍只需要 `class.view` 或班主任身份，
+⑤ **楼名不是权限**：班主任/教务处填教室与宿舍只需要 `class.view` 或班级身份，
    楼名清单由 `GET /class/buildings`（登录即可读）与宿舍面板一起提供；
    楼名的增删改仍然只属于 `building.manage`（宿管），两者刻意分开。
 ⑥ **能力表 `capabilities`**（`GET /student/:id/manage` 下发，前端只照着画按钮，
@@ -141,11 +159,14 @@
    | `editProfile` | ✅ | 姓名 / 性别 / 生日（学籍字段仍归管理员） |
    | `resetPassword` | ✅ | 重置为该生初始密码 |
    | `badges` | ✅ | 发放 / 回收 |
-   | `ban` / `unban` | ✅ | 限制 / 解除（只允许 `sync` / `gps`） |
+   | `ban` / `unban` | ✅ | 限制 / 解除（`login` / `sync` / `gps` 全部） |
    | `dorm` | ✅ | 安排 / 退宿 |
+   | `unbindWechat` | ✅ | 解绑本班学生的微信（用户 2026-10-23 新增） |
    | `deleteAccount` | ❌ | **开关 `HOMEROOM_CAN_DELETE`**；关闭时服务端真的回 `403`，前端也不画按钮 |
 
    改开关一处即可，路由与前端都跟着变（前端读同一份 capabilities）。
+   宿舍与卫生区不走 `capabilities`（班委也有），由前端 `canManageDorms` / `canManageAreas` 控制，
+   服务端分别用 `loadClassStudentTarget` 与「`newAreas` 仅班主任」两道校验对应。
 
 
 ## 管理端 /api/admin（JWT + role=admin）

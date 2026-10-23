@@ -23,6 +23,8 @@ const UserGoal = require('../models/user-goal');
 const Appeal = require('../models/appeal');
 const BanRecord = require('../models/ban-record');
 const DormAssignment = require('../models/dorm-assignment');
+const WxSession = require('../models/wx-session');
+const User = require('../models/user');
 
 /**
  * 重置密码（单条接口与批量接口共用）。
@@ -128,4 +130,27 @@ async function unbanUser(user, { scope, operator } = {}) {
   return { lifted, restrictions: anticheat.activeRestrictions(user) };
 }
 
-module.exports = { resetUserPassword, deleteUserCascade, banUser, unbanUser };
+/**
+ * 解绑微信（用户 2026-10-23：班主任可对本班学生解绑）。
+ *
+ * 管理端（user.manage）与班级域（班主任对本班学生）共用这一份，避免
+ * 「管理端会清 wx_sessions、班级域忘了」这类分裂。
+ *
+ * ⚠️ 这里清掉的只是**服务端可撤销**的三样东西（openid / wx_sessions / deviceToken）；
+ * 小程序侧的 JWT 无法撤销，由 `middlewares/auth.js` 用「令牌里的 openid ≠ user.openid」
+ * 判定把旧令牌判 401 —— 少了那一道，解绑后旧设备还能继续用 30 天
+ * （2026-10-22 实测撞到：「已经解绑了陈宇航，手机端还是他的超管界面」）。
+ *
+ * @returns {Promise<{unbound: boolean, openid: string}>}
+ */
+async function unbindWechat(user) {
+  if (!user) throw new ApiError(404, 404, '用户不存在');
+  if (!user.openid) throw new ApiError(400, 400, '该账号未绑定微信');
+  const openid = user.openid;
+  await User.updateOne({ _id: user._id }, { $unset: { openid: 1, openidBoundAt: 1 } });
+  await WxSession.deleteMany({ openid });
+  await deviceSvc.revokeAllForUser(user._id);
+  return { unbound: true, openid };
+}
+
+module.exports = { resetUserPassword, deleteUserCascade, banUser, unbanUser, unbindWechat };
