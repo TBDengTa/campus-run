@@ -875,6 +875,21 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('.env.example 有 CHECK_PHOTO_MAX_MB（20）', /CHECK_PHOTO_MAX_MB=20/.test(envEx));
   // nginx 必须放得下（否则 Nginx 先回 413，Node 根本收不到）
   ok('nginx client_max_body_size 足够', (() => { const m = nginxSrc.match(/client_max_body_size\s+(\d+)m/); return !!m && Number(m[1]) >= 10; })());
+// ===== nginx upstream 端口必须跟随实际 PORT（用户 2026-10-27 整站 502）=====
+{
+  const shSrc3 = require('fs').readFileSync(path.join(__dirname, '..', 'deploy', 'install.sh'), 'utf8');
+  ok('nginx upstream 端口跟随 .env PORT', /fix_nginx_upstream_port\(\) \{/.test(shSrc3));
+  // 必须在 resolve_port 之后调用（$PORT 才是真实值）
+  const iResolve = shSrc3.indexOf('PORT="$(resolve_port)"');
+  const iFix = shSrc3.indexOf('fix_nginx_upstream_port "$PORT"');
+  ok('在 resolve_port 之后同步 upstream', iResolve > 0 && iFix > iResolve, `resolve=${iResolve} fix=${iFix}`);
+  // 用正则匹配任意端口，而不是只认 3010（只认 3010 就又写死了）
+  ok('upstream 端口按正则替换（不写死）', /127\\\.0\\\.0\\\.1:\[0-9\]\+/.test(shSrc3));
+  ok('端口已正确时跳过修改', /nginx upstream 端口已正确/.test(shSrc3));
+  // install.sh 的 if/fi 必须配对（历史上漏 fi 会让脚本直接报语法错）
+  ok('install.sh if/fi 配对', (() => { let d = 0; for (const line of shSrc3.split('\n')) { const t = line.trim(); if (/^if\s/.test(t)) d++; else if (/^fi$|^fi;/.test(t)) d--; } return d === 0; })());
+}
+
 // ===== 列表空但徽章有数（用户 2026-10-27）=====
 {
   const anoJs3 = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'config', 'anomalies', 'anomalies.js'), 'utf8');
