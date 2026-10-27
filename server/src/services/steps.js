@@ -155,7 +155,8 @@ function mergeAnomaly(rule, model) {
   // 这样「模型很确信」时能单独进入待研判（>=30），但要到自动封禁仍需硬规则或极高模型分。
   const modelScaled = Math.max(0, Math.min(100, Math.round(((model.score || 0) - 0.5) * 250)));
   const finalScore = Math.max(rule.score || 0, modelScaled);
-  const reasons = [...new Set([...(rule.reasons || []), ...(model.reasons || [])])];
+  // 语义级去重：硬规则与模型可能用不同措辞描述同一件事（用户 2026-10-27 反馈重复）
+  const reasons = require('./anticheat-model').dedupeReasons([...(rule.reasons || []), ...(model.reasons || [])]);
   const ruleAuto = rule.level === 'autoBan';
   // 模型极高（>=0.95）也允许自动封禁；否则模型只能把记录推到待研判
   const modelAuto = model.score >= 0.95;

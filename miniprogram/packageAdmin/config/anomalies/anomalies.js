@@ -115,11 +115,17 @@ Page({
       await getApp().ensureLogin();
       // 写权限：user.manage（处置账号）；取不到时按只读渲染（fail-closed）
       await adminPerm.applyManage(this, 'user.manage');
-      const res = await auth.get('/api/admin/step-anomalies', {
-        status: this.data.tab,
-        keyword: this.data.keyword || undefined,
-        limit: 50,
-      });
+      // ⚠️ 不要传 undefined 值的参数（用户 2026-10-27 报「待研判 85 条但列表是空的」）。
+      //   wx.request 在 GET 时把 data 拼成 query，而 `{ keyword: undefined }` 的**键仍然存在**，
+      //   微信会序列化成字面量 `keyword=undefined` → 服务端当成真关键字，
+      //   去匹配「姓名/学号/班级里含 undefined」→ total=0、列表全空。
+      //   而 counts（待研判 85）走的是**不加 keyword 的独立 count**，所以徽章仍有数字 ——
+      //   两个数字对不上，界面就自相矛盾了（这正是截图里的现象）。
+      //   正确做法：只在真有关键字时才带上它。
+      const query = { status: this.data.tab, limit: 50 };
+      const kw = String(this.data.keyword || '').trim();
+      if (kw) query.keyword = kw;
+      const res = await auth.get('/api/admin/step-anomalies', query);
       const list = (res.list || []).map((r) => ({
         ...r,
         statusInfo: STATUS[r.status] || { text: r.status, theme: 'default' },

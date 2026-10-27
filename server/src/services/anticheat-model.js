@@ -645,7 +645,8 @@ async function evaluate(source, record, history = {}) {
 
   // 可解释性：把「最偏离」的特征挑出来，管理员才知道为什么判异常。
   // 物理约束命中的理由优先展示（它比模型分更硬、更容易说服人）。
-  const reasons = [...new Set([...hardScore.reasons, ...explain(source, feat, score)])].slice(0, 4);
+  // 合并后必须**语义去重**（否则「同步增速 50 步/秒」会以 3 种写法出现 3 次）
+  const reasons = dedupeReasons([...hardScore.reasons, ...explain(source, feat, score)]).slice(0, 4);
   // features 一并返回：调用方要把它存进异常记录，供将来训练有监督模型用
   return { score, level, reasons, threshold: th, modelRows: model ? model.rows : 0, modelScore, hardScore: hardScore.score, features: feat };
 }
@@ -727,6 +728,47 @@ function explain(source, feat, score) {
 }
 
 /**
+ * 理由去重（**语义级，不是字符串级**）。
+ *
+ * 用户 2026-10-27 反馈列表里同一件事出现两三次：
+ *   「步数增速 168.5 步/秒」「同步增速 50.0 步/秒，机器写入特征」「同步增速 50.0 步/秒」
+ * 字符串去重对此无效（文字不同、含义相同）。这里按「类别」归一：
+ *   · 同一类别只保留一条，优先保留**信息更多**的（带具体数字的胜过泛指）；
+ *   · 类别由关键词识别（数字模式 / 整数化 / 增速 / 基线 / 单日总量 / 配速 / 平滑度 …）。
+ * 这样管理员看到的永远是「几条不同的问题」，而不是同一句话的几种写法。
+ */
+const REASON_KINDS = [
+  { kind: 'pattern', re: /重复|顺序数字/ },
+  { kind: 'round', re: /整数化|末位/ },
+  { kind: 'rate', re: /增速|步\/秒/ },
+  { kind: 'baseline', re: /基线/ },
+  { kind: 'daily', re: /单日|生理上限/ },
+  { kind: 'pace', re: /配速/ },
+  { kind: 'speed', re: /速度|km\/h/ },
+  { kind: 'jitter', re: /平滑度/ },
+  { kind: 'sparse', re: /轨迹点/ },
+  { kind: 'gap', re: /间隔/ },
+  { kind: 'sync', re: /步数不涨|无变化/ },
+];
+
+function dedupeReasons(list) {
+  const best = new Map();
+  for (const raw of list || []) {
+    const text = String(raw || '').trim();
+    if (!text) continue;
+    const hit = REASON_KINDS.find((k) => k.re.test(text));
+    const kind = hit ? hit.kind : text; // 认不出类别的按原文各自保留
+    const prev = best.get(kind);
+    const hasNum = /\d/.test(text);
+    const prevHasNum = prev ? /\d/.test(prev) : false;
+    if (!prev || (hasNum && !prevHasNum) || (hasNum === prevHasNum && text.length > prev.length)) {
+      best.set(kind, text);
+    }
+  }
+  return [...best.values()];
+}
+
+/**
  * 只读当前缓存的模型（**不触发训练**）。
  * 管理端「模型状态」用它：否则打开页面就要等 3 秒训练，前端会超时。
  */
@@ -739,6 +781,7 @@ module.exports = {
   werunFeatures,
   gpsFeatures,
   physicalScore,
+  dedupeReasons,
   // 模型
   buildIsolationForest,
   scoreForest,

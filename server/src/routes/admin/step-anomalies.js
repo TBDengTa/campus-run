@@ -37,11 +37,19 @@ router.get(
     if (req.query.source) filter.source = String(req.query.source);
     if (req.query.keyword) {
       const kw = String(req.query.keyword).trim();
-      if (kw) {
+      // ⚠️ 过滤「字面量 undefined / null」（用户 2026-10-27 报「待研判 85 条但列表空」）：
+      //   小程序 GET 传 `{ keyword: undefined }` 时，微信会把它序列化成 `keyword=undefined`。
+      //   那是**合法字符串**，不加判断就会被当真关键字，去匹配「姓名含 undefined」→ 结果全空，
+      //   而 counted 的徽章仍显示 85，界面自相矛盾。
+      //   前端已改成不传空参数；这里再兜一道，避免其它客户端（H5 / 直连 curl）踩同一个坑。
+      const isNoise = /^(undefined|null|NaN)$/i.test(kw);
+      if (kw && !isNoise) {
+        // 正则转义：关键字里可能有 . * + 等，直接拼进 RegExp 会报错或语义错乱
+        const safe = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         filter.$or = [
-          { realName: new RegExp(kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') },
-          { studentId: new RegExp(kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') },
-          { className: new RegExp(kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') },
+          { realName: new RegExp(safe, 'i') },
+          { studentId: new RegExp(safe, 'i') },
+          { className: new RegExp(safe, 'i') },
         ];
       }
     }

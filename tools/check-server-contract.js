@@ -875,6 +875,28 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('.env.example 有 CHECK_PHOTO_MAX_MB（20）', /CHECK_PHOTO_MAX_MB=20/.test(envEx));
   // nginx 必须放得下（否则 Nginx 先回 413，Node 根本收不到）
   ok('nginx client_max_body_size 足够', (() => { const m = nginxSrc.match(/client_max_body_size\s+(\d+)m/); return !!m && Number(m[1]) >= 10; })());
+// ===== 列表空但徽章有数（用户 2026-10-27）=====
+{
+  const anoJs3 = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'config', 'anomalies', 'anomalies.js'), 'utf8');
+  const anoRoute3 = require('fs').readFileSync(path.join(SERVER, 'routes/admin/step-anomalies.js'), 'utf8');
+  const model3 = require('fs').readFileSync(path.join(SERVER, 'services/anticheat-model.js'), 'utf8');
+
+  // 根因：wx.request 把 { keyword: undefined } 序列化成字面量 keyword=undefined，
+  // 服务端当真关键字去匹配「姓名含 undefined」→ total=0、列表空，而 counts 仍是真实数量。
+  // 去掉注释再判断（注释里本身就有 `{ keyword: undefined }` 字样，直接正则匹配会误报）
+  const anoJs3NoComment = anoJs3.replace(/\/\/.*$/gm, '');
+  ok('请求参数不得含 undefined 字面量', !/keyword:\s*this\.data\.keyword \|\| undefined/.test(anoJs3NoComment));
+  ok('只在有关键字时才带 keyword', /const kw = String\(this\.data\.keyword \|\| ''\)\.trim\(\)/.test(anoJs3NoComment) && /if \(kw\) query\.keyword = kw/.test(anoJs3NoComment));
+  ok('服务端兜底忽略 undefined/null 字面量', /isNoise/.test(anoRoute3) && /undefined\|null\|NaN/.test(anoRoute3));
+  // 正则转义（关键字含 . * 等不能让 RegExp 抛错）
+  ok('关键字正则已转义', anoRoute3.indexOf('replace(/[.*+?^${}()|[\\]\\\\]/g') >= 0 || /\\.\*\\+\\?/.test(anoRoute3) || anoRoute3.includes('.replace(/[.*+?'));
+
+  // 理由语义去重（同一件事不该出现两三次）
+  ok('理由语义去重', /function dedupeReasons/.test(model3) && /REASON_KINDS/.test(model3));
+  ok('evaluate 使用语义去重', /dedupeReasons\(\[\.\.\.hardScore\.reasons/.test(model3));
+  ok('合并理由也走去重', /dedupeReasons\(\[\.\.\.\(rule\.reasons/.test(require('fs').readFileSync(path.join(SERVER, 'services/steps.js'), 'utf8')));
+}
+
 // ===== 标注积累与升级提示（用户 2026-10-27）=====
 {
   const model2 = require('fs').readFileSync(path.join(SERVER, 'services/anticheat-model.js'), 'utf8');
