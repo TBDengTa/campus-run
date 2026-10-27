@@ -875,6 +875,39 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('.env.example 有 CHECK_PHOTO_MAX_MB（20）', /CHECK_PHOTO_MAX_MB=20/.test(envEx));
   // nginx 必须放得下（否则 Nginx 先回 413，Node 根本收不到）
   ok('nginx client_max_body_size 足够', (() => { const m = nginxSrc.match(/client_max_body_size\s+(\d+)m/); return !!m && Number(m[1]) >= 10; })());
+// ===== 学生会控制台要有「扫码加人」入口（用户 2026-10-27）=====
+{
+  const unionRouteSrc = require('fs').readFileSync(path.join(SERVER, 'routes/union.js'), 'utf8');
+  const unionJs = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'pages', 'union', 'union.js'), 'utf8');
+  const unionWxml = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'pages', 'union', 'union.wxml'), 'utf8');
+
+  // 服务端：/dashboard 必须下发 canScanJoin
+  // ⚠️ 用「取 /dashboard 路由片段再断言」，而不是全文搜 —— /mine 里也有同形的 ok(res,{...})，
+  //   第一次就把字段加到了 /mine 上（全文搜能过、实际不生效），排查了一轮。
+  const dashSeg = (() => {
+    const a = unionRouteSrc.indexOf("'/dashboard'");
+    if (a < 0) return '';
+    const b = unionRouteSrc.indexOf('ok(res, {', a);
+    return b < 0 ? '' : unionRouteSrc.slice(b, b + 2000);
+  })();
+  ok('/dashboard 下发 canScanJoin', /canScanJoin:\s*unionSvc\.canManageMembers/.test(dashSeg));
+  ok('canScanJoin 与 canManageMembers 同口径', /canScanJoin:\s*unionSvc\.canManageMembers\(identity\)/.test(dashSeg));
+  // 反向断言：/mine 里不该有这个字段（说明没改错位置）
+  const mineSeg = (() => {
+    const a = unionRouteSrc.indexOf("'/mine'");
+    if (a < 0) return '';
+    const b = unionRouteSrc.indexOf('ok(res, {', a);
+    return b < 0 ? '' : unionRouteSrc.slice(b, b + 1200);
+  })();
+  ok('/mine 里没有误加 canScanJoin', !/canScanJoin/.test(mineSeg));
+
+  // 前端：快捷入口 + 跳转 + 权限门
+  ok('学生会页有扫码加人入口', /wx:if="\{\{canUnionScanJoin\}\}"[\s\S]{0,120}goScanJoin/.test(unionWxml));
+  ok('入口文案为「扫码加人」', /扫码加人/.test(unionWxml));
+  ok('canUnionScanJoin 来自 dashboard.canScanJoin', /canUnionScanJoin:\s*!!data\.canScanJoin/.test(unionJs));
+  ok('goScanJoin 指向扫码页', /goScanJoin\(\)[\s\S]{0,160}packageAdmin\/union\/scan-join/.test(unionJs));
+}
+
 // ===== GPS 记录必须换算步数与卡路里（用户 2026-10-27「没有步数的换算」）=====
 {
   const stepsSrc4 = require('fs').readFileSync(path.join(SERVER, 'services/steps.js'), 'utf8');

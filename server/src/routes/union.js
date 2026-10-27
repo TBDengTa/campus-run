@@ -939,6 +939,12 @@ router.get(
       pendingReview,
       myToday,
       myTotal,
+      // 扫码加人（用户 2026-10-27「学生会控制台中没有扫码加部门的内容」）：
+      // 与 canManageMembers 同一口径 —— 主席团 / 部长 / 副部长 / union.steward 才能
+      // 扫学生二维码把人加进部门；普通部员点了必然 403，入口不该露给他们。
+      // ⚠️ 必须放在**这个** ok() 里：/dashboard 里只有一个返回，而 /mine 也有个同形 ok()
+      //   （第一次改错位置，前端拿不到该字段，排查了一轮）。
+      canScanJoin: unionSvc.canManageMembers(identity),
       myPendingAppeal: await CheckRecord.countDocuments({ 'appeal.status': 'pending', voided: { $ne: true }, ...scopeFilter }),
     });
   })

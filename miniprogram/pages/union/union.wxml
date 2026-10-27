@@ -136,6 +136,14 @@
         <t-icon name="usergroup" size="30rpx" color="var(--tt-brand)" />
         <text class="un-shortcut-t">成员管理</text>
       </view>
+      <!-- 扫码加人（用户 2026-10-27：「在学生会控制台中没有扫码加部门的内容」）：
+           干部扫学生主页的「加入学生会二维码」→ 直接把该学生加进自己的部门。
+           权限口径与服务端一致（canUnionScanJoin = 主席团 / 部长 / 副部长 / union.steward），
+           普通部员看不到这个入口（点了必然 403）。 -->
+      <view class="un-shortcut" wx:if="{{canUnionScanJoin}}" bind:tap="goScanJoin">
+        <t-icon name="scan" size="30rpx" color="var(--tt-brand)" />
+        <text class="un-shortcut-t">扫码加人</text>
+      </view>
       <view class="un-shortcut" bind:tap="goStats">
         <t-icon name="chart-bar" size="30rpx" color="var(--tt-brand)" />
         <text class="un-shortcut-t">班级排名</text>

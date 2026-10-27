@@ -18,6 +18,8 @@ Page({
     reviewLevel: '',
     canReview: false,
     canManageMembers: false,
+    // 扫码加人（主席团 / 部长 / 副部长 / union.steward）；服务端 dashboard 下发
+    canUnionScanJoin: false,
     modules: [],
     pendingReview: 0,
     myPendingAppeal: 0,
@@ -115,6 +117,7 @@ Page({
         reviewLevel: data.reviewLevel || '',
         canReview: !!data.canReview,
         canManageMembers: !!data.canManageMembers,
+        canUnionScanJoin: !!data.canScanJoin,
         modules: ordered,
         pendingReview: data.pendingReview || 0,
         myPendingAppeal: data.myPendingAppeal || 0,
@@ -158,6 +161,11 @@ Page({
 
   goManageMembers() {
     wx.navigateTo({ url: '/packageUnion/members/manage' });
+  },
+
+  // 扫码加人（用户 2026-10-27）：扫码页在 packageAdmin/union/scan-join
+  goScanJoin() {
+    wx.navigateTo({ url: '/packageAdmin/union/scan-join/scan-join' });
   },
 
   goStats() {
