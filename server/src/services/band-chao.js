@@ -437,7 +437,7 @@ async function entryTargets({ moduleDef, date, period, scopeDepartmentIds = null
     if (moduleDef.key === 'morning_class') profileFilter.hasMorningClass = { $ne: false };
     if (moduleDef.key === 'study_evening') profileFilter.hasNightStudy = { $ne: false };
     const profiles = await ClassProfile.find(profileFilter)
-      .select('className schoolId schoolName departmentId departmentName grade studentCount dormCount')
+      .select('className schoolId schoolName departmentId departmentName grade studentCount dormCount classroom')
       .limit(limit)
       .lean();
     // 人数实时统计（学籍 / 住宿名单）：录入台的「应到 / 应住」必须与班级真实人数一致，
@@ -447,11 +447,18 @@ async function entryTargets({ moduleDef, date, period, scopeDepartmentIds = null
       const c = live.get(p.className) || { studentCount: p.studentCount || 0, dormCount: p.dormCount || 0 };
       const org = resolveOrg(p, maps);
       if (!inScope(org)) continue;
+      // 教室（如「1号教学楼·201」）：晚自习这类**以教室为检查场所**的模块要优先展示它；
+      // 同时拆出教学楼，供录入台的「教学楼筛选」用（用户 2026-10-26 第 5 点）。
+      const classroom = String(p.classroom || '').trim();
+      const building = classroom ? classroom.split(/[·・\-—/\s]+/)[0] || '' : '';
       targets.push({
         targetType: targetTypes.includes('classroom') ? 'classroom' : 'class',
         targetId: p.className,
         targetName: p.className,
         className: p.className,
+        // 教室 / 教学楼：录入台据此把标题从「班级」换成「教室」，并支持按教学楼筛选
+        classroom,
+        building,
         schoolId: org.schoolId,
         schoolName: org.schoolName,
         departmentId: org.departmentId,
@@ -471,21 +478,44 @@ async function entryTargets({ moduleDef, date, period, scopeDepartmentIds = null
       .sort({ buildingId: 1, roomNo: 1 })
       .limit(limit)
       .lean();
+    // ⚠️ 应住人数必须**实时聚合** dorm_assignments，不能只信 dorm_rooms.residents ——
+    //   后者是「展示用缓存值」，退宿 / 换房后极易失真（用户 2026-10-26 报
+    //   「查宿录入中没有计算应住人数」，这是第二层根因；第一层是下面这个字段名）。
+    const roomIds = rooms.map((r) => r._id);
+    const liveResidents = new Map();
+    if (roomIds.length) {
+      const DormAssignment = require('../models/dorm-assignment');
+      const agg = await DormAssignment.aggregate([
+        { $match: { roomId: { $in: roomIds }, status: { $in: ['checked_in', 'guest'] } } },
+        { $group: { _id: '$roomId', n: { $sum: 1 } } },
+      ]);
+      for (const a of agg) liveResidents.set(String(a._id), a.n);
+    }
     for (const r of rooms) {
       const org = resolveOrg(r, maps);
       if (!inScope(org)) continue;
+      const residentCount = liveResidents.has(String(r._id))
+        ? liveResidents.get(String(r._id))
+        : Number(r.residents) || 0;
       targets.push({
         targetType: 'dorm_room',
         targetId: String(r._id),
         targetName: `${r.buildingName || r.buildingId || ''}${r.buildingName ? ' ' : ''}${r.roomNo}`.trim(),
         className: r.className || '',
+        // 楼栋：查宿录入台按「宿舍楼」筛选（与卫生的「教学楼」筛选同一种交互）
+        building: r.buildingName || r.buildingId || '',
         // 房间按默认班级导出年级（混宿房间仅作展示/筛选参考，真正归属仍按在住学生分摊）
         grade: roster.gradeFromClassName(r.className || ''),
         schoolId: org.schoolId,
         schoolName: org.schoolName,
         departmentId: org.departmentId,
         departmentName: org.departmentName,
-        residents: r.residents || 0,
+        residents: residentCount,
+        // ⚠️ 别名 residentCount：routes/union.js::shouldCountCtx 读的是这个字段名，
+        //   而这里历史上只给了 `residents` —— 两个名字对不上，查宿的「应住人数」永远
+        //   是 undefined、从不注入（= 用户报的现象）。两个字段都给，
+        //   避免再有任何一处按旧名读取时静默拿不到值。
+        residentCount,
       });
     }
   }

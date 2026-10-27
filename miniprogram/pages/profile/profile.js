@@ -198,13 +198,36 @@ Page({
   async chooseAvatar(e) {
     const { avatarUrl: tempPath } = e.detail;
     if (!tempPath) return;
-    // 先上传到服务器拿到正式 URL（微信临时路径其他设备不可见），再保存到资料
+    // 先上传到服务器拿到正式 URL（微信临时路径其他设备不可见），再保存到资料。
+    //
+    // ⚠️ 必须**先压缩**再传（用户 2026-10-26「头像的拍照和图库上传不行」）：
+    //   chooseAvatar 给的是原图，手机相册照片常有 3~8MB，而 /api/upload/avatar
+    //   限制 2MB（头像只需 200px 级别，2MB 是合理上限）。
+    //   旧实现原样上传 → 服务端 400「文件超出大小限制」→ 前端却只显示
+    //   「头像上传失败」，用户完全看不出是尺寸问题（拍照与图库都会踩到）。
+    //   用 wx.compressImage 压到 60% 质量；压不动就退回原路径（小图本来不需要压）。
+    wx.showLoading({ title: '处理中…' });
+    let src = tempPath;
+    try {
+      const compressed = await new Promise((resolve) => {
+        wx.compressImage({
+          src: tempPath,
+          quality: 60,
+          success: (r) => resolve((r && r.tempFilePath) || ''),
+          fail: () => resolve(''),
+        });
+      });
+      if (compressed) src = compressed;
+    } catch (err) {
+      /* 压缩不可用就用原图，交给服务端判定 */
+    }
     wx.showLoading({ title: '上传中…' });
     try {
-      const { url } = await auth.uploadFile(tempPath, { url: '/api/upload/avatar' });
+      const { url } = await auth.uploadFile(src, { url: '/api/upload/avatar' });
       await this.applyProfile({ avatarUrl: url });
     } catch (err) {
-      wx.showToast({ title: err.message || '头像上传失败', icon: 'none' });
+      // 带出服务端真实原因（以前只有「头像上传失败」，看不出是超限还是网络）
+      wx.showToast({ title: err.message || '头像上传失败', icon: 'none', duration: 2500 });
     } finally {
       wx.hideLoading();
     }

@@ -17,5 +17,8 @@
       <input class="form-input" password value="{{confirmPassword}}" placeholder="再次输入新密码" bindinput="inputConfirm" />
     </view>
     <t-button theme="primary" block loading="{{submitting}}" bind:tap="submit" class="mt-24">保存新密码</t-button>
+    <!-- 跳过入口只给示例账号（用户 2026-10-24「在首次登录输入新的密码增加跳过功能」）：
+         真实账号跳过改密 = 「学号后 8 位」永久有效，是安全倒退，服务端也会 403。 -->
+    <view class="skip-link" wx:if="{{first && isDemo && !loading}}" bind:tap="skip">暂不修改，先体验</view>
   </view>
 </view>

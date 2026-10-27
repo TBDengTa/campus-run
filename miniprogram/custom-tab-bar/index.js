@@ -116,6 +116,28 @@ Component({
     },
 
     refresh(path) {
+      // 身份字段缺失时先按「未知」渲染，同时异步补一次 /api/auth/me 再重画。
+      //
+      // 用户 2026-10-25 报障「示例学生2 导航栏没有学生会入口」：`isUnionMember` 是
+      // /api/auth/me 现算下发的，而 currentUser() 读的 globalData.userInfo 可能是
+      // 旧版本登录留下的对象（没有该字段），于是 buildList 里 `user.isUnionMember`
+      // 是 undefined → 动态项为 null → 底部导航直接少一项，且没有任何提示。
+      // tabBar 的 refresh 是同步的（setActive 在页面 onShow 里同步调），
+      // 所以这里不能 await：先渲染不带的版本，补到数据后再 refresh 一次。
+      const self = this;
+      const user = currentUser();
+      if (user && typeof user.isUnionMember !== 'boolean' && user.role !== 'teacher' && !this._unionProbe) {
+        this._unionProbe = (async () => {
+          try {
+            await getApp().refreshUser();
+            self.refresh(path);
+          } catch (e) {
+            /* 失败保持当前渲染 */
+          } finally {
+            self._unionProbe = null;
+          }
+        })();
+      }
       const list = this.buildList();
       const target = path || this.data.currentPath;
       let selected = 0;

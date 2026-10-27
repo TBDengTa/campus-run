@@ -1143,3 +1143,143 @@
 .ud-qr-btn {
   width: 100%;
 }
+
+
+/* ===== 密码变更 · 设置新密码弹层（用户 2026-10-26）===== */
+.ud-pwd-body {
+  padding: 8rpx 0 4rpx;
+}
+
+.ud-pwd-field {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 20rpx 0;
+  border-bottom: 1rpx solid var(--tt-line);
+}
+
+.ud-pwd-label {
+  flex-shrink: 0;
+  width: 140rpx;
+  font-size: 26rpx;
+  color: var(--tt-text-2);
+}
+
+.ud-pwd-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 28rpx;
+  letter-spacing: 2rpx;
+}
+
+.ud-pwd-ph {
+  font-size: 23rpx;
+  letter-spacing: 0;
+  color: var(--tt-text-3);
+}
+
+/* 强度提示：颜色随 computePwdStrength 的 cls 变化（弱红 / 可用橙 / 良好绿） */
+.ud-pwd-hint {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  margin-top: 18rpx;
+  padding: 14rpx 16rpx;
+  border-radius: 10rpx;
+  background: var(--tt-bg-page);
+  font-size: 22rpx;
+  color: var(--tt-text-2);
+}
+
+.ud-pwd-hint.is-weak {
+  background: var(--td-error-color-1, #fef3f2);
+  color: var(--td-error-color-7, #d54941);
+}
+
+.ud-pwd-hint.is-ok {
+  background: var(--td-warning-color-1, #fff1e9);
+  color: var(--tt-text-2);
+}
+
+.ud-pwd-hint.is-strong {
+  background: var(--td-success-color-1, #ecf9f2);
+  color: var(--td-success-color-7, #0f7b4f);
+}
+
+.ud-pwd-note {
+  margin-top: 16rpx;
+  font-size: 21rpx;
+  line-height: 1.65;
+  color: var(--tt-text-3);
+}
+
+/* 底部双按钮：取消（弱） + 确定（主），左右排列
+   ⚠️ 不能用 `.tt-sheet-foot > *`（WXSS 不支持通配符选择器，真机编译会报
+   `error at token '*'`），必须给每个按钮各包一层 flex:1 的容器
+   （同 class 页的 .cls-sheet-btn、room-dialog 的 .rd-btn） */
+.ud-pwd-sheet .tt-sheet-foot {
+  display: flex;
+  gap: 16rpx;
+}
+
+.ud-pwd-btn {
+  flex: 1;
+  min-width: 0;
+}
+
+
+/* ===== 密码变更 · 动作选择层（用户 2026-10-26「这个也太难看了」）=====
+   替代 wx.showActionSheet：卡片式选项，主标题 + 副说明，与全站 .tt-sheet 一致 */
+.ud-pwd-menu-body {
+  padding: 4rpx 0 8rpx;
+}
+
+.ud-pwd-opt {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding: 26rpx 22rpx;
+  margin-bottom: 16rpx;
+  border-radius: 16rpx;
+  background: var(--tt-bg-page);
+  transition: background 0.15s;
+}
+
+.ud-pwd-opt:last-child {
+  margin-bottom: 0;
+}
+
+.ud-pwd-opt:active {
+  background: var(--tt-brand-weak, #fff3e8);
+}
+
+.ud-pwd-opt-icon {
+  flex-shrink: 0;
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 18rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+}
+
+.ud-pwd-opt-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+.ud-pwd-opt-t {
+  font-size: 29rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.ud-pwd-opt-s {
+  font-size: 22rpx;
+  line-height: 1.5;
+  color: var(--tt-text-3);
+}

@@ -1,14 +1,14 @@
 # 唐唐快跑 · 校园跑小程序 2.0
 
 > 面向高校的校园运动记录与管理平台。微信小程序端（用户端 + 管理端同包）+ Node.js 后端。
-> **当前版本：v2.0.0**
+> **当前版本：v2.0.4**
 
 <p>
   <img alt="platform" src="https://img.shields.io/badge/platform-WeChat%20MiniProgram-07C160">
   <img alt="backend" src="https://img.shields.io/badge/backend-Node.js%20%7C%20Express-339933">
   <img alt="database" src="https://img.shields.io/badge/database-MongoDB-47A248">
   <img alt="ui" src="https://img.shields.io/badge/UI-TDesign-0052D9">
-  <img alt="version" src="https://img.shields.io/badge/version-2.0.0-FF6B00">
+  <img alt="version" src="https://img.shields.io/badge/version-2.0.4-FF6B00">
 </p>
 
 ---
@@ -307,7 +307,8 @@ node tools/verify-identity-e2e.js       # 旧令牌 401 自愈、一键登录身
 
 | 版本 | 日期 | 内容 |
 |---|---|---|
-| **v2.0.0** | 2026-10 | 全新重写：前后端分离、管理端内置小程序、白橙设计系统、自定义悬浮导航、班级域（班主任 / 班委）、班超评比、学生会管理、跑分体系、结构拆分（`packageAdmin` / `packageUnion`）、内置 19 项静态检查与端到端验证 |
+| **v2.0.4** | 2026-10 | 唐跑AI数据模型（反作弊学习引擎）：Isolation Forest 无监督异常检测、微信同步与 GPS 两套独立特征与模型、物理约束层、人工反馈阈值自校准；标注持久化（`step_labels`）与「标注攒够后提示升级有监督模型」；新增步数异常记录管理页（人工封禁 / 标记正常）；修复时区导致的「22 点」时间显示错误；修复 GPS 计距恒为 0、室内漂移、后台定位中断；修复相册照片 / HEIC 上传失败；「重置密码」改为「密码变更」；检查录入新增对象类型与楼栋筛选（晚自习优先显示教室） |
+| **v2.0.0** | 2026-10 | 全新重写：前后端分离、管理端内置小程序、白橙设计系统、自定义悬浮导航、班级域（班主任 / 班委）、班超评比、学生会管理、跑分体系、结构拆分（`packageAdmin` / `packageUnion`）、内置静态契约检查与端到端验证 |
 
 > 1.0 代码已遗失，2.0 基于旧 MongoDB 结构逆向重建并设计新表 + 一次性迁移方案，详见迁移文档。
 
@@ -323,5 +324,5 @@ node tools/verify-identity-e2e.js       # 旧令牌 401 自愈、一键登录身
 
 <p align="center">
   由 <b>河北唐博科技有限公司</b> 设计与开发<br>
-  <sub>校园运动记录与管理平台 · v2.0.0</sub>
+  <sub>校园运动记录与管理平台 · v2.0.4</sub>
 </p>

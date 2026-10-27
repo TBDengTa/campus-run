@@ -5,12 +5,25 @@ const { makeUploader, publicUploadUrl, unlinkUpload } = require('../utils/upload
 const FileObject = require('../models/file-object');
 const unionSvc = require('../services/union');
 
-const AVATAR_MAX_MB = 2;
+// 头像上限：原为 2MB，但手机相册原图（尤其 iPhone HEIC / 高像素 JPEG）经常 3~8MB，
+// 用户 2026-10-26 报「头像拍照和图库都传不上」就是被这条挡掉的。
+// 前端已用 wx.compressImage 压缩（quality 60），这里放宽到 5MB 兜住「压缩失败退回原图」的情况。
+// 头像文件只落 /uploads 且按扩展名白名单命名，放宽体积不影响安全。
+const AVATAR_MAX_MB = 5;
 const upload = makeUploader({ maxMb: AVATAR_MAX_MB });
 
-// 检查留证照片：现场拍摄需要比头像宽松（头像 2MB 会在原图直传时频繁失败），单张上限 5MB。
-// 用**独立的 multer 实例**，不动头像那条链路的大小限制（头像仍然 2MB）。
-const CHECK_PHOTO_MAX_MB = 5;
+// 检查留证照片：现场拍摄需要比头像宽松。用**独立的 multer 实例**，不动头像那条链路。
+//
+// 用户 2026-10-26 的两轮要求：
+//   ① 「现场照片选相册的照片上传错误」→ 相册原图 6~12MB，5MB 上限直接拒掉；
+//   ② 「检查录入照片可以大一点 清晰一点」→ 不要为了能传就压得很糊。
+//
+// 现在的前端策略（entry.js::compressForUpload）是**自适应压缩**：
+//   ≤ 8MB 原样上传（一点不压）；更大的才按 quality 85→70→55 逐级压，够小就停。
+// 所以这里的上限只需要「不小于前端安全线 + 余量」，取 **20MB**（与 nginx 的
+// client_max_body_size 20m 对齐，避免 Nginx 先回 413 而 Node 收不到请求）。
+// 想再调整不必改代码：设 .env 的 CHECK_PHOTO_MAX_MB（缺省 20）。
+const CHECK_PHOTO_MAX_MB = Number(process.env.CHECK_PHOTO_MAX_MB || 20) || 20;
 const checkPhotoUpload = makeUploader({ maxMb: CHECK_PHOTO_MAX_MB });
 
 const router = express.Router();

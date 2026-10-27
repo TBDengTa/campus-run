@@ -637,6 +637,9 @@ Page({
         //（--td-primary-color-7 = #ff6b00 = --tt-brand），用它当「班委」色会和「实习」撞色
         //（底色 --td-primary-color-1 = #fff4ec = --tt-brand-soft，完全相同）。
         const chips = [];
+        // 示例账户标签放最前：管理员扫一眼就知道这条不是真实学生/教师，
+        // 不会拿它去核对学籍、也不会误当成「数据异常」处理（用户 2026-10-24）。
+        if (item.isDemo) chips.push({ text: '示例', cls: 'demo' });
         if (item.isSuper) chips.push({ text: '管理员', cls: 'role' });
         else if (item.isTeacher) chips.push({ text: '教师', cls: 'neutral' });
         // 生效中的限制放在状态类之前：它是管理员最需要立刻看到的（可操作信号）

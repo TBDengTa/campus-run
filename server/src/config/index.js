@@ -19,6 +19,13 @@ const config = {
     .map((s) => s.trim())
     .filter(Boolean),
   adPageBaseUrl: process.env.AD_PAGE_BASE_URL || '',
+  // 对外访问的根地址（如 https://example.com，不要带结尾斜杠）。
+  // 用户 2026-10-26 报「检查录入上传照片失败」：文件其实传成功了，但返回的 URL 是
+  // 按请求头（req.protocol + req.get('host')）拼的 —— 一旦反代/内网/协议判断出错，
+  // 就会拼出 http:// 或内网 IP，而**小程序只允许 https 且必须是已备案白名单域名**，
+  // 图片加载被拒 → 用户看到的就是「上传失败」。
+  // 配了它就用它，没配才退回请求头（本地开发不用配）。
+  publicBaseUrl: String(process.env.PUBLIC_BASE_URL || '').replace(/\/+$/, ''),
   uploadMaxMb: Number(process.env.UPLOAD_MAX_MB || 5),
   // 本地测试登录：DEV_LOGIN=true 时接受 dev-student/dev-teacher/dev-admin 约定 code
   devLogin: process.env.DEV_LOGIN === 'true',

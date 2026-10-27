@@ -249,29 +249,59 @@ function buildIdentity(memberRecords, modules, campusDepts = {}) {
 /**
  * 解析用户的学生会身份（带 30s 进程内缓存；增删改成员时调 clearIdentityCache 立即失效）
  */
+/**
+ * 查某人的在任成员记录 —— **openid 与 userId 双路匹配**。
+ *
+ * 为什么不能只按 openid（用户 2026-10-25 实测撞到）：
+ *   成员记录的 openid 是**建档那一刻从学生账号拷贝的快照**（models/union-member.js:
+ *   `openid: student.openid || ''`）。现实中大量顺序是「先把学生加进学生会，学生之后才绑微信」，
+ *   建档时 openid 为空串；学生绑完微信后，成员记录的 openid 仍然是空 ——
+ *   只按 openid 查就永远查不到，表现为：用户详情页「未加入学生会」、
+ *   底部导航不出「学生会」入口、`/api/union/*` 全部 403（身份识别不到），
+ *   而数据库里成员记录明明在。这是真实生产缺陷，不只是示例账号的问题。
+ *   userId 是建档就有的稳定键（required），两条都认才可靠。
+ *   同一模式已在本仓库其它 join 上踩过两次（学生会成员、班级名单 unionText）。
+ *
+ * 缓存仍按 openid 存（身份解析的热路径键），未绑微信的人不进缓存。
+ */
+async function findActiveMembers(user) {
+  const openid = (user && user.openid) || '';
+  const or = [];
+  if (openid) or.push({ openid });
+  if (user && user._id) or.push({ userId: user._id });
+  if (!or.length) return [];
+  return memberModel
+    .find({ status: 'active', $or: or })
+    .sort({ level: 1, createdAt: 1 })
+    .lean();
+}
+
 async function resolveIdentity(user, { force = false } = {}) {
   const openid = (user && user.openid) || '';
-  if (!openid) return buildIdentity([], []);
-  const hit = identityCache.get(openid);
-  if (!force && hit && Date.now() - hit.at < CACHE_TTL) return hit.identity;
+  // 缓存按 openid 存（热路径键）；未绑微信的人不缓存，避免把「无 openid」当键互相污染
+  if (openid && !force) {
+    const hit = identityCache.get(openid);
+    if (hit && Date.now() - hit.at < CACHE_TTL) return hit.identity;
+  }
 
   const [records, modules] = await Promise.all([
-    memberModel.find({ openid, status: 'active' }).sort({ level: 1, createdAt: 1 }).lean(),
+    findActiveMembers(user),
     CheckModule.find({ enabled: true }).sort({ sort: 1 }).lean(),
   ]);
   // 校区 → 院系展开：**一次** Organization.find 批量处理全部 schoolId（records 已到手，不重复查成员）
   const schoolIds = [...new Set((records || []).filter((m) => m.level === 'branch' && m.schoolId).map((m) => String(m.schoolId)))];
   const campusDepts = await campusDepartmentIndex(schoolIds);
   const identity = buildIdentity(records, modules, campusDepts);
-  identityCache.set(openid, { at: Date.now(), identity });
+  if (openid) identityCache.set(openid, { at: Date.now(), identity });
   return identity;
 }
 
 // 该用户是否学生会（活跃）成员：用于 /api/auth/me 与底部导航
+// 同样按 openid + userId 双路（见 findActiveMembers 注释）
 async function isUnionMember(user) {
-  if (!user || !user.openid) return false;
-  const n = await memberModel.countDocuments({ openid: user.openid, status: 'active' });
-  return n > 0;
+  if (!user) return false;
+  const rows = await findActiveMembers(user);
+  return rows.length > 0;
 }
 
 /**
@@ -279,7 +309,9 @@ async function isUnionMember(user) {
  * 纯读取，不写库。
  */
 async function decorateUser(user, payload = {}) {
-  if (!user || !user.openid) return payload;
+  if (!user) return payload;
+  // 未绑微信也要解析（按 userId 认身份）：否则「先进学生会、后绑微信」的人
+  // 在绑定成功那一刻 userInfo 里 isUnionMember 仍是 false，要重进小程序才更新。
   const identity = await resolveIdentity(user);
   return {
     ...payload,

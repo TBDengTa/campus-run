@@ -1,4 +1,5 @@
 const express = require('express');
+const fs = require('fs');
 const path = require('path');
 const morgan = require('morgan');
 const config = require('./config');
@@ -17,6 +18,24 @@ function createApp() {
   // 用 bigint 纳秒计时，避免毫秒精度在快接口上全是 0。
   let served = 0;
   const bootAt = Date.now() - Math.floor(process.uptime() * 1000);
+  // 构建号 = 部署包的文件时间（install.sh 同步代码时 mtime 会保留打包时刻）。
+  // 用途（用户 2026-10-24「示例账户页一直显示未创建」）：排查「线上跑的到底是哪个版本」
+  // 时，不用登服务器 —— 浏览器开 / 或 curl /health 就能看到构建时间，
+  // 与部署动作对一下就知道新包有没有真正生效。
+  let buildTag = '';
+  try {
+    buildTag = fs.statSync(path.join(__dirname, 'index.js')).mtime.toISOString();
+  } catch (e) {
+    /* 读不到不影响启动 */
+  }
+  // 应用版本号：唯一来源是 server/package.json（用户 2026-10-27「现在版本是 2.0.4 了」）。
+  // 状态页标题与 /health 都从这里取，避免「部署包叫 2.0.0、页面写 2.0」这类不一致。
+  let appVersion = '';
+  try {
+    appVersion = require('../package.json').version || '';
+  } catch (e) {
+    appVersion = '';
+  }
   app.use((req, res, next) => {
     served += 1;
     req.__t0 = process.hrtime.bigint();
@@ -24,7 +43,9 @@ function createApp() {
   });
 
   // 健康检查（部署探活 / 反代 upstream 检测用）：机器读的，保持纯 JSON
-  app.get('/health', (req, res) => res.json({ ok: true, ts: Date.now() }));
+  // build=代码构建时间（见上方 buildTag），排查「线上跑的是哪个版本」时一条 curl 就能确认
+  // version=应用版本号（来自 package.json），与状态页标题保持同源
+  app.get('/health', (req, res) => res.json({ ok: true, ts: Date.now(), build: buildTag, version: appVersion }));
 
   /**
    * 根路径：给人看的状态页。
@@ -67,6 +88,40 @@ function createApp() {
 
     const rssMb = Math.round(process.memoryUsage().rss / 1024 / 1024);
 
+    // ===== 唐跑AI数据模型（用户 2026-10-27）=====
+    // 状态页要能看出「反作弊学习引擎活着没有、学了多少、当前判定阈值」。
+    //
+    // ⚠️ 这里**只读缓存**（peekModel），绝不触发训练：
+    //   状态页每 30 秒自动刷新，而一次训练要 2~3 秒（GPS 甚至曾达 30 秒），
+    //   放在渲染路径里会把页面拖垮（这正是 /model-status 超时那次的教训）。
+    //   缓存为空时显示「预热中」，同时在后台静默预热，下次刷新就能看到数据。
+    const ai = (() => {
+      try {
+        const acModel = require('./services/anticheat-model');
+        const w = acModel.peekModel('werun');
+        const g = acModel.peekModel('gps');
+        const th = acModel.currentThreshold();
+        if (!w) acModel.getModel('werun').catch(() => {});
+        if (!g) acModel.getModel('gps').catch(() => {});
+        const trees = (m) => (m && m.forest ? m.forest.length : 0);
+        const stamp = Math.max((w && w.trainedAt) || 0, (g && g.trainedAt) || 0);
+        return {
+          ok: true,
+          ready: !!(w && g),
+          werunReady: !!w,
+          gpsReady: !!g,
+          werunRows: (w && w.rows) || 0,
+          gpsRows: (g && g.rows) || 0,
+          werunTrees: trees(w),
+          gpsTrees: trees(g),
+          trainedAt: stamp ? fmt(stamp) : '—',
+          threshold: `可疑 ${Number(th.suspicious).toFixed(2)} / 自动封禁 ${Number(th.autoBan).toFixed(2)}`,
+        };
+      } catch (e) {
+        return { ok: false, ready: false };
+      }
+    })();
+
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(`<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8">
@@ -100,10 +155,31 @@ function createApp() {
     font-size:13px;font-weight:600;color:var(--brand);background:#fff4ec}
   a.primary{background:var(--brand);color:#fff}
   code{background:#f2f3f5;padding:1px 6px;border-radius:4px;font-size:12px}
+  /* ===== 唐跑AI数据模型 ===== */
+  .ai{margin-top:20px;padding:18px;border-radius:14px;
+      background:linear-gradient(135deg,#fff8f3,#fff);border:1px solid #ffe3cc}
+  .ai-head{display:flex;align-items:center;gap:9px}
+  .ai-badge{width:26px;height:26px;border-radius:8px;background:var(--brand);color:#fff;
+            font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:none}
+  .ai-title{font-size:15px;font-weight:600;flex:1}
+  .ai-state{font-size:12px;font-weight:600;color:#b25e09;background:#fff1e9;
+            padding:2px 10px;border-radius:999px}
+  .ai-state.ok{color:var(--ok);background:#ecf9f2}
+  .ai-desc{margin:9px 0 14px;font-size:12.5px;color:var(--sub);line-height:1.6}
+  .ai-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .ai-item{background:#fff;border:1px solid var(--line);border-radius:10px;padding:11px 13px;
+           display:flex;flex-direction:column;gap:3px}
+  .ai-name{font-size:12px;color:var(--sub)}
+  .ai-val{font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}
+  .ai-val.ok{color:var(--ok)} .ai-val.warn{color:#b25e09}
+  .ai-meta{font-size:11px;color:var(--sub)}
+  .ai-foot{display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;
+           margin-top:13px;font-size:11.5px;color:var(--sub)}
+  .ai-foot strong{color:var(--text);font-weight:600;font-variant-numeric:tabular-nums}
 </style></head>
 <body><div class="card">
   <div class="row"><span class="dot${apiOk ? '' : ' bad'}"></span>
-    <h1>唐唐快跑 <span class="brand">2.0</span> 后端服务${apiOk ? '运行中' : '异常'}</h1></div>
+    <h1>唐唐快跑 <span class="brand">${appVersion}</span> 后端服务${apiOk ? '运行中' : '异常'}</h1></div>
   <p class="sub">这是一个纯 API 服务，没有网页界面。<br>
     如果你看到这个页面，说明<strong>服务进程正常、反向代理也通了</strong>。</p>
   <div class="kv">
@@ -128,6 +204,42 @@ function createApp() {
     <span class="k">服务器时间</span>
     <span class="v mono">${time}</span>
   </div>
+
+  <!-- ===== 唐跑AI数据模型（用户 2026-10-27）=====
+       反作弊的学习引擎状态：两个模型各自学了多少条历史、判定阈值是多少。
+       单独一块而不是塞进上面的 kv：它是「模型」而不是「服务运行指标」，
+       混在一起会让运维分不清哪个是健康检查、哪个是业务能力。 -->
+  <div class="ai">
+    <div class="ai-head">
+      <span class="ai-badge">AI</span>
+      <span class="ai-title">唐跑AI数据模型</span>
+      <span class="ai-state ${ai.ready ? 'ok' : ''}">${
+        !ai.ok ? '不可用' : ai.ready ? '运行中' : '预热中'
+      }</span>
+    </div>
+    <p class="ai-desc">从历史运动数据中学习真实与机器的行为差异，按来源分开判定。</p>
+    <div class="ai-grid">
+      <div class="ai-item">
+        <span class="ai-name">微信同步模型</span>
+        <span class="ai-val ${ai.werunReady ? 'ok' : 'warn'}">${
+          ai.werunReady ? `${ai.werunRows.toLocaleString('zh-CN')} 条样本` : '预热中…'
+        }</span>
+        <span class="ai-meta">${ai.werunTrees ? `${ai.werunTrees} 棵决策树` : '—'}</span>
+      </div>
+      <div class="ai-item">
+        <span class="ai-name">GPS 实跑模型</span>
+        <span class="ai-val ${ai.gpsReady ? 'ok' : 'warn'}">${
+          ai.gpsReady ? `${ai.gpsRows.toLocaleString('zh-CN')} 条样本` : '预热中…'
+        }</span>
+        <span class="ai-meta">${ai.gpsTrees ? `${ai.gpsTrees} 棵决策树` : '—'}</span>
+      </div>
+    </div>
+    <div class="ai-foot">
+      <span>判定阈值 <strong>${ai.threshold || '—'}</strong></span>
+      <span>最近训练 ${ai.trainedAt || '—'}</span>
+    </div>
+  </div>
+
   <div class="links">
     <a class="primary" href="/health">健康检查 /health</a>
     <a href="/api/content/announcements">公告接口示例</a>

@@ -130,7 +130,8 @@ must(
   'POST /api/auth/bind 必须区分教师与学生账号（教师允许换绑）'
 );
 must(
-  /if \(!isTeacherAccount\) \{[\s\S]{0,90}new ApiError\(403, 403004/.test(authRoute),
+  // 「目标账号」是真实学生时仍然 403 —— 只有教师与示例账号豁免（用户 2026-10-24 要示例账号可抢占）
+  /if \(!isTeacherAccount && !isDemoAccount\) \{[\s\S]{0,140}new ApiError\(403, 403004/.test(authRoute),
   '学生换微信登录必须仍然 403 403004（这条限制不能因为教师放开而一起放开）'
 );
 must(
@@ -142,9 +143,29 @@ must(
   '绑定/换绑前必须先查「这个微信当前绑在谁身上」（否则会抛 Mongo E11000 唯一索引错误）'
 );
 must(
-  /if \(holder\.role !== 'teacher'\)/.test(authRoute),
+  /const holderIsRealStudent = holder\.role !== 'teacher' && !holder\.isDemo/.test(authRoute),
   '占着这个微信的是**学生**账号时必须拒绝（学生微信不能被任何账号顶掉）'
 );
+// ⚠️ 关键安全点（用户 2026-10-25 由本断言抓到过一次回归）：
+// 「占用方是不是真实学生」必须只看 holder 自己的身份，**不能被目标账号的 isDemo 豁免**。
+// 否则示例账号就能把真实学生绑着的微信抢走，把那个学生直接踢下线 —— 冒名 + 顶号。
+{
+  const holderBlock = (authRoute.match(/if \(holder\) \{[\s\S]*?\n    \}/) || [''])[0];
+  must(!!holderBlock, '必须有 holder 处理块');
+  must(
+    !/holderIsRealStudent[\s\S]{0,200}isDemoAccount/.test(holderBlock.replace(/const holderIsRealStudent = holder\.role !== 'teacher' && !holder\.isDemo;/, '')) &&
+      !/if \(holderIsRealStudent && !isDemoAccount\)/.test(holderBlock) &&
+      !/holderIsRealStudent[\s\S]{0,60}\|\| isDemoAccount/.test(holderBlock),
+    '真实学生占用方的拒绝判定不得掺入目标账号的 isDemo 豁免（示例账号不能顶掉真实学生的微信）'
+  );
+  // 顺序：先判 holderIsRealStudent 并抛出，再判目标账号豁免
+  const idxHolderCheck = holderBlock.indexOf('if (holderIsRealStudent)');
+  const idxTargetCheck = holderBlock.indexOf('if (!isTeacherAccount && !isDemoAccount)');
+  must(
+    idxHolderCheck >= 0 && idxTargetCheck >= 0 && idxHolderCheck < idxTargetCheck,
+    '必须先拒「抢真实学生的微信」，再判目标账号豁免（顺序反了会让示例账号绕过该保护）'
+  );
+}
 must(
   /\$unset: \{ openid: 1, openidBoundAt: 1 \}/.test(authRoute),
   '教师之间换绑必须先把这个微信从原账号解绑（openid 唯一索引）'

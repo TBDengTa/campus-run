@@ -120,6 +120,42 @@
         </view>
       </picker>
     </view>
+    <!-- ===== 对象类型 / 楼栋筛选（用户 2026-10-26 第 4、5 点）=====
+         ④ 卫生检查：宿舍 / 班级 / 室外 三类切换（typeOptions 只在真的有多类时出现）
+         ⑤ 晚自习：按教学楼筛选（buildingOptions 由真实对象的 classroom 拆出）
+         两者都不写死选项：单类型模块（早操）不会显示这一栏。 -->
+    <view class="en-cascade en-cascade-2" wx:if="{{typeOptions.length || buildingOptions.length}}">
+      <picker
+        wx:if="{{typeOptions.length}}"
+        class="en-cascade-item"
+        mode="selector"
+        range="{{typeOptions}}"
+        range-key="label"
+        value="{{typeIndex}}"
+        bindchange="onTypeChange"
+      >
+        <view class="en-cascade-v {{typeFilter ? 'active' : ''}}">
+          <text class="en-cascade-label">对象</text>
+          <text class="en-cascade-value">{{typeOptions[typeIndex].label}}</text>
+          <t-icon name="chevron-down" size="20rpx" color="var(--tt-text-3)" />
+        </view>
+      </picker>
+      <picker
+        wx:if="{{buildingOptions.length}}"
+        class="en-cascade-item"
+        mode="selector"
+        range="{{buildingOptions}}"
+        range-key="label"
+        value="{{buildingIndex}}"
+        bindchange="onBuildingChange"
+      >
+        <view class="en-cascade-v {{buildingFilter ? 'active' : ''}}">
+          <text class="en-cascade-label">楼栋</text>
+          <text class="en-cascade-value">{{buildingOptions[buildingIndex].label}}</text>
+          <t-icon name="chevron-down" size="20rpx" color="var(--tt-text-3)" />
+        </view>
+      </picker>
+    </view>
     <view class="en-scope-hint" wx:if="{{scopeHint}}">
       <t-icon name="info-circle" size="22rpx" color="var(--tt-text-3)" />
       <text>{{scopeHint}}</text>
@@ -128,7 +164,7 @@
     <!-- ===== 受检对象列表（卡片化；点整行 → 开抽屉填表）===== -->
     <view class="tt-section">
       <text>受检对象</text>
-      <text class="en-priority" wx:if="{{!schoolFilter && !departmentFilter && !gradeFilter && hasCurrentYear}}">今年优先</text>
+      <text class="en-priority" wx:if="{{!schoolFilter && !departmentFilter && !gradeFilter && !typeFilter && !buildingFilter && hasCurrentYear}}">今年优先</text>
       <text class="tt-section-extra">{{filtered.length}} / {{targets.length}} 个</text>
     </view>
     <view class="tt-card en-targets">
@@ -143,7 +179,9 @@
       >
         <view class="en-target-main">
           <view class="en-target-head">
-            <text class="en-target-name">{{item.targetName}}</text>
+            <!-- displayName：教室类模块（晚自习）显示教室「1号教学楼·201」，
+                 其它模块仍是班级名/房间名（用户 2026-10-26 第 5 点「应该优先显示教室」） -->
+            <text class="en-target-name">{{item.displayName || item.targetName}}</text>
             <text class="en-target-status en-target-{{item.statusClass}}">{{item.statusText}}</text>
           </view>
           <text class="en-target-sub">{{item.info}}</text>

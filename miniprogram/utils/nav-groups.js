@@ -132,6 +132,11 @@ const NAV_GROUPS = [
       // 楼名管理（用户 2026-10-22）：教室/宿舍的楼名白名单，填表时先选楼再填门号。
       // 权限用独立的 building.view（与 config.* 分开：宿管要维护宿舍楼，但不该因此能改计分口径）
       { key: 'buildings', perm: 'building.view', icon: 'city', label: '楼名管理', url: '/packageAdmin/config/buildings' },
+      // 示例账户（用户 2026-10-24）：创建 3 个演示账号（班委 / 班主任 / 学生会主席），
+      // 密码统一 123456、不绑微信、退出自动解绑、首次改密可跳过。
+      // 权限用 config.view 查看、config.manage 创建/清理（与跑分设置同一档：
+      // 示例账号能登录学生会复核界面，属于「能影响演示环境的事」）。
+      { key: 'demo', perm: 'config.view', icon: 'usergroup-add', label: '示例账户', url: '/packageAdmin/config/demo/demo' },
       { key: 'files', perm: 'file.view', icon: 'folder-open', label: '文件管理', url: '/packageAdmin/files/files' },
       // 「北斗运动」= 激励视频赚步数：用户端页面 /pages/reward/reward 与它的规则配置页
       // /packageAdmin/config/reward-video 是**同一件事的两面**（用户明确说「激励视频规则就是北斗运动」）。

@@ -1,6 +1,11 @@
 const auth = require('../../utils/request');
 const fmt = require('../../utils/format');
 
+// 进首页自动同步微信运动的最小间隔（毫秒）：
+// 自动同步是「进页面就做」的动作，来回切 tab 很容易把接口打爆，
+// 所以 5 分钟内不重复自动同步（手动点「同步微信运动」不受限）。
+const AUTO_SYNC_MIN_GAP = 5 * 60 * 1000;
+
 // ===== 可选插画素材：把图片放到下列路径即可自动启用（未放置时回退到 CSS 插画）=====
 //   顶部场景图：miniprogram/assets/home/hero.jpg（宽高比约 2.87:1，例如 1500×523；
 //   图内已含「唐唐快跑」标题与标语，放图后页面不再叠加文字，高度按图片比例自适应）
@@ -207,6 +212,50 @@ Page({
     // 让「我的班级」卡（班主任/班委）与班超块 / 学生会块跟着首页一起刷新
     this.setData({ classRefreshAt: Date.now(), bcRefreshAt: Date.now() });
     this.refresh();
+    // 进页面自动同步微信运动（用户 2026-10-26「微信运动学生账户要进入页面自动同步」）。
+    // 放在 refresh() 之后、且不 await：同步依赖 openid 会话，失败绝不能影响首页渲染。
+    this.autoSyncWerun();
+  },
+
+  /**
+   * 进页面自动同步微信运动步数（静默，不弹 loading / 不弹成功提示）。
+   *
+   * 为什么必须静默：这是**每次进首页都会跑**的动作，如果像手动同步那样弹
+   * 「同步成功」toast，用户每切一次 tab 就被打扰一次。
+   *
+   * 三重护栏（都不可省）：
+   *   ① 同一次页面存活期内**只自动试一次**（_autoSynced）：切 tab 回来不重复请求；
+   *   ② 距上次同步不足 AUTO_SYNC_MIN_GAP 就跳过：避免来回切页面把接口打爆；
+   *   ③ 教师账号不参与运动数据（AGENTS.md 铁律），直接不请求。
+   * 失败一律静默：微信运动没授权、会话过期、网络抖动都很常见，
+   * 用户想确认结果可以点「同步微信运动」手动同步（那里有明确提示）。
+   */
+  async autoSyncWerun() {
+    try {
+      if (this._autoSynced) return;
+      const user = getApp().globalData.userInfo || {};
+      if (!user._id || user.role === 'teacher') return; // 教师不参与运动数据
+      // 频率护栏：两次自动同步至少间隔 5 分钟（手动同步不受此限制）
+      const now = Date.now();
+      if (this._lastAutoSyncAt && now - this._lastAutoSyncAt < AUTO_SYNC_MIN_GAP) return;
+      this._autoSynced = true;
+      this._lastAutoSyncAt = now;
+
+      await getApp().ensureLogin();
+      let result;
+      try {
+        result = await this.postSyncWerun();
+      } catch (e) {
+        // 会话缺失/过期：重登拿新 sessionKey 后重试一次（与手动同步同一套自愈）
+        if (e.code !== 400002 && e.code !== 400001) throw e;
+        await auth.login();
+        result = await this.postSyncWerun();
+      }
+      // 同步到新数据 → 刷新首页（步数卡 / 今日目标会变）
+      if (result && !result.skipped) await this.refresh();
+    } catch (e) {
+      // 静默：未授权微信运动 / 网络失败都不该在进页面时报错
+    }
   },
 
   // 自定义 tabBar 选中态（教师端导航项与学生不同）

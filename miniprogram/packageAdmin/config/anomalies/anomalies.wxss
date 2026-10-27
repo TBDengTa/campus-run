@@ -1,0 +1,364 @@
+/* 步数异常记录页（packageAdmin/config/anomalies） */
+.sa-tabs {
+  display: flex;
+  gap: 12rpx;
+  padding: 20rpx 24rpx 8rpx;
+}
+
+.sa-tab {
+  flex: 1;
+  text-align: center;
+  padding: 18rpx 0;
+  border-radius: 14rpx;
+  font-size: 27rpx;
+  color: var(--tt-text-2);
+  background: var(--tt-bg-card, #fff);
+}
+
+.sa-tab.active {
+  color: #fff;
+  background: var(--tt-brand);
+  font-weight: 600;
+}
+
+.sa-tab-badge {
+  display: inline-block;
+  margin-left: 8rpx;
+  min-width: 30rpx;
+  padding: 0 8rpx;
+  border-radius: 999rpx;
+  font-size: 20rpx;
+  line-height: 30rpx;
+  color: #fff;
+  background: var(--td-error-color-6);
+  vertical-align: middle;
+}
+
+.sa-search {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin: 16rpx 24rpx;
+  padding: 0 20rpx;
+  height: 76rpx;
+  border-radius: 14rpx;
+  background: var(--tt-bg-card, #fff);
+}
+
+.sa-search-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 27rpx;
+}
+
+.sa-search-btn {
+  flex-shrink: 0;
+  font-size: 26rpx;
+  color: var(--tt-brand);
+}
+
+.sa-hint {
+  display: flex;
+  gap: 10rpx;
+  margin: 0 24rpx 16rpx;
+  padding: 18rpx 20rpx;
+  border-radius: 12rpx;
+  background: var(--tt-bg-page);
+  font-size: 22rpx;
+  line-height: 1.6;
+  color: var(--tt-text-3);
+}
+
+.sa-list {
+  padding: 0 24rpx 40rpx;
+}
+
+.sa-item {
+  margin-bottom: 20rpx;
+  padding: 24rpx;
+  border-radius: 16rpx;
+  background: var(--tt-bg-card, #fff);
+}
+
+.sa-item-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.sa-item-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+.sa-name {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.sa-meta {
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+.sa-status {
+  flex-shrink: 0;
+  padding: 4rpx 14rpx;
+  border-radius: 999rpx;
+  font-size: 21rpx;
+}
+
+.sa-status-warning {
+  color: var(--td-warning-color-7, #b25e09);
+  background: var(--td-warning-color-1, #fff1e9);
+}
+
+.sa-status-danger {
+  color: var(--td-error-color-7, #d54941);
+  background: var(--td-error-color-1, #fef3f2);
+}
+
+.sa-status-default {
+  color: var(--tt-text-3);
+  background: var(--tt-bg-page);
+}
+
+.sa-item-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8rpx 40rpx;
+  margin-top: 18rpx;
+}
+
+.sa-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10rpx;
+  min-width: 180rpx;
+}
+
+.sa-label {
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+.sa-value {
+  font-size: 26rpx;
+  color: var(--tt-text-1);
+}
+
+.sa-score {
+  color: var(--td-error-color-6);
+  font-weight: 600;
+}
+
+.sa-reasons {
+  display: flex;
+  gap: 8rpx;
+  margin-top: 16rpx;
+  padding: 14rpx 16rpx;
+  border-radius: 10rpx;
+  background: var(--tt-bg-page);
+  font-size: 22rpx;
+  line-height: 1.5;
+  color: var(--tt-text-2);
+}
+
+.sa-actions {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 20rpx;
+  padding-top: 20rpx;
+  border-top: 1rpx solid var(--tt-line);
+}
+
+.sa-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12rpx;
+  padding: 120rpx 40rpx;
+}
+
+.sa-empty-t {
+  font-size: 28rpx;
+  color: var(--tt-text-2);
+}
+
+.sa-empty-s {
+  font-size: 23rpx;
+  color: var(--tt-text-3);
+}
+
+.sa-loading {
+  display: block;
+  margin: 60rpx auto;
+}
+
+.sa-field-label {
+  font-size: 24rpx;
+  color: var(--tt-text-2);
+  margin-bottom: 14rpx;
+}
+
+.sa-days {
+  display: flex;
+  gap: 12rpx;
+  flex-wrap: wrap;
+}
+
+.sa-day {
+  padding: 14rpx 26rpx;
+  border-radius: 12rpx;
+  font-size: 25rpx;
+  color: var(--tt-text-2);
+  background: var(--tt-bg-page);
+}
+
+.sa-day.active {
+  color: #fff;
+  background: var(--td-error-color-6);
+  font-weight: 600;
+}
+
+.sa-note {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 120rpx;
+  padding: 18rpx;
+  border-radius: 12rpx;
+  background: var(--tt-bg-page);
+  font-size: 25rpx;
+}
+
+
+/* ===== 来源分流（用户 2026-10-27「微信同步、GPS 分开来」）=====
+   两种跑步类型的判定模型完全不同，列表里用颜色区分，避免管理员混淆 */
+.sa-source {
+  display: inline-block;
+  padding: 2rpx 12rpx;
+  border-radius: 8rpx;
+  font-size: 22rpx;
+}
+
+.sa-source-werun {
+  color: var(--tt-brand);
+  background: var(--tt-brand-weak, #fff3e8);
+}
+
+.sa-source-gps {
+  color: #1a73e8;
+  background: #e8f0fe;
+}
+
+/* 模型分：与「可疑分」（0~100 规则分）区分开，用另一套配色 */
+.sa-model {
+  color: var(--td-error-color-6);
+  font-weight: 600;
+}
+
+/* 学习引擎状态条 */
+.sa-engine {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8rpx 24rpx;
+  margin: 0 24rpx 16rpx;
+  padding: 16rpx 20rpx;
+  border-radius: 12rpx;
+  background: var(--tt-bg-page);
+  font-size: 21rpx;
+  color: var(--tt-text-3);
+}
+
+.sa-engine-item {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+}
+
+.sa-dot {
+  width: 12rpx;
+  height: 12rpx;
+  border-radius: 50%;
+  background: var(--td-success-color-5);
+}
+
+.sa-dot.off {
+  background: var(--tt-text-3);
+}
+
+
+/* ===== 升级提示（标注积累进度）=====
+   未达标：安静的灰底进度条；达标：绿色高亮 —— 状态一眼可辨 */
+.sa-upgrade {
+  margin: 0 24rpx 16rpx;
+  padding: 20rpx 22rpx;
+  border-radius: 14rpx;
+  background: var(--tt-bg-card, #fff);
+}
+
+.sa-upgrade.is-ready {
+  background: var(--td-success-color-1, #ecf9f2);
+  border: 1rpx solid var(--td-success-color-3, #b7e6cd);
+}
+
+.sa-upgrade-head {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+}
+
+.sa-upgrade-title {
+  flex: 1;
+  font-size: 26rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.sa-upgrade.is-ready .sa-upgrade-title {
+  color: var(--td-success-color-7, #0f7b4f);
+}
+
+.sa-upgrade-pct {
+  font-size: 24rpx;
+  font-weight: 600;
+  color: var(--tt-text-2);
+}
+
+.sa-upgrade-bar {
+  height: 10rpx;
+  margin: 14rpx 0 12rpx;
+  border-radius: 999rpx;
+  background: var(--tt-bg-page);
+  overflow: hidden;
+}
+
+.sa-upgrade-fill {
+  height: 100%;
+  border-radius: 999rpx;
+  background: var(--tt-brand);
+  transition: width 0.3s;
+}
+
+.sa-upgrade.is-ready .sa-upgrade-fill {
+  background: var(--td-success-color-5);
+}
+
+.sa-upgrade-sub {
+  font-size: 21rpx;
+  line-height: 1.6;
+  color: var(--tt-text-3);
+}
+
+.sa-upgrade-stats {
+  display: flex;
+  gap: 28rpx;
+  margin-top: 10rpx;
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+}

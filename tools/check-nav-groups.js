@@ -367,7 +367,14 @@ const check = (name, cond, detail) => {
     // （根目录没有 package.json，版本以 server/package.json 为唯一机器可读来源）
     const aboutVer = (aboutJs.match(/version:\s*'([\d.]+)'/) || [])[1];
     const serverPkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'server', 'package.json'), 'utf8'));
-    check('关于我们版本号 = 2.0.0', aboutVer === '2.0.0', `about.js: ${aboutVer}`);
+    // ⚠️ 不要在这里写死版本号（以前写 '2.0.0'，每次升版这条断言就误报一次，
+    //    还会诱导人去改断言而不是改真版本 —— 2026-10-27 升 2.0.4 时踩到）。
+    // 正确口径：三处互相一致 + 与 package.json 同源，具体是几号由 package.json 决定。
+    check(
+      `关于我们版本号 = ${serverPkg.version}（以 package.json 为准）`,
+      aboutVer === serverPkg.version,
+      `about.js: ${aboutVer} / package.json: ${serverPkg.version}`
+    );
     check('README 版本号与关于我们一致', readme.includes(`v${aboutVer}`), `README 未见 v${aboutVer}`);
     check('server/package.json 版本一致', serverPkg.version === aboutVer, `package.json: ${serverPkg.version}`);
     // 紧凑排版：不允许再出现大 hero 或 2×2 图标卡（回退到旧版会撑满首屏）

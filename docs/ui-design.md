@@ -182,6 +182,12 @@ box-shadow: 0 12rpx 32rpx rgba(255, 107, 0, 0.24);
    - JSON 文件保持合法（可用 `Get-Content -Raw | ConvertFrom-Json` 校验）
    - WXML 中引用的每个图标名都已确认存在
    - 所有 `bind:tap` 指向的方法在对应 `.js` 中存在
+   - `node tools/check-miniprogram.js`（WXSS 选择器、体积、图标、处理函数一把过）
+8. **WXSS 不支持通配符选择器 `*`**：`.tt-sheet-foot > * { flex: 1 }` 这类写法在开发者工具里是
+   **编译期**失败，上传会报 `./xxx.wxss(1:18082): error at token '*'`（2026-10-26 真实事故，
+   `packageAdmin/user-detail`）。要让底部两个按钮等分，给每个 `t-button` **各包一层**
+   `flex:1; min-width:0` 的 `<view>`（先例 `.ud-pwd-btn`、`.cls-sheet-btn`、`.rd-btn`），
+   `tools/check-miniprogram.js` 已能扫出选择器里的 `*`。
 
 ## 8. 首页（学生端）版式与插画素材位
 

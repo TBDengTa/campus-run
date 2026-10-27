@@ -1,6 +1,11 @@
 const section = require('./section');
 
 Page({
+  // 步数异常记录（用户 2026-10-27）：可疑但未自动封禁的记录查看 + 手动封禁
+  goAnomalies() {
+    wx.navigateTo({ url: '/packageAdmin/config/anomalies/anomalies' });
+  },
+
   sectionKeys: ['anticheat'],
 
   data: {

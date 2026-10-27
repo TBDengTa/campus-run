@@ -600,18 +600,25 @@ router.get(
         .lean(),
     ]);
 
-    // 已经是学生会成员的人：标记出来，避免重复添加
-    const openids = rows.map((r) => r.openid).filter(Boolean);
-    const existing = openids.length
-      ? await UnionMember.find({ openid: { $in: openids }, status: 'active' })
-          .select('openid deptName level')
+    // 已经是学生会成员的人：标记出来，避免重复添加。
+    // ⚠️ 必须按 **userId** 查而不是 openid（用户 2026-10-25 出现「示例学生2 两条职务」，
+    //    诱因之一就是这里标记不到人）：成员记录的 openid 是建档时的快照，
+    //    「先进学生会、后绑微信」的人这里是空串 → 只按 openid 永远匹配不到，
+    //    候选人列表不显示「已是成员」，管理员就会再加一次，造出重复记录。
+    //    userId 是建档就有的稳定键，且列表行 id 本身就是 userId。
+    const userIds = rows.map((r) => r._id).filter(Boolean);
+    const existing = userIds.length
+      ? await UnionMember.find({ userId: { $in: userIds }, status: 'active' })
+          .select('userId deptName level')
           .lean()
       : [];
     const existBy = new Map();
     for (const m of existing) {
-      const list = existBy.get(m.openid) || [];
+      const key = String(m.userId || '');
+      if (!key) continue;
+      const list = existBy.get(key) || [];
       list.push(`${m.level === 'school' ? '校' : '分院'}${m.deptName || ''}`);
-      existBy.set(m.openid, list);
+      existBy.set(key, list);
     }
 
     ok(res, {
@@ -628,7 +635,7 @@ router.get(
         specialty: u.specialty || '',
         isClassOfficer: !!u.isClassOfficer,
         isHomeroom: (u.homeroomClasses || []).length > 0,
-        unionTags: existBy.get(u.openid) || [],
+        unionTags: existBy.get(String(u._id)) || [],
         subText: [u.className, u.departmentName, u.specialty].filter(Boolean).join(' · '),
       })),
     });

@@ -33,6 +33,8 @@ const Organization = require('../../models/organization');
 const accountAdmin = require('../../services/user-account-admin');
 // 班主任对本班学生的管理权判定（与班级域写接口同一份，见 services/student-scope.js）
 const studentScope = require('../../services/student-scope');
+// 班委 / 班主任班级写入（与班级域 PUT /student/:userId/officer 共用同一份校验）
+const classRoles = require('../../services/class-roles');
 // 宿舍（住宿记录）的读写唯一实现：班级域「班主任给本班学生设宿舍」共用，
 // 并负责下发楼名清单（教师权限组不需要 building.view 也能填宿舍）
 const studentDorm = require('../../services/student-dorm');
@@ -176,16 +178,23 @@ router.post(
   })
 );
 
-// 重置密码（需 permission.manage）：恢复为初始密码（学号/身份证后8），无初始数据则生成随机码
-// 实现见 services/user-account-admin.js（班级域「班主任重置本班学生密码」共用同一份）
+// 密码变更（需 permission.manage）：两个动作，用户 2026-10-26「重置密码」改称「密码变更」
+//   body { mode:'initial' }               → 恢复初始密码（教师 123456 / 学生 学号或身份证后8位）
+//   body { mode:'set', password:'xxx' }   → 设置密码（不强制改密）
+//   ⚠️ 不传 mode 时按 initial 处理：老前端（改名前）只发空 body，行为与改造前一致，不会 400。
+// 实现见 services/user-account-admin.js（班级域「班主任改本班学生密码」共用同一份）
 router.post(
   '/:id/reset-password',
   requirePermission('permission.manage'),
   wrap(async (req, res) => {
     const user = await User.findById(req.params.id);
     if (!user) throw new ApiError(404, 404, '用户不存在');
-    const message = await accountAdmin.resetUserPassword(user);
-    ok(res, { success: true, message });
+    const body = req.body || {};
+    const r = await accountAdmin.changeUserPassword(user, {
+      mode: body.mode || 'initial',
+      password: body.password,
+    });
+    ok(res, { success: true, mode: r.mode, message: r.message });
   })
 );
 
@@ -327,6 +336,10 @@ router.put(
 // 班主任班级 / 班委（需 user.manage）
 // body: { homeroomClasses?: string[]（教师，多选）, isClassOfficer?: boolean（学生开关） }
 // 只改这两个班级身份字段，不动角色/权限；班级域接口（/api/class/*）按这些字段做成员资格校验
+//
+// 校验与写入实现搬到了 services/class-roles.js（用户 2026-10-24）：
+// 班主任也要能开关本班学生的班委（PUT /api/class/student/:userId/officer），
+// 两个入口必须共用同一份校验，否则口径迟早漂移（AGENTS.md：禁止另写一套）。
 router.put(
   '/:id/class-roles',
   requirePermission('user.manage'),
@@ -334,26 +347,8 @@ router.put(
     const user = await User.findById(req.params.id);
     if (!user) throw new ApiError(404, 404, '用户不存在');
     const { homeroomClasses, isClassOfficer } = req.body || {};
-
-    if (homeroomClasses !== undefined) {
-      if (user.role !== 'teacher') throw new ApiError(400, 400, '只有教师账号可以设置为班主任');
-      if (!Array.isArray(homeroomClasses)) throw new ApiError(400, 400, 'homeroomClasses 需为数组');
-      const classes = [...new Set(homeroomClasses.map((c) => String(c || '').trim()).filter(Boolean))];
-      if (classes.length > 20) throw new ApiError(400, 400, '一个班主任最多分配 20 个班级');
-      const tooLong = classes.find((c) => c.length > 40);
-      if (tooLong) throw new ApiError(400, 400, `班级名过长：${tooLong.slice(0, 20)}…`);
-      user.homeroomClasses = classes;
-    }
-
-    if (isClassOfficer !== undefined) {
-      if (user.role !== 'student') throw new ApiError(400, 400, '只有学生账号可以设为班委');
-      if (isClassOfficer && !user.className) {
-        throw new ApiError(400, 400, '该学生尚未识别出班级（年级 + 专业），无法设为班委');
-      }
-      user.isClassOfficer = !!isClassOfficer;
-    }
-
-    await user.save();
+    if (homeroomClasses !== undefined) await classRoles.setHomeroomClasses(user, homeroomClasses);
+    if (isClassOfficer !== undefined) await classRoles.setClassOfficer(user, isClassOfficer);
     ok(res, {
       success: true,
       _id: user._id,
@@ -1182,7 +1177,8 @@ const BATCH_ACTIONS = {
   ban: { perm: 'user.manage', label: '限制账号' },
   unban: { perm: 'user.manage', label: '解除限制' },
   transfer: { perm: 'permission.manage', label: '转移院校/系部/专业/年级' },
-  'reset-password': { perm: 'permission.manage', label: '重置密码' },
+  // 批量只支持「恢复初始密码」；「设置密码」需要逐人不同的明文，走用户详情页单条操作
+  'reset-password': { perm: 'permission.manage', label: '恢复初始密码' },
   delete: { perm: 'permission.manage', label: '删除账号' },
 };
 // 单次上限：批量删号会级联删多张表，放开到几千条会把请求线程占满（也超出「一次操作」的人工核对能力）
@@ -1391,8 +1387,9 @@ router.post(
             result: `已转移（${user.className || '未分班'}）${patch.transferNote ? ' · ' + patch.transferNote : ''}`,
           });
         } else if (action === 'reset-password') {
-          await accountAdmin.resetUserPassword(user);
-          done.push({ _id: String(user._id), name, result: '已重置密码' });
+          // 批量只做「恢复初始密码」（设置密码需要逐人不同的明文，不适合批处理）
+          const msg = await accountAdmin.resetUserPassword(user);
+          done.push({ _id: String(user._id), name, result: msg || '已恢复初始密码' });
         } else if (action === 'delete') {
           await accountAdmin.deleteUserCascade(user);
           done.push({ _id: String(user._id), name, result: '已删除' });

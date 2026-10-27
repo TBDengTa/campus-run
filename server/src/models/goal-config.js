@@ -33,7 +33,12 @@ const goalConfigSchema = new mongoose.Schema(
       weeklyExtraCap: { type: Number, default: 0 },
     },
     anticheat: {
-      maxStepJumpPerSync: { type: Number, default: 13000 }, // 单次同步步数暴增阈值
+      // 单次同步步数暴增阈值。**2026-10-26 由 13000 提到 30000**（用户：「同步的微信步数不要被封禁」）：
+      // 旧值 13000 对「白天走够了、晚上第一次进小程序」的人太窄 —— 一次首同步 15000 步就被
+      // 判暴增、限制微信同步 7 天，24h 内再撞一次升级为限制登录，而那全是真实步数。
+      // 配合 services/anticheat.js::checkStepJump 的「攒久了才同步不判违规」与 50000 单日上限，
+      // 真实用户（含跑马拉松的）不会被误伤；真刷步的短时暴增仍会被抓。
+      maxStepJumpPerSync: { type: Number, default: 30000 },
       minPaceSecondsPerKm: { type: Number, default: 120 }, // 配速低于该值(秒/公里)视为异常
       banDays: { type: Number, default: 7 },
       enabled: { type: Boolean, default: true },

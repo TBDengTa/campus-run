@@ -1,0 +1,177 @@
+.demo-page {
+  padding-bottom: 40rpx;
+}
+
+/* ===== 顶部说明 ===== */
+.demo-tip {
+  display: flex;
+  gap: 12rpx;
+  margin: 0 var(--tt-gap) 8rpx;
+  padding: 20rpx 22rpx;
+  border-radius: var(--tt-radius);
+  background: var(--tt-brand-soft);
+}
+
+.demo-tip-text {
+  flex: 1;
+  font-size: 23rpx;
+  line-height: 1.7;
+  color: var(--tt-text-2);
+}
+
+.demo-tip-strong {
+  font-weight: 600;
+  color: var(--tt-brand-deep);
+}
+
+.demo-tip-pwd {
+  font-weight: 700;
+  color: var(--tt-brand-deep);
+  text-decoration: underline dotted;
+}
+
+/* ===== 账号行 ===== */
+.demo-ver {
+  margin: 0 var(--tt-gap) 8rpx;
+  font-size: 19rpx;
+  color: var(--tt-text-3);
+  text-align: right;
+}
+
+.demo-diag {
+  margin-top: 6rpx;
+  padding: 8rpx 12rpx;
+  border-radius: 8rpx;
+  background: var(--td-warning-color-1, #fff1e9);
+  font-size: 19rpx;
+  line-height: 1.6;
+  color: var(--tt-text-2);
+  word-break: break-all;
+}
+
+.demo-card {
+  padding-top: 6rpx;
+  padding-bottom: 6rpx;
+}
+
+.demo-loading {
+  display: block;
+  padding: 30rpx 0;
+  text-align: center;
+}
+
+.demo-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 20rpx 0;
+  border-bottom: 1rpx solid var(--tt-line);
+}
+
+.demo-row:last-child {
+  border-bottom: none;
+}
+
+.demo-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 68rpx;
+  height: 68rpx;
+  flex-shrink: 0;
+  border-radius: 20rpx;
+  background: var(--tt-brand-soft);
+}
+
+.demo-main {
+  min-width: 0;
+}
+
+.demo-name {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--tt-text);
+}
+
+.demo-badge {
+  padding: 2rpx 10rpx;
+  border-radius: 6rpx;
+  background: var(--tt-brand-soft);
+  font-size: 19rpx;
+  font-weight: 600;
+  color: var(--tt-brand-deep);
+}
+
+.demo-desc {
+  margin-top: 4rpx;
+  font-size: 21rpx;
+  line-height: 1.55;
+  color: var(--tt-text-3);
+}
+
+.demo-state {
+  margin-top: 6rpx;
+  font-size: 20rpx;
+  color: var(--tt-text-2);
+}
+
+.demo-state-warn {
+  color: var(--td-warning-color-6, #d97a00);
+}
+
+.demo-unbind {
+  flex-shrink: 0;
+  padding: 8rpx 20rpx;
+  border-radius: 999rpx;
+  background: var(--tt-bg-page);
+  font-size: 22rpx;
+  color: var(--tt-text-2);
+}
+
+.demo-unbind.is-disabled {
+  opacity: 0.4;
+}
+
+/* ===== 操作区 ===== */
+.demo-actions {
+  margin-top: 20rpx;
+}
+
+.demo-del {
+  margin-top: 16rpx;
+}
+
+/* ===== 规则说明 ===== */
+.demo-rules {
+  padding-top: 8rpx;
+  padding-bottom: 8rpx;
+}
+
+.demo-rule {
+  display: flex;
+  gap: 16rpx;
+  padding: 14rpx 0;
+  border-bottom: 1rpx solid var(--tt-line);
+}
+
+.demo-rule:last-child {
+  border-bottom: none;
+}
+
+.demo-rule-k {
+  flex-shrink: 0;
+  width: 132rpx;
+  font-size: 22rpx;
+  font-weight: 600;
+  color: var(--tt-text-2);
+}
+
+.demo-rule-v {
+  flex: 1;
+  font-size: 22rpx;
+  line-height: 1.65;
+  color: var(--tt-text-3);
+}

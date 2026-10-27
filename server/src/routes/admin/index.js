@@ -13,6 +13,9 @@ router.use('/dashboard', requirePermission('dashboard.view'), require('./dashboa
 // 其它 /users/* 路径本 router 不匹配，会 next() 落到下面的 users 路由（权限结论不变）。
 router.use('/users', require('./user-badges'));
 router.use('/users', requirePermission('user.view'), require('./users'));
+// 步数异常记录（用户 2026-10-27）：待研判列表 + 手动封禁 / 标记正常。
+// 挂 user.manage —— 这是「处置账号」的动作，不是只读查看。
+router.use('/step-anomalies', require('./step-anomalies'));
 router.use('/appeals', requirePermission('appeal.view'), require('./appeals'));
 router.use('/ads', requirePermission('ad.view'), require('./ads'));
 router.use('/content', requirePermission('content.view'), require('./content'));
@@ -39,6 +42,12 @@ router.use('/upload', requireAnyPermission(['ad.manage', 'file.manage', 'content
 
 // 权限组管理（增删改，需 permission.manage）
 router.use('/permission-groups', requirePermission('permission.manage'), require('./permission-groups'));
+
+// 示例账户（演示/培训用）：创建、重置、解绑微信、清理。
+// 挂 config.manage 的理由：示例账号能登录学生会复核界面，属于「能影响演示环境的事」，
+// 不该发给只有 user.view 的人；读取状态放宽到 config.view（与系统配置页同级）。
+// 内部每个接口各自守卫（GET 用 config.view，写操作 config.manage）。
+router.use('/demo', require('./demo'));
 
 // 权限目录 + 权限组（管理用户权限者可用）
 router.get(

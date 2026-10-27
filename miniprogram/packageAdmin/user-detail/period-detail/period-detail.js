@@ -9,15 +9,17 @@ function md(dateKey) {
   return `${Number(dateKey.slice(5, 7))}月${Number(dateKey.slice(8, 10))}日`;
 }
 
+/**
+ * HH:mm 展示（**北京时区**）。
+ *
+ * ⚠️ 这里原来是从字符串里抠 `T(\d{2}:\d{2})` —— 本地或用带时区偏移的串时看着正常，
+ *     但服务端返回的是 **UTC** ISO 串（`2026-10-26T22:30:00.000Z`），
+ *     于是北京时间 10-27 06:30 的记录被显示成「22:30」。
+ *     用户 2026-10-27 报「今天同步的会有 22 点的奇怪时间 今天都没有 22 点呢」就是它。
+ * 统一走 fmt.formatClock（按 Asia/Shanghai 取字段），不再从字符串里截时间。
+ */
 function fmtTime(v) {
-  if (!v) return '';
-  const s = String(v);
-  // 兼容 Date / ISO 字符串：只取 HH:mm
-  const m = s.match(/T(\d{2}:\d{2})/);
-  if (m) return m[1];
-  const d = new Date(s);
-  if (Number.isNaN(d.getTime())) return '';
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return fmt.formatClock(v);
 }
 
 Page({

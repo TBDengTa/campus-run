@@ -7,7 +7,7 @@
  *  3. t-icon 名称在 TDesign 图标字体里存在
  *  4. <image src> 本地图片存在
  *  5. class 名在任一 WXSS 里有定义（防止写了类但没样式）
- *  6. WXML 标签配平 / JSON 合法 / WXSS 花括号配平
+ *  6. WXML 标签配平 / JSON 合法 / WXSS 花括号配平 / WXSS 选择器不含通配符 `*`
  *  7. 页面四件套齐全、tabBar 页面与跳转目标已在 app.json 登记
  *  8. 业务页登录闸门：if (!getApp().requireLogin()) return;
  *  9. 主包体积（含 npm 上限 2MB）
@@ -280,11 +280,21 @@ for (const f of files.filter((x) => x.endsWith('.json'))) {
     problems.push(`${rel(f)}: JSON 非法 ${e.message}`);
   }
 }
+// WXSS 选择器只支持 class / id / 元素 / 属性选择 + 后代、子代、相邻、伪类组合；
+// 通配符 `*` 这类写法在开发者工具里是**编译期**失败，不带本地检查就只能等上传时才炸。
+// 真实事故：user-detail.wxss 写了 `.ud-pwd-sheet .tt-sheet-foot > *`，上传报
+// `./packageAdmin/user-detail/user-detail.wxss(1:18082): error at token '*'`。
 for (const f of wxsss) {
   const s = fs.readFileSync(f, 'utf8');
   const o = (s.match(/\{/g) || []).length;
   const c = (s.match(/\}/g) || []).length;
   if (o !== c) problems.push(`${rel(f)}: WXSS 花括号不配平 ${o}/${c}`);
+  const noComment = s.replace(/\/\*[\s\S]*?\*\//g, ' ');
+  for (const m of noComment.matchAll(/([^{}]+)\{/g)) {
+    const sel = m[1].trim();
+    if (!sel || sel.startsWith('@')) continue;
+    if (/\*/.test(sel)) problems.push(`${rel(f)}: WXSS 选择器含通配符 \`*\`（编译期报 error at token '*'）-> ${sel}`);
+  }
 }
 
 const appJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'app.json'), 'utf8'));

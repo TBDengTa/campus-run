@@ -1,7 +1,8 @@
 Page({
   data: {
-    // 版本号：与 README / GitHub 发布标签保持一致（用户 2026-10-23「版本一致都是 2.0.0」）
-    version: '2.0.0',
+    // 版本号：与 README / GitHub 发布标签保持一致（用户 2026-10-27「现在版本是 2.0.4 了」）；
+// 服务端状态页与 /health 的 version 来自 server/package.json，三处必须一致。
+    version: '2.0.4',
     company: '河北唐博科技有限公司',
     officialAccount: '唐博客',
     tagline: '校园运动记录 · 微信运动同步 · 轨迹与目标管理',

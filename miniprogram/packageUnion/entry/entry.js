@@ -18,7 +18,32 @@ const fmt = require('../../utils/format');
 // 用户已确认：拍照**选填**，单次最多 9 张。
 // 9 与服务端同口径（routes/union.js 写入时 photos.slice(0, 9)，models/check-record.js 的 photos 数组）
 // —— 两边不一致会出现「前端让传 12 张、后端静默丢 3 张」这种查不出来的丢图。
+
+// ===== 受检对象类型（用户 2026-10-26 第 4 点：卫生检查要能按 宿舍 / 班级 / 室外 筛选）=====
+// key 与服务端 check-modules.js 的 targetTypes 一一对应：
+//   classroom 教室 · dorm_room 宿舍 · area 室外卫生区 · class 班级（无教室数据的模块）
+const TARGET_TYPE_KEY = {
+  classroom: 'classroom',
+  class: 'class',
+  dorm_room: 'dorm',
+  area: 'outdoor',
+};
+const TARGET_TYPE_TEXT = {
+  classroom: '教室',
+  class: '班级',
+  dorm: '宿舍',
+  outdoor: '室外',
+};
+
 const MAX_PHOTOS = 9;
+// ===== 上传前的自适应压缩阈值（用户 2026-10-26「可以大一点 清晰一点」）=====
+// 原则：**能不动就不动**——小图原样上传，不损失任何画质；只有大图才压，且压到刚够用。
+// PHOTO_SAFE_BYTES：原图小于它就原样上传。取 8MB —— 服务端上限 CHECK_PHOTO_MAX_MB
+//   缺省 10MB，留 2MB 余量给 multipart 包装与不同平台的体积差异。
+const PHOTO_SAFE_BYTES = 8 * 1024 * 1024;
+// PHOTO_MAX_EDGE：长边超过它才缩边（px）。2560 足以看清门牌 / 板报文字等现场细节，
+//   不像 1280 那样糊掉；10MB 上限下 2560 的 JPEG 通常只有 1~3MB。
+const PHOTO_MAX_EDGE = 2560;
 // 照片字段的 type。后端已把 check-module 的 type enum 定为 'photo'，
 // 这里同时容忍 'photos' / 'image' 两种写法（契约演进期的保守兼容，**不改字段名**）。
 const PHOTO_TYPES = ['photo', 'photos', 'image'];
@@ -217,6 +242,16 @@ Page({
     schoolIndex: 0,
     departmentIndex: 0,
     gradeIndex: 0,
+    // 受检对象类型 / 楼栋筛选（用户 2026-10-26 第 4、5 点）：
+    //   typeFilter    '' 全部 / classroom 教室 / class 班级 / dorm 宿舍 / outdoor 室外
+    //   buildingFilter '' 全部 / 具体楼栋（晚自习按教学楼，查宿按宿舍楼）
+    //   选项都由 buildTypeOptions / buildBuildingOptions 从真实对象生成，不写死
+    typeFilter: '',
+    buildingFilter: '',
+    typeOptions: [],
+    buildingOptions: [],
+    typeIndex: 0,
+    buildingIndex: 0,
     // 分院身份：明确告知筛选范围被收在本院校（校区）内（服务端也会 fail-closed 收敛 targets）
     scopeHint: '',
     // 列表侧的状态汇总（B 端头部一眼看出今天还差多少）与「本模块今日已全部录入」提示
@@ -274,6 +309,15 @@ Page({
 
   onShow() {
     if (!getApp().requireLogin()) return;
+    // 抽屉开着时**不要重载**（用户 2026-10-24 报「拍照上传到 100% 时弹窗被关掉了」）。
+    //
+    // 链路：wx.chooseMedia 拍照 → 微信切到相机界面 → 小程序 onHide →
+    //       选完照片返回 → onShow → load() → loadTargets() 把
+    //       showForm / photos / form / current 一次性重置 →
+    //       正在上传的抽屉连同刚选的照片全部消失，看起来像「传完自动关闭」。
+    // 列表数据晚几秒刷新没有代价（提交后会主动 loadTargets），但表单内容丢了必须重拍，
+    // 所以这里优先保表单：抽屉开着就跳过这次重载。
+    if (this.data.showForm) return;
     this.load();
   },
 
@@ -347,6 +391,16 @@ Page({
       const current = Number(currentYear);
       // 「其他」= 没有年级 / 未来年级（测试班 56级 → 2056）。未来年级不能排到今年前面。
       const gradeKey = grade && (!current || (year >= 1900 && year <= current)) ? grade : 'other';
+      // ===== 受检对象类型 / 楼栋（用户 2026-10-26 第 4、5 点）=====
+      //   ④ 卫生检查要能按「宿舍 / 班级 / 室外」筛选 —— 服务端 targetTypes 已有三类，
+      //      前端把它们映射成中文类型键；
+      //   ⑤ 晚自习「应该优先显示教室，并增加筛选教学楼」—— 服务端 targetType 已改成 classroom
+      //      且下发 classroom / building，这里把标题从班级名换成教室。
+      const typeKey = TARGET_TYPE_KEY[t.targetType] || t.targetType || 'class';
+      const classroom = String(t.classroom || '').trim();
+      const building = String(t.building || '').trim();
+      // 标题：教室类模块（晚自习）优先显示教室；没有教室数据时退回班级名（不能空着）
+      const showClassroom = typeKey === 'classroom' && classroom;
       return {
         ...t,
         grade,
@@ -359,12 +413,22 @@ Page({
         schoolLabel: String(t.schoolName || (t.schoolId ? '未命名院校' : '其他')),
         departmentLabel: String(t.departmentName || (t.departmentId ? '未命名系部' : '其他')),
         isCurrentYear: gradeKey === currentYear,
+        // 类型与楼栋：筛选用（'' = 该对象没有楼栋信息，例如卫生区）
+        typeKey,
+        typeLabel: TARGET_TYPE_TEXT[typeKey] || '',
+        buildingKey: building,
+        buildingLabel: building,
+        // 教室类模块显示教室名（如「1号教学楼·201」），否则显示班级名
+        displayName: showClassroom ? classroom : t.targetName,
         statusClass: !t.status ? 'missing' : t.status === 'cancelled' ? 'cancelled' : t.status === 'rejected' ? 'rejected' : 'done',
         // 行内状态文案：早八未录显示「无迟到」（中性灰），不显示服务端默认的「未录」
         // —— 否则列表上一片「未录」，像是纪检部漏录（实际没人迟到是常态）。
         statusText: !t.status && optionalModule ? noRecordText : t.statusText,
-        // 行内副信息：「23级大数据技术 · 32 人」——列表侧不再需要进表单就知道对象规模
-        info: `${t.className || t.departmentName || ''}${infoOf(t)}`,
+        // 行内副信息：「23级大数据技术 · 32 人」——列表侧不再需要进表单就知道对象规模。
+        // 教室类模块：副信息里补上班级（教室是主标题，班级退到副信息）
+        info: showClassroom
+          ? `${t.className || ''}${infoOf(t)}`
+          : `${t.className || t.departmentName || ''}${infoOf(t)}`,
         // 已录对象的扣分 / 得分摘要（数据来自服务端 entryTargets 的 score / deduct）：
         // 结算口径是「扣分」优先（scoring.mode 为 deduct 的模块只有 deduct 有值），
         // 得分与扣分都为 null（未录）时不显示，避免每行都挂一个「—」。
@@ -466,6 +530,62 @@ Page({
     return options.concat([...map.values()].sort((a, b) => a.label.localeCompare(b.label)));
   },
 
+  /**
+   * 受检对象类型选项（用户 2026-10-26 第 4 点）。
+   * 只列**当前模块真实存在**的类型：卫生有三种、早操只有班级，
+   * 这样不会出现「选了宿舍但列表空」的空选项。固定顺序 教室→班级→宿舍→室外。
+   */
+  buildTypeOptions(list) {
+    const ORDER = ['classroom', 'class', 'dorm', 'outdoor'];
+    const seen = new Map();
+    for (const t of list || []) {
+      const k = t.typeKey || '';
+      if (!k) continue;
+      seen.set(k, (seen.get(k) || 0) + 1);
+    }
+    // 只有一种类型时不生成选项（上层会把 typeFilter 清空，UI 也不显示这一栏）
+    if (seen.size <= 1) return [];
+    const options = [...seen.entries()]
+      .map(([key, count]) => ({ key, label: TARGET_TYPE_TEXT[key] || key, count }))
+      .sort((a, b) => {
+        const ia = ORDER.indexOf(a.key);
+        const ib = ORDER.indexOf(b.key);
+        return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+      });
+    return [{ key: '', label: '全部', count: (list || []).length }].concat(options);
+  },
+
+  /**
+   * 楼栋选项（用户 2026-10-26 第 5 点「增加筛选教学楼」）。
+   * 取当前类型集合里出现过的 building；卫生区这类没有楼栋的对象不产出选项。
+   */
+  /**
+   * 楼栋选项（用户 2026-10-26 第 5 点「增加筛选教学楼」、第 2 点「早操不需要楼栋筛选」）。
+   *
+   * ⚠️ 只给**以场所为受检对象**的模块开放（教室 / 宿舍）：
+   *   · 晚自习（classroom）：检查的是「哪个教室」，按教学楼筛才有意义；
+   *   · 查宿 / 卫生宿舍（dorm_room）：按宿舍楼筛；
+   *   · **早操 / 早八（class）**：检查的是「哪个班的出勤」，班级本身不在楼里 ——
+   *     服务端也跟着班级台账带出了 classroom（那是给卫生·教室录入核对用的），
+   *     拿它做筛选只会让早操平白多出一个没用的「楼栋」下拉。
+   * 所以按 typeKey 放行，而不是「有 building 就显示」。
+   */
+  buildBuildingOptions(list) {
+    const BUILDING_TYPES = ['classroom', 'dorm'];
+    const seen = new Map();
+    for (const t of list || []) {
+      if (BUILDING_TYPES.indexOf(t.typeKey) < 0) continue;
+      const b = t.buildingKey || '';
+      if (!b) continue;
+      seen.set(b, (seen.get(b) || 0) + 1);
+    }
+    if (!seen.size) return [];
+    const options = [...seen.entries()]
+      .map(([key, count]) => ({ key, label: key, count }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+    return [{ key: '', label: '全部楼栋', count: (list || []).length }].concat(options);
+  },
+
   // 年级选项：今年标「26级·今年」置顶，其他年份新→旧，「其他」放最后
   buildGradeOptions(targets, currentYear) {
     const all = targets || [];
@@ -511,13 +631,29 @@ Page({
     const gradeOptions = this.buildGradeOptions(byDept, this.data.currentYear);
     if (!gradeOptions.some((o) => o.key === gradeFilter)) gradeFilter = '';
 
-    // 院校 / 系部 / 年级筛选后的范围（不含搜索）：顶部进度与「全部录完」按这个范围统计，
+    // ===== 受检对象类型 / 楼栋筛选（用户 2026-10-26 第 4、5 点）=====
+    //   ④ 卫生检查：按 宿舍 / 班级（教室）/ 室外 筛选
+    //   ⑤ 晚自习：按 教学楼 筛选（服务端已下发 target.building）
+    // 选项只从「当前模块真实存在的对象」生成 —— 卫生才有三类、早操只有班级，
+    // 所以选择器不写死，避免出现点了没结果的空选项。
+    let typeFilter = this.data.typeFilter || '';
+    let buildingFilter = this.data.buildingFilter || '';
+    const typeOptions = this.buildTypeOptions(all);
+    if (typeOptions.length <= 1) typeFilter = ''; // 只有一种类型时不做类型筛选
+    else if (!typeOptions.some((o) => o.key === typeFilter)) typeFilter = '';
+    const byType = typeFilter ? all.filter((t) => t.typeKey === typeFilter) : all;
+    const buildingOptions = this.buildBuildingOptions(byType);
+    if (!buildingOptions.some((o) => o.key === buildingFilter)) buildingFilter = '';
+
+    // 院校 / 系部 / 年级 / 类型 / 楼栋筛选后的范围（不含搜索）：顶部进度与「全部录完」按这个范围统计，
     // 这样切到「计财系 / 2026」时，未录 / 已录 / 受检对象不会仍显示全校 54 个。
     let scoped = all;
     if (schoolFilter) scoped = scoped.filter((t) => t.schoolKey === schoolFilter);
     if (departmentFilter) scoped = scoped.filter((t) => t.departmentKey === departmentFilter);
     if (gradeFilter === 'other') scoped = scoped.filter((t) => t.gradeKey === 'other');
     else if (gradeFilter) scoped = scoped.filter((t) => t.gradeKey === gradeFilter);
+    if (typeFilter) scoped = scoped.filter((t) => t.typeKey === typeFilter);
+    if (buildingFilter) scoped = scoped.filter((t) => t.buildingKey === buildingFilter);
 
     const list = kw ? scoped.filter((t) => String(t.targetName || '').indexOf(kw) >= 0) : scoped;
     const filtered = list.slice().sort((a, b) => this.compareTargets(a, b)).slice(0, 300);
@@ -527,7 +663,7 @@ Page({
       return i < 0 ? 0 : i;
     };
 
-    const scopeActive = !!(schoolFilter || departmentFilter || gradeFilter);
+    const scopeActive = !!(schoolFilter || departmentFilter || gradeFilter || typeFilter || buildingFilter);
     // 「只记异常人」的模块（早八）：未录**不算待办**（没人迟到是常态），
     // 所以进度里的「未录数」与「还差 N 个」都按 0 算，但**列表照旧列出**这些班级，
     // 方便纪检部在有迟到时进去补录（用户明确要求保留入口）。
@@ -558,6 +694,13 @@ Page({
       schoolFilter,
       departmentFilter,
       gradeFilter,
+      // 类型 / 楼栋筛选（用户 2026-10-26 第 4、5 点）
+      typeFilter,
+      buildingFilter,
+      typeOptions,
+      buildingOptions,
+      typeIndex: indexOf(typeOptions, typeFilter),
+      buildingIndex: indexOf(buildingOptions, buildingFilter),
       schoolOptions,
       departmentOptions,
       gradeOptions,
@@ -598,6 +741,19 @@ Page({
   onGradeChange(e) {
     const opt = this.data.gradeOptions[Number(e.detail.value) || 0] || { key: '' };
     this.setData({ gradeFilter: opt.key }, () => this.applyFilter());
+  },
+
+  // 受检对象类型筛选（用户 2026-10-26 第 4 点：宿舍 / 班级 / 室外）
+  // 切类型时楼栋要跟着重算：选了「宿舍」后，教学楼选项就不该还留着。
+  onTypeChange(e) {
+    const opt = this.data.typeOptions[Number(e.detail.value) || 0] || { key: '' };
+    this.setData({ typeFilter: opt.key, buildingFilter: '' }, () => this.applyFilter());
+  },
+
+  // 楼栋筛选（用户 2026-10-26 第 5 点：晚自习按教学楼筛）
+  onBuildingChange(e) {
+    const opt = this.data.buildingOptions[Number(e.detail.value) || 0] || { key: '' };
+    this.setData({ buildingFilter: opt.key }, () => this.applyFilter());
   },
 
   onDateChange(e) {
@@ -865,7 +1021,63 @@ Page({
     }, 120);
   },
 
+  /**
+   * 抽屉关闭（遮罩 / 右上角 X / 「取消」三个入口都走这里）。
+   *
+   * 用户 2026-10-24 报障：「学生会录入记录拍照时，上传到 100% 弹窗被关掉了」。
+   * 根因不是上传本身，而是**关闭入口一个守卫都没有**：closeForm 会把 photos、form、current
+   * 整个清空，于是误触遮罩（拍照返回时系统层收起后容易穿透一次点击）、或手滑点到「取消」，
+   * 刚传完的照片和填了一半的表单就全没了，而且没有任何提示 —— 看起来像「上传完自动关闭」。
+   *
+   * 三层拦截：
+   *   ① 正在上传（uploading / 还有 pending）→ 直接拒绝关闭，先等传完，避免白传；
+   *   ② 正在提交 → 拒绝关闭（提交后会自动关，中途关会看不出结果）；
+   *   ③ 有未提交内容 → 二次确认；空表单直接关（不该为「什么都没填」还弹一次框）。
+   * 提交成功 / 取消检查那两处是**程序化关闭**，走 doCloseForm()，不受这些拦截影响。
+   */
   closeForm() {
+    if (this.data.uploading || (this.data.photos || []).some((p) => p && (p.status === 'uploading' || p.status === 'pending'))) {
+      wx.showToast({ title: '照片上传中，传完再关闭', icon: 'none' });
+      return;
+    }
+    if (this.data.submitting) {
+      wx.showToast({ title: '正在提交，请稍候', icon: 'none' });
+      return;
+    }
+    if (!this.hasDraft()) {
+      this.doCloseForm();
+      return;
+    }
+    const that = this;
+    wx.showModal({
+      title: '放弃这次录入？',
+      content: '表单还没提交，关闭后已填内容和已上传的照片都会丢失。',
+      confirmText: '放弃',
+      confirmColor: '#e5484d',
+      cancelText: '继续填写',
+      success: (r) => {
+        if (r.confirm) that.doCloseForm();
+      },
+    });
+  },
+
+  // 是否有「还没提交的内容」：有照片，或任一字段填过值。
+  // 只用于决定要不要弹二次确认，所以宁可判松一点（多问一次）也不要漏（静默丢数据）。
+  hasDraft() {
+    if ((this.data.photos || []).length) return true;
+    if (this.data.existingId) return true; // 修改已有记录：中途关掉也算丢改动
+    const form = this.data.form || {};
+    return Object.keys(form).some((k) => {
+      const v = form[k];
+      if (v === undefined || v === null || v === '') return false;
+      if (Array.isArray(v)) return v.length > 0;
+      if (typeof v === 'boolean') return v === true;
+      return true;
+    });
+  },
+
+  // 真正的关闭（程序化调用：提交成功、取消检查后）
+  doCloseForm() {
     this.setData({
       showForm: false,
       bodyLocked: false,
@@ -1011,8 +1223,13 @@ Page({
         that.setPhotos(that.data.photos.concat(added));
         that.uploadPending(field);
       },
-      fail() {
-        // 用户取消选图不是错误，不提示
+      fail(err) {
+        // ⚠️ 以前这里静默吞掉所有失败（注释写「用户取消不是错误」），
+        //   结果「图库选不了图」时页面毫无反应，用户以为功能坏了（用户 2026-10-26）。
+        //   现在区分「用户主动取消」与「真的失败了」。
+        const msg = String((err && err.errMsg) || '');
+        if (/cancel/i.test(msg)) return; // 取消：不提示
+        wx.showToast({ title: '选择图片失败，请重试', icon: 'none' });
       },
     });
   },
@@ -1041,16 +1258,104 @@ Page({
     if (!item || !item.path) return;
     this.patchPhoto(index, { status: 'uploading', progress: 0, error: '' });
     try {
-      const data = await auth.uploadCheckPhoto(item.path, {
+      // ⚠️ 上传前**强制压缩**（用户 2026-10-26「现场照片依旧是选择相册的照片上传错误」）。
+      //
+      // 为什么必须有这一步：服务端 /api/upload/check-photo 限 5MB，而
+      //   · 相机拍照 → 微信当场压成 ~1MB JPEG → 能过；
+      //   · 相册原图 → 6~12MB（尤其 iPhone/高像素安卓）→ 直接 400「文件超出大小限制」。
+      // chooseMedia 的 sizeType:['compressed'] **并不保证**真的压到 5MB 以内
+      // （它按平台策略压，相册大图仍可能超限），所以这里再压一次兜底。
+      // 观察：头像上传加压缩后就好了，这里当时漏了 —— 于是表现为「拍照行、相册不行」。
+      // 压到 quality 60 通常能到 200~800KB，足以看清现场（检查留证不需要印刷画质）。
+      const src = await this.compressForUpload(item.path);
+      const data = await auth.uploadCheckPhoto(src, {
         onProgress: (percent) => this.patchPhoto(index, { progress: Number(percent) || 0 }),
       });
       this.patchPhoto(index, { status: 'done', progress: 100, url: (data && data.url) || '' });
     } catch (err) {
-      this.patchPhoto(index, {
-        status: 'failed',
-        error: (err && err.message) || '上传失败',
-      });
+      // 把**真实原因**显示出来（用户 2026-10-26「检查录入上传照片依旧失败」，
+      // 但界面上只有一句「上传失败」，无法判断是 403 / 超时 / 域名白名单 / 图片过大）。
+      // 区分几类，给出能照着做的下一步：
+      //   · code 403002 → 身份识别不到（学生会成员校验没过）
+      //   · code 401    → 登录态过期
+      //   · 超过 5MB    → 提示换一张或重拍（压缩后仍超限的极端情况）
+      //   · 其它        → 原样带出服务端 message，并附 code 便于反馈
+      const code = err && err.code;
+      let msg = (err && err.message) || '上传失败';
+      if (code === 403002) msg = '上传被拒：你还不是学生会成员（请确认已在成员名单中）';
+      else if (code === 401) msg = '登录已过期，请重新登录后再传';
+      else if (/超出大小限制|too large|413/i.test(msg)) msg = '照片太大（压缩后仍超限），请重拍或换一张';
+      else if (code) msg = `${msg}（code ${code}）`;
+      this.patchPhoto(index, { status: 'failed', error: msg });
     }
+  },
+
+  /**
+   * 上传前压缩（**自适应**，用户 2026-10-26「你直接压缩不行吗 而且检查录入照片可以大一点 清晰一点」）。
+   *
+   * 设计原则：**能不动就不动，要动也只动到刚够用**。
+   *   ① 小图（≤ PHOTO_SAFE_BYTES）→ **原样上传**，一点画质都不损失；
+   *   ② 大图 → 从高画质开始压，逐级降质量（85 → 70 → 55），**够小就立刻停**；
+   *   ③ 尺寸过大才缩边，且只缩到 2560（不是一刀切 1280）。
+   *
+   * 为什么不直接用 chooseMedia 的 sizeType:['compressed']：
+   *   它按平台策略压，**不保证**落在服务端上限内（相册大图仍可能 6~12MB），
+   *   而且压多少不可控 —— 可能把一张本来 1MB 的清晰照片也重压一遍。
+   *
+   * 服务端上限见 routes/upload.js 的 CHECK_PHOTO_MAX_MB（缺省 10MB）；
+   * 这里按 8MB 目标压，留余量给 multipart 包装与不同平台差异。
+   *
+   * @param {string} src 本地临时文件路径
+   * @returns {Promise<string>} 可上传的路径（可能是原图，也可能是压缩后的）
+   */
+  async compressForUpload(src) {
+    // 环境不支持 → 原样传（服务端仍会按上限把关）
+    if (!wx.compressImage) return src;
+
+    // 先看原图大小：够小就直接用原图，**完全不压**（保画质）
+    const size = await this.getFileSize(src);
+    if (size > 0 && size <= PHOTO_SAFE_BYTES) return src;
+
+    // 逐级降质量，直到落进安全线；从高画质开始，尽量少损失
+    let current = src;
+    for (const quality of [85, 70, 55]) {
+      const out = await this.tryCompress(current, quality);
+      if (!out) continue;
+      current = out;
+      const s = await this.getFileSize(current);
+      if (s > 0 && s <= PHOTO_SAFE_BYTES) return current; // 够小就停，不再降画质
+    }
+    return current; // 最低档仍偏大就交给服务端判定（会给出明确提示）
+  },
+
+  // 读本地临时文件大小（失败返回 0 = 未知，调用方按「需要压缩」处理）
+  getFileSize(path) {
+    return new Promise((resolve) => {
+      try {
+        wx.getFileSystemManager().getFileInfo({
+          filePath: path,
+          success: (r) => resolve((r && r.size) || 0),
+          fail: () => resolve(0),
+        });
+      } catch (e) {
+        resolve(0);
+      }
+    });
+  },
+
+  // 单次压缩：quality 越高越清晰、体积越大
+  tryCompress(src, quality) {
+    return new Promise((resolve) => {
+      wx.compressImage({
+        src,
+        quality,
+        // 长边上限 2560：足以看清门牌、板报文字等现场细节，
+        // 不像 1280 那样糊掉；只有超大原图才会被缩边。
+        compressedWidth: PHOTO_MAX_EDGE,
+        success: (r) => resolve((r && r.tempFilePath) || ''),
+        fail: () => resolve(''), // 压不动就让上层继续用当前文件
+      });
+    });
   },
 
   // 只改某一张（避免整组 setData 导致所有缩略图重渲染 / 进度条闪烁）
@@ -1255,7 +1560,7 @@ Page({
         title: (existingId ? '已更新' : '提交成功') + (extra ? ` · ${extra}` : ''),
         icon: extra ? 'none' : 'success',
       });
-      this.closeForm();
+      this.doCloseForm();
       await this.loadTargets();
       // 提交成功后**自动定位下一个未录对象**（连续录入场景）：有则高亮提示，无则告知本模块已录完
       const hasNext = this.locateNextMissing();
@@ -1303,7 +1608,8 @@ Page({
         try {
           await auth.post(`/api/union/records/${id}/cancel`, { reason });
           wx.showToast({ title: '已取消', icon: 'success' });
-          that.closeForm();
+          // 取消成功后是程序化关闭：走 doCloseForm，不能被「未提交内容」二次确认拦住
+          that.doCloseForm();
           await that.loadTargets();
         } catch (e) {
           wx.showToast({ title: e.message || '操作失败', icon: 'none' });

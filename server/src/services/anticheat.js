@@ -11,6 +11,14 @@ const SCOPES = ['login', 'sync', 'gps'];
 const DAY_MS = 24 * 3600 * 1000;
 const SCOPE_TEXT = { login: '登录', sync: '微信同步', gps: 'GPS 实跑' };
 
+// ===== 微信运动同步的误伤护栏（用户 2026-10-26「同步的微信步数不要被封禁」）=====
+// STALE_SYNC_MS：距上次同步超过这么久，就视为「攒了一段时间才同步」——
+//   此时增量天然等于这段时间的累计步数，一律不按「暴增」处理（首次同步同理）。
+const STALE_SYNC_MS = 30 * 60 * 1000;
+// MAX_REASONABLE_DAILY_STEPS：单日步数的物理上限。真实高强度用户（长跑/巡逻）能到 3~5 万，
+//   超过这个数才可能是脚本刷步；不超过它的一律视为真实步数，判违规没有意义。
+const MAX_REASONABLE_DAILY_STEPS = 50000;
+
 function normalizeScope(scope) {
   if (scope === 'manual') return 'login'; // 历史记录 banType='manual' 即整账号封禁
   return SCOPES.includes(scope) ? scope : 'login';
@@ -168,11 +176,45 @@ async function lift({ user, scope = 'all', operator, reason = '解封' }) {
 }
 
 // ===== 反作弊检查 =====
-// 步数暴增（微信运动同步）→ 限制微信同步；24h 内重犯升级为限制登录
-async function checkStepJump(user, date, previousSteps, newSteps) {
+/**
+ * 步数暴增检测（微信运动同步）→ 限制微信同步；24h 内重犯升级为限制登录。
+ *
+ * ⚠️ 用户 2026-10-26：「微信运动学生账户要进入页面自动同步，同步的微信步数不要被封禁」。
+ * 这条检测**原本会误伤正常人**，必须按「同步节奏」而不是「绝对增量」判断：
+ *
+ *   反例（修复前必然踩到）：学生白天走了 15000 步，晚上第一次进小程序（或昨天没开过），
+ *   一次同步写入 15000 步 → 旧逻辑只看 `jump > maxStepJumpPerSync(13000)`
+ *   → 判「单次同步暴增」→ 限制微信同步 7 天；24h 内再撞一次就**升级为限制登录**。
+ *   可这完全是微信运动的真实步数，用户什么也没做错。**进页面自动同步会让这个误伤频次大增**。
+ *
+ * 正确口径（三个条件都要满足才算异常）：
+ *   ① **不是「攒了很久才同步」** —— 距上次微信同步超过 STALE_SYNC_MS（30 分钟）时，
+ *      增量天然就是「这段时间攒下的全部步数」，属于正常补同步；首次同步同理（无记录即 stale）。
+ *   ② 当日累计超过 MAX_REASONABLE_DAILY_STEPS（50000）：真实高强度用户也能到 3~5 万步，
+ *      旧阈值 13000 对「全天累计的首同步」过窄。
+ *   ③ 同时单次增量仍超过配置阈值：短窗口内暴增这么多，才可能是脚本刷步。
+ *
+ * @param {object} user
+ * @param {string} date 日期键 YYYY-MM-DD
+ * @param {number} previousSteps 今天已记录的步数
+ * @param {number} newSteps 本次同步的当日累计步数
+ * @param {{lastSyncAt?: number}} [ctx] 该用户上一次微信同步的时间戳（毫秒）
+ */
+async function checkStepJump(user, date, previousSteps, newSteps, ctx = {}) {
   const config = await GoalConfig.getSingleton();
   if (!config.anticheat.enabled) return { violation: false };
-  const jump = newSteps - previousSteps;
+  const jump = (newSteps || 0) - (previousSteps || 0);
+  if (jump <= 0) return { violation: false };
+
+  // ① 首次同步 / 长时间未同步后的补同步 → 增量天然是累计值，不算「暴增」
+  const lastSyncAt = Number(ctx.lastSyncAt) || 0;
+  const stale = lastSyncAt > 0 ? Date.now() - lastSyncAt > STALE_SYNC_MS : true;
+  if (stale) return { violation: false };
+
+  // ② 当日累计没超过物理上限 → 真实步数，不判违规
+  if ((newSteps || 0) <= MAX_REASONABLE_DAILY_STEPS) return { violation: false };
+
+  // ③ 短窗口内仍然暴增超过配置阈值 → 才认定异常
   if (jump > config.anticheat.maxStepJumpPerSync) {
     const days = config.anticheat.banDays || 7;
     const info = await restrict({

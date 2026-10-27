@@ -1,0 +1,98 @@
+<view class="page tt-page demo-page">
+  <!-- ===== 说明 ===== -->
+  <view class="demo-tip">
+    <t-icon name="info-circle" size="30rpx" color="var(--tt-brand)" />
+    <view class="demo-tip-text">
+      示例账户用于演示与培训，<text class="demo-tip-strong">不影响真实数据</text>。
+      三个账号共用密码 <text class="demo-tip-pwd num-font" bind:tap="copyPassword">{{password}}</text>，
+      不自动绑定微信；任何微信登录即可占用，退出登录会自动解绑。
+    </view>
+  </view>
+
+  <!-- ===== 账号列表 ===== -->
+  <view class="tt-section">
+    <text>示例账号</text>
+    <text class="tt-section-extra">{{anyExists ? className : '尚未创建'}}</text>
+  </view>
+  <!-- 接口版本 + 后端连的库（排查用）：显示「旧版本」= 后端没部署最新包；
+       库名不对 = 这个后端连的不是你创建账号的那个库 -->
+  <view class="demo-ver" wx:if="{{apiVersion}}">接口版本：{{apiVersion}}{{dbText ? ' · 库：' + dbText : ''}}</view>
+
+  <view class="tt-card demo-card">
+    <t-loading wx:if="{{loading}}" theme="circular" size="40rpx" class="demo-loading" />
+    <block wx:else>
+      <!-- 每个 spec 的状态在 JS 里就合并进同一项（rows），不在模板里跨数组取 list[index]：
+           跨数组下标依赖两个数组顺序严格一致，一旦服务端多/少一条或顺序变化，
+           就会出现「明明创建了却显示未创建」这种没有任何报错的错位。 -->
+      <view class="demo-row" wx:for="{{rows}}" wx:key="key">
+        <view class="demo-avatar">
+          <t-icon name="{{item.icon}}" size="34rpx" color="var(--tt-brand)" />
+        </view>
+        <view class="flex-1 demo-main">
+          <view class="demo-name">
+            <text>{{item.label}}</text>
+            <text class="demo-badge" wx:if="{{item.bound}}">已绑</text>
+          </view>
+          <view class="demo-desc">{{item.desc}}</view>
+          <view class="demo-state">
+            <text wx:if="{{!item.exists}}" class="demo-state-warn">未创建</text>
+            <text wx:elif="{{item.bound}}">占用中 · {{item.boundAtText}}</text>
+            <text wx:else>空闲，可直接登录</text>
+          </view>
+          <!-- 未创建时把服务端诊断摊开（用户 2026-10-24：页面显示未创建但账号明明存在）。
+               与其远程猜「版本没部署？查错库？名字不匹配？」，不如让接口自己把证据吐出来 -->
+          <view class="demo-diag" wx:if="{{!item.exists && item.diag}}">
+            <view wx:if="{{item.diag.similar && item.diag.similar.length}}">库里相近账号：{{item.diag.similar}}</view>
+            <view wx:else>库里没有 isDemo 账号（若你刚创建过，说明后端没部署最新版或连的不是这个库）</view>
+          </view>
+        </view>
+        <view
+          class="demo-unbind {{(!item.exists || !item.bound || !canManage) ? 'is-disabled' : ''}}"
+          wx:if="{{canManage}}"
+          catch:tap="unbind"
+          data-key="{{item.key}}"
+        >解绑</view>
+      </view>
+      <view class="tt-empty" wx:if="{{!rows.length && !loading}}">暂无示例账号定义</view>
+    </block>
+  </view>
+
+  <!-- ===== 操作 ===== -->
+  <view class="tt-card demo-actions" wx:if="{{canManage}}">
+    <t-button theme="primary" block loading="{{busy}}" bind:tap="seed">
+      {{anyExists ? '重置为初始状态' : '创建示例账户'}}
+    </t-button>
+    <t-button wx:if="{{anyExists}}" theme="danger" variant="outline" block bind:tap="removeAll" class="demo-del">
+      清理全部示例账户
+    </t-button>
+  </view>
+
+  <!-- ===== 示例账号的三条特殊规则 ===== -->
+  <view class="tt-section">
+    <text>与真实账号的差别</text>
+  </view>
+  <view class="tt-card demo-rules">
+    <view class="demo-rule">
+      <text class="demo-rule-k">微信绑定</text>
+      <text class="demo-rule-v">可被任意微信占用，也可手动解绑；真实学生账号一旦绑定不可更换</text>
+    </view>
+    <view class="demo-rule">
+      <text class="demo-rule-k">退出登录</text>
+      <text class="demo-rule-v">自动解绑微信，下一个微信可直接登录；真实账号退出只清本机登录态</text>
+    </view>
+    <view class="demo-rule">
+      <text class="demo-rule-k">首次改密</text>
+      <text class="demo-rule-v">可点「暂不修改」跳过；真实账号必须修改初始密码</text>
+    </view>
+    <view class="demo-rule">
+      <text class="demo-rule-k">数据隔离</text>
+      <text class="demo-rule-v">不进排行榜、不计入班级应到人数；班超联赛只看班级状态（示例所在的 24 级为实习班，本就不参与）</text>
+    </view>
+    <view class="demo-rule">
+      <text class="demo-rule-k">权限</text>
+      <text class="demo-rule-v">示例教师1 带内置「教师管理组」（看板 / 用户 / 申诉 / 内容 / 配置均为查看 + 可审核申诉），可进管理端演示；学生示例只有身份能力（班委 / 学生会主席），无任何管理权限</text>
+    </view>
+  </view>
+
+  <view class="tt-footer">生产环境部署完成后建议清理示例账户；需要时再重新创建</view>
+</view>

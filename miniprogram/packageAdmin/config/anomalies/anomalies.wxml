@@ -1,0 +1,153 @@
+<view class="page tt-page">
+  <!-- ===== 顶部：状态切换 + 计数 ===== -->
+  <view class="sa-tabs">
+    <view class="sa-tab {{tab === 'open' ? 'active' : ''}}" data-tab="open" bind:tap="switchTab">
+      待研判<text class="sa-tab-badge" wx:if="{{counts.open}}">{{counts.open}}</text>
+    </view>
+    <view class="sa-tab {{tab === 'banned' ? 'active' : ''}}" data-tab="banned" bind:tap="switchTab">
+      已封禁<text class="sa-tab-badge" wx:if="{{counts.banned}}">{{counts.banned}}</text>
+    </view>
+    <view class="sa-tab {{tab === 'dismissed' ? 'active' : ''}}" data-tab="dismissed" bind:tap="switchTab">已排除</view>
+  </view>
+
+  <!-- ===== 学习引擎状态（用户 2026-10-27「融入大数据或推理模型，自己学习规则与模式」）=====
+       让管理员确认模型在工作，并看到自校准后的判定阈值 —— 反作弊系统必须透明可解释，
+       否则管理员无法信任它的判断，也就不会用它的结果。 -->
+  <view class="sa-engine" wx:if="{{engine}}">
+    <view class="sa-engine-item">
+      <view class="sa-dot {{engine.werunReady ? '' : 'off'}}"></view>
+      <text>微信模型{{engine.werunReady ? '已就绪' : '预热中'}}{{engine.werunRows ? '（' + engine.werunRows + ' 条样本）' : ''}}</text>
+    </view>
+    <view class="sa-engine-item">
+      <view class="sa-dot {{engine.gpsReady ? '' : 'off'}}"></view>
+      <text>GPS 模型{{engine.gpsReady ? '已就绪' : '预热中'}}{{engine.gpsRows ? '（' + engine.gpsRows + ' 条样本）' : ''}}</text>
+    </view>
+    <view class="sa-engine-item">
+      <text>判定阈值 {{engine.thresholdText}}</text>
+    </view>
+  </view>
+
+  <!-- ===== 升级提示（用户 2026-10-27「标注积累到阈值后自动提示升级」）=====
+       当前是无监督模型；攒够人工标注就能升级为有监督分类器，准确率明显更高。
+       达标时高亮提示，未达标时只显示一个安静的进度条 —— 不打扰日常使用。 -->
+  <view class="sa-upgrade {{upgrade.ready ? 'is-ready' : ''}}" wx:if="{{upgrade}}">
+    <view class="sa-upgrade-head">
+      <t-icon name="{{upgrade.ready ? 'check-circle-filled' : 'chart-bar'}}" size="30rpx" color="{{upgrade.ready ? 'var(--td-success-color-5)' : 'var(--tt-text-3)'}}" />
+      <text class="sa-upgrade-title">{{upgrade.ready ? '可以升级为有监督模型' : '标注积累进度'}}</text>
+      <text class="sa-upgrade-pct">{{upgrade.progress}}%</text>
+    </view>
+    <view class="sa-upgrade-bar">
+      <view class="sa-upgrade-fill" style="width: {{upgrade.progress}}%"></view>
+    </view>
+    <view class="sa-upgrade-sub">{{upgrade.suggestion}}</view>
+    <view class="sa-upgrade-stats">
+      <text>总标注 {{upgrade.total}}</text>
+      <text>作弊 {{upgrade.perClass.cheat}}</text>
+      <text>正常 {{upgrade.perClass.normal}}</text>
+    </view>
+  </view>
+
+  <!-- 搜索：按姓名 / 学号 / 班级 -->
+  <view class="sa-search">
+    <t-icon name="search" size="28rpx" color="var(--tt-text-3)" />
+    <input class="sa-search-input" placeholder="搜索姓名 / 学号 / 班级" value="{{keyword}}" bindinput="onKeyword" bindconfirm="onSearch" />
+    <view class="sa-search-btn" bind:tap="onSearch">搜索</view>
+  </view>
+
+  <!-- ===== 说明条：让管理员明白这些记录是怎么来的 ===== -->
+  <view class="sa-hint" wx:if="{{tab === 'open'}}">
+    <t-icon name="info-circle" size="24rpx" color="var(--tt-text-3)" />
+    <text>系统已自动拦截明显刷步（如重复数字、增速超限）并封禁；这里只列**可疑但未到自动封禁**的记录，请人工研判。</text>
+  </view>
+
+  <!-- ===== 列表 ===== -->
+  <view class="sa-list" wx:if="{{list.length}}">
+    <view class="sa-item" wx:for="{{list}}" wx:key="id">
+      <view class="sa-item-head">
+        <view class="sa-item-name">
+          <text class="sa-name">{{item.realName}}</text>
+          <text class="sa-meta">{{item.className}}{{item.studentId ? ' · ' + item.studentId : ''}}</text>
+        </view>
+        <text class="sa-status sa-status-{{item.statusInfo.theme}}">{{item.statusInfo.text}}</text>
+      </view>
+
+      <view class="sa-item-body">
+        <view class="sa-row">
+          <text class="sa-label">来源</text>
+          <!-- 来源分流（用户 2026-10-27「微信同步、GPS 分开来」）：两种行为特征完全不同，判定模型也是两套 -->
+          <text class="sa-value sa-source sa-source-{{item.source}}">{{item.sourceText}}</text>
+        </view>
+        <view class="sa-row">
+          <text class="sa-label">日期</text>
+          <text class="sa-value">{{item.date}}</text>
+        </view>
+        <view class="sa-row" wx:if="{{item.source === 'werun'}}">
+          <text class="sa-label">当日步数</text>
+          <text class="sa-value num-font">{{item.stepsText}}</text>
+        </view>
+        <view class="sa-row">
+          <text class="sa-label">可疑分</text>
+          <text class="sa-value num-font sa-score">{{item.scoreText}}</text>
+        </view>
+        <view class="sa-row" wx:if="{{item.modelScoreText}}">
+          <text class="sa-label">模型分</text>
+          <!-- 模型分（0~1，0.5 = 正常基准）：留档便于复核「是规则判的还是学习模型判的」 -->
+          <text class="sa-value num-font sa-model">{{item.modelScoreText}}</text>
+        </view>
+      </view>
+
+      <view class="sa-reasons">
+        <t-icon name="error-circle" size="24rpx" color="var(--td-warning-color-6)" />
+        <text>{{item.reasonText}}</text>
+      </view>
+
+      <!-- 写操作只给 user.manage：只读账号看不到封禁 / 标记按钮 -->
+      <view class="sa-actions" wx:if="{{canManage && item.status === 'open'}}">
+        <t-button size="small" theme="danger" variant="outline" data-id="{{item.id}}" data-name="{{item.realName}}" bind:tap="openBan">封禁</t-button>
+        <t-button size="small" theme="default" variant="outline" data-id="{{item.id}}" bind:tap="dismiss">标记正常</t-button>
+      </view>
+    </view>
+  </view>
+
+  <view class="sa-empty" wx:if="{{!loading && !list.length}}">
+    <t-icon name="check-circle" size="56rpx" color="var(--td-success-color-5)" />
+    <view class="sa-empty-t">{{tab === 'open' ? '没有待研判的异常记录' : '暂无记录'}}</view>
+    <view class="sa-empty-s">{{tab === 'open' ? '当前所有同步数据都在正常范围内' : ''}}</view>
+  </view>
+
+  <t-loading wx:if="{{loading}}" theme="circular" size="44rpx" text="加载中…" class="sa-loading" />
+</view>
+
+<!-- ===== 封禁弹层：天数 + 备注 =====
+     不用 ActionSheet（样式不可控、长文案折行），与全站 .tt-sheet 统一 -->
+<t-popup visible="{{banSheetVisible}}" placement="bottom" bind:visible-change="closeBan">
+  <view class="tt-sheet">
+    <view class="tt-sheet-grab"></view>
+    <view class="tt-sheet-head">
+      <view class="tt-sheet-icon"><t-icon name="lock-on" size="36rpx" color="var(--td-error-color-6)" /></view>
+      <view class="tt-sheet-title">
+        限制微信同步
+        <view class="tt-sheet-sub">{{banTargetName}} · 封禁期间无法同步微信步数</view>
+      </view>
+      <view class="tt-sheet-close" bind:tap="closeBan"><t-icon name="close" size="32rpx" color="var(--tt-text-2)" /></view>
+    </view>
+    <view class="tt-sheet-body">
+      <view class="sa-field-label">封禁天数</view>
+      <view class="sa-days">
+        <view
+          class="sa-day {{banDays === item ? 'active' : ''}}"
+          wx:for="{{dayOptions}}"
+          wx:key="*this"
+          data-days="{{item}}"
+          bind:tap="onBanDays"
+        >{{item}} 天</view>
+      </view>
+      <view class="sa-field-label" style="margin-top: 24rpx">备注（选填）</view>
+      <textarea class="sa-note" placeholder="例如：多次整数步数，已电话核实" value="{{banNote}}" bindinput="onBanNote" maxlength="100" />
+    </view>
+    <view class="tt-sheet-foot">
+      <t-button theme="default" block bind:tap="closeBan">取消</t-button>
+      <t-button theme="danger" block loading="{{banSaving}}" disabled="{{!canManage}}" bind:tap="submitBan">确定封禁</t-button>
+    </view>
+  </view>
+</t-popup>

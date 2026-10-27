@@ -125,6 +125,8 @@ const CAP_KEYS = [
   'unban',
   'dorm',
   'unbindWechat',
+  // 班委开关（用户 2026-10-24「班主任在班级 TAB 没有配置班委的权限」）
+  'classOfficer',
   'deleteAccount',
 ];
 function mergeCaps(a, b) {
@@ -132,6 +134,7 @@ function mergeCaps(a, b) {
   for (const k of CAP_KEYS) out[k] = !!(a && a[k]) || !!(b && b[k]);
   return out;
 }
+
 
 // 在抽屉行里按 badgeKey 找目标（独立徽章直接命中；等级徽章命中组内某一级）
 function findBadgeItem(items, key) {
@@ -182,6 +185,7 @@ Page({
       unban: false,
       dorm: false,
       unbindWechat: false,
+      classOfficer: false,
       deleteAccount: false,
     },
     // 班主任只能限制这两个类型（限制登录是校级处置，服务端会拒绝 login）
@@ -261,6 +265,16 @@ Page({
     badgeSheetLoading: false,
     badgeItems: [], // [{ kind:'single'|'group', ... }]（等级组可展开选级别）
     badgeGranting: '', // 正在发放的 badgeKey（防连点）
+    // ===== 密码变更（用户 2026-10-26）=====
+    // pwdMenuVisible：动作选择层（恢复初始密码 / 设置新密码）
+    // pwdSheetVisible：设置新密码的输入弹层
+    pwdMenuVisible: false,
+    pwdIsTeacher: false,
+    pwdSheetVisible: false,
+    pwdTargetName: '',
+    pwdForm: { password: '', confirm: '' },
+    pwdStrength: { cls: '', icon: 'info-circle', color: 'var(--tt-text-3)', text: '6-20 位，建议字母 + 数字组合' },
+    pwdSaving: false,
   },
 
   onLoad(options) {
@@ -321,6 +335,33 @@ Page({
         await this.loadClassScope();
         return;
       }
+      // ===== 班主任走管理端读路径时的能力补齐（用户 2026-10-24 报「示例教师1 没有本班操作权限」）=====
+      //
+      // 根因：教师权限组带 user.view → 详情页走的是管理端这条读路径（不是班级域回退分支），
+      // 而上面那套 caps 是按 user.manage / permission.manage / badge.manage 算的 ——
+      // 班主任这些权限项都没有 → caps 全 false → 快捷操作与班级 TAB 一个都不渲染。
+      // 服务端其实已经通过 detail.canManageStudent=true 说了「这个班主任能管这个学生」，
+      // 但前端没去拿它的能力表。
+      //
+      // 修法：canManageStudent=true 时补拉一次班级域 /manage（loadHomeroomTarget 会做完全
+      // 同一份判定，拉不通就是拉不通），把它下发的 capabilities / banScopes 并进本页。
+      // 能力仍然只有服务端说了算（AGENTS.md：前端只控显隐，鉴权在服务端），
+      // 前端不再自己猜「班主任应该能做什么」。
+      let homeroomCaps = {};
+      let homeroomBanScopes = [];
+      if (detail.canManageStudent) {
+        const cls = (detail.user && detail.user.className) || this.data.className || '';
+        if (cls) {
+          try {
+            const mg = await auth.get(`/api/class/student/${this.data.id}/manage?className=${encodeURIComponent(cls)}`);
+            homeroomCaps = (mg && mg.capabilities) || {};
+            homeroomBanScopes = (mg && mg.banScopes) || [];
+          } catch (e) {
+            // 403 = 服务端最终判定不让管（例如目标学生自己持有管理权限）→ 按只读渲染，静默
+            homeroomCaps = {};
+          }
+        }
+      }
       const [sportDetail] = await Promise.all([
         auth.get(`/api/admin/users/${this.data.id}/sport-detail`).catch(() => null),
       ]);
@@ -353,7 +394,25 @@ Page({
         // 班主任对本班学生的管理权（服务端判定）：走到管理端详情分支也要认它 ——
         // 「有 user.view 的班主任」不会进班级域回退分支，只认权限项的话他们会一个按钮都看不到。
         canManageStudent: !!detail.canManageStudent,
-        banScopes: detail.canManageStudent ? ['sync', 'gps'] : [],
+        // 限制类型：优先用班级域下发的（班主任可 login/sync/gps），
+        // 管理端权限项给的 sync/gps 作为兜底。
+        banScopes: homeroomBanScopes.length ? homeroomBanScopes : detail.canManageStudent ? ['sync', 'gps'] : [],
+        // 能力表 = 管理端权限项算出的 caps（上面 setData 已写）∪ 班级域下发的能力。
+        // 班主任走管理端读路径时，权限项那套全 false，靠这里把班级域能力并进来。
+        caps: mergeCaps(
+          {
+            editProfile: canPerms,
+            resetPassword: canPerms,
+            badges: canBadges,
+            ban: canUser,
+            unban: canUser,
+            dorm: canUser,
+            unbindWechat: canUser,
+            classOfficer: canUser,
+            deleteAccount: canPerms,
+          },
+          homeroomCaps
+        ),
         homeroomClasses: user.homeroomClasses || [],
         isClassOfficer: !!user.isClassOfficer,
         dorm: dormRow,
@@ -491,6 +550,12 @@ Page({
       return;
     }
     const profile = (manage && manage.profile) || null;
+    // 能力表先算好：classFooter 与 caps 都要用（同一个来源，别在模板里再判一遍）
+    const mergedCaps = mergeCaps((overview && overview.capabilities) || {}, (manage && manage.capabilities) || {});
+    // 宿舍面板数据源：manage（班主任）优先，其次 overview（班主任 + 班委都通）。
+    // 只认 manage 会让班委的宿舍抽屉空白（楼名、是否绑微信全拿不到）。
+    const dormSrc = (manage && manage.dorm) || (overview && overview.dorm) || {};
+    const dormRoomText = dormSrc.roomText || row.roomText || '';
     const todayTarget = Number(row.todayTarget) || 0;
     const weekTarget = Number(row.weekTarget) || 0;
     this.setData({
@@ -511,7 +576,13 @@ Page({
       // 能力表：以 /overview 为准（班主任与班委都通），并合并 /manage 的完整能力（班主任才有）。
       // 为什么合并而不是二选一：/overview 面向「班委也看」的宿舍场景，
       // /manage 才是班主任的完整能力表（含徽章/限制/解绑）。班主任两者都通，取并集最准确。
-      caps: mergeCaps((overview && overview.capabilities) || {}, (manage && manage.capabilities) || {}),
+      caps: mergedCaps,
+      // 底部说明按能力表说事实：班委能排宿舍，就不能再写「班委仅查看」（用户 2026-10-24）
+      classFooter: mergedCaps.editProfile
+        ? '班级视角：班主任可对本班学生「编辑资料 / 重置密码 / 发徽章 / 限制功能 / 排宿舍」；学籍字段与删除账户仍归管理员'
+        : mergedCaps.dorm
+          ? '班级视角：班委可查看本班学生数据，并可维护本班学生宿舍（查宿与宿舍卫生据此计算）'
+          : '班级视角：只读查看本班学生数据',
       // 限制类型：服务端给（班主任可限制 login/sync/gps；班委无此能力）
       banScopes: (manage && manage.banScopes) || [],
       badgeSheetVisible: false,
@@ -528,27 +599,24 @@ Page({
       points: null,
       homeroomClasses: [],
       isClassOfficer: !!row.isClassOfficer,
-      // 宿舍：用 /manage 一起下发的宿舍面板（当前在住 + 楼名 + 本班已用房间 + 是否绑微信）。
-      // 班主任可以**直接改本班学生宿舍**（用户 2026-10-22），楼名由服务端随面板下发，
-      // 不依赖 building.view。manage 里没有 dorm（老服务端）时退回列表行的 roomText。
-      dorm: (manage && manage.dorm && manage.dorm.roomText)
-        ? { roomText: manage.dorm.roomText, bedNo: manage.dorm.bedNo || '', roomId: manage.dorm.roomId || '' }
-        : row.roomText
-          ? { roomText: row.roomText, bedNo: '', roomId: '' }
-          : null,
-      dormText: (manage && manage.dorm && manage.dorm.roomText) || row.roomText || '未分配',
+      // 宿舍面板数据源：manage（仅班主任）→ overview（班主任与班委都通）→ 列表行 roomText。
+      // 之前只认 manage：班委拿不到 manage（403）→ 楼名与快捷房间为空，
+      // 宿舍抽屉打开后什么都选不了（用户 2026-10-24「身为班委在用户详情里排不了宿舍」）。
+      dorm: dormRoomText ? { roomText: dormRoomText, bedNo: dormSrc.bedNo || '', roomId: dormSrc.roomId || '' } : null,
+      dormText: dormRoomText || '未分配',
       // 班级视角的学生会身份：/api/class/students 每行带 unionText（「生活部 · 部长」），
       // 没有就是未加入 —— 班主任只读视角也要能看到，不然「学生会」信息在班级入口永远缺失。
       union: row.unionText ? { isMember: true, text: row.unionText } : { isMember: false, roles: [], text: '' },
       unionRoles: row.unionText
         ? [{ mainText: row.unionText, levelText: '学生会', termLabel: '' }]
         : [],
-      dormSheetSub: `${cls || '未分班'} · ${(manage && manage.dorm && manage.dorm.roomText) || row.roomText || '未分配'}`,
+      dormSheetSub: `${cls || '未分班'} · ${dormRoomText || '未分配'}`,
       dormSheetVisible: false,
-      // 楼名与快捷房间随 manage 一起回来，抽屉打开即用（不必再请求，也不需要 building.view）
-      dormBuildings: (manage && manage.dorm && manage.dorm.buildings) || [],
-      dormQuickRooms: (manage && manage.dorm && manage.dorm.quickRooms) || [],
-      dormWechatBound: !!(manage && manage.dorm && manage.dorm.wechatBound),
+      // 楼名 / 快捷房间 / 是否绑微信：manage（班主任）与 overview（班主任+班委）都带，取有值的那份。
+      // 只认 manage 会让班委的宿舍抽屉变成空白禁用（用户 2026-10-24）。
+      dormBuildings: dormSrc.buildings || [],
+      dormQuickRooms: dormSrc.quickRooms || [],
+      dormWechatBound: !!dormSrc.wechatBound,
       user: {
         _id: id,
         realName: (profile && profile.realName) || row.name || fallbackName || '未命名',
@@ -997,15 +1065,24 @@ Page({
     }
   },
 
-  // 班委开关（学生）：即时保存，失败回滚
+  // 班委开关（学生）：即时保存，失败回滚。
+  // 两条写路径（用户 2026-10-24「班主任在班级 TAB 没有配置班委的权限」）：
+  //   · 管理员（user.manage）→ PUT /api/admin/users/:id/class-roles
+  //   · 本班班主任 → PUT /api/class/student/:id/officer（成员资格校验，服务端同一份 class-roles 实现）
+  // 按钮显隐由 caps.classOfficer 控制（服务端下发），这里只管选 URL。
   async onOfficerChange(e) {
     const value = !!(e.detail && e.detail.value);
     if (this.data.officerSaving) return;
     const prev = this.data.isClassOfficer;
     this.setData({ isClassOfficer: value, officerSaving: true });
     try {
-      await auth.put(`/api/admin/users/${this.data.id}/class-roles`, { isClassOfficer: value });
-      wx.showToast({ title: value ? '已设为班委（仅查看本班）' : '已取消班委', icon: 'none' });
+      if (this.data.canManageClass) {
+        await auth.put(`/api/admin/users/${this.data.id}/class-roles`, { isClassOfficer: value });
+      } else {
+        const { head, q } = this.apiFor('account'); // 班主任 → 班级域
+        await auth.put(`${head}/officer${q}`, { isClassOfficer: value });
+      }
+      wx.showToast({ title: value ? '已设为班委（可管本班宿舍/卫生区/教室）' : '已取消班委', icon: 'none' });
     } catch (err) {
       this.setData({ isClassOfficer: prev });
       wx.showToast({ title: err.message || '设置失败', icon: 'none' });
@@ -1175,15 +1252,27 @@ Page({
   },
 
   async openDormSheet() {
-    const canDorm = this.data.canManageUser || this.data.canManageStudent;
-    if (!canDorm) {
-      wx.showToast({ title: '只有班主任或管理员可以安排宿舍', icon: 'none' });
+    // 能不能排宿舍**只看服务端下发的 caps.dorm**（用户 2026-10-24 报「班委在用户详情里排不了宿舍」）：
+    //   · 管理员 → user.manage
+    //   · 班主任 → 班级域 capabilities.dorm
+    //   · 班委   → 同样为 true（宿舍是班级事务，班委的本职工作就是查宿）
+    // 之前这里判断的是 canManageUser || canManageStudent —— 班委两个都是 false，
+    // 于是 WXML 按 caps.dorm 把入口画出来了、一点却弹「只有班主任或管理员可以安排宿舍」。
+    // 同一个能力两处各判一遍，必然漂移（AGENTS.md：能力只有一份来源）。
+    if (!this.data.caps.dorm) {
+      wx.showToast({ title: '只有班主任、班委或管理员可以安排宿舍', icon: 'none' });
       return;
     }
     const d = this.data.dorm || null;
     this.setData({
       dormSheetVisible: true,
-      dormWechatBound: !!this.data.user.openid || !!(this.data.loginInfo && this.data.loginInfo.wechatBound),
+      // 是否已绑微信：班级域下 loginInfo 不拉、user 文档也不带 openid，
+      // 若在这里用它们重算会把服务端下发的 true 覆盖成 false → 抽屉直接禁用
+      // （用户 2026-10-24「班委排宿舍」链路上的第二处卡点）。
+      // 班级域一律沿用服务端给的 dormSrc.wechatBound；管理端才按本地已知字段算。
+      dormWechatBound: this.data.classOnly
+        ? this.data.dormWechatBound
+        : !!this.data.user.openid || !!(this.data.loginInfo && this.data.loginInfo.wechatBound),
       dormForm: { roomText: d && d.roomText ? d.roomText : '', bedNo: (d && d.bedNo) || '' },
       dormSheetCanUnbind: !!(d && d.roomText),
     });
@@ -1255,9 +1344,9 @@ Page({
 
   // 退宿：在住记录置 checked_out，历史保留，之后可重新绑定（组件只在 canUnbind 为真时抛事件）
   unbindDorm() {
-    const canDorm = this.data.canManageUser || this.data.canManageStudent;
-    if (!canDorm) {
-      wx.showToast({ title: '只有班主任或管理员可以安排宿舍', icon: 'none' });
+    // 与 openDormSheet 同一口径：只认服务端下发的 caps.dorm（管理员 / 班主任 / 班委）
+    if (!this.data.caps.dorm) {
+      wx.showToast({ title: '只有班主任、班委或管理员可以安排宿舍', icon: 'none' });
       return;
     }
     const that = this;
@@ -1299,24 +1388,138 @@ Page({
     });
   },
 
-  // 重置登录密码：恢复为初始密码（学号/身份证后8）。
-  // 管理端需 permission.manage；班主任（班级域）可重置本班学生。
-  resetPassword() {
+  /**
+   * 密码变更（用户 2026-10-26：「重置密码」改称「密码变更」，点开有两个动作）。
+   *
+   *   ① 恢复初始密码 —— 教师 123456 / 学生 学号后8位或身份证后8位
+   *   ② 设置密码     —— 管理员直接指定新密码（不强制改密，旧初始密码立即失效）
+   *
+   * 用**自己的 t-popup 选择层**而不是 wx.showActionSheet（用户 2026-10-26：「这个也太难看了」）：
+   *   · ActionSheet 是微信原生控件，样式完全不可控 —— 白底黑字、行高巨大，
+   *     而且「恢复初始密码（教师 123456 / 学生 学号·身份证后8位）」这种长说明塞进
+   *     itemList 必然折成两行，视觉上很难看（截图正是这个形态）；
+   *   · 改成项目统一的 .tt-sheet 弹层：主标题 + 两个带副说明的选项卡片，与全站风格一致。
+   *
+   * 权限来源仍是服务端：管理端 permission.manage，或本班班主任（caps.resetPassword 由服务端下发）。
+   */
+  changePassword() {
+    if (!this.data.caps.resetPassword) return;
+    const u = this.data.user || {};
+    this.setData({
+      pwdMenuVisible: true,
+      pwdIsTeacher: u.role === 'teacher',
+    });
+  },
+
+  closePwdMenu() {
+    this.setData({ pwdMenuVisible: false });
+  },
+
+  onPwdMenuVisible(e) {
+    if (!(e.detail && e.detail.visible)) this.closePwdMenu();
+  },
+
+  // 选择层里的两个动作（data-act 区分）
+  onPwdMenuPick(e) {
+    const act = (e.currentTarget && e.currentTarget.dataset.act) || '';
+    this.setData({ pwdMenuVisible: false });
+    if (act === 'initial') this.restoreInitialPassword();
+    else if (act === 'set') this.openPwdSheet();
+  },
+
+  // 动作一：恢复初始密码
+  restoreInitialPassword() {
     const that = this;
+    const isTeacher = (this.data.user && this.data.user.role) === 'teacher';
     wx.showModal({
-      title: '重置登录密码',
-      content: '该用户的密码将重置为初始密码，并要求下次登录时修改。确认重置？',
+      title: '恢复初始密码',
+      content: isTeacher
+        ? '将把该教师账号的密码恢复为 123456，并要求其下次登录时修改。确认恢复？'
+        : '将把该学生账号的密码恢复为名单初始密码（学号后8位 / 身份证后8位），并要求其下次登录时修改。确认恢复？',
       success: async (res) => {
         if (!res.confirm) return;
         try {
           const { head, q } = that.apiFor('account');
-          const r = await auth.post(`${head}/reset-password${q}`);
-          wx.showModal({ title: '已重置', content: r.message, showCancel: false });
+          const r = await auth.post(`${head}/reset-password${q}`, { mode: 'initial' });
+          wx.showModal({ title: '已恢复', content: r.message, showCancel: false });
           that.load();
         } catch (err) {
-          wx.showToast({ title: err.message, icon: 'none' });
+          // 没有名单初始密码数据的账号会走到这里（服务端明确报错，让管理员改用「设置新密码」）
+          wx.showModal({ title: '无法恢复', content: err.message, showCancel: false });
         }
       },
     });
+  },
+
+  // 动作二：设置新密码（打开弹层）
+  openPwdSheet() {
+    if (!this.data.caps.resetPassword) return;
+    const u = this.data.user || {};
+    this.setData({
+      pwdSheetVisible: true,
+      pwdTargetName: u.realName || u.nickname || u.account || '该账号',
+      pwdForm: { password: '', confirm: '' },
+      pwdStrength: this.computePwdStrength(''),
+      pwdSaving: false,
+    });
+  },
+
+  closePwdSheet() {
+    this.setData({ pwdSheetVisible: false, pwdForm: { password: '', confirm: '' }, pwdSaving: false });
+  },
+
+  onPwdSheetVisible(e) {
+    if (!(e.detail && e.detail.visible)) this.closePwdSheet();
+  },
+
+  onPwdInput(e) {
+    const field = (e.currentTarget && e.currentTarget.dataset.field) || '';
+    if (field !== 'password' && field !== 'confirm') return;
+    const patch = { [`pwdForm.${field}`]: e.detail.value };
+    // 只在改「新密码」时更新强度提示（确认框的输入不参与强度计算）
+    if (field === 'password') patch.pwdStrength = this.computePwdStrength(e.detail.value);
+    this.setData(patch);
+  },
+
+  // 强度提示（与服务端 pwd.validateNewPassword 同口径；额外建议字母+数字，但不拦提交）
+  computePwdStrength(pwd) {
+    const s = String(pwd || '');
+    if (!s) return { cls: '', icon: 'info-circle', color: 'var(--tt-text-3)', text: '6-20 位，建议字母 + 数字组合' };
+    if (s.length < 6) return { cls: 'is-weak', icon: 'error-circle', color: 'var(--td-error-color-6)', text: '至少 6 位' };
+    if (s.length > 20) return { cls: 'is-weak', icon: 'error-circle', color: 'var(--td-error-color-6)', text: '最多 20 位' };
+    const hasLetter = /[A-Za-z]/.test(s);
+    const hasDigit = /\d/.test(s);
+    if (hasLetter && hasDigit && s.length >= 8) {
+      return { cls: 'is-strong', icon: 'check-circle', color: 'var(--td-success-color-5)', text: '强度良好' };
+    }
+    return { cls: 'is-ok', icon: 'info-circle', color: 'var(--td-warning-color-6)', text: '可用；字母 + 数字且 8 位以上更安全' };
+  },
+
+  async submitPwd() {
+    if (this.data.pwdSaving) return;
+    const { password, confirm } = this.data.pwdForm || {};
+    if (password.length < 6 || password.length > 20) {
+      wx.showToast({ title: '新密码需为 6-20 位', icon: 'none' });
+      return;
+    }
+    if (password !== confirm) {
+      wx.showToast({ title: '两次输入的密码不一致', icon: 'none' });
+      return;
+    }
+    this.setData({ pwdSaving: true });
+    try {
+      const { head, q } = this.apiFor('account');
+      const r = await auth.post(`${head}/reset-password${q}`, { mode: 'set', password });
+      this.setData({ pwdSheetVisible: false, pwdSaving: false, pwdForm: { password: '', confirm: '' } });
+      wx.showModal({
+        title: '密码已设置',
+        content: `${r.message || '设置成功'}。请把新密码告知该用户，旧初始密码已失效。`,
+        showCancel: false,
+      });
+      this.load();
+    } catch (err) {
+      this.setData({ pwdSaving: false });
+      wx.showToast({ title: err.message || '设置失败', icon: 'none', duration: 2500 });
+    }
   },
 });

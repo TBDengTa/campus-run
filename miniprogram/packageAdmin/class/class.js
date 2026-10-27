@@ -409,14 +409,17 @@ Page({
       }
       const classes = mine.classes || [];
       const className = this.data.className || classes[0] || '';
-      const canNudge = mine.role === 'homeroom' && !mine.readonly;
+      // 督促未达标：班主任 + 班委都开放（用户 2026-10-24「班委需要能查看校园跑未达标的学生」）。
+      // 能力以服务端 capabilities.nudge 为准（老服务端没这个字段时回退到 role 判断），
+      // 不再用 `!mine.readonly` —— readonly 现在只表示「不能改班级配置」。
+      const canNudge = mine.capabilities ? !!mine.capabilities.nudge : !!mine.role;
       this.setData({
         role: mine.role,
         canNudge,
-        roleText: canNudge ? '班主任' : '班委 · 仅查看',
+        roleText: mine.role === 'homeroom' ? '班主任' : '班委',
         roleTip: canNudge
           ? '可以查看本班名单、校园跑、班级考勤，并在「校园跑」tab 督促今日未达标的学生'
-          : '仅查看模式：名单 / 校园跑 / 班级考勤都能看，但不能做任何修改',
+          : '可以查看本班名单、校园跑与班级考勤',
         classes,
         className,
       });

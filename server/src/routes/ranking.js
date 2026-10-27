@@ -113,6 +113,8 @@ function lookupStage(userFilter) {
       $match: {
         'u.status': { $ne: 'banned' },
         'u.role': { $ne: 'teacher' },
+        // 示例账号（演示用）不进排行榜：它们不跑真实的步数，混进榜单会挤占真实学生的名次
+        'u.isDemo': { $ne: true },
         'u.privacy.exitRanking': { $ne: true },
         ...Object.entries(userFilter).reduce((acc, [k, v]) => ({ ...acc, [`u.${k}`]: v }), {}),
       },
@@ -400,7 +402,7 @@ async function rankClassRows({ metric, startKey, endKey, scopeFilter: scopedMatc
   const User = require('../models/user');
   const stages = metric === 'points' ? classPointsStages(startKey, endKey, config) : classStages(metric, startKey, endKey);
   const rows = await User.aggregate([
-    { $match: { openid: { $nin: [null, ''] }, status: { $ne: 'banned' }, role: { $ne: 'teacher' }, 'privacy.exitRanking': { $ne: true }, ...scopedMatch } },
+    { $match: { openid: { $nin: [null, ''] }, status: { $ne: 'banned' }, role: { $ne: 'teacher' }, isDemo: { $ne: true }, 'privacy.exitRanking': { $ne: true }, ...scopedMatch } },
     ...stages,
     {
       $group: {

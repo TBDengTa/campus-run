@@ -19,8 +19,19 @@ const str = (v, max = 40) => String(v === undefined || v === null ? '' : v).trim
  *   · 拆得出来就两栏分开存：以后按楼栋筛选、按房间查宿都要靠 buildingId
  */
 function parseRoomLabel(input) {
+  // ⚠️ 防「对象被当字符串用」产生的脏数据（用户 2026-10-26 报：宿舍里出现
+  //   楼名「[object」、房号「Object]9901」—— 就是某次把对象直接拼进字符串造成的）。
+  //   String({}) === '[object Object]'，再按分隔符切就得到「[object」+「Object]9901」。
+  //   这类输入一律当非法：宁可让录入人重填，也不要把垃圾写进 dorm_rooms
+  //   （脏楼名会污染整个「楼栋」下拉，且按楼栋筛选/统计全部失真）。
+  if (input && typeof input === 'object') {
+    throw new Error('宿舍号格式不正确（收到的是对象，请传「1号楼·201」这样的字符串）');
+  }
   const raw = str(input, 60);
   if (!raw) return { buildingId: '', buildingName: '', roomNo: '' };
+  if (/\[object/i.test(raw)) {
+    throw new Error('宿舍号格式不正确（不要把对象当宿舍号提交），请填写「1号楼·201」');
+  }
   // 分隔符：中圆点 / 空格 / 连字符 / 斜杠 / 逗号
   const parts = raw.split(/[·・\-—/、,\s]+/).filter(Boolean);
   if (parts.length >= 2) {

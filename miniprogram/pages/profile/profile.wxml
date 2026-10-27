@@ -331,7 +331,7 @@
     <view class="logout-btn" bind:tap="logout">退出登录</view>
   </view>
 
-  <view class="tt-footer">唐唐快跑 v2.0.0</view>
+  <view class="tt-footer">唐唐快跑 v2.0.4</view>
 
   <!-- ===== 我的人物码（用户 2026-10-22）：所有用户都有码，含教师 =====
        学生/教师出示，学生会干部扫码后把本人加进自己的部门。凭证一次性、10 分钟有效。 -->

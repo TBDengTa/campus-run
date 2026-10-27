@@ -13,6 +13,25 @@ function haversine(lat1, lng1, lat2, lng2) {
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
+// ===== GPS 计距参数（用户 2026-10-27「会记录 0 路径信息也不太详细，室内 后台不准确」）=====
+// 这几个阈值决定「哪些定位点算数」，全部集中在这里，便于现场调参。
+// GPS_MAX_ACCURACY：精度（米）差于此值的点一律不采纳。室内 / 基站定位常见 30~100m，
+//   这类点的漂移能把 0 米跑成几百米，也会让轨迹乱成一团。
+const GPS_MAX_ACCURACY = 30;
+// GPS_MIN_STEP：小于此位移（米）**不计距离，但仍更新参考点**。
+//   关键点：不足它的位移**累加到 pendingDistance**，攒够再计入 —— 直接丢弃会让慢走永远记 0。
+const GPS_MIN_STEP = 2;
+// GPS_MAX_JUMP：单次位移上限（米）。超过视为瞬移（信号跳变），整点丢弃。
+const GPS_MAX_JUMP = 100;
+// GPS_MAX_SPEED：速度上限（米/秒）。12 m/s ≈ 43 km/h，人类跑步不可能超过。
+const GPS_MAX_SPEED = 12;
+// GPS_POINT_MIN_GAP：轨迹采样的最小间隔（毫秒）。室内高频抖动会产生大量冗余点。
+const GPS_POINT_MIN_GAP = 3000;
+// GPS_STILL_SPEED：低于此速度（米/秒）视为**静止**，完全不计距。
+//   必须用设备上报的 speed 判静止：坐标漂移 ±1~3 米时与「慢走」在几何上无法区分，
+//   只能靠系统给的 speed 判定（0.5 m/s ≈ 1.8 km/h，正常步行通常 >1 m/s）。
+const GPS_STILL_SPEED = 0.5;
+
 // ===== 跑步页原生模板广告（格子）尺寸：只调这两个常量，样式不必改 =====
 // 官方口径（开放能力/广告/原生模板广告）：广告宽高由外层容器决定 —— 外层宽度 = 广告宽度，
 // 内部 `ad-custom` 固定 width:100% + 高度按模板等比自适应，且「无广告展示时 ad-custom 不占高度」，
@@ -66,7 +85,11 @@ Page({
     this.distance = 0;
     this.seconds = 0;
     this.timer = null;
-    this.lastPoint = null;
+    this.lastPoint = null; // { latitude, longitude, at }：上一次采样的点（含时间，用于速度校验）
+    this.lastMoveAt = 0; // 上次真正记入距离的时间
+    // 悬挂量：不足 GPS_MIN_STEP 的碎位移先攒着，攒够阈值再一次性计入（否则慢走会永远记 0）
+    this.pendingDistance = 0;
+    this._lastVec = null; // 上一次位移向量（用于识别原地漂移的方向反转）
   },
 
   onShow() {
@@ -234,8 +257,22 @@ Page({
   initLocation() {
     wx.getLocation({
       type: 'gcj02',
+      // isHighAccuracy + highAccuracyExpireTime：高精度模式（用户 2026-10-27「室内不准确」）。
+      // 默认定位可能来自基站/室内 WiFi，精度几十米；高精度会优先 GPS 并允许更长等待时间。
+      isHighAccuracy: true,
+      highAccuracyExpireTime: 4000,
       success: (res) => {
         this.setData({ latitude: res.latitude, longitude: res.longitude, locationReady: true });
+        // 精度太差时给出可操作提示（不是报错）：室内定位天然不准，
+        // 让用户知道「去空旷处 / 开 GPS」能改善，而不是跑完才发现记了 0。
+        const acc = Number(res.accuracy);
+        if (Number.isFinite(acc) && acc > GPS_MAX_ACCURACY) {
+          wx.showToast({
+            title: `当前定位精度约 ${Math.round(acc)} 米，建议到空旷处再开始`,
+            icon: 'none',
+            duration: 3000,
+          });
+        }
       },
       fail: () => {
         wx.showModal({
@@ -250,39 +287,161 @@ Page({
     });
   },
 
+  /**
+   * 开始持续定位（用户 2026-10-27「后台不准确」）。
+   *
+   * 为什么优先 `startLocationUpdateBackground`：
+   *   前台版 `startLocationUpdate` 在**切后台 / 锁屏后会被系统暂停**，跑者把手机放兜里、
+   *   切到音乐 App 时整段轨迹就断了 —— 这就是「后台不准确」的直接原因。
+   *   后台版能继续定位（需在小程序后台开通「后台定位」权限），拿不到就退回前台版，
+   *   绝不让「某个 API 不存在」把功能直接卡死。
+   *
+   * 回调只绑定一次并存下引用（onLocationChangeBound）：
+   *   每次 `.bind(this)` 都产生新函数，`offLocationChange()` 不带参数是**另一种行为**
+   *   （移除全部监听），带错引用则移除不掉 → 暂停后仍收到点、距离继续涨。
+   */
   startLocationUpdate() {
-    wx.startLocationUpdate({
-      success: () => {
-        wx.onLocationChange(this.onLocationChange.bind(this));
-      },
-      fail: (e) => {
-        wx.showToast({ title: '定位启动失败：' + (e.errMsg || ''), icon: 'none' });
-      },
-    });
+    if (this._locationListening) return; // 防重复注册
+    const onOk = () => {
+      this._locationListening = true;
+      if (!this.onLocationChangeBound) this.onLocationChangeBound = this.onLocationChange.bind(this);
+      wx.onLocationChange(this.onLocationChangeBound);
+    };
+    const onFail = (e) => wx.showToast({ title: '定位启动失败：' + ((e && e.errMsg) || ''), icon: 'none' });
+
+    const startForeground = () => {
+      try {
+        wx.startLocationUpdate({ success: onOk, fail: onFail });
+      } catch (e) {
+        onFail(e);
+      }
+    };
+
+    if (typeof wx.startLocationUpdateBackground === 'function') {
+      try {
+        wx.startLocationUpdateBackground({ success: onOk, fail: startForeground });
+        return;
+      } catch (e) {
+        startForeground();
+        return;
+      }
+    }
+    startForeground();
   },
 
   stopLocationUpdate() {
     try {
-      wx.offLocationChange();
+      // 只移除自己注册的那个回调；若从未注册过则清空全部（防御）
+      if (this.onLocationChangeBound) wx.offLocationChange(this.onLocationChangeBound);
+      else wx.offLocationChange();
       wx.stopLocationUpdate();
     } catch (e) {
-      /* 忽略 */
+      /* 忽略：定位可能本来就没启动 */
     }
+    this._locationListening = false;
   },
 
+  /**
+   * 定位回调：**只采纳可信的点**，再累加距离。
+   *
+   * ⚠️ 用户 2026-10-27 报「GPS 跑步有很大问题 会记录 0 路径信息也不太详细，室内 后台不准确」。
+   * 旧实现只有 `if (d >= 2 && d < 100)` 一道过滤，四个真问题：
+   *   ① **丢距离**：`lastPoint` 在过滤之外无条件更新 → 小于 2m 的点被丢弃后，
+   *      下一个点是从更远处算起，而中间那段真实位移**没有计入**；
+   *      走走停停（每步移动不足 2m 的慢走 / 室内小范围）就会一直记 0。
+   *   ② **不看精度**：室内 / 后台定位的 accuracy 可能几十米，漂移点被当真位移。
+   *   ③ **暂停不重置**：`pause()` 后 `lastPoint` 还是暂停前那个点，恢复时把
+   *      暂停期间的位移一次性算进来（或者算成跳变被丢弃 → 又是 0）。
+   *   ④ **不校验速度**：瞬移（如 2 秒移动 90m）会被当作真实跑步，路径也乱。
+   *
+   * 新规则（按顺序）：
+   *   a. accuracy 太差（> GPS_MAX_ACCURACY）→ 不采纳、**也不更新 lastPoint**（等更准的点）
+   *   b. 距离 < GPS_MIN_STEP（默认 3m）→ **仍更新 lastPoint**（关键！避免丢距离）
+   *   c. 距离过大 / 速度过快（瞬移）→ 丢弃该点，**不更新 lastPoint**（防止被带偏）
+   *   d. 通过 → 累加距离、记录点、更新 lastPoint（含时间戳）
+   */
   onLocationChange(res) {
     if (this.data.state !== 'running') return;
-    const { latitude, longitude } = res;
+    const { latitude, longitude, accuracy, speed } = res || {};
+    if (typeof latitude !== 'number' || typeof longitude !== 'number') return;
+
+    const now = Date.now();
+    // a. 精度太差（室内 / 基站定位常见几十米）→ 跳过，但不污染 lastPoint
+    const acc = Number(accuracy);
+    if (Number.isFinite(acc) && acc > GPS_MAX_ACCURACY) return;
+
+    // a2. 设备报告「静止」→ 完全不计距（用户 2026-10-27「站着不动也涨距离」）。
+    //
+    // 为什么必须用系统的 speed 而不是只看坐标：站着不动时 GPS 坐标会在
+    // ±1~3 米范围**随机漂移**，累计几十次就会虚增几十米。这类漂移在坐标上
+    // 与「慢走」几乎无法区分（都是每步 1~3 米），只能靠设备给的 speed 判定。
+    //   speed 单位 m/s；-1 表示不可用（此时不做静止判定，回退用坐标+时间判断）。
+    const spd = Number(speed);
+    if (Number.isFinite(spd) && spd >= 0 && spd < GPS_STILL_SPEED) {
+      // 静止：只更新参考点位置，不累加任何距离；悬挂量也清零（避免残留抖动
+      // 在下次迈步时被一次性计入）
+      this.lastPoint = { latitude, longitude, at: now };
+      this.pendingDistance = 0;
+      return;
+    }
+
     const last = this.lastPoint;
     if (last) {
       const d = haversine(last.latitude, last.longitude, latitude, longitude);
-      if (d >= 2 && d < 100) {
-        // 过滤漂移
-        this.distance += d;
+      const dtSec = Math.max(0.5, (now - (last.at || now)) / 1000);
+      const calcSpeed = d / dtSec; // m/s
+
+      // c. 瞬移：距离离谱或速度超过人类极限 → 丢弃该点（不更新 lastPoint）
+      if (d > GPS_MAX_JUMP || calcSpeed > GPS_MAX_SPEED) {
+        return;
       }
+
+      // b. 位移太小（GPS 正常抖动）→ **累积后**再判断，不能直接丢弃。
+      //
+      // ⚠️ 这里曾经是「小于 GPS_MIN_STEP 就只更新参考点、return」—— 那是个真 bug：
+      //   慢走 / 室内小范围移动时，每个点只前进 2~2.5 米，永远攒不到阈值，
+      //   于是**每一步都被重新起算、距离恒为 0**（用户 2026-10-27「会记录 0」就是它）。
+      // 正确做法：把不足阈值的位移累加到悬挂量 pendingDistance，攒够阈值再计入。
+      //
+      // 但只攒会踩另一个坑：**speed 不可用时**，站着不动的坐标漂移（±1~3m）也会被
+      // 一路攒起来 → 原地不动却涨距离。真实移动的位移方向基本一致，漂移则是来回摆动，
+      // 所以用「相邻两次位移向量的点积」判方向：反向就认为在漂，清空悬挂量。
+      if (d < GPS_MIN_STEP) {
+        const dLat = latitude - last.latitude;
+        const dLng = longitude - last.longitude;
+        const prevVec = this._lastVec; // 上一次的位移向量
+        const dot = prevVec ? prevVec.dLat * dLat + prevVec.dLng * dLng : 0;
+        const reversed = prevVec && dot <= 0; // 方向反转（含垂直）→ 漂移
+        this._lastVec = { dLat, dLng };
+
+        if (reversed) {
+          // 来回摆动 = 原地漂移，悬挂量作废，不涨距离
+          this.pendingDistance = 0;
+        } else {
+          this.pendingDistance = (this.pendingDistance || 0) + d;
+        }
+        this.lastPoint = { latitude, longitude, at: now };
+        if (this.pendingDistance >= GPS_MIN_STEP) {
+          this.distance += this.pendingDistance;
+          this.pendingDistance = 0;
+          this.lastMoveAt = now;
+        }
+        return;
+      }
+
+      // d. 采纳：累加距离（含之前攒下的悬挂量）；方向连续，记下本次位移向量
+      this.distance += d + (this.pendingDistance || 0);
+      this.pendingDistance = 0;
+      this._lastVec = { dLat: latitude - last.latitude, dLng: longitude - last.longitude };
+      this.lastMoveAt = now;
     }
-    this.lastPoint = { latitude, longitude };
-    this.points.push({ latitude, longitude, timestamp: Date.now() });
+
+    this.lastPoint = { latitude, longitude, at: now };
+    // 轨迹只记**采纳过**的点（过滤后的点不影响真实路径形状），
+    // 并且按最小间隔节流，避免室内高频抖动产生几千个点把 polyline 拖慢。
+    if (!this.points.length || now - this.points[this.points.length - 1].timestamp >= GPS_POINT_MIN_GAP) {
+      this.points.push({ latitude, longitude, timestamp: now });
+    }
     if (this.points.length % 5 === 0 || this.points.length < 10) {
       this.updatePolyline();
     }
@@ -349,11 +508,21 @@ Page({
   pause() {
     this.applyState('paused');
     this.stopTimer();
+    // ⚠️ 暂停必须停掉定位监听（用户 2026-10-27「室内 后台不准确」）：
+    //   不停的话，暂停期间人还在移动，回调仍在跑，要么把暂停时的位移算进距离，
+    //   要么因为 lastPoint 过期在恢复瞬间被判成「瞬移」而被丢弃 —— 两种都不对。
+    //   同时清空参考点：恢复后从新位置重新起算，不把暂停期间的位移计入。
+    this.stopLocationUpdate();
+    this.lastPoint = null;
   },
 
   resume() {
     this.applyState('running');
     this.startTimer();
+    // 恢复时重新开监听，并从「当前所在位置」重新建立参考点
+    this.lastPoint = null;
+this._lastVec = null;
+    this.startLocationUpdate();
   },
 
   finish() {

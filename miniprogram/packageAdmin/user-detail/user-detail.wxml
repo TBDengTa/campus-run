@@ -12,8 +12,10 @@
             <t-tag wx:if="{{isSuper}}" theme="primary" variant="light" size="small">管理员</t-tag>
             <t-tag wx:elif="{{user.role === 'teacher'}}" theme="default" variant="light" size="small">教师</t-tag>
             <text class="ud-union-tag" wx:if="{{union.isMember}}">{{unionRoles[0].mainText || union.text || '学生会成员'}}</text>
-            <!-- 班级视角：班委是「仅查看」；班主任（canManageStudent）有管理动作，不能再挂这个标签 -->
-            <t-tag wx:if="{{classOnly && !canManageStudent}}" theme="warning" variant="light" size="small">仅查看</t-tag>
+            <!-- 班级视角的「仅查看」标签：按服务端能力表判断，不再用 canManageStudent 一个布尔。
+                 班委能排宿舍（caps.dorm=true）、班主任能管账号（caps.editProfile=true），
+                 两者都不该挂「仅查看」；只有真的什么都做不了时才挂。 -->
+            <t-tag wx:if="{{classOnly && !caps.dorm && !caps.editProfile}}" theme="warning" variant="light" size="small">仅查看</t-tag>
           </view>
           <view class="ud-hero-meta">
             <text>{{user.role === 'teacher' ? '教师' : '学生'}}</text>
@@ -72,9 +74,12 @@
       <view class="ud-quick-icon"><t-icon name="edit-1" size="38rpx" color="var(--tt-brand)" /></view>
       <text>编辑资料</text>
     </view>
-    <view class="ud-quick-item" wx:if="{{caps.resetPassword}}" bind:tap="resetPassword">
+    <!-- 密码变更（用户 2026-10-26「重置密码」改称「密码变更」）：点开选两个动作
+         ① 恢复初始密码：教师 123456 / 学生 学号或身份证后8位
+         ② 设置密码：管理员直接指定新密码（不强制改密） -->
+    <view class="ud-quick-item" wx:if="{{caps.resetPassword}}" bind:tap="changePassword">
       <view class="ud-quick-icon"><t-icon name="refresh" size="38rpx" color="var(--tt-brand)" /></view>
-      <text>重置密码</text>
+      <text>密码变更</text>
     </view>
     <!-- 解绑微信：管理端 user.manage，或本班班主任（用户 2026-10-23「班主任……还能管理本班学生
          基础操作如解绑微信」）。班级域走 POST /api/class/student/:id/unbind-wechat。 -->
@@ -400,14 +405,17 @@
 
   <!-- ============ Tab 3 · 班级（身份 + 宿舍） ============ -->
   <block wx:if="{{mainTab === 'class'}}">
-    <block wx:if="{{canManageClass}}">
+    <!-- 班级身份块：管理员（user.manage）能改「班主任班级 + 班委」；
+         班主任对本班学生也能开关班委（caps.classOfficer，用户 2026-10-24）。
+         班主任班级仍只归管理员 —— 教师给自己分配班级是越权。 -->
+    <block wx:if="{{canManageClass || caps.classOfficer}}">
       <view class="tt-section">
         <text>班级身份</text>
         <text class="tt-section-extra">{{user.role === 'teacher' ? '班主任' : '班委（班长等）'}}</text>
       </view>
       <view class="tt-card ud-card">
         <block wx:if="{{user.role === 'teacher'}}">
-          <view class="ud-pick-row" bind:tap="openClassSheet">
+          <view class="ud-pick-row" wx:if="{{canManageClass}}" bind:tap="openClassSheet">
             <text class="ud-pick-label">班主任班级</text>
             <view class="ud-pick-value">
               <text class="{{homeroomClasses.length ? '' : 'ud-ph'}}">{{homeroomClasses.length ? '已分配 ' + homeroomClasses.length + ' 个班' : '未分配'}}</text>
@@ -423,9 +431,9 @@
           <view class="ud-switch-row">
             <view class="flex-1">
               <view class="ud-switch-title">班委（班长等）</view>
-              <view class="ud-note">开启后该学生可查看本班概况、名单与排名——仅查看，没有任何操作权限</view>
+              <view class="ud-note">开启后该学生可查看本班概况、名单与排名，并可维护本班宿舍 / 卫生区 / 教室</view>
             </view>
-            <t-switch value="{{isClassOfficer}}" disabled="{{!canManageClass || !user.className}}" loading="{{officerSaving}}" bind:change="onOfficerChange" />
+            <t-switch value="{{isClassOfficer}}" disabled="{{(!canManageClass && !caps.classOfficer) || !user.className}}" loading="{{officerSaving}}" bind:change="onOfficerChange" />
           </view>
           <view class="ud-note" wx:if="{{!user.className}}">该学生还没有识别出班级（年级 + 专业），无法设为班委</view>
         </block>
@@ -527,7 +535,7 @@
     <view class="tt-footer">申诉审核通过只解除对应类型的限制</view>
   </block>
 
-  <view class="tt-footer" wx:if="{{classOnly}}">{{canManageStudent ? '班级视角：班主任可对本班学生「编辑资料 / 重置密码 / 发徽章 / 限制同步·GPS / 排宿舍」；学籍字段与删除账户仍归管理员' : '班级视角：只读查看本班学生数据（班主任可督促未达标学生，班委仅查看）'}}</view>
+  <view class="tt-footer" wx:if="{{classOnly}}">{{classFooter}}</view>
 </view>
 
 <!-- ===== 班级视角下数据缺失 ===== -->
@@ -743,5 +751,112 @@
   bind:unbind="unbindDorm"
   bind:close="closeDormSheet"
 />
+
+<!-- ===== 密码变更 · 动作选择层（用户 2026-10-26「这个也太难看了」）=====
+     不用 wx.showActionSheet：原生控件样式不可控（白底黑字、行高巨大），
+     而且长说明塞进 itemList 必然折成两行（截图正是那个形态）。
+     这里用统一的 .tt-sheet 弹层，两个选项各带一行副说明。 -->
+<t-popup wx:if="{{caps.resetPassword}}" visible="{{pwdMenuVisible}}" placement="bottom" bind:visible-change="onPwdMenuVisible">
+  <view class="tt-sheet ud-pwd-menu">
+    <view class="tt-sheet-grab"></view>
+    <view class="tt-sheet-head">
+      <view class="tt-sheet-icon">
+        <t-icon name="lock-on" size="36rpx" color="var(--tt-brand)" />
+      </view>
+      <view class="tt-sheet-title">
+        密码变更
+        <view class="tt-sheet-sub">{{user.realName || user.nickname || '该账号'}} · 选择变更方式</view>
+      </view>
+      <view class="tt-sheet-close" bind:tap="closePwdMenu">
+        <t-icon name="close" size="32rpx" color="var(--tt-text-2)" />
+      </view>
+    </view>
+    <view class="tt-sheet-body ud-pwd-menu-body">
+      <view class="ud-pwd-opt" data-act="initial" bind:tap="onPwdMenuPick">
+        <view class="ud-pwd-opt-icon"><t-icon name="refresh" size="34rpx" color="var(--tt-brand)" /></view>
+        <view class="ud-pwd-opt-main">
+          <text class="ud-pwd-opt-t">恢复初始密码</text>
+          <text class="ud-pwd-opt-s">{{pwdIsTeacher ? '教师账号恢复为 123456，首次登录需改密' : '学生恢复为学号后8位 / 身份证后8位，首次登录需改密'}}</text>
+        </view>
+        <t-icon name="chevron-right" size="26rpx" color="var(--tt-text-3)" />
+      </view>
+      <view class="ud-pwd-opt" data-act="set" bind:tap="onPwdMenuPick">
+        <view class="ud-pwd-opt-icon"><t-icon name="edit-1" size="34rpx" color="var(--tt-brand)" /></view>
+        <view class="ud-pwd-opt-main">
+          <text class="ud-pwd-opt-t">设置新密码</text>
+          <text class="ud-pwd-opt-s">直接指定一个新密码，立即生效且不再强制改密</text>
+        </view>
+        <t-icon name="chevron-right" size="26rpx" color="var(--tt-text-3)" />
+      </view>
+    </view>
+    <view class="tt-sheet-foot">
+      <t-button theme="default" block bind:tap="closePwdMenu">取消</t-button>
+    </view>
+  </view>
+</t-popup>
+
+<!-- ===== 密码变更 · 设置新密码（用户 2026-06-26 需求：「密码变更」两个动作之一）===== -->
+<!-- 整个弹层受 caps.resetPassword 守卫：没有密码变更权限的人连 DOM 都不该有
+     （check-write-guard 会扫写操作入口；点了被 403 的设计在这儿不成立） -->
+<t-popup wx:if="{{caps.resetPassword}}" visible="{{pwdSheetVisible}}" placement="bottom" bind:visible-change="onPwdSheetVisible">
+  <view class="tt-sheet ud-pwd-sheet">
+    <view class="tt-sheet-grab"></view>
+    <view class="tt-sheet-head">
+      <view class="tt-sheet-icon">
+        <t-icon name="refresh" size="36rpx" color="var(--tt-brand)" />
+      </view>
+      <view class="tt-sheet-title">
+        设置新密码
+        <view class="tt-sheet-sub">{{pwdTargetName}} · 设置后立即生效，不再强制其首次登录改密</view>
+      </view>
+      <view class="tt-sheet-close" bind:tap="closePwdSheet">
+        <t-icon name="close" size="32rpx" color="var(--tt-text-2)" />
+      </view>
+    </view>
+    <view class="tt-sheet-body ud-pwd-body">
+      <view class="ud-pwd-field">
+        <text class="ud-pwd-label">新密码</text>
+        <input
+          class="ud-pwd-input"
+          password
+          value="{{pwdForm.password}}"
+          placeholder="6-20 位，建议字母+数字组合"
+          placeholder-class="ud-pwd-ph"
+          maxlength="20"
+          bindinput="onPwdInput"
+          data-field="password"
+        />
+      </view>
+      <view class="ud-pwd-field">
+        <text class="ud-pwd-label">确认密码</text>
+        <input
+          class="ud-pwd-input"
+          password
+          value="{{pwdForm.confirm}}"
+          placeholder="再次输入新密码"
+          placeholder-class="ud-pwd-ph"
+          maxlength="20"
+          bindinput="onPwdInput"
+          data-field="confirm"
+        />
+      </view>
+      <!-- 强度提示：与服务端 pwd.validateNewPassword 同一口径（6-20 位、可打印字符），
+           额外给一条「字母+数字更安全」的建议——不是硬性要求，不拦提交 -->
+      <view class="ud-pwd-hint {{pwdStrength.cls}}">
+        <t-icon name="{{pwdStrength.icon}}" size="26rpx" color="{{pwdStrength.color}}" />
+        <text>{{pwdStrength.text}}</text>
+      </view>
+      <view class="ud-pwd-note">设置后该账号的旧初始密码（学号后8位 / 123456）会立即失效，需用新密码登录。</view>
+    </view>
+    <view class="tt-sheet-foot">
+      <view class="ud-pwd-btn">
+        <t-button theme="default" block bind:tap="closePwdSheet">取消</t-button>
+      </view>
+      <view class="ud-pwd-btn">
+        <t-button theme="primary" block loading="{{pwdSaving}}" disabled="{{!caps.resetPassword}}" bind:tap="submitPwd">确定设置</t-button>
+      </view>
+    </view>
+  </view>
+</t-popup>
 
 <t-loading wx:if="{{loading && !user}}" theme="circular" size="44rpx" text="加载用户…" class="udetail-loading" />

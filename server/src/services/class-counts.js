@@ -34,7 +34,10 @@ async function liveCounts(classNames) {
 
   const [students, dorms] = await Promise.all([
     User.aggregate([
-      { $match: { className: { $in: names }, role: { $ne: 'teacher' } } },
+      // 示例账号（isDemo）不计入应到人数：它们被塞进真实班级用于演示，
+      // 算进去会让「应到 35 人」变成 37 人，出勤率分母永久偏大（真实数据被演示数据污染）。
+      // 与排行榜排除 isDemo 同一口径。
+      { $match: { className: { $in: names }, role: { $ne: 'teacher' }, isDemo: { $ne: true } } },
       { $group: { _id: '$className', n: { $sum: 1 } } },
     ]),
     DormAssignment.aggregate([

@@ -34,6 +34,14 @@ const userSchema = new Schema(
     // 管理员重置专用：初始密码哈希备份（永不失效），重置时同时恢复 initialHashes
     resetHashes: { type: [String], default: [] },
     mustChangePassword: { type: Boolean, default: false },
+    // 示例账号（演示/培训用）：**只给 isDemo 账号**的三项特殊能力，真实账号一律不适用：
+    //   ① 微信绑定可被任意微信抢占（别的微信直接登录就把 openid 改成自己的，无需管理员解绑）；
+    //   ② 退出登录时自动解绑（POST /api/auth/demo-release 清 openid + 撤设备令牌）——
+    //      否则第一个人测完，学生账号就永久占住那个微信，后面的测试者全被「已绑定其他微信」挡住；
+    //   ③ 首次登录可跳过改密（真实账号仍强制改密，避免「学号后8」长期有效）。
+    isDemo: { type: Boolean, default: false, index: true },
+    // 示例账号点了「暂不修改」：只用于前端不再反复弹改密页，不等于关闭强制改密（真实账号恒为 false）
+    passwordChangeSkipped: { type: Boolean, default: false },
     failedLogins: { type: Number, default: 0 },
     lockUntil: { type: Date },
     // 不设默认值：studentId 有唯一稀疏索引，多个空串会撞唯一键；未填写时不落字段

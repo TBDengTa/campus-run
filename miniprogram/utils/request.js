@@ -69,6 +69,32 @@ function clearAuth() {
 // 都是上一个账号的结论 —— 换号后仍然生效，表现就是「换了账号还带着上一个人的身份」。
 // 只清一半比不清更危险：页面半新半旧，报出来的现象无法复现。
 function logout() {
+  // 示例账号（isDemo）：**退出登录时先让服务端解绑微信**（用户 2026-10-24「退出登录自动解绑」）。
+  //
+  // 为什么必须落到服务端：openid 存在 users 文档上，只清本地 token 的话库里那个微信仍占着
+  // 这个示例账号 —— 下一个人用别的微信登录照样被「已绑定其他微信」挡住，示例账号就废了。
+  //
+  // 三条约束：
+  //   ① 只对 isDemo 生效（服务端有守卫，真实账号调它返回 403）；非示例账号调它无害，
+  //      所以这里不必先判断身份 —— 少一次同步读取，logout 路径也不依赖缓存。
+  //   ② **绝不阻塞退出**：网络断了 / 服务端没起，也必须能正常退出。
+  //      这里用 wx.request 的 fire-and-forget 形态（不 await），本地清理照旧同步执行。
+  //   ③ 必须在 clearAuth() **之前**发：请求要靠 token 鉴权，清了 token 就调不动了。
+  try {
+    const t = getToken();
+    if (t) {
+      wx.request({
+        url: `${env.BASE_URL}/api/auth/demo-release`,
+        method: 'POST',
+        header: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' },
+        data: {},
+        success() {},
+        fail() {},
+      });
+    }
+  } catch (e) {
+    // 忽略：任何异常都不能阻止退出登录
+  }
   clearAuth();
   markLoggedOut();
   try {

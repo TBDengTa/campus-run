@@ -31,3 +31,16 @@
   flex: 1;
   font-size: 30rpx;
 }
+
+/* 示例账号的「暂不修改」：文字按钮，弱于主按钮，避免被当成推荐路径 */
+.skip-link {
+  margin-top: 24rpx;
+  padding: 12rpx 0;
+  text-align: center;
+  font-size: 26rpx;
+  color: var(--tt-text-3);
+}
+
+.skip-link:active {
+  opacity: 0.6;
+}

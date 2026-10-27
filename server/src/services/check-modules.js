@@ -82,7 +82,11 @@ const DEFAULT_MODULES = [
     ownerDeptKey: 'study',
     ownerDeptName: '学习部',
     entryDeptKeys: ['study'],
-    targetTypes: ['class'],
+    // 用户 2026-10-26 第 5 点：「晚自习检查中不应该显示班级 应该优先显示教室，并且增加筛选教学楼」。
+    //   · targetTypes 从 'class' 改成 'classroom'：录入台拿到的 targetType 变 classroom，
+    //     关联合成器据此把标题从「班级」换成「教室 / 教学楼·门号」，并按教学楼筛选；
+    //   · 检查对象本身仍是「班级」（晚自习按班考勤），只是**展示以教室为主**。
+    targetTypes: ['classroom'],
     periods: ['evening_study'],
     fields: [
       // 评价含「网课」：网课班内无学生、在宿舍观看，**不需要填报后续内容**
@@ -523,8 +527,11 @@ async function getModule(key) {
 //   用版本号做**一次性结构迁移**：库里 defVersion < 本版本 → 覆盖结构字段一次；相等 → 跳过（幂等）。
 //   历史：v1 = 老口径（卫生 7 项打分 / 应到人数手填 / 查宿按班级）；v2 = 第四轮新表单 + 照片字段；
 //         v3 = 第五轮：实到人数改为 derived（选缺勤/未归名单自动推算，不再手填）；
-//         v4 = 第六轮：早八「没有记录 = 无迟到」语义（optionalWhenMissing + noRecordText）。
-const DEF_VERSION = 4;
+//         v4 = 第六轮：早八「没有记录 = 无迟到」语义（optionalWhenMissing + noRecordText）；
+//         v5 = 2026-10-26：晚自习 targetTypes 由 ['class'] 改为 ['classroom']
+//              （用户「晚自习不应该显示班级 应该优先显示教室，并增加筛选教学楼」）——
+//              存量库的 targetTypes 必须靠这次迁移更新，否则代码改了线上仍是旧值。
+const DEF_VERSION = 5;
 
 // 启动期幂等播种：内置模块的 key/结构以代码为准（entryDeptKeys 每次同步，保证鉴权口径一致），
 // 运营可改的部分（名称、字段选项、计分权重）**只在首次创建时写入，之后不覆盖**；

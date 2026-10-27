@@ -70,6 +70,9 @@ const anticheat = require('../services/anticheat');
 // 宿舍（住宿记录）的读写唯一实现：班主任给本班学生安排住宿，与管理端共用，
 // 并负责把楼名清单一起下发（教师不需要 building.view）
 const studentDorm = require('../services/student-dorm');
+// 班委开关 / 班主任分配：与管理端 PUT /:id/class-roles 共用同一份校验实现
+// （用户 2026-10-24「班主任在班级 TAB 没有配置班委的权限」→ 班级域补写入口）
+const classRoles = require('../services/class-roles');
 
 // 跑分（可选能力）：公式与批量聚合统一由 services/points.js 提供（与用户端 /api/points 同源）。
 // 该服务与班级域并行开发，缺失/接口变动时本路由自动降级为「不含跑分字段」，不影响启动与其它接口。
@@ -455,7 +458,9 @@ router.get(
         sanitaryCreateArea: isHomeroom, // 就地新建全校区域：仅班主任
         dorms: !!role, // 学生宿舍：班主任 + 班委
         studentAccount: isHomeroom, // 编辑资料/重置/限制/解绑/发徽章：仅班主任
-        nudge: isHomeroom, // 督促未达标：仅班主任
+        // 督促未达标：班主任 + 班委（用户 2026-10-24「班委需要能查看校园跑未达标的学生」）。
+        // 「督促」只是把未达标名单生成文案复制到剪贴板，不写任何数据，班委做这个正合适。
+        nudge: !!role,
       },
       className: req.user.className || '',
       name: req.user.realName || req.user.nickname || '',
@@ -768,7 +773,7 @@ router.get(
     ok(res, {
       className: stats.className,
       role: scope.isHomeroom ? 'homeroom' : 'officer',
-      canNudge: scope.isHomeroom, // 只有班主任做「督促」，班委仅查看
+      canNudge: scope.isHomeroom || scope.isOfficer, // 督促未达标：班主任 + 班委（用户 2026-10-24，只生成文案不写数据）
       date: stats.today,
       weekStart: stats.weekStart,
       ...stats.summary,
@@ -839,7 +844,7 @@ router.get(
     ok(res, {
       className: stats.className,
       role: scope.isHomeroom ? 'homeroom' : 'officer',
-      canNudge: scope.isHomeroom,
+      canNudge: scope.isHomeroom || scope.isOfficer,
       // 班主任可对**本班学生**做管理动作（编辑资料/重置密码/发徽章/限制/删除）：
       // 这里是**行级提示**，真正鉴权在 /api/class/student/:userId/* 与 services/student-scope.js；
       // 班委恒 false（只读）。
@@ -876,7 +881,7 @@ router.get(
     ok(res, {
       className: stats.className,
       role: scope.isHomeroom ? 'homeroom' : 'officer',
-      canNudge: scope.isHomeroom,
+      canNudge: scope.isHomeroom || scope.isOfficer,
       date: stats.today,
       weekStart: stats.weekStart,
       metric: 'week',
@@ -1404,7 +1409,7 @@ router.get(
       from,
       to,
       role: scope.isHomeroom ? 'homeroom' : 'officer',
-      canNudge: scope.isHomeroom, // 与其它班级域接口一致：只有班主任做「督促」
+      canNudge: scope.isHomeroom || scope.isOfficer, // 督促：班主任 + 班委（用户 2026-10-24）
       classInfo: {
         className,
         studentCount: profile ? profile.studentCount || 0 : 0,
@@ -1527,6 +1532,9 @@ function homeroomCapabilities() {
     unban: true,
     dorm: true, // 安排 / 退宿
     unbindWechat: true, // 解绑本班学生的微信（用户 2026-10-23 新增）
+    // 班委开关（用户 2026-10-24「班主任在班级 TAB 没有配置班委的权限」）：
+    // 谁能当班委是班级事务，班主任最清楚；写入口 PUT /student/:userId/officer。
+    classOfficer: true,
     deleteAccount: HOMEROOM_CAN_DELETE,
   };
 }
@@ -1604,6 +1612,8 @@ router.get(
         ban: isHomeroom,
         unban: isHomeroom,
         unbindWechat: isHomeroom,
+        // 班委开关：仅班主任（用户 2026-10-24；写入口 PUT /student/:userId/officer）
+        classOfficer: isHomeroom,
         deleteAccount: isHomeroom ? HOMEROOM_CAN_DELETE : false,
       },
       // 学生基础资料（只读展示：班委也需要看到是谁）
@@ -1700,13 +1710,19 @@ router.put(
   })
 );
 
-// 重置密码（恢复为名单初始密码；无初始数据则由 service 生成随机码并在 message 里返回）
+// 密码变更（恢复初始密码 / 设置密码）：与管理员同一实现（services/user-account-admin.js）。
+// 用户 2026-10-26：两个动作 —— body { mode:'initial' } 恢复初始密码；{ mode:'set', password } 设置新密码。
+// 不传 mode 按 initial 处理（老前端兼容）。
 router.post(
   '/student/:userId/reset-password',
   wrap(async (req, res) => {
     const { target } = await loadHomeroomTarget(req);
-    const message = await accountAdmin.resetUserPassword(target);
-    ok(res, { success: true, message });
+    const body = req.body || {};
+    const r = await accountAdmin.changeUserPassword(target, {
+      mode: body.mode || 'initial',
+      password: body.password,
+    });
+    ok(res, { success: true, mode: r.mode, message: r.message });
   })
 );
 
@@ -1747,6 +1763,20 @@ router.post(
     const { target } = await loadHomeroomTarget(req);
     const r = await accountAdmin.unbindWechat(target);
     ok(res, { success: true, openid: r.openid });
+  })
+);
+
+// 班委开关（用户 2026-10-24「示例教师1……班级TAB中也没有配置权限(班委与宿舍)」）：
+// 班主任应能在本班学生详情页开/关班委。原先这条写路径只有管理端
+// PUT /api/admin/users/:id/class-roles（需 user.manage），教师权限组没有 user.manage
+// → 班级 TAB 的班委开关对班主任完全不可用。
+// 校验复用 services/class-roles.js（与管理端同一份，禁止另写一套）。
+router.put(
+  '/student/:userId/officer',
+  wrap(async (req, res) => {
+    const { target } = await loadHomeroomTarget(req);
+    await classRoles.setClassOfficer(target, !!(req.body && req.body.isClassOfficer));
+    ok(res, { success: true, isClassOfficer: !!target.isClassOfficer });
   })
 );
 

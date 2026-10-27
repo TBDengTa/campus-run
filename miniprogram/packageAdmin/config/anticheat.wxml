@@ -4,6 +4,17 @@
     <text class="tt-section-extra">异常数据自动拦截</text>
   </view>
 
+  <!-- 入口：步数异常记录（用户 2026-10-27「对于有异常但是没到自动封禁的记录进行查看可以进行手动封禁」） -->
+  <view class="tt-card cfg-card" bind:tap="goAnomalies">
+    <view class="cfg-fitem cfg-fitem-link">
+      <view class="cfg-flabel-col">
+        <text class="cfg-switch-label">步数异常记录</text>
+        <text class="cfg-fdesc">查看可疑但未自动封禁的记录，可人工封禁或标记正常</text>
+      </view>
+      <t-icon name="chevron-right" size="28rpx" color="var(--tt-text-3)" />
+    </view>
+  </view>
+
   <view class="tt-card cfg-card">
     <view class="cfg-fitem cfg-fitem-switch">
       <view class="cfg-flabel-col">

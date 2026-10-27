@@ -377,6 +377,14 @@
   background: var(--td-gray-color-2, #eee);
 }
 
+/* 示例账户：虚线描边（不填色），与「管理员」实心、其它实心标签都区分开 ——
+   它表达的是「这条不是真实数据」，不是一个更强的身份，所以刻意画得最轻 */
+.users-chip-demo {
+  color: var(--tt-brand-deep);
+  background: transparent;
+  border: 1rpx dashed var(--tt-brand);
+}
+
 /* 生效中的限制：语义是「警告/危险」，用 TDesign 的 danger 色板而不是品牌色 */
 .users-chip-danger {
   color: var(--td-error-color-7, #d54941);

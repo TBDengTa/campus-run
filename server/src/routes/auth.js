@@ -106,6 +106,8 @@ router.post(
         deviceToken: silent ? undefined : await deviceSvc.issue(user, req),
         bound: true,
         mustChangePassword: !!user.mustChangePassword,
+        passwordChangeSkipped: !!user.passwordChangeSkipped,
+        isDemo: !!user.isDemo,
         isNew: false,
         userInfo: await unionSvc.decorateUser(user, {
           ...user.toSafeJSON(),
@@ -202,6 +204,13 @@ router.post(
 
     // 微信绑定校验。三条规则，按「谁占着这个微信」与「目标账号是什么角色」交叉判定：
     //
+    // ⓿ **示例账号（isDemo）不受 ①③ 限制**（用户 2026-10-24「登录时自行绑定也不能绑定 / 退出登录自动解绑」）：
+    //    示例账号是给多人轮流试用同一个账号的，如果它也一微信一绑定，
+    //    第一个人试完就永久占住，后面所有人都被「已绑定其他微信」挡住 —— 演示功能直接失效。
+    //    所以示例账号的 openid **可被任意微信直接抢占**（原微信那台设备的令牌因 openid
+    //    不一致自然 401，等于被挤下线；退出登录时客户端还会主动调 /demo-release 解绑）。
+    //    ⚠️ 这个豁免只对 isDemo 生效，真实学生账号的铁律一个字都没改。
+    //
     // ① 学生账号**自己已绑的微信不能换**（一个账号只认第一个绑定的微信）——
     //    否则别人可以用自己微信顶掉学生身份、代跑代签。
     // ② 教师账号不限制换绑（用户 2026-10-22「教师账户不限制微信绑定的登录」）：
@@ -217,25 +226,35 @@ router.post(
     //    也会撞上「这个微信已经属于别人」，旧实现直接赋值 → Mongo 抛 E11000（500），
     //    而且学生账号能借这条路径抢走教师的微信。所以先查占用方，再决定。
     const isTeacherAccount = user.role === 'teacher';
+    // 示例账号：豁免学生绑定限制（详见上面 ⓿）
+    const isDemoAccount = !!user.isDemo;
     const rebinding = !!user.openid && user.openid !== openid;
     const holder = await User.findOne({ openid, _id: { $ne: user._id } })
-      .select('account realName role')
+      .select('account realName role isDemo')
       .lean();
     const holderName = holder ? holder.account || holder.realName || '其他账号' : '';
 
     if (holder) {
-      if (!isTeacherAccount) {
-        const roleText = holder.role === 'teacher' ? '教师' : '学生';
-        throw new ApiError(403, 403004, `当前微信已绑定${roleText}账号「${holderName}」，学生账号不能用它登录`);
-      }
-      if (holder.role !== 'teacher') {
+      // ⚠️ 「占着这个微信的人」的判定**只看 holder 自己的身份**，绝不能被目标账号豁免：
+      //   示例账号可以「任意微信都能登进来」，但不等于它可以把**真实学生**绑着的微信抢走 ——
+      //   抢走的直接后果是那个学生被 $unset 踢下线（openid 唯一索引），身份被人冒用，
+      //   这正是「学生一账号一微信」铁律要防的事（AGENTS.md：学生微信不能被任何账号顶掉）。
+      //   只有 holder 是教师或另一个示例账号时，才允许顶替。
+      const holderIsRealStudent = holder.role !== 'teacher' && !holder.isDemo;
+      if (holderIsRealStudent) {
         throw new ApiError(
           403,
           403004,
           `当前微信已绑定学生账号「${holderName}」，学生账号的微信不能被更换`
         );
       }
-      // 教师之间换绑：把「这个微信」从原账号摘掉（openid 有唯一索引，必须先解绑再绑）。
+      // 「目标账号」的判定：真实学生不能借别人的微信登录（教师 / 示例账号可以）
+      if (!isTeacherAccount && !isDemoAccount) {
+        const roleText = holder.role === 'teacher' ? '教师' : '学生';
+        throw new ApiError(403, 403004, `当前微信已绑定${roleText}账号「${holderName}」，学生账号不能用它登录`);
+      }
+      // 教师之间换绑 / 示例账号抢占：把「这个微信」从原账号摘掉
+      // （openid 有唯一索引，必须先解绑再绑）。
       //
       // ⚠️ 这里**不能**调 revokeAllForUser(holder._id)（用户 2026-10-23 报障：
       //    「历史登录支持一键登录……现在虽然不限制绑定微信，但是会出现历史记录失效」）。
@@ -246,7 +265,7 @@ router.post(
       //    真正需要失效的只是「刚才这台设备」的 JWT —— 它由 middlewares/auth.js 的
       //    openid 比对自然判 401，随后 /api/auth/login 按当前微信重新认定身份，无需额外处理。
       await User.updateOne({ _id: holder._id }, { $unset: { openid: 1, openidBoundAt: 1 } });
-    } else if (rebinding && !isTeacherAccount) {
+    } else if (rebinding && !isTeacherAccount && !isDemoAccount) {
       // 学生账号自己已经绑了另一个微信 → 不允许换（规则 ①）
       throw new ApiError(403, 403004, '该账号已绑定其他微信，禁止登录。如为本人操作，请联系管理员处理');
     }
@@ -260,12 +279,26 @@ router.post(
     if (!user.realName) user.realName = user.account;
     await user.save();
 
+    // ⚠️ 换绑后必须清掉「这个微信」的身份缓存（用户 2026-10-25 端到端实测抓到）。
+    //   identityCache 的键是 openid：同一个微信从 A 账号换绑到 B 账号后，
+    //   缓存里仍是 A 的身份 —— 表现为 B 登录后「不是学生会成员」、看不到学生会入口，
+    //   要等缓存过期或重启才恢复。教师换账号（刘恩琦 → 陈宇航）与示例账号互相抢占都会踩到。
+    //   缓存键就是当前这个 openid（新旧账号共用），清一次即覆盖两个账号的读取路径。
+    unionSvc.clearIdentityCache(openid);
+
     const effective = await user.getEffectivePermissions();
     ok(res, {
       token: signToken(user),
-      deviceToken: await deviceSvc.issue(user, req),
+      // 示例账号**不签发设备令牌**：它随时会被别人抢占、退出还会自动解绑，
+      // 签出去的 deviceToken 只会变成一条指向「已解绑微信」的无主记录，
+      // 让「历史登录一键登录」列表里出现点不通的条目。
+      deviceToken: user.isDemo ? undefined : await deviceSvc.issue(user, req),
       bound: true,
       mustChangePassword: !!user.mustChangePassword,
+      // 示例账号可跳过改密；真实账号恒为 false（见 /api/auth/password/skip 的守卫）。
+      // 已跳过就不再反复弹改密页（否则每次启动都要拦一次）。
+      passwordChangeSkipped: !!user.passwordChangeSkipped,
+      isDemo: !!user.isDemo,
       isNew: false,
       userInfo: await unionSvc.decorateUser(user, {
         ...user.toSafeJSON(),
@@ -273,6 +306,52 @@ router.post(
         isManager: effective.length > 0,
       }),
     });
+  })
+);
+
+/**
+ * 示例账号：退出登录时自动解绑微信（用户 2026-10-24「退出登录自动解绑」）。
+ *
+ * 为什么必须落到服务端：openid 存在 users 文档上，只清客户端本地 token 的话，
+ * 库里那个微信仍然占着这个示例账号 —— 下一个人用别的微信登录依旧被「已绑定其他微信」挡住。
+ *
+ * 只对 isDemo 生效：真实账号调它一律 403（这是「解绑微信」的管理动作，
+ * 走管理端用户详情页 / user.manage，不能让普通用户自己绕过绑定铁律）。
+ * 客户端 logout() 会先调它，失败不阻塞本地退出。
+ */
+router.post(
+  '/demo-release',
+  auth,
+  wrap(async (req, res) => {
+    if (req.guestOpenid) throw new ApiError(403, 403003, '请先登录');
+    if (!req.user || !req.user.isDemo) {
+      throw new ApiError(403, 403002, '只有示例账号会自动解绑微信');
+    }
+    const demo = require('../services/demo-accounts');
+    const result = await demo.releaseDemoBinding(req.user._id);
+    ok(res, result);
+  })
+);
+
+/**
+ * 示例账号：首次登录跳过改密（用户 2026-10-24「在首次登录输入新的密码增加跳过功能」）。
+ *
+ * 为什么只给示例账号：真实账号跳过改密 = 「学号后 8 位」永久有效，是安全倒退。
+ * 示例账号本来就是公共试用号，密码是公开的 123456，跳过与否不产生额外风险。
+ */
+router.post(
+  '/password/skip',
+  auth,
+  wrap(async (req, res) => {
+    if (req.guestOpenid) throw new ApiError(403, 403003, '请先登录');
+    const user = await User.findById(req.user._id);
+    if (!user) throw new ApiError(404, 404, '用户不存在');
+    if (!user.isDemo) {
+      throw new ApiError(403, 403002, '只有示例账号可以跳过修改密码；真实账号必须修改初始密码');
+    }
+    user.passwordChangeSkipped = true;
+    await user.save();
+    ok(res, { success: true, passwordChangeSkipped: true });
   })
 );
 
@@ -359,6 +438,8 @@ router.post(
       deviceToken: newDeviceToken,
       bound: true,
       mustChangePassword: !!user.mustChangePassword,
+      passwordChangeSkipped: !!user.passwordChangeSkipped,
+      isDemo: !!user.isDemo,
       userInfo: { ...user.toSafeJSON(), effectivePermissions: effective, isManager: effective.length > 0 },
     });
   })

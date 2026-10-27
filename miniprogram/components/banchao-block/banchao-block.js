@@ -86,11 +86,41 @@ Component({
       return (app && app.globalData && app.globalData.userInfo) || auth.getUser() || null;
     },
 
+    /**
+     * 学生会模式专用：**确保拿到带身份字段的 me**。
+     *
+     * 用户 2026-10-25 报障「示例学生2 在首页看不到学生会卡片、导航栏也没有学生会」。
+     * 根因：`isUnionMember` 是 /api/auth/me 由 services/union.js::decorateUser 现算的，
+     * 而 currentUser() 取的是 globalData.userInfo / 本地缓存 —— 它可能是
+     *   ① 上一个版本登录时写入的旧对象（那时还没有 decorateUser 补的字段）；
+     *   ② 刚登录、身份还没确认过时的占位对象。
+     * 这两种情况下 me.isUnionMember 是 undefined → 卡片判为「不是学生会成员」→ 整块不渲染，
+     * 而且因为判断不报错，用户完全看不出原因（服务端 /api/auth/me 明明是 true）。
+     *
+     * 判据用 `typeof === 'boolean'`：字段**存在且是布尔值**才算可信。
+     * 缺失时主动 refreshUser()（= /api/auth/me）一次并把结果写回 globalData，
+     * 这样卡片、tabBar 都会跟着恢复，不必等用户重进小程序。
+     */
+    async resolveUnionUser() {
+      const me = this.currentUser() || {};
+      if (typeof me.isUnionMember === 'boolean') return me;
+      try {
+        const fresh = await getApp().refreshUser();
+        if (fresh) return fresh;
+      } catch (e) {
+        /* 取不到就用拿到的（可能是 null），下面按非成员处理 */
+      }
+      return me;
+    },
+
     async load() {
       try {
         await getApp().ensureLogin();
+        if (this.data.mode === 'union') {
+          const me = await this.resolveUnionUser();
+          return await this.loadUnion(me || {});
+        }
         const me = this.currentUser() || {};
-        if (this.data.mode === 'union') return await this.loadUnion(me);
         return await this.loadBanChao(me);
       } catch (e) {
         this.setData({ show: false, loading: false });

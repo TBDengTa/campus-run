@@ -10,7 +10,6 @@
  *
  * 鉴权不在本文件：本文件的调用方必须先确认「要么有对应权限，要么是本班班主任」。
  */
-const crypto = require('crypto');
 const { ApiError } = require('../utils/response');
 const anticheat = require('./anticheat');
 const pwd = require('./password');
@@ -26,32 +25,109 @@ const DormAssignment = require('../models/dorm-assignment');
 const WxSession = require('../models/wx-session');
 const User = require('../models/user');
 
+// 教师账号的固定初始密码（用户 2026-10-26：「初始密码教师账户为 123456」）。
+// ⚠️ 只用于「管理员点『恢复初始密码』」这一动作 —— **不迁移任何存量密码**（用户明确第 5 点）。
+const TEACHER_INITIAL_PASSWORD = '123456';
+
 /**
- * 重置密码（单条接口与批量接口共用）。
- * 为什么必须共用：批量如果另写一份，就会出现「单条会同步恢复 initialHashes、批量不会」
- * 这类分裂（下次改密用旧密码验证就会失败）。
+ * 重置密码 —— **恢复为初始密码**（单条 / 批量 / 班级域共用）。
+ *
+ * 用户 2026-10-26 把「重置密码」改称「密码变更」，并拆成两个动作；本函数是其中的「初始密码」：
+ *   · 教师 → 固定 123456（写入 resetHashes，保证以后还能再次恢复成同一个值）；
+ *   · 学生 → 恢复名单初始密码（学号后8 / 身份证后8 的既有哈希，见 services/roster.js::initialPasswords）。
+ *
+ * 为什么必须共用一份（历史踩点）：批量如果另写一套，就会出现
+ * 「单条会同步恢复 initialHashes、批量不会」这类分裂 —— 下次改密用旧密码验证就会失败。
+ *
+ * 为什么学生走「恢复 resetHashes」而不是重新算：身份证原文**不落库**
+ * （models/user.js 没有身份证字段，导入时算完哈希就丢），没法重算；
+ * resetHashes 正是导入时那组初始哈希的常驻备份。
+ *
  * @returns {Promise<string>} 给用户看的结果文案
  */
 async function resetUserPassword(user) {
   let message;
-  const resetHashes = user.resetHashes || [];
-  if (resetHashes.length) {
-    // 恢复为名单初始密码，并同步恢复可用的 initialHashes（下次改密用旧密码验证）
-    user.passwordHash = resetHashes[0];
-    user.initialHashes = [...resetHashes];
-    message = '已重置为初始密码（证件/学号后8位）';
+  if (user.role === 'teacher') {
+    // 教师固定 123456：三种哈希字段一起写，保证「登录 / 再次恢复 / 改密时校验旧密码」都认它
+    const h = pwd.hashPassword(TEACHER_INITIAL_PASSWORD);
+    user.passwordHash = h;
+    user.initialHashes = [h];
+    user.resetHashes = [h];
+    message = `已恢复为初始密码：${TEACHER_INITIAL_PASSWORD}`;
   } else {
-    const randomPwd = crypto.randomBytes(4).toString('hex');
-    user.passwordHash = pwd.hashPassword(randomPwd);
-    user.initialHashes = [pwd.hashPassword(randomPwd)];
-    user.resetHashes = [pwd.hashPassword(randomPwd)];
-    message = `该账号无名单初始密码数据，已生成随机密码：${randomPwd}`;
+    const resetHashes = user.resetHashes || [];
+    if (resetHashes.length) {
+      // 恢复为名单初始密码，并同步恢复可用的 initialHashes（下次改密用旧密码验证）
+      user.passwordHash = resetHashes[0];
+      user.initialHashes = [...resetHashes];
+      message = '已恢复为初始密码（学号后8位 / 身份证后8位）';
+    } else {
+      // ⚠️ 不再静默生成随机码（本次改动的刻意决定）：
+      //   管理员以为恢复成了「学号后8」、实际是个随机串，学生按学号后8 登不上，
+      //   而界面上那句 message 早就滚走了 —— 现场排查成本极高。
+      //   没有初始密码数据的账号（例如手工创建、或历史遗留）必须明确报错，让管理员改用「设置密码」。
+      throw new ApiError(
+        400,
+        400,
+        '该账号没有名单初始密码数据（学号/身份证后8位），无法恢复为初始密码；请改用「设置密码」指定一个新密码'
+      );
+    }
   }
   user.mustChangePassword = true;
   user.failedLogins = 0;
   user.lockUntil = null;
   await user.save();
   return message;
+}
+
+/**
+ * 密码变更的第二个动作：**设置密码**（管理员/班主任直接指定新密码）。
+ *
+ * 与「恢复初始密码」的区别（用户 2026-10-26 明确）：
+ *   · 不强制改密（mustChangePassword=false）—— 管理员主动设的正式密码，不该逼着再改一次；
+ *   · 同时清空 initialHashes / resetHashes —— 旧初始密码立即失效，
+ *     否则「学号后8」还能登进一个已被重置过的账号（安全倒退）。
+ *
+ * @param {object} user User 文档
+ * @param {string} newPassword 明文新密码
+ * @returns {Promise<string>} 结果文案
+ */
+async function setUserPassword(user, newPassword) {
+  const plain = String(newPassword || '');
+  // 强度校验（用户第 4 点「要校验强度」）：复用全局唯一口径，避免这里另立一套更宽松的标准
+  const invalid = pwd.validateNewPassword(plain);
+  if (invalid) throw new ApiError(400, 400, invalid);
+  // 与当前密码相同 → 拒绝（否则「变更」是个空操作，用户以为改成功了）
+  if (pwd.verifyPassword(plain, user.passwordHash)) {
+    throw new ApiError(400, 400, '新密码不能与当前密码相同');
+  }
+  user.passwordHash = pwd.hashPassword(plain);
+  user.initialHashes = [];
+  user.resetHashes = [];
+  // 设置密码 = 管理员指定的正式密码，不再要求首次登录改密（见函数注释）
+  user.mustChangePassword = false;
+  user.failedLogins = 0;
+  user.lockUntil = null;
+  await user.save();
+  return '密码已设置';
+}
+
+/**
+ * 密码变更的统一入口（两个路由共用）：按 mode 分发，路由只做鉴权与取参。
+ * @param {object} user
+ * @param {{mode?:string, password?:string}} opts mode='initial'（默认）| 'set'
+ */
+async function changeUserPassword(user, opts = {}) {
+  const mode = String(opts.mode || 'initial');
+  if (mode === 'set') {
+    const message = await setUserPassword(user, opts.password);
+    return { mode, message };
+  }
+  if (mode !== 'initial') {
+    throw new ApiError(400, 400, `不支持的密码变更方式：${mode}`);
+  }
+  const message = await resetUserPassword(user);
+  return { mode: 'initial', message };
 }
 
 async function refreshDormCountsFor(classNames) {
@@ -150,7 +226,24 @@ async function unbindWechat(user) {
   await User.updateOne({ _id: user._id }, { $unset: { openid: 1, openidBoundAt: 1 } });
   await WxSession.deleteMany({ openid });
   await deviceSvc.revokeAllForUser(user._id);
+  // 身份缓存按 openid 存，解绑后必须清（与 /api/auth/bind 换绑清缓存同一类问题）：
+  // 不清的话，这个微信之后绑到别的账号时，短时间内读到的仍是旧账号的学生会身份。
+  // 用延迟 require：避免 services/union ↔ 本文件形成加载期循环依赖。
+  try {
+    require('./union').clearIdentityCache(openid);
+  } catch (e) {
+    /* 清不掉只影响一次读取的时效，绝不阻塞解绑本身 */
+  }
   return { unbound: true, openid };
 }
 
-module.exports = { resetUserPassword, deleteUserCascade, banUser, unbanUser, unbindWechat };
+module.exports = {
+  TEACHER_INITIAL_PASSWORD,
+  resetUserPassword,
+  setUserPassword,
+  changeUserPassword,
+  deleteUserCascade,
+  banUser,
+  unbanUser,
+  unbindWechat,
+};
