@@ -875,6 +875,27 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('.env.example 有 CHECK_PHOTO_MAX_MB（20）', /CHECK_PHOTO_MAX_MB=20/.test(envEx));
   // nginx 必须放得下（否则 Nginx 先回 413，Node 根本收不到）
   ok('nginx client_max_body_size 足够', (() => { const m = nginxSrc.match(/client_max_body_size\s+(\d+)m/); return !!m && Number(m[1]) >= 10; })());
+// ===== GPS 记录必须换算步数与卡路里（用户 2026-10-27「没有步数的换算」）=====
+{
+  const stepsSrc4 = require('fs').readFileSync(path.join(SERVER, 'services/steps.js'), 'utf8');
+  const runRoute = require('fs').readFileSync(path.join(SERVER, 'routes/run.js'), 'utf8');
+  const wxSrc = require('fs').readFileSync(path.join(SERVER, 'services/wechat.js'), 'utf8');
+
+  // 根因：GPS 写入固定 steps:0，而小程序提交 GPS 时不传步数 → 详情页永远 0 步
+  ok('GPS 记录按距离换算步数', /stepsFromDist = Math\.round\(distMeters \/ 0\.7\)/.test(stepsSrc4));
+  ok('GPS 不再固定写 steps: 0', !/steps: 0,\s*\n\s*distance: Math\.round\(distance/.test(stepsSrc4));
+  ok('卡路里按步数折算', /Math\.round\(finalSteps \* 0\.04\)/.test(stepsSrc4));
+  // 换算口径必须与微信同步一致（否则同一段路程两种算法，数据不可比）
+  ok('与 estimateFromSteps 同口径（0.7 米/步、0.04 千卡/步）', /steps \* 0\.7/.test(wxSrc) && /steps \* 0\.04/.test(wxSrc));
+  // 客户端若传了真实步数/卡路里，优先用它（手环计数优于估算）
+  ok('客户端步数优先', /clientSteps > 0 \? clientSteps : stepsFromDist/.test(stepsSrc4));
+  ok('客户端卡路里优先', /Number\(calories\) > 0 \? Math\.round\(Number\(calories\)\)/.test(stepsSrc4));
+  // 路由要把 steps 透传给服务层
+  ok('路由透传 steps', /const \{ date, distance, durationSeconds, calories, steps,/.test(runRoute) && /calories,\s*\n\s*steps,/.test(runRoute));
+  // 回填脚本存在（历史数据修复）
+  ok('提供 GPS 步数回填脚本', require('fs').existsSync(path.join(__dirname, 'backfill-gps-steps.js')));
+}
+
 // ===== nginx upstream 端口必须跟随实际 PORT（用户 2026-10-27 整站 502）=====
 {
   const shSrc3 = require('fs').readFileSync(path.join(__dirname, '..', 'deploy', 'install.sh'), 'utf8');

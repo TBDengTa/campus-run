@@ -182,13 +182,15 @@ router.post(
     const gpsRestriction = anticheat.activeRestriction(req.user, 'gps');
     if (gpsRestriction) throw restrictedError(gpsRestriction);
 
-    const { date, distance, durationSeconds, calories, startTime, endTime, routePoints, location } = req.body || {};
+    // steps 可选：小程序当前不计步，传了就用（手环/系统计步），没传由服务层按距离反算
+    const { date, distance, durationSeconds, calories, steps, startTime, endTime, routePoints, location } = req.body || {};
     if (!distance || distance < 10) throw new ApiError(400, 400, '距离过短');
     const result = await stepsSvc.saveGpsRun(req.user, {
       date: isValidDateKey(date) ? date : undefined,
       distance,
       durationSeconds,
       calories,
+      steps,
       startTime,
       endTime,
       routePoints,

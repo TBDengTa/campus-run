@@ -289,7 +289,7 @@ async function syncWerunDay(user, dateKey, cumulativeSteps, { checkJump = true }
 }
 
 // 记录一次 GPS 实跑
-async function saveGpsRun(user, { date, distance, durationSeconds, calories, startTime, endTime, routePoints, location }) {
+async function saveGpsRun(user, { date, distance, durationSeconds, calories, steps, startTime, endTime, routePoints, location }) {
   const blocked = teacherBlock(user);
   if (blocked) return blocked;
 
@@ -357,13 +357,31 @@ async function saveGpsRun(user, { date, distance, durationSeconds, calories, sta
     return { restricted: { violation: true, ...info, message: 'GPS 轨迹异常' }, anomaly };
   }
 
+  // ===== 步数与卡路里换算（用户 2026-10-27「你看这个没有步数的换算啊」）=====
+  //
+  // 问题：GPS 记录原来把 `steps: 0` / `calories: calories || 0` 直接写库，
+  //   而小程序提交 GPS 时**只传 distance + durationSeconds**（它没有计步能力，
+  //   wx.getLocation 回调里也没有步数），于是详情页永远显示「0 步 / 0 千卡」。
+  //
+  // 修复：按**距离反算步数**，与微信同步用同一套换算口径（services/wechat.js）：
+  //   · 0.7 米/步 → steps = distance / 0.7
+  //   · 卡路里 = steps × 0.04（与 estimateFromSteps 一致）
+  // 若客户端将来开始传步数（手环/系统计步），优先用它传的值 —— 真实计步永远优于估算。
+  const distMeters = Math.max(0, Math.round(Number(distance) || 0));
+  const clientSteps = Math.max(0, Math.round(Number(steps) || 0));
+  const stepsFromDist = Math.round(distMeters / 0.7); // 与 estimateFromSteps 的 0.7 米/步 同口径
+  const finalSteps = clientSteps > 0 ? clientSteps : stepsFromDist;
+  // 卡路里：客户端给了就用它，否则按步数折算（0.04 千卡/步，与微信同步一致）
+  const finalCalories =
+    Number(calories) > 0 ? Math.round(Number(calories)) : Math.round(finalSteps * 0.04);
+
   const doc = await RunRecord.create({
     openid: user.openid,
     source: 'gps',
     date: dateKey,
-    steps: 0,
-    distance: Math.round(distance || 0),
-    calories: Math.round(calories || 0),
+    steps: finalSteps,
+    distance: distMeters,
+    calories: finalCalories,
     durationSeconds: Math.round(durationSeconds || 0),
     startTime,
     endTime,
