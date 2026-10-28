@@ -561,8 +561,11 @@ router.put(
         // 字符串字段（remark / classroom）：**必须按 key 写回各自的字段**。
         // 这里曾经是写死的 `changed.remark / profile.remark` —— 白名单加了 classroom 之后，
         // 老师改教室会把备注整段覆盖掉（看着保存成功、数据被悄悄改坏）。
-        const maxLen = key === 'classroom' ? 40 : 200;
-        const next = String(body[key] || '').trim().slice(0, maxLen);
+        // classroom 与独立端点 PUT /classroom 用**同一个归一化函数**，避免两条路径存出两种格式。
+        const next =
+          key === 'classroom'
+            ? normalizeClassroom(body[key])
+            : String(body[key] || '').trim().slice(0, 200);
         if ((profile[key] || '') !== next) changed[key] = next;
         profile[key] = next;
       }
@@ -578,13 +581,42 @@ router.put(
   })
 );
 
-// ===== 教室（班委也能改，用户 2026-10-23）=====
+// ===== 教室（班委也能改，用户 2026-10-23；门号可为名称，用户 2026-10-28）=====
 //
 // 为什么单开一个端点，而不是放宽 PUT /profile：
 //   那个端点的白名单里还有 hasMorningExercise / hasNightStudy / hasMorningRun / remark ——
 //   早操/晚自习/校园跑开关会进班超与校园跑的统计口径，备注是老师的私人记录，
 //   放开整条 PUT 就等于连它们一起给了班委。用户明确只给「教室」，所以这里只接受 classroom 一个字段。
 // 权限：班主任 + 班委（resolveScope 已保证是本班），与宿舍/卫生区同一档「班级事务」。
+//
+// 用户 2026-10-28「在设置教室中会出现没有门号而是名的问题」：
+//   教室的「门号」可以是场所名（阶梯教室 / 报告厅 / A301），所以这里**按文本保存**，
+//   不再假设是数字。仍保留两条基础校验：
+//     · 拒绝对象（services/dorms.js 的 parseRoomLabel 曾因 String({}) 造出「[object」脏楼名）；
+//     · 只清洗**门号段**里与解析冲突的字符，**楼名分隔符「·」必须保留**。
+//
+// ⚠️ 这里绝对不能把 `·` 一并替换掉：前端存的是「教学楼·404」，把 · 换成空格就变成
+//    「教学楼 404」—— 前端回显与服务端 parseRoomLabel 都要靠这个分隔符拆楼名/门号，
+//    换成空格后虽然还能拆（空格也是分隔符），但楼名里本来带空格的（如「1号 教学楼」）
+//    就会被拆成前半段，读回来是错楼。所以：按第一个· 切成「楼名 | 门号」，
+//    只对门号段做分隔符清洗，再拼回去。
+function normalizeClassroom(input) {
+  if (input && typeof input === 'object') {
+    throw new ApiError(400, 400, '教室格式不正确（收到的是对象，请传「教学楼·404」这样的字符串）');
+  }
+  const raw = String(input === undefined || input === null ? '' : input);
+  if (/\[object/i.test(raw)) {
+    throw new ApiError(400, 400, '教室格式不正确（不要把对象当教室提交），请填写「教学楼·404」');
+  }
+  const clean = (s) => String(s || '').replace(/[・\-—/、,\n\r\t]/g, ' ').replace(/\s+/g, ' ').trim();
+  const idx = raw.indexOf('·');
+  if (idx < 0) return clean(raw).slice(0, 40);
+  const building = clean(raw.slice(0, idx));
+  const place = clean(raw.slice(idx + 1));
+  if (!building || !place) return (building || place).slice(0, 40);
+  return `${building}·${place}`.slice(0, 40);
+}
+
 router.put(
   '/classroom',
   wrap(async (req, res) => {
@@ -601,7 +633,8 @@ router.put(
     }
     const profile = await loadOrInitProfile(scope.className);
     if (!profile) throw new ApiError(404, 404, '班级台账生成失败，请稍后重试');
-    const next = String(body.classroom || '').trim().slice(0, 40);
+    // 教室允许名称（阶梯教室等），按文本保存；normalizeClassroom 负责清脏与归一化分隔符
+    const next = normalizeClassroom(body.classroom);
     const changed = (profile.classroom || '') !== next;
     if (changed) {
       profile.classroom = next;

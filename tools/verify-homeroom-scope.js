@@ -242,10 +242,38 @@ const TMP_TAG = `homeroom_verify_${Date.now()}`;
     assert(offNew.status === 403, '班委新建卫生区 → 403（仅班主任）', offNew);
 
     // ---- 6) 重置密码 ----
-    const rp = await call('teacher', 'POST', `/api/class/student/${tmp._id}/reset-password${q()}`);
-    assert(rp.status === 200 && /重置|密码/.test(rp.data.message || ''), '班主任重置本班学生密码 → 200', rp);
-    const afterReset = await User.findById(tmp._id);
-    assert(afterReset.mustChangePassword === true, '重置后要求下次登录改密', afterReset.mustChangePassword);
+    // ⚠️ v2.0.4 起行为变了（不是回归，刻意的）：没有名单初始密码数据的账号**不再静默生成随机码**，
+    //    而是明确 400 让管理员改用「设置密码」——避免「管理员以为恢复成学号后8、实际是随机串，
+    //    学生按学号后8 登不上，而那句 message 早滚走了」。
+    //    本脚本的临时学生是 User.create 出来的，没有 resetHashes，所以走的是这条 400 分支；
+    //    下面再补一个「有名单初始密码时重置成功」的用例，两条路径都覆盖。
+    const rpNoInit = await call('teacher', 'POST', `/api/class/student/${tmp._id}/reset-password${q()}`);
+    assert(
+      rpNoInit.status === 400 && /初始密码|设置密码/.test(rpNoInit.message || ''),
+      '无名单初始密码时重置 → 400 并提示改用「设置密码」（v2.0.4 刻意行为）',
+      rpNoInit
+    );
+
+    // 造一个「有名单初始密码」的临时学生，验证重置成功路径
+    const withInit = await User.create({
+      openid: `${TMP_TAG}_init`,
+      account: `${TMP_TAG}_I`,
+      realName: '临时验证学生2',
+      role: 'student',
+      className,
+      studentId: `I${Date.now()}`,
+      mustChangePassword: false,
+      // resetHashes 是「名单初始密码」的哈希集合，服务端恢复时取 [0]
+      resetHashes: [require(path.join(serverDir, 'src', 'services', 'password')).hashPassword('20230101')],
+    });
+    try {
+      const rp = await call('teacher', 'POST', `/api/class/student/${withInit._id}/reset-password${q()}`);
+      assert(rp.status === 200 && /重置|恢复/.test(rp.data.message || ''), '有初始密码时班主任重置 → 200', rp);
+      const afterReset = await User.findById(withInit._id);
+      assert(afterReset.mustChangePassword === true, '重置后要求下次登录改密', afterReset.mustChangePassword);
+    } finally {
+      await User.deleteMany({ _id: withInit._id });
+    }
 
     // ---- 7) 限制功能：三类都允许（用户 2026-10-23「都要」，含限制登录） ----
     const banLogin = await call('teacher', 'POST', `/api/class/student/${tmp._id}/ban${q()}`, { scope: 'login', days: 7 });

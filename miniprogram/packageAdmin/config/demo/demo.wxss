@@ -93,7 +93,8 @@
   gap: 10rpx;
   font-size: 28rpx;
   font-weight: 600;
-  color: var(--tt-text);
+  /* 令牌只有 --tt-text-1/2/3，没有 --tt-text（写错的变量不会报错，只会静默失效） */
+  color: var(--tt-text-1);
 }
 
 .demo-badge {

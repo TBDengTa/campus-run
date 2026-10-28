@@ -50,19 +50,26 @@
         </view>
       </view>
 
-      <!-- ② 门号：同一次填写完成，不再二次弹窗 -->
+      <!-- ② 门号：同一次填写完成，不再二次弹窗。
+           用户 2026-10-28：**教室**的门号放宽为文本（阶梯教室 / 报告厅 / A301 这类没有门牌号的场所）；
+           **宿舍**仍是纯数字（房号＝门牌号，床位与按房间查宿都依赖数字口径）。 -->
       <view class="rd-block">
-        <view class="tt-sheet-label">门号</view>
+        <view class="tt-sheet-label">{{roomLabel}}</view>
         <view class="tt-sheet-field">
           <input
             class="tt-sheet-input"
-            type="number"
+            type="{{allowText ? 'text' : 'number'}}"
             value="{{roomNo}}"
-            placeholder="只填数字，如 201"
+            placeholder="{{roomPlaceholder}}"
             placeholder-class="tt-sheet-ph"
+            maxlength="{{allowText ? 20 : 6}}"
             bindinput="onRoomInput"
             disabled="{{!pickBuilding}}"
           />
+        </view>
+        <view class="rd-hint" wx:if="{{roomHint}}">
+          <t-icon name="info-circle" size="24rpx" color="var(--tt-text-3)" />
+          <text class="rd-hint-t">{{roomHint}}</text>
         </view>
       </view>
 
