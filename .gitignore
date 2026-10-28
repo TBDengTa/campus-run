@@ -36,6 +36,11 @@ deploy/
 # 设计源文件（原始大图，不入包也不入库；压缩后的小图放 miniprogram/assets/）
 .design-src/
 
+# 一次性调试脚本（_tmp-* / _probe*）：跑完即删，绝不入库。
+# tools/ 下只应该有 check-*（可重复运行的静态检查）、verify-*（端到端验证）与生成器。
+tools/_tmp-*.js
+tools/_probe*.js
+
 
 # 站点配置含真实域名与证书路径（AGENTS.md：真实域名不入库）。
 # 模板见 deploy/nginx/*.conf.example

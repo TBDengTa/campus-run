@@ -155,7 +155,18 @@ async function lift({ user, scope = 'all', operator, reason = '解封' }) {
     } else {
       const r = (user.restrictions || {})[s];
       if (r && (r.until || r.reason)) {
-        user.restrictions[s] = { until: null, reason: '', at: now, count: r.count || 0, operator: operator || 'system' };
+        // ⚠️ 解封要把 `at` 清空（用户 2026-10-28「被封禁的情况重复记录，申诉成功后不会重新封锁」）。
+        //
+        //   restrict() 的「24 小时内重犯 → 升级为限制登录」判据是 prev.at：
+        //     const recent = prev.at && now - prev.at < DAY_MS;
+        //   旧实现解封时写 `at: now`（解封时刻），于是**刚解封就处于"24 小时内已违规"状态**：
+        //   学生申诉成功 → 立刻解封 → 当天正常同步再触发一次规则 → 直接升级限制登录，
+        //   看起来就是"申诉成功后又被重新封锁"。
+        //
+        //   正确语义：解封 = 之前那次违规的记录被推翻/勾销，24 小时窗口应从**下一次**违规重新算。
+        //   把 at 置空 → recent 判定为 false → 下次仍按首次（限制同步 / 限制 GPS），不再升级。
+        //   count 保留（它是历史累犯次数，用于统计；升级判定只看 at，不看 count）。
+        user.restrictions[s] = { until: null, reason: '', at: null, count: r.count || 0, operator: operator || 'system' };
         lifted.push(s);
       }
     }

@@ -42,6 +42,21 @@ const goalConfigSchema = new mongoose.Schema(
       minPaceSecondsPerKm: { type: Number, default: 120 }, // 配速低于该值(秒/公里)视为异常
       banDays: { type: Number, default: 7 },
       enabled: { type: Boolean, default: true },
+      // ===== AI 模型严谨度（用户 2026-10-28「在反作弊中可以调整 AI 封禁的严谨程度」）=====
+      //
+      // 三档预设，对应 services/anticheat-model.js::STRICTNESS_PRESETS：
+      //   loose 宽松 / balanced 平衡（默认）/ strict 严格 / custom 自定义（手调两个阈值）
+      //
+      // 为什么要做成档位而不是直接暴露两个小数：
+      //   0.62 / 0.78 这种数字对管理员没有直觉 —— 「调到多少才不会误伤真实学生」没人答得上来。
+      //   档位把「误伤风险」翻译成可理解的话（宽松 = 只封明显的，可能漏掉一些）。
+      //
+      // 阈值本身仍会被历史标注**自动微调**（见 anticheat-model 的在线校准），
+      // 档位是「基线」，校准在基线上小幅浮动（±0.06 封顶），admin 调档立即生效且不会被校准吃掉。
+      aiStrictness: { type: String, enum: ['loose', 'balanced', 'strict', 'custom'], default: 'balanced' },
+      // custom 档才读这两个；其它档位忽略（避免"改了但没生效"的困惑）
+      aiSuspiciousThreshold: { type: Number, default: 0.62 }, // 达到它 = 记一条「待研判」异常
+      aiAutoBanThreshold: { type: Number, default: 0.78 }, // 达到它 = 自动限制
     },
     rewardVideo: {
       dailyLimit: { type: Number, default: 10 }, // 每日观看上限
