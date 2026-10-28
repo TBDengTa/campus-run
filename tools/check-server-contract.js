@@ -876,6 +876,31 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('.env.example 有 CHECK_PHOTO_MAX_MB（100）', /CHECK_PHOTO_MAX_MB=100/.test(envEx));
   // nginx 必须放得下（否则 Nginx 先回 413，Node 根本收不到）
   ok('nginx client_max_body_size 足够', (() => { const m = nginxSrc.match(/client_max_body_size\s+(\d+)m/); return !!m && Number(m[1]) >= 10; })());
+// ===== 部门选择器带校区前缀 + 成员页合并（用户 2026-10-28）=====
+{
+  const sjJs = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'scan-join', 'scan-join.js'), 'utf8');
+  const sjWxml = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'scan-join', 'scan-join.wxml'), 'utf8');
+  const navSrc = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'utils', 'nav-groups.js'), 'utf8');
+  const appJson = JSON.parse(require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'app.json'), 'utf8').replace(/\/\/.*$/gm, ''));
+  const unionJs = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'pages', 'union', 'union.js'), 'utf8');
+
+  // ① 下拉必须带校区前缀（否则两个「体育部」无法区分）
+  ok('部门选择器带校区前缀', /label: d\.schoolName \? `\$\{d\.schoolName\} · \$\{d\.name\}`/.test(sjJs));
+  ok('picker 用 label 显示', /range-key="label"/.test(sjWxml));
+
+  // ② 两个重复的成员页合并为一个（只留 packageAdmin/union/members）
+  const adminPkg = (appJson.subpackages || []).find((p) => p.root === 'packageAdmin');
+  const unionPkg = (appJson.subpackages || []).find((p) => p.root === 'packageUnion');
+  ok('保留 学生会成员 页', !!adminPkg && adminPkg.pages.includes('union/members/members'));
+  ok('删除重复的 packageUnion/members/manage', !!unionPkg && !unionPkg.pages.includes('members/manage'));
+  ok('工作台成员管理指向统一页', /goManageMembers\(\)[\s\S]{0,160}packageAdmin\/union\/members\/members/.test(unionJs));
+
+  // ③ 「学生会成员」只有主席团（与管理员）能看见，部长/副部长不可见
+  ok('成员入口按主席团判定', /canViewMembers:[\s\S]{0,200}isPresidiumIdentity\(user\)/.test(navSrc));
+  ok('新增 isPresidiumIdentity（只认主席团）', /function isPresidiumIdentity/.test(navSrc));
+  ok('成员入口不再用 canUnionScanJoin 放行', !/canViewMembers: canUnionScanJoin/.test(navSrc));
+}
+
 // ===== 部门层级必须按所属校区显示（用户 2026-10-28「为什么全是校学生会啊」）=====
 {
   const uSrc2 = require('fs').readFileSync(path.join(SERVER, 'routes/union.js'), 'utf8');

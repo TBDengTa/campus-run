@@ -113,10 +113,19 @@ Page({
   buildDeptOptions(campusId) {
     const all = this._deptAll || [];
     const isSchoolLevel = !campusId || campusId === 'school';
-    return all.filter((d) => {
-      if (d.schoolId) return !isSchoolLevel && String(d.schoolId) === String(campusId);
-      return !isSchoolLevel; // 共用部门：各校区共用
-    });
+    return all
+      .filter((d) => {
+        if (d.schoolId) return !isSchoolLevel && String(d.schoolId) === String(campusId);
+        return !isSchoolLevel; // 共用部门：各校区共用
+      })
+      .map((d) => ({
+        ...d,
+        // ⚠️ 选择器里必须带**校区前缀**（用户 2026-10-28「你看没有前缀·这就很难受」）：
+        //   生活部/学习部/纪检部在两个校区各有一条，两个「体育部」也分属不同校区，
+        //   只显示部门名的话下拉里会出现两个一模一样的「体育部」，根本没法选。
+        //   label 只用于**显示**，提交时仍用 key + schoolId。
+        label: d.schoolName ? `${d.schoolName} · ${d.name}` : d.name,
+      }));
   },
 
   // 应用某个院校（切院校与初次加载共用）

@@ -159,8 +159,12 @@ Page({
     wx.navigateTo({ url: '/packageUnion/records/records' });
   },
 
+  // 成员管理（用户 2026-10-28「去掉学生会成员管理，都是这个学生会成员」）：
+  //   两个页面合为一个 —— 原来 packageUnion/members/manage（标题「成员管理」）与
+  //   packageAdmin/union/members/members（标题「学生会成员」）功能重复，用户要求只留后者。
+  //   现在从学生会工作台点「成员管理」直接进**同一个**页面，不再有两套 UI。
   goManageMembers() {
-    wx.navigateTo({ url: '/packageUnion/members/manage' });
+    wx.navigateTo({ url: '/packageAdmin/union/members/members' });
   },
 
   // 扫码加人（用户 2026-10-27）：扫码页在 packageAdmin/union/scan-join

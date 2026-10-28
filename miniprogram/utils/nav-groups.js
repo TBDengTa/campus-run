@@ -176,7 +176,24 @@ const ALL_PERMS = ['*'];
 //   或持有 union.manage / union.steward 权限（总管 / 团委老师，可能不在成员名单里）。
 // 用途：只有这些人能「扫码加人」，入口不该再露给普通部员（点了必然 403）。
 const PRESIDIUM_ROLES = ['president', 'vice_president'];
+// 主席团部门的 key（与服务端 PRESIDIUM_KEY 常量同值）
+const PRESIDIUM_KEY = 'presidium';
 const MANAGER_ROLES = ['minister', 'vice_minister'];
+
+/**
+ * 是否主席团（校 / 院都算）。与服务端 services/union.js::isPresidiumIdentity 同口径：
+ *   deptKey === 'presidium' 或 role ∈ {president, vice_president}
+ *
+ * 用途：用户 2026-10-28「只有主席团能看见学生会成员」—— 判定必须只看主席团身份，
+ * 不能再把部长 / 副部长算进去（那是 canUnionScanJoin 的口径，两者刻意分开）。
+ */
+function isPresidiumIdentity(user) {
+  if (!user) return false;
+  const roles = user.unionRoles || [];
+  return roles.some(
+    (r) => r && (r.deptKey === PRESIDIUM_KEY || PRESIDIUM_ROLES.includes(r.role))
+  );
+}
 
 function canUnionScanJoin(user, perms) {
   if (!user) return false;
@@ -219,11 +236,19 @@ function navCtx(user, opts = {}) {
     isClassRole,
     isUnionMember: !!(user && user.isUnionMember),
     canUnionScanJoin: canUnionScanJoin(user, perms),
-    // 「学生会成员」入口可见性（用户 2026-10-28）：
-    //   ① 学生身份的干部（主席团 / 部长 / 副部长）—— 他们没有 union.* 权限，但服务端放行；
-    //   ② 持 union.view（或 union.steward / '*'）的管理员、团委老师。
-    // 这两类人必须都能进，否则主席团在管理中枢里就少一个入口。
-    canViewMembers: canUnionScanJoin(user, perms) || isSuper || perms.includes('union.view') || perms.includes('union.steward'),
+    // 「学生会成员」入口可见性（用户 2026-10-28「只有主席团能看见这个，其他都看不见」）：
+    //
+    //   ⚠️ 上一版放的是「干部都可见」（主席团 + 部长 + 副部长 + 总管），用户明确要收紧到**只有主席团**。
+    //   ⚠️ 但**不能**把 union.view / union.manage 的管理员一起关掉：学生处、团委老师
+    //     若也看不见，就再没有任何入口能改成员了（那是他们唯一的入口）。
+    //   所以口径是：**主席团** 或 **持 union.view/union.manage/steward/`*` 的管理员**。
+    //     部长 / 副部长 / 普通部员 → 看不到（他们仍可用「扫码加人」加人，但不能进成员名单）。
+    canViewMembers:
+      isPresidiumIdentity(user) ||
+      isSuper ||
+      perms.includes('union.view') ||
+      perms.includes('union.manage') ||
+      perms.includes('union.steward'),
   };
 }
 

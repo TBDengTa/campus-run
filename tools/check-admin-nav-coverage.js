@@ -27,8 +27,9 @@ const SECOND_LEVEL = new Set([
   // 它的 URL 是模板字符串拼的（`...dorms?id=${id}&className=...`），
   // 本脚本只认 nav-groups 的 url 字面量，所以必须显式列进白名单，否则会误报成不可达。
   'packageAdmin/class-manage/dorms/dorms',
-  // 学生会成员管理（主席团 / 部长用）：从学生会工作台的「成员管理」进入，URL 无字面量入口
-  'packageUnion/members/manage',
+  // 学生会成员页：管理中枢入口在 nav-groups（unionMembers），
+  // 学生会工作台的「成员管理」也指向它（用户 2026-10-28 把两个重复页面合并为一个）。
+  // 但工作台那条是页面内 navigateTo 的字面量，本脚本只认 nav-groups，故这里不需要再列。
 ]);
 
 // nav-groups 里的一级入口

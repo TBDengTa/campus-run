@@ -49,12 +49,12 @@
             class="sj-pair-r"
             mode="selector"
             range="{{deptOptions}}"
-            range-key="name"
+            range-key="label"
             value="{{deptIndex}}"
             bindchange="onDeptChange"
           >
             <view class="sj-picker sj-picker-sm">
-              <text class="sj-picker-name {{deptReady ? '' : 'is-placeholder'}}">{{deptOptions[deptIndex].name}}</text>
+              <text class="sj-picker-name {{deptReady ? '' : 'is-placeholder'}}">{{deptOptions[deptIndex].label || deptOptions[deptIndex].name}}</text>
               <t-icon name="chevron-down" size="24rpx" color="var(--tt-text-3)" />
             </view>
           </picker>
@@ -101,7 +101,7 @@
         <view class="sj-scan-icon {{deptReady ? '' : 'is-off'}}">
           <t-icon name="scan" size="72rpx" color="{{deptReady ? 'var(--tt-brand)' : 'var(--tt-text-3)'}}" />
         </view>
-        <text class="sj-scan-t" wx:if="{{deptReady}}">扫到即加入「{{deptOptions[deptIndex].name}}」</text>
+        <text class="sj-scan-t" wx:if="{{deptReady}}">扫到即加入「{{deptOptions[deptIndex].label || deptOptions[deptIndex].name}}」</text>
         <text class="sj-scan-t" wx:else>请先在上面选择部门</text>
         <view class="sj-scan-btn">
           <t-button theme="primary" block loading="{{loading}}" disabled="{{!deptReady}}" bind:tap="scan">
