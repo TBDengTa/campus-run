@@ -592,7 +592,51 @@ router.post(
       }
       deptKey = own[0].deptKey;
     }
+    // 层级 / 校区（用户 2026-10-28「生活部/学习部/纪检部 要分开显示，两个校区的」）：
+    //
+    // 共用部门（scope='both' 且无 schoolId）在界面上会按校区各展开一条，
+    // 干部选中的那一条带 schoolId → 用它决定这条成员记录属于哪个校区。
+    // 优先级：
+    //   ① 部门自身挂了 schoolId → 就用它（部门只属于那一个校区，不接受覆盖）
+    //   ② 前端显式传 schoolId（共用部门选具体校区）→ 校验它确实是合法校区
+    //   ③ 都没给 → 退到干部自己的记录（老行为）
     const dept = await assertDept(deptKey, { allowEmpty: false });
+    const bodySchoolId = str(body.schoolId, 40);
+    let level;
+    let schoolId;
+    let deptSchoolName = '';
+
+    if (dept.schoolId) {
+      // 部门本身就属于某个校区
+      level = 'branch';
+      schoolId = dept.schoolId;
+    } else if (bodySchoolId) {
+      // 共用部门 + 前端指定的校区：必须是真的校区（type='school'）
+      const Organization = require('../models/organization');
+      const org = await Organization.findOne({ _id: bodySchoolId, type: 'school' }).select('name').lean();
+      if (!org) throw new ApiError(400, 400, '所选校区不存在，请重新选择');
+      level = 'branch';
+      schoolId = String(org._id);
+      deptSchoolName = org.name || '';
+    } else {
+      // 退路：沿用干部自己的记录（老行为，兼容未传 schoolId 的旧客户端）
+      const ownRec =
+        (identity.members || []).find((m) => m && m.deptKey === dept.key && m.status === 'active') ||
+        (identity.members || []).find((m) => m && m.status === 'active') ||
+        {};
+      level = ownRec.level === 'branch' ? 'branch' : 'school';
+      schoolId = level === 'branch' ? ownRec.schoolId || null : null;
+      deptSchoolName = level === 'branch' ? ownRec.schoolName || '' : '';
+    }
+    // 部门已挂校区时，校区名从部门查（上面的分支只设了 id）
+    if (dept.schoolId && !deptSchoolName) {
+      const Organization = require('../models/organization');
+      const org = await Organization.findById(dept.schoolId).select('name').lean();
+      deptSchoolName = (org && org.name) || '';
+    }
+
+    // 部门归属校区校验（与成员管理同一份守卫）
+    assertDeptFitsCampus(dept, level, schoolId);
     // 主席团不得作为「可加入」的部门（它没有部员，只有主席/副主席）
     if (dept.key === unionSvc.PRESIDIUM_KEY) {
       throw new ApiError(400, 400, '主席团不是可加入的部门，请选择具体业务部门');
@@ -615,25 +659,8 @@ router.post(
       }
     }
 
-    // 层级 / 校区**由部门归属决定**（用户 2026-10-28「为什么全是校学生会啊」）。
-    //
-    // ⚠️ 旧实现这里取的是「干部自己的记录」：
-    //   主席团是校级 → 他把人加进「北校区学生会 · 文艺部」时 level 被写成 school、
-    //   校区为空，成员记录从此看起来"挂在总校学生会" —— 数据一开始就是错的，
-    //   而且前端列表也会照着这条错数据渲染。
-    // 正确口径：部门带 schoolId = 属于该校区（branch）；不带 = 校级（school）。
-    const level = dept.schoolId ? 'branch' : 'school';
-    const schoolId = dept.schoolId || null;
-    // 校区名：用于成员记录的 schoolName（展示与导出都要它）
-    let deptSchoolName = '';
-    if (schoolId) {
-      const Organization = require('../models/organization');
-      const org = await Organization.findById(schoolId).select('name').lean();
-      deptSchoolName = (org && org.name) || '';
-    }
-
-    // 部门归属校区校验（与成员管理同一份守卫）
-    assertDeptFitsCampus(dept, level, schoolId);
+    // 层级 / 校区 / 校区名已在上面按「部门归属 → 前端指定校区 → 干部记录」的优先级算好，
+    // 这里不再重复计算（避免同一文件里两套口径）。
 
     const dupFilter = { userId: student._id, level, deptKey: dept.key, status: 'active' };
     if (level === 'branch' && schoolId) dupFilter.schoolId = schoolId;
@@ -655,9 +682,9 @@ router.post(
       //   成员记录的 level 会被写成 school、schoolName 为空，
       //   于是这个学生看起来"在总校学生会"而不是北校区分会 —— 数据一开始就错了。
       // 部门带 schoolId → 就是该校区；否则才是校级。
-      level: dept.schoolId ? 'branch' : 'school',
-      schoolId: dept.schoolId ? dept.schoolId : null,
-      schoolName: dept.schoolId ? deptSchoolName : '',
+      level,
+      schoolId,
+      schoolName: deptSchoolName,
       deptKey: dept.key,
       deptName: dept.name,
       role,
@@ -711,40 +738,94 @@ router.get(
     const visible = isPresidium ? joinable : joinable.filter((d) => ownKeys.has(d.key));
 
     // 部门所属校区的名称（用户 2026-10-28「为什么全是校学生会啊」）：
-    //   部门有 schoolId → 它是**该校区**的分会部门，必须把校区名带上，
-    //   否则前端只能猜，全显示成「校学生会」——而库里 8 个部门其实各属不同校区。
+    //   部门有 schoolId → 它是**该校区**的分会部门，必须把校区名带上。
     // 一次性把用到的 Organization 查出来（不逐个 await，避免 N+1）。
-    const schoolIds = [...new Set(visible.map((d) => (d.schoolId ? String(d.schoolId) : '')).filter(Boolean))];
-    const schoolNameById = new Map();
-    if (schoolIds.length) {
-      const Organization = require('../models/organization');
-      const orgs = await Organization.find({ _id: { $in: schoolIds } }).select('name').lean();
+    //
+    // 用户 2026-10-28 追加：「生活部 / 学习部 / 纪检部 这些都不是校级，要分开显示，两个校区的」
+    //   → scope='both' 且无 schoolId 的部门是**各校区共有**的，不是"校级"。
+    //     数据上仍是一条记录（用户明确选择「保留一条记录，界面按两个校区分组显示」），
+    //     但**展示时按每个校区各展开一条**，让干部能选到"北校区·生活部"或"洋河校区·生活部"。
+    //   主席团例外：保持全局唯一（用户确认），它本来就不在 joinable 里。
+    const Organization = require('../models/organization');
+    // 全部校区（type='school'）—— 共用部门要在每个校区各出现一次
+    const campuses = await Organization.find({ type: 'school' })
+      .sort({ name: 1 })
+      .select('name')
+      .lean();
+    const campusList = campuses.map((o) => ({ id: String(o._id), name: o.name || '' }));
+
+    const explicitSchoolIds = [
+      ...new Set(visible.map((d) => (d.schoolId ? String(d.schoolId) : '')).filter(Boolean)),
+    ];
+    const schoolNameById = new Map(campusList.map((c) => [c.id, c.name]));
+    const missingIds = explicitSchoolIds.filter((id) => !schoolNameById.has(id));
+    if (missingIds.length) {
+      const orgs = await Organization.find({ _id: { $in: missingIds } }).select('name').lean();
       for (const o of orgs) schoolNameById.set(String(o._id), o.name || '');
     }
 
-    const departments = visible.map((d) => {
-      const maxRank = isPresidium ? 2 : maxRoleRank(identity, d.key);
-      const roles = Object.keys(ROLE_RANK)
+    // 展开成"可选条目"：一条部门记录可能展开成多条（共用部门 × 校区）
+    const departments = [];
+    const rolesFor = (deptKey) => {
+      const maxRank = isPresidium ? 2 : maxRoleRank(identity, deptKey);
+      return Object.keys(ROLE_RANK)
         .filter((r) => roleRank(r) <= maxRank)
         .sort((a, b) => roleRank(a) - roleRank(b))
         .map((r) => ({ key: r, text: UnionMember.ROLE_TEXT[r] || r }));
-      const schoolName = d.schoolId ? schoolNameById.get(String(d.schoolId)) || '' : '';
-      return {
+    };
+
+    for (const d of visible) {
+      const roles = rolesFor(d.key);
+      const scope = d.scope || 'both';
+      // ① 明确挂了校区 → 就是那一家的部门（每条一条）
+      if (d.schoolId) {
+        const sid = String(d.schoolId);
+        const sname = schoolNameById.get(sid) || '';
+        departments.push({
+          key: d.key,
+          name: d.name,
+          scope,
+          schoolId: sid,
+          schoolName: sname,
+          levelText: sname ? `${sname}学生会` : '分院学生会',
+          roles,
+        });
+        continue;
+      }
+      // ② 共用部门（scope='both'，无 schoolId）→ **每个校区各展开一条**
+      //    这样「生活部」会在北校区、洋河校区下各出现一次，干部能明确选到校区。
+      //    纯校级部门（scope='school'）不展开，仍显示为「校学生会」。
+      if (scope === 'both' || scope === 'branch') {
+        for (const c of campusList) {
+          departments.push({
+            key: d.key,
+            name: d.name,
+            scope,
+            schoolId: c.id,
+            schoolName: c.name,
+            levelText: c.name ? `${c.name}学生会` : '分院学生会',
+            roles,
+          });
+        }
+        continue;
+      }
+      // ③ 纯校级（scope='school'）
+      departments.push({
         key: d.key,
         name: d.name,
-        scope: d.scope || 'both',
-        // 归属：有 schoolId = 该校区分会；无 schoolId = 校级
-        schoolId: d.schoolId ? String(d.schoolId) : '',
-        schoolName,
-        // 层级文案由服务端给（前端不再自己猜），避免「全是校学生会」这类错误
-        levelText: schoolName ? `${schoolName}学生会` : '校学生会',
+        scope,
+        schoolId: '',
+        schoolName: '',
+        levelText: '校学生会',
         roles,
-      };
-    });
+      });
+    }
 
     ok(res, {
       // 主席团 → 全校所有业务部门；其它干部 → 只能选自己的部门
       presidium: isPresidium,
+      // 校区分组：前端按这个顺序分组展示（「北校区学生会」「洋河校区学生会」…）
+      campuses: campusList,
       departments,
     });
   })

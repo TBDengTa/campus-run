@@ -882,17 +882,21 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   const sjJs2 = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'scan-join', 'scan-join.js'), 'utf8');
 
   // 服务端 join-options 必须按部门 schoolId 算层级，不能一律校学生会
-  ok('join-options 带校区名', /schoolNameById/.test(uSrc2) && /const schoolName = d\.schoolId \? schoolNameById\.get/.test(uSrc2));
-  ok('部门层级按校区（非全校）', /levelText: schoolName \? `\$\{schoolName\}学生会` : '校学生会'/.test(uSrc2));
+  ok('join-options 带校区名', /schoolNameById/.test(uSrc2) && /const schoolNameById = new Map\(campusList/.test(uSrc2));
+  // 共用部门（无 schoolId）在每个校区各展开一条：levelText =「<校区>学生会」
+  ok('共用部门按校区展开', /if \(scope === 'both' \|\| scope === 'branch'\)/.test(uSrc2) && /levelText: c\.name \? `\$\{c\.name\}学生会`/.test(uSrc2));
+  ok('join-options 下发校区分组', /campuses: campusList/.test(uSrc2));
   // 前端直接展示服务端给的 levelText，不再自己按 isPresidium 猜
   ok('前端不再按身份猜层级', !/isPresidium \? '校学生会'/.test(sjJs2));
   ok('前端用服务端 levelText', /levelText: d\.levelText/.test(sjJs2));
 
   // 成员记录的 level/schoolId 必须由**部门归属**决定（旧实现用干部自己的记录，
   // 导致主席团把人加进分院部门时 level 被写成 school）
-  ok('成员层级由部门归属决定', /const level = dept\.schoolId \? 'branch' : 'school'/.test(uSrc2));
-  ok('不再用干部自己的记录定层级', !/ownRec\.level === 'branch'/.test(uSrc2));
-  ok('成员记录写入部门校区名', /schoolName: dept\.schoolId \? deptSchoolName : ''/.test(uSrc2));
+  // 层级优先级：部门归属 → 前端指定校区 → 干部记录（见 accept 里的三分支）
+  ok('成员层级优先用部门归属', uSrc2.includes("if (dept.schoolId) {") && uSrc2.includes("level = 'branch';") && uSrc2.includes('schoolId = dept.schoolId;'));
+  ok('共用部门可用前端指定校区', /else if \(bodySchoolId\) \{/.test(uSrc2));
+  ok('干部记录只作为最后的兜底', /退路：沿用干部自己的记录/.test(uSrc2));
+  ok('成员记录写入校区名', /schoolName: deptSchoolName,/.test(uSrc2));
   // 成员展示层级带真实校区名（不再一律「分院学生会」）
   ok('成员展示层级带校区名', /levelText: m\.level === 'school' \? '校学生会' : m\.schoolName/.test(uSrc2));
 }

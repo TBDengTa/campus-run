@@ -42,7 +42,12 @@ const NAV_GROUPS = [
     title: '学生会',
     only: 'unionMember',
     items: [
-      { key: 'unionMembers', perm: 'union.view', icon: 'usergroup', label: '学生会成员', url: '/packageAdmin/union/members/members' },
+      // 「学生会成员」入口（用户 2026-10-28「我希望所有主席团可以进入到这个学生会成员中」）：
+      //   ⚠️ 旧实现只写 perm:'union.view'，而**主席团是学生、没有任何管理权限** ——
+      //      他们在管理中枢里根本看不到「学生会成员」，尽管服务端 assertMemberManager 明确放行主席团。
+      //   改成 only:'unionMembersEntry'：主席团 / 部长 / 副部长 / 总管 **或** 持 union.view 的管理员，
+      //   满足其一即可见（判定见 navCtx 的 canViewMembers）。
+      { key: 'unionMembers', perm: '', only: 'unionMembersEntry', icon: 'usergroup', label: '学生会成员', url: '/packageAdmin/union/members/members' },
       // 扫码加人（用户 2026-10-22）：学生主页出示二维码，干部扫它直接把该学生加进部门。
       // **只给真正能管成员的人看**（用户 2026-10-22「学生会扫码加入不应该显示」）：
       // 服务端 assertMemberManager 只放行 主席团 / 部长 / 副部长 / 学生会总管，
@@ -214,6 +219,11 @@ function navCtx(user, opts = {}) {
     isClassRole,
     isUnionMember: !!(user && user.isUnionMember),
     canUnionScanJoin: canUnionScanJoin(user, perms),
+    // 「学生会成员」入口可见性（用户 2026-10-28）：
+    //   ① 学生身份的干部（主席团 / 部长 / 副部长）—— 他们没有 union.* 权限，但服务端放行；
+    //   ② 持 union.view（或 union.steward / '*'）的管理员、团委老师。
+    // 这两类人必须都能进，否则主席团在管理中枢里就少一个入口。
+    canViewMembers: canUnionScanJoin(user, perms) || isSuper || perms.includes('union.view') || perms.includes('union.steward'),
   };
 }
 
@@ -233,6 +243,8 @@ function entryVisible(item, ctx) {
   if (item.only === 'class' && !c.isClassRole) return false;
   // 「能管学生会成员的人」：主席团 / 部长 / 副部长 / 总管（见 canUnionScanJoin）
   if (item.only === 'unionManager' && !c.canUnionScanJoin) return false;
+  // 「学生会成员」入口：干部（无管理权限的学生）与持 union.view 的管理员都能进（见 navCtx.canViewMembers）
+  if (item.only === 'unionMembersEntry' && !c.canViewMembers) return false;
   // 检查记录：学生会成员（按身份范围）或学生会总管（全校）；纯 union.view 不放行（服务端会 403）
   if (item.only === 'unionRecords' && !(c.isUnionMember || isSuper || perms.includes('union.steward'))) {
     return false;
@@ -313,8 +325,20 @@ function homeGroups(ctx) {
   const isSuper = !!(ctx && ctx.isSuper) || perms.includes('*');
   return groups.filter((g) => {
     if (!HOME_EXCLUDED_GROUPS.has(g.key)) return true;
-    // 该分类下只要有一条是「靠权限进来的」就保留整组（管理员的入口不能丢）
-    return g.items.some((it) => it.perm && (isSuper || perms.includes(it.perm)));
+    // 该分类下只要有一条是「靠权限进来的」就保留整组（管理员的入口不能丢）。
+    //
+    // ⚠️ 除了看 item.perm，还要看「靠 union.* 权限进来」的条目（用户 2026-10-28）：
+    //   「学生会成员」改成 only:'unionMembersEntry' 后 perm 是空串，
+    //   如果只判 item.perm，持 union.view 的管理员在**首页**就看不到「学生会」分类了
+    //   （他们唯一的入口）。这里把这类身份条目也按「是否靠 union.* 权限」算进来。
+    return g.items.some((it) => {
+      if (it.perm && (isSuper || perms.includes(it.perm))) return true;
+      // unionMembersEntry 的权限来源就是 union.view / union.steward（见 navCtx.canViewMembers）
+      if (it.only === 'unionMembersEntry') {
+        return isSuper || perms.includes('union.view') || perms.includes('union.steward');
+      }
+      return false;
+    });
   });
 }
 

@@ -23,6 +23,9 @@ Page({
     loading: false,
     error: '',
     // 可选部门（来自自己在学生会里的成员记录）
+    // 院校（校学生会 + 各校区）：与「学生会成员→添加成员」同款两级选择
+    campusOptions: [],
+    campusIndex: 0,
     deptOptions: [],
     deptIndex: 0,
     deptReady: false, // 是否已选定部门（未选不能扫）
@@ -50,43 +53,88 @@ Page({
     if (!getApp().requireLogin()) return;
   },
 
-  // 取「可加入的部门 + 可选职务」（用户 2026-10-28）。
+  // 取「院校 + 部门 + 可选职务」（用户 2026-10-28）。
   //
-  // 旧实现读 /api/union/mine 的 roles（= 自己在哪个部门），于是主席团成员
-  // （deptKey='presidium'）只能往主席团加人 —— 而主席团根本没有部员。
-  // 现在改走 /api/union/manage/join-options：
-  //   · 主席团 → 返回全校**所有业务部门**（主席团本身被服务端排除，它不是可加入的部门）
-  //   · 其它干部 → 只返回自己所在的部门
-  // 同时该接口按「不能授予高于自己的职务」下发每个部门可选的职务。
+  // 对齐管理端「学生会成员 → 添加成员」的两级选择器（用户原话：
+  //   「你看在学生会成员(具有权限)中的增加成员就是院校与部门」），口径完全一致：
+  //   · 院校 = 校学生会 / 各校区（服务端下发 campuses）
+  //   · 部门 = 只列该院校可用的；共用部门（生活部/学习部/纪检部）在**每个校区各出现一次**
+  //
+  // 旧实现有两次错：① 读 /api/union/mine 的 roles（自己在哪个部门）→ 主席团只能加主席团；
+  // ② 按 isPresidium 把层级一律写「校学生会」→ 各校区分会被说成校级。
+  // 现在全部以服务端 join-options 为准，前端只做「院校→部门」联动。
   async loadDepts() {
     try {
       const res = await auth.get('/api/union/manage/join-options');
       const depts = (res && res.departments) || [];
+      const campuses = (res && res.campuses) || [];
       const isPresidium = !!(res && res.presidium);
-      const opts = depts.map((d) => ({
+
+      // 院校选项：校学生会（全校）+ 各校区。都是"整条部门记录代入"的口径，
+      // 这里只是选择器的分组维度 —— 真正的归属由 dept.schoolId 表达。
+      const campusOptions = [{ id: 'school', name: '校学生会' }].concat(
+        campuses.map((c) => ({ id: c.id, name: c.name || '未命名校区' }))
+      );
+
+      // 原始全量存一份（this._deptAll）：反复切院校不能把选项越换越少
+      this._deptAll = depts.map((d) => ({
         key: d.key,
         name: d.name,
-        // 层级文案**由服务端给**（用户 2026-10-28「为什么全是校学生会啊」）：
-        //   这里是"主席团的部门"，但主席团能看到**各个校区**的部门，
-        //   如果按 isPresidium 一律写「校学生会」，就把「北校区学生会」的部门也说成校级了。
-        //   服务端已按部门自己的 schoolId 算出 levelText（有校区 → 「<校区>学生会」），
-        //   前端只管展示，不要再自己判断。
         levelText: d.levelText || (d.schoolName ? `${d.schoolName}学生会` : '校学生会'),
+        schoolId: d.schoolId || '',
         schoolName: d.schoolName || '',
+        scope: d.scope || 'both',
         roles: d.roles || [],
       }));
+
       this.setData({
         isPresidium,
-        deptOptions: opts,
+        campusOptions,
+        campusIndex: 0,
+        deptOptions: [],
         deptIndex: 0,
-        deptReady: opts.length > 0,
-        // 换部门要重置职务（不同部门可授予的职务可能不同）
+        deptReady: false,
         roleIndex: 0,
-        roleOptions: opts.length ? opts[0].roles || [] : [],
+        roleOptions: [],
       });
+      // 默认落在第一个"有部门可选"的院校上，省掉一次无意义的空列表
+      const firstIdx = campusOptions.findIndex((c) => this.buildDeptOptions(c.id).length > 0);
+      this.applyCampus(firstIdx >= 0 ? firstIdx : 0);
     } catch (e) {
       this.setData({ deptOptions: [], deptReady: false, error: e.message || '读取部门失败' });
     }
+  },
+
+  // 按院校过滤可选部门（与服务端 join-options 的展开结果对齐）：
+  //   ① 部门明确挂了校区 → 只在那个校区出现
+  //   ② 共用部门（无 schoolId）→ 在**每个**校区各出现一次，但不出现在「校学生会」层
+  //      （与 utils/union-dept.js::deptFitsCampus 的既有约定一致：
+  //       全校层除主席团外不再有别的部门 —— 用户 2026-10-21）
+  buildDeptOptions(campusId) {
+    const all = this._deptAll || [];
+    const isSchoolLevel = !campusId || campusId === 'school';
+    return all.filter((d) => {
+      if (d.schoolId) return !isSchoolLevel && String(d.schoolId) === String(campusId);
+      return !isSchoolLevel; // 共用部门：各校区共用
+    });
+  },
+
+  // 应用某个院校（切院校与初次加载共用）
+  applyCampus(index) {
+    const campus = this.data.campusOptions[index] || {};
+    const opts = this.buildDeptOptions(campus.id);
+    this.setData({
+      campusIndex: index,
+      deptOptions: opts,
+      deptIndex: 0,
+      deptReady: opts.length > 0,
+      roleIndex: 0,
+      roleOptions: opts.length ? opts[0].roles || [] : [],
+    });
+  },
+
+  onCampusChange(e) {
+    this.applyCampus(Number(e.detail.value) || 0);
   },
 
   onDeptChange(e) {
@@ -149,6 +197,9 @@ Page({
     try {
       const res = await auth.post(`/api/union/invite/${encodeURIComponent(token)}/accept`, {
         deptKey: dept.key,
+        // 共用部门（生活部等）在每个校区各展开一条，必须把选中的校区一起提交，
+        // 否则服务端只能按干部自己的记录猜 → 又把北校区的加人记成校级
+        schoolId: dept.schoolId || '',
         role: role || 'member',
       });
       const m = (res && res.member) || {};

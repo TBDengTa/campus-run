@@ -14,31 +14,57 @@
   </view>
 
   <block wx:else>
-    <!-- ① 先选部门（用户 2026-10-22：「先在扫码页面中设置部门然后直接去扫」）
-         用户 2026-10-28：「我身为校主席团应该能加载所有部门」+「没有主席团才对」
-         → 主席团可选全校**所有业务部门**（主席团本身被服务端排除，它不是可加入的部门）。 -->
+    <!-- ① 先选院校 → 再选部门（用户 2026-10-28「你看在学生会成员中的增加成员就是院校与部门」）
+         对齐管理端「学生会成员 → 添加成员」的两级选择器，口径完全一致：
+           · 院校 = 校学生会 / 各校区
+           · 部门 = 只列该院校可用的（共用部门在每个校区各出现一次）
+         主席团本人可跨校区加人（用户 2026-10-28「我身为校主席团应该能加载所有部门」）。 -->
     <view class="tt-card sj-card">
       <view class="sj-step">
         <view class="sj-step-no">1</view>
-        <text class="sj-step-t">选择要加入的部门</text>
+        <text class="sj-step-t">选择院校与部门</text>
       </view>
-      <block wx:if="{{deptOptions.length}}">
-        <picker
-          mode="selector"
-          range="{{deptOptions}}"
-          range-key="name"
-          value="{{deptIndex}}"
-          bindchange="onDeptChange"
-        >
-          <view class="sj-picker">
-            <view class="sj-picker-main">
-              <text class="sj-picker-name">{{deptOptions[deptIndex].name}}</text>
-              <text class="sj-picker-org">{{deptOptions[deptIndex].levelText}}</text>
+      <block wx:if="{{campusOptions.length}}">
+        <!-- 院校 -->
+        <view class="sj-pair">
+          <text class="sj-pair-l">院校</text>
+          <picker
+            class="sj-pair-r"
+            mode="selector"
+            range="{{campusOptions}}"
+            range-key="name"
+            value="{{campusIndex}}"
+            bindchange="onCampusChange"
+          >
+            <view class="sj-picker sj-picker-sm">
+              <text class="sj-picker-name">{{campusOptions[campusIndex].name}}</text>
+              <t-icon name="chevron-down" size="24rpx" color="var(--tt-text-3)" />
             </view>
-            <t-icon name="chevron-down" size="26rpx" color="var(--tt-text-3)" />
-          </view>
-        </picker>
-        <text class="sj-hint">{{isPresidium ? '主席团可往全校任意部门加人（主席团本身不接收部员）' : '只能加到自己所在的部门与校区（服务端会再校验一次）'}}</text>
+          </picker>
+        </view>
+        <!-- 部门 -->
+        <view class="sj-pair">
+          <text class="sj-pair-l">部门</text>
+          <picker
+            class="sj-pair-r"
+            mode="selector"
+            range="{{deptOptions}}"
+            range-key="name"
+            value="{{deptIndex}}"
+            bindchange="onDeptChange"
+          >
+            <view class="sj-picker sj-picker-sm">
+              <text class="sj-picker-name {{deptReady ? '' : 'is-placeholder'}}">{{deptOptions[deptIndex].name}}</text>
+              <t-icon name="chevron-down" size="24rpx" color="var(--tt-text-3)" />
+            </view>
+          </picker>
+        </view>
+        <text class="sj-hint">{{isPresidium ? '主席团可往任意院校的部门加人（主席团本身不接收部员）' : '只能加到自己所在的部门与校区（服务端会再校验一次）'}}</text>
+        <view class="sj-empty" wx:if="{{!deptReady}}">
+          <t-icon name="info-circle" size="36rpx" color="var(--td-warning-color-5)" />
+          <text class="sj-empty-t">该院校下没有你可加的部门</text>
+          <text class="sj-empty-d">换一个院校试试，或让管理员在「部门与模块配置」里给该校区添加部门</text>
+        </view>
       </block>
       <view class="sj-empty" wx:else>
         <t-icon name="info-circle" size="44rpx" color="var(--td-warning-color-5)" />

@@ -217,3 +217,48 @@
   background: var(--tt-brand);
   font-weight: 600;
 }
+
+
+/* ===== 院校 / 部门 两级选择行（与「学生会成员→添加成员」同款）===== */
+.sj-pair {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 18rpx 0;
+  border-bottom: 1rpx solid var(--tt-line);
+}
+
+.sj-pair:last-of-type {
+  border-bottom: 0;
+}
+
+.sj-pair-l {
+  flex-shrink: 0;
+  width: 88rpx;
+  font-size: 26rpx;
+  color: var(--tt-text-2);
+}
+
+.sj-pair-r {
+  flex: 1;
+  min-width: 0;
+}
+
+.sj-picker-sm {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10rpx;
+  padding: 16rpx 20rpx;
+  border-radius: 12rpx;
+  background: var(--tt-bg-page);
+}
+
+.sj-picker-sm .sj-picker-name {
+  font-size: 27rpx;
+  color: var(--tt-text-1);
+}
+
+.sj-picker-sm .sj-picker-name.is-placeholder {
+  color: var(--tt-text-3);
+}
