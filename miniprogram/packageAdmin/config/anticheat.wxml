@@ -38,6 +38,38 @@
     </view>
   </view>
 
+  <!-- ===== AI 封禁严谨度（用户 2026-10-28）=====
+       为什么用档位：0.62 / 0.78 这种阈值对管理员没有直觉，
+       「调到多少才不会误伤真实学生」没人答得上来。档位把
+       「误伤风险 ↔ 漏抓风险」的取舍翻译成人话。
+       档位是基线，AI 的在线校准会在基线上小幅浮动（±0.06 封顶）。 -->
+  <view class="tt-section">
+    <text>AI 封禁严谨度</text>
+    <text class="tt-section-extra">影响自动封禁的严格程度</text>
+  </view>
+  <view class="tt-card cfg-card">
+    <view class="cfg-fitem cfg-fitem-col">
+      <view class="ai-strict-opts">
+        <view
+          class="ai-strict-opt {{config.anticheat.aiStrictness === item.key ? 'active' : ''}} {{!canManage ? 'is-readonly' : ''}}"
+          wx:for="{{aiStrictnessOptions}}"
+          wx:key="key"
+          data-key="{{item.key}}"
+          bind:tap="onPickStrictness"
+        >
+          <text class="ai-strict-t">{{item.label}}</text>
+          <text class="ai-strict-d">{{item.desc}}</text>
+        </view>
+      </view>
+      <text class="cfg-hint" wx:if="{{config.anticheat.aiStrictness === 'custom'}}">
+        自动封禁线必须高于待研判线，否则「可疑」就直接封了，等于没有中间态。
+      </text>
+      <text class="cfg-hint" wx:else>
+        当前生效：待研判 ≥ {{aiPreview.suspicious}}，自动封禁 ≥ {{aiPreview.autoBan}}（0~1，越高越宽松）
+      </text>
+    </view>
+  </view>
+
   <view class="cfg-save-bar" wx:if="{{canManage}}">
     <t-button theme="primary" block loading="{{saving}}" bind:tap="save">保存配置</t-button>
   </view>

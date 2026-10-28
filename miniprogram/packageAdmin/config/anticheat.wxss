@@ -1,1 +1,58 @@
 @import "config.wxss";
+
+
+/* ===== AI 封禁严谨度（用户 2026-10-28）===== */
+.cfg-fitem-col {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.ai-strict-opts {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+}
+
+.ai-strict-opt {
+  padding: 18rpx 22rpx;
+  border-radius: 14rpx;
+  background: var(--tt-bg-page);
+  border: 2rpx solid transparent;
+}
+
+.ai-strict-opt.active {
+  border-color: var(--tt-brand);
+  background: var(--tt-brand-weak, #fff4ec);
+}
+
+.ai-strict-opt.is-readonly {
+  opacity: 0.6;
+}
+
+.ai-strict-t {
+  display: block;
+  font-size: 27rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.ai-strict-opt.active .ai-strict-t {
+  color: var(--tt-brand);
+}
+
+.ai-strict-d {
+  display: block;
+  margin-top: 6rpx;
+  font-size: 22rpx;
+  line-height: 1.5;
+  color: var(--tt-text-2);
+}
+
+
+.cfg-hint {
+  display: block;
+  margin-top: 12rpx;
+  font-size: 22rpx;
+  line-height: 1.5;
+  color: var(--tt-text-3);
+}

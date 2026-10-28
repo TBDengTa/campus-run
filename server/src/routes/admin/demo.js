@@ -27,7 +27,7 @@ const router = express.Router();
  *     老后端没有这个字段 → 页面显示「旧版本」，一眼确认部署没生效；
  *   · `build` = 代码文件时间，和部署动作对得上号。
  */
-const API_VERSION = 'demo-rows-32';
+const API_VERSION = 'demo-rows-33';
 let buildTag = '';
 try {
   buildTag = fs.statSync(path.join(__dirname, '../../index.js')).mtime.toISOString();

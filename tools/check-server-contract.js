@@ -876,6 +876,44 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('.env.example 有 CHECK_PHOTO_MAX_MB（100）', /CHECK_PHOTO_MAX_MB=100/.test(envEx));
   // nginx 必须放得下（否则 Nginx 先回 413，Node 根本收不到）
   ok('nginx client_max_body_size 足够', (() => { const m = nginxSrc.match(/client_max_body_size\s+(\d+)m/); return !!m && Number(m[1]) >= 10; })());
+// ===== 申诉解封重置重犯时钟 + AI 严谨度可调（用户 2026-10-28）=====
+{
+  const acSrc = require('fs').readFileSync(path.join(SERVER, 'services/anticheat.js'), 'utf8');
+  const modelSrc = require('fs').readFileSync(path.join(SERVER, 'services/anticheat-model.js'), 'utf8');
+  const cfgSrc = require('fs').readFileSync(path.join(SERVER, 'models/goal-config.js'), 'utf8');
+  const acPageJs = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'config', 'anticheat.js'), 'utf8');
+  const cfgRoute = require('fs').readFileSync(path.join(SERVER, 'routes/admin/config.js'), 'utf8');
+
+  // ① 解封必须清空 at，否则「刚解封就处于 24h 内已违规」→ 再触发一次直接升级限制登录
+  ok('解封会清空 24h 重犯时钟', /at: null, count: r\.count \|\| 0/.test(acSrc));
+  ok('升级判据仍看 at（原设计保留）', /const recent = prev\.at && now\.getTime\(\)/.test(acSrc));
+
+  // ② AI 严谨度四档可调
+  ok('goal_config 有 aiStrictness 字段', /aiStrictness: \{ type: String, enum: \['loose', 'balanced', 'strict', 'custom'\]/.test(cfgSrc));
+  ok('服务端有档位预设', /const STRICTNESS_PRESETS = \{/.test(modelSrc));
+  ok('严格档比平衡档更敏感', (() => {
+    const m = modelSrc.match(/strict: \{ suspicious: ([0-9.]+), autoBan: ([0-9.]+) \}/);
+    const b = modelSrc.match(/balanced: \{ suspicious: ([0-9.]+), autoBan: ([0-9.]+) \}/);
+    return !!m && !!b && Number(m[1]) < Number(b[1]) && Number(m[2]) < Number(b[2]);
+  })());
+  ok('宽松档比平衡档更保守', (() => {
+    const m = modelSrc.match(/loose: \{ suspicious: ([0-9.]+), autoBan: ([0-9.]+) \}/);
+    const b = modelSrc.match(/balanced: \{ suspicious: ([0-9.]+), autoBan: ([0-9.]+) \}/);
+    return !!m && !!b && Number(m[1]) > Number(b[1]) && Number(m[2]) > Number(b[2]);
+  })());
+  ok('换档时校准重置到新基线', /if \(thresholdCfgCache\.key !== key\) \{[\s\S]{0,120}FEEDBACK\.threshold = \{ \.\.\.base \}/.test(modelSrc));
+  ok('配置保存后清阈值缓存（立即生效）', /clearThresholdCache\(\)/.test(cfgRoute));
+  ok('前端档位数字与服务端一致', (() => {
+    const s = acPageJs.match(/key: 'strict'[\s\S]{0,200}?suspicious: ([0-9.]+),\s*\n\s*autoBan: ([0-9.]+)/);
+    const m = modelSrc.match(/strict: \{ suspicious: ([0-9.]+), autoBan: ([0-9.]+) \}/);
+    return !!s && !!m && Number(s[1]) === Number(m[1]) && Number(s[2]) === Number(m[2]);
+  })());
+
+  // ③ 微信同步合并窗口（报告用，非断言性的行为说明）
+  const stepsSrc = require('fs').readFileSync(path.join(SERVER, 'services/steps.js'), 'utf8');
+  ok('1 小时内同步合并为同一条记录', /SYNC_WINDOW_MS = 60 \* 60 \* 1000/.test(stepsSrc) && /const merge = !!last && now - lastAt < SYNC_WINDOW_MS/.test(stepsSrc));
+}
+
 // ===== 班级名规范化（用户 2026-10-28「25班不是25级班，数据不匹配」）=====
 {
   const rosterSrc = require('fs').readFileSync(path.join(SERVER, 'services/roster.js'), 'utf8');

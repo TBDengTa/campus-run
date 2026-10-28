@@ -418,6 +418,13 @@ async function loadFeedback(force = false) {
       }))
       .filter((x) => Number.isFinite(x.score));
     FEEDBACK.loadedAt = Date.now();
+    // 先刷新档位基线，再校准 —— 顺序不能反，否则本轮校准仍按旧基线筛标注
+    // （用户 2026-10-28：管理员调了 AI 严谨度，校准要跟着新基线走）。
+    try {
+      await loadThresholdBase();
+    } catch (e) {
+      /* 配置读取失败不阻断校准 */
+    }
     recalibrateThreshold();
   } catch (e) {
     /* 库不可用时退回内存样本，不影响判定 */
@@ -468,7 +475,11 @@ async function recordFeedback(isCheat, score, meta = {}) {
 function recalibrateThreshold() {
   const list = FEEDBACK.samples;
   if (list.length < 20) return; // 样本太少不动阈值
-  const flagged = list.filter((x) => x.score >= BASE_THRESHOLD.suspicious);
+  // 判据线用**当前生效基线**（而非写死的 BASE_THRESHOLD）：
+  // 管理员把档位调成 loose / strict 之后，校准要在新基线上继续，
+  // 否则「历史标注按 balanced 的线筛出的人」与「现在的线」不是一回事（用户 2026-10-28）。
+  const base = thresholdCfgCache.base || BASE_THRESHOLD;
+  const flagged = list.filter((x) => x.score >= base.suspicious);
   if (!flagged.length) return;
   const precision = flagged.filter((x) => x.isCheat).length / flagged.length;
   const t = FEEDBACK.threshold;
@@ -483,8 +494,104 @@ function recalibrateThreshold() {
   }
 }
 
+/**
+ * AI 严谨度预设（用户 2026-10-28「在反作弊中可以调整 AI 封禁的严谨程度」）。
+ *
+ * 为什么用档位而不是让管理员直接填 0.62 / 0.78：
+ *   那两个小数对管理员没有任何直觉 —— 「填多少才不会误伤真实学生」没人答得上来。
+ *   档位把「误伤风险 ↔ 漏抓风险」的取舍翻译成人话：
+ *     loose    只封**明显**作弊，宁漏不误伤（大型活动 / 新生期用）
+ *     balanced 默认，与历史校准基线一致
+ *     strict   宁可多抓，接受少量误伤（管理员有充足人手复核）
+ *     custom   管理员自己填两个阈值（高级用法）
+ *
+ * 档位是**基线**：在线校准在其上小幅浮动（±0.06 封顶），所以调档立即生效且不会被校准吃掉。
+ */
+const STRICTNESS_PRESETS = {
+  loose: { suspicious: 0.72, autoBan: 0.88 },
+  balanced: { suspicious: 0.62, autoBan: 0.78 },
+  strict: { suspicious: 0.52, autoBan: 0.68 },
+};
+const CALIBRATION_MAX_SHIFT = 0.06; // 校准相对基线的最大偏移
+
+/**
+ * 读取当前生效的阈值。
+ *
+ * 优先级：goal_config.anticheat 的 aiStrictness / aiSuspiciousThreshold / aiAutoBanThreshold
+ *        → 档位预设 → BASE_THRESHOLD，再叠加在线校准的偏移量（封顶 ±0.06）。
+ *
+ * 配置读取有 30s 缓存（同步路径高频调用，不能每次都查库）；
+ * 管理端保存配置后会调 clearThresholdCache() 立即生效。
+ */
+let thresholdCfgCache = { at: 0, key: '', base: null };
+
+async function loadThresholdBase() {
+  const now = Date.now();
+  if (thresholdCfgCache.base && thresholdCfgCache.key && now - thresholdCfgCache.at < 30 * 1000) {
+    return thresholdCfgCache.base;
+  }
+  let base = { ...BASE_THRESHOLD };
+  let key = 'balanced';
+  try {
+    const GoalConfig = require('../models/goal-config');
+    const cfg = await GoalConfig.getSingleton();
+    const ac = (cfg && cfg.anticheat) || {};
+    const mode = ['loose', 'balanced', 'strict', 'custom'].includes(ac.aiStrictness)
+      ? ac.aiStrictness
+      : 'balanced';
+    key = mode;
+    if (mode === 'custom') {
+      // 自定义：钳在合法区间，避免填出 0.1 / 1.5 这种把系统弄坏的值
+      const sNum = Number(ac.aiSuspiciousThreshold);
+      const aNum = Number(ac.aiAutoBanThreshold);
+      const susp = Number.isFinite(sNum) ? Math.min(0.95, Math.max(0.3, sNum)) : BASE_THRESHOLD.suspicious;
+      const autom = Number.isFinite(aNum) ? Math.min(0.99, Math.max(0.4, aNum)) : BASE_THRESHOLD.autoBan;
+      // 自动封禁必须**高于**可疑线，否则"可疑"就直接封了，等于没有中间态
+      base = { suspicious: susp, autoBan: Math.max(susp + 0.02, autom) };
+    } else {
+      base = { ...(STRICTNESS_PRESETS[mode] || BASE_THRESHOLD) };
+    }
+  } catch (e) {
+    /* 配置读不到 → 用默认档位，绝不让反作弊因配置故障失灵 */
+  }
+  // 档位变了 → 校准从**新基线**重新开始。
+  //
+  // ⚠️ 不能保留旧的校准偏移（实测踩过）：管理员把 balanced(0.62) 切成 loose(0.72) 时，
+  //   FEEDBACK.threshold 还是 0.62，被 clamp 到「新基线 ±0.06」的 0.66 ——
+  //   loose 只生效了一半，看起来像"调了没用"。
+  //   正确语义：换档 = 换基线，历史校准是针对旧基线的统计，不该平移到新档位。
+  if (thresholdCfgCache.key !== key) {
+    FEEDBACK.threshold = { ...base };
+  } else if (!FEEDBACK.threshold || !Number.isFinite(FEEDBACK.threshold.suspicious)) {
+    FEEDBACK.threshold = { ...base };
+  }
+  thresholdCfgCache = { at: now, key, base };
+  return base;
+}
+
+/** 配置变更后立即失效缓存（管理端保存时调用） */
+function clearThresholdCache() {
+  thresholdCfgCache = { at: 0, key: '', base: null };
+}
+
 function currentThreshold() {
-  return { ...FEEDBACK.threshold };
+  // 同步接口：用**已加载**的基线（异步加载在 startThresholdAutoLoad 里跑，不阻塞判定路径）
+  const base = thresholdCfgCache.base || { ...BASE_THRESHOLD };
+  const t = { ...FEEDBACK.threshold };
+  // 把校准结果收敛到「基线 ± CALIBRATION_MAX_SHIFT」内，避免校准把档位改掉
+  const clamp = (v, b) => Math.min(0.95, Math.max(0.35, Math.min(b + CALIBRATION_MAX_SHIFT, Math.max(b - CALIBRATION_MAX_SHIFT, v))));
+  return {
+    suspicious: clamp(t.suspicious, base.suspicious),
+    autoBan: clamp(t.autoBan, base.autoBan),
+    mode: thresholdCfgCache.key || 'balanced',
+    base,
+  };
+}
+
+/** 预加载基线（进程启动 / 每次校准前调用；同步判定路径不 await） */
+async function warmThreshold() {
+  await loadThresholdBase();
+  return currentThreshold();
 }
 
 // ===========================================================================
@@ -777,6 +884,9 @@ function peekModel(source) {
 }
 
 module.exports = {
+  STRICTNESS_PRESETS,
+  clearThresholdCache,
+  warmThreshold,
   // 特征工程（可用于离线分析 / 单测）
   werunFeatures,
   gpsFeatures,

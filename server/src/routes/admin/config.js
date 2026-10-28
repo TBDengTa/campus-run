@@ -103,6 +103,27 @@ router.put(
       if (anticheat.maxStepJumpPerSync != null) doc.anticheat.maxStepJumpPerSync = Number(anticheat.maxStepJumpPerSync);
       if (anticheat.minPaceSecondsPerKm != null) doc.anticheat.minPaceSecondsPerKm = Number(anticheat.minPaceSecondsPerKm);
       if (anticheat.banDays != null) doc.anticheat.banDays = Number(anticheat.banDays);
+      // ===== AI 严谨度（用户 2026-10-28「可以调整 AI 封禁的严谨程度」）=====
+      // 档位：loose / balanced / strict / custom。非法值一律回落 balanced（不改坏）。
+      if (anticheat.aiStrictness != null) {
+        const mode = String(anticheat.aiStrictness);
+        doc.anticheat.aiStrictness = ['loose', 'balanced', 'strict', 'custom'].includes(mode) ? mode : 'balanced';
+      }
+      // 自定义阈值的钳位与服务端 currentThreshold 同一口径（0.3~0.95 / 0.4~0.99，
+      // 且自动封禁必须高于待研判 0.02）—— 两处口径必须一致，否则页面预览与实际生效不符。
+      if (anticheat.aiSuspiciousThreshold != null) {
+        const v = Number(anticheat.aiSuspiciousThreshold);
+        if (Number.isFinite(v)) doc.anticheat.aiSuspiciousThreshold = Math.min(0.95, Math.max(0.3, v));
+      }
+      if (anticheat.aiAutoBanThreshold != null) {
+        const v = Number(anticheat.aiAutoBanThreshold);
+        if (Number.isFinite(v)) doc.anticheat.aiAutoBanThreshold = Math.min(0.99, Math.max(0.4, v));
+      }
+      // 保证「自动封禁线 ≥ 待研判线 + 0.02」，否则可疑一档就封了，等于没有中间态
+      doc.anticheat.aiAutoBanThreshold = Math.max(
+        Number(doc.anticheat.aiAutoBanThreshold || 0.78),
+        Number(doc.anticheat.aiSuspiciousThreshold || 0.62) + 0.02
+      );
     }
     if (rewardVideo) {
       doc.rewardVideo.enabled = rewardVideo.enabled !== false;
@@ -153,6 +174,14 @@ router.put(
       doc.buildings = { teaching: normalized.teaching, dorm: normalized.dorm };
     }
     await doc.save();
+    // AI 严谨度改动要**立即生效**（用户 2026-10-28）：
+    // anticheat-model 的阈值有 30s 进程内缓存，不清的话管理员改完还得等半分钟，
+    // 容易误以为「改了没生效」。这里直接失效缓存，下次判定就按新档位。
+    try {
+      require('../../services/anticheat-model').clearThresholdCache();
+    } catch (e) {
+      /* 缓存清理是可选能力，失败不影响保存 */
+    }
     const out = typeof doc.toObject === 'function' ? doc.toObject() : doc;
     out.pointsLegacy = null; // 保存即完成迁移：不再提示旧字段换算
     out.rewardVideoEffective = rewardVideoSvc.resolvePerWatch(out.rewardVideo);
