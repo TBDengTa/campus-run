@@ -876,6 +876,21 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('.env.example 有 CHECK_PHOTO_MAX_MB（100）', /CHECK_PHOTO_MAX_MB=100/.test(envEx));
   // nginx 必须放得下（否则 Nginx 先回 413，Node 根本收不到）
   ok('nginx client_max_body_size 足够', (() => { const m = nginxSrc.match(/client_max_body_size\s+(\d+)m/); return !!m && Number(m[1]) >= 10; })());
+// ===== 班级名规范化（用户 2026-10-28「25班不是25级班，数据不匹配」）=====
+{
+  const rosterSrc = require('fs').readFileSync(path.join(SERVER, 'services/roster.js'), 'utf8');
+  const fixTool = require('fs').readFileSync(path.join(__dirname, 'fix-class-names.js'), 'utf8');
+
+  // 权威口径：班级名 = 「年级后两位 + 级 + 专业」（services/roster.js::classNameFromGradeSpecialty）
+  ok('班级名权威格式含「级」字', /const prefix = `\$\{g\.slice\(-2\)\}级\$\{s\}`/.test(rosterSrc));
+  // 迁移脚本的规范化规则必须与它一致，否则「修完还是两套口径」
+  ok('班级名规范化规则与 roster 一致', /\$\{m\[1\]\}级\$\{m\[2\]\}/.test(fixTool));
+  ok('只规范两位年级前缀（防误改楼名等）', /\(2\[0-9\]\|3\[0-9\]\|9\[0-9\]\)/.test(fixTool));
+  ok('迁移脚本默认 dry-run（安全）', /const APPLY = process\.argv\.includes\('--apply'\)/.test(fixTool));
+  ok('迁移脚本覆盖数组字段（classNames/homeroomClasses）', /ARR_FIELDS = \['classNames', 'homeroomClasses'\]/.test(fixTool));
+  ok('迁移脚本合并重复台账', /toDeleteProfiles/.test(fixTool));
+}
+
 // ===== 用户管理「封禁」筛选 + 成员页接口（用户 2026-10-28）=====
 {
   const usersRoute = require('fs').readFileSync(path.join(SERVER, 'routes/admin/users.js'), 'utf8');
