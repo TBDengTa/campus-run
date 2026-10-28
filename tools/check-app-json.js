@@ -120,6 +120,76 @@ for (const t of (appJson.tabBar && appJson.tabBar.list) || []) {
   }
 }
 
+// ===== 隐私接口必须与代码实际调用一致（用户 2026-10-28 发布受阻）=====
+//
+// 事故：代码里调了 wx.startLocationUpdateBackground，但 requiredPrivateInfos 只声明了
+// 前台版 startLocationUpdate，也没配 requiredBackgroundModes。
+// 微信**审核通过了**，但发布时提示「代码涉及未配置在 app.json 的
+// wx.startLocationUpdateBackground 接口，发布后将无法使用」—— 等于 GPS 后台跑步直接失效。
+// 这类问题的可怕之处：审核阶段看不出来，只有按下发布才暴露。
+//
+// 所以这里做静态反查：把代码里出现的 wx.<定位类接口> 全扫一遍，
+// 凡是微信要求在 app.json 声明的，都必须出现在 requiredPrivateInfos 里。
+// 以后再加定位相关 API 也会在这里立刻报出来。
+{
+  const REQUIRE_DECLARE = new Set([
+    'getLocation',
+    'onLocationChange',
+    'startLocationUpdate',
+    'startLocationUpdateBackground',
+    'chooseLocation',
+    'getFuzzyLocation',
+  ]);
+  const declared = new Set(appJson.requiredPrivateInfos || []);
+  const usedInCode = new Set();
+  const walkJs = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (e.name === 'miniprogram_npm' || e.name === 'node_modules') continue;
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) walkJs(p);
+      else if (/\.js$/.test(e.name)) {
+        let src = '';
+        try {
+          src = fs.readFileSync(p, 'utf8');
+        } catch (err) {
+          continue;
+        }
+        for (const m of src.matchAll(/wx\.([A-Za-z]+)\s*\(/g)) {
+          if (REQUIRE_DECLARE.has(m[1])) usedInCode.add(m[1]);
+        }
+      }
+    }
+  };
+  walkJs(path.join(__dirname, '..', 'miniprogram'));
+
+  for (const api of usedInCode) {
+    if (!declared.has(api)) {
+      problems.push(
+        `代码调用了 wx.${api}，但 requiredPrivateInfos 未声明 —— ` +
+          '审核可能通过，但**发布后该接口无法使用**（微信会提示「未配置在 app.json」）'
+      );
+    }
+  }
+  // 后台定位必须配 requiredBackgroundModes
+  if (declared.has('startLocationUpdateBackground')) {
+    if (!(appJson.requiredBackgroundModes || []).includes('location')) {
+      problems.push(
+        '用了 wx.startLocationUpdateBackground，但 requiredBackgroundModes 缺 "location" —— 后台定位拿不到'
+      );
+    }
+  }
+  // 定位类接口必须配 scope.userLocation 描述（否则弹窗无文案，审核也常因此被拒）
+  if (usedInCode.size && !(appJson.permission && appJson.permission['scope.userLocation'])) {
+    problems.push('用了定位接口，但 app.json permission.scope.userLocation 没有描述文案（弹窗会是空的）');
+  }
+  if (usedInCode.size) {
+    notes.push(
+      `定位接口已声明：${[...usedInCode].sort().join(' / ')}` +
+        (declared.has('startLocationUpdateBackground') ? '（含后台定位 location 模式）' : '')
+    );
+  }
+}
+
 console.log(
   `检查 app.json：主包 ${(appJson.pages || []).length} 页 / 分包 ${subpackages.length} 个（共 ${allPages.length} 页）、` +
     `组件引用 ${seen.size} 个`

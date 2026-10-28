@@ -876,6 +876,25 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('.env.example 有 CHECK_PHOTO_MAX_MB（100）', /CHECK_PHOTO_MAX_MB=100/.test(envEx));
   // nginx 必须放得下（否则 Nginx 先回 413，Node 根本收不到）
   ok('nginx client_max_body_size 足够', (() => { const m = nginxSrc.match(/client_max_body_size\s+(\d+)m/); return !!m && Number(m[1]) >= 10; })());
+// ===== 后台定位接口必须声明（用户 2026-10-28 发布受阻）=====
+{
+  const appJsonRaw = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'app.json'), 'utf8');
+  const appJ = JSON.parse(appJsonRaw.replace(/\/\/.*$/gm, ''));
+  const jp = appJ.requiredPrivateInfos || [];
+  // 代码里调了 wx.startLocationUpdateBackground，就必须同时满足两个声明，
+  // 否则微信审核通过、发布时才提示「未配置在 app.json，发布后无法使用」。
+  ok('后台定位已在 requiredPrivateInfos 声明', jp.includes('startLocationUpdateBackground'));
+  ok('后台定位已配 requiredBackgroundModes', (appJ.requiredBackgroundModes || []).includes('location'));
+  ok('前台定位接口仍声明（降级路径可用）', jp.includes('startLocationUpdate') && jp.includes('onLocationChange'));
+  ok('定位弹窗有文案', !!(appJ.permission && appJ.permission['scope.userLocation'] && appJ.permission['scope.userLocation'].desc));
+  // 代码里确实在使用后台定位（否则这条声明就没意义）
+  const runPage = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'pages', 'run', 'index.js'), 'utf8');
+  ok('代码优先用后台定位、失败退回前台', /wx\.startLocationUpdateBackground/.test(runPage) && /startForeground/.test(runPage));
+  // 静态检查器必须有这道反查（防止以后新增定位 API 又漏声明）
+  const appChecker = require('fs').readFileSync(path.join(__dirname, 'check-app-json.js'), 'utf8');
+  ok('check-app-json 会反查未声明的定位接口', /requiredPrivateInfos 未声明/.test(appChecker));
+}
+
 // ===== 申诉解封重置重犯时钟 + AI 严谨度可调（用户 2026-10-28）=====
 {
   const acSrc = require('fs').readFileSync(path.join(SERVER, 'services/anticheat.js'), 'utf8');

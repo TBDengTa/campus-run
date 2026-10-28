@@ -161,6 +161,16 @@ addTree('deploy/systemd', path.join(ROOT, 'deploy', 'systemd'), {});
 addTree('deploy/nginx', path.join(ROOT, 'deploy', 'nginx'), {});
 addFile('DEPLOY.md', path.join(ROOT, 'deploy', 'DEPLOY.md'), { lf: true });
 
+// ===== 数据修复工具（用户 2026-10-28）=====
+// 打包默认**不含 tools/**（那里面全是开发期静态检查，服务器上没用）。
+// 但「班级名规范化」是**运维型**迁移脚本：换库 / 换环境 / 重新导入名单后
+// 都可能需要再跑一次，而运维人员手上只有这个发布包。
+// 所以单独挑出这一类「可重复运行、带 dry-run」的脚本入包，放在 tools/ 下，用法与仓库里一致。
+for (const name of ['fix-class-names.js', 'backfill-gps-steps.js']) {
+  const src = path.join(ROOT, 'tools', name);
+  if (fs.existsSync(src)) addFile(`tools/${name}`, src, { lf: true });
+}
+
 // ---------- 可选的「预设连接串」：只进 tar 包，不落仓库 ----------
 // 用法：node tools/make-linux-bundle.js --mongo-uri='mongodb://用户:密码@127.0.0.1:27017/?authSource=admin'
 // 目的：私有部署时省掉「装完再手改 .env」这一步。因为 dist/ 已在 .gitignore 里，

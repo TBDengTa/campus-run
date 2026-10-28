@@ -173,7 +173,11 @@
   "requiredPrivateInfos": [
     "getLocation",
     "onLocationChange",
-    "startLocationUpdate"
+    "startLocationUpdate",
+    "startLocationUpdateBackground"
+  ],
+  "requiredBackgroundModes": [
+    "location"
   ],
   "sitemapLocation": "sitemap.json",
   "lazyCodeLoading": "requiredComponents"
