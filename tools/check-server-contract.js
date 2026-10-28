@@ -876,6 +876,25 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('.env.example 有 CHECK_PHOTO_MAX_MB（100）', /CHECK_PHOTO_MAX_MB=100/.test(envEx));
   // nginx 必须放得下（否则 Nginx 先回 413，Node 根本收不到）
   ok('nginx client_max_body_size 足够', (() => { const m = nginxSrc.match(/client_max_body_size\s+(\d+)m/); return !!m && Number(m[1]) >= 10; })());
+// ===== 用户管理「封禁」筛选 + 成员页接口（用户 2026-10-28）=====
+{
+  const usersRoute = require('fs').readFileSync(path.join(SERVER, 'routes/admin/users.js'), 'utf8');
+  const mmJs2 = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'members', 'members.js'), 'utf8');
+
+  // ① 封禁筛选必须覆盖三种限制（login/sync/gps），不能只匹配 status='banned'
+  ok('封禁筛选包含单项限制', /q\.status === 'banned'[\s\S]{0,700}restrictions\.sync\.until/.test(usersRoute));
+  ok('封禁筛选包含 GPS 限制', /restrictions\.gps\.until/.test(usersRoute));
+  ok('封禁筛选排除已过期限制', /bannedUntil: \{ \$gt: now \}/.test(usersRoute));
+  ok('正常筛选排除所有生效限制', /q\.status === 'active'[\s\S]{0,500}\$not: \{ \$gt: now \}/.test(usersRoute));
+  ok('不再只按 status 字段过滤封禁', !/^  if \(q\.status\) cond\.status = q\.status;$/m.test(usersRoute));
+
+  // ② 成员页改用用户端接口（主席团/部长是学生，管理端整树要求 union.view 会 403）
+  ok('成员列表走用户端接口', /auth\.get\('\/api\/union\/manage\/members'/.test(mmJs2));
+  ok('非成员时回退管理端接口', /e\.code === 403002 \|\| e\.code === 403\)[\s\S]{0,160}\/api\/admin\/union\/members/.test(mmJs2));
+  ok('改职务/调部门走用户端', /auth\.put\(`\/api\/union\/manage\/members\/\$\{member\.id\}`/.test(mmJs2));
+  ok('移出走用户端 remove', /\/api\/union\/manage\/members\/\$\{member\.id\}\/remove/.test(mmJs2));
+}
+
 // ===== 学生会成员入口的三级口径（用户 2026-10-28 最终版）=====
 {
   const navSrc2 = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'utils', 'nav-groups.js'), 'utf8');

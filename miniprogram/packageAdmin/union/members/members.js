@@ -116,7 +116,18 @@ Page({
     this.setData({ loading: true });
     try {
       await getApp().ensureLogin();
-      const data = await auth.get('/api/admin/union/members', {
+      // 列表走**用户端**接口（用户 2026-10-28 图1「无权限（需要 union.view）」）：
+      //
+      // 根因：这个页面原来请求 /api/admin/union/members，而管理端整棵树在挂载时
+      // 要求 `union.view` —— 主席团 / 部长 / 副部长是**学生**、没有任何管理权限，
+      // 于是进去后立刻弹「无权限（需要 union.view）」，列表空、只剩一句 toast。
+      // 服务端其实早有面向干部的用户端实现（/api/union/manage/members，
+      // 用成员身份 assertMemberManager + 范围过滤 memberManageAllowed），
+      // 与管理端**同一份数据、同一套口径**，只是鉴权方式不同。
+      //
+      // 回退策略：管理员（持 union.view）通常不是学生会成员，用户端接口会 403，
+      // 这时回退到管理端接口 —— 两条路都保住。
+      const params = {
         page,
         limit: this.data.limit,
         campus: this.data.campus,
@@ -124,7 +135,18 @@ Page({
         termId: this.data.termIdFilter,
         keyword: this.data.keyword,
         status: 'active',
-      });
+      };
+      let data;
+      try {
+        data = await auth.get('/api/union/manage/members', params);
+      } catch (e) {
+        // 403：不是学生会成员（学生处 / 团委老师）→ 改用管理端接口
+        if (e && (e.code === 403002 || e.code === 403)) {
+          data = await auth.get('/api/admin/union/members', params);
+        } else {
+          throw e;
+        }
+      }
       listRev += 1;
       const rev = listRev;
       const rows = (data.list || []).map((m) => ({
@@ -366,7 +388,30 @@ Page({
     if (this.data.batchSaving) return;
     this.setData({ batchSaving: true });
     try {
-      const res = await auth.post('/api/admin/union/members/bulk-update', { ids, action, ...payload });
+      // 批量改职务 / 调部门：用户端**没有批量接口**（干部走身份校验），
+      // 所以干部身份下逐条调 PUT /api/union/manage/members/:id；
+      // 管理员（非成员）走管理端的批量接口（一次请求更省）。
+      // 用户 2026-10-28：主席团在管理端接口上会「无权限（需要 union.view）」。
+      const isManager = !!this.data.canManage;
+      let res;
+      const isUnionMember = !!((getApp().globalData.userInfo || {}).isUnionMember);
+      if (isUnionMember && isManager) {
+        // 逐条：与单条改职务 / 调部门完全同一条路径，失败逐条收集
+        const updatedIds = [];
+        const failed = [];
+        for (const id of ids) {
+          try {
+            const body = action === 'role' ? { role: payload.role } : { deptKey: payload.deptKey };
+            await auth.put(`/api/union/manage/members/${id}`, body);
+            updatedIds.push(id);
+          } catch (e) {
+            failed.push({ id, name: '', reason: (e && e.message) || '失败' });
+          }
+        }
+        res = { updated: updatedIds.length, failed };
+      } else {
+        res = await auth.post('/api/admin/union/members/bulk-update', { ids, action, ...payload });
+      }
       const updated = (res && res.updated) || 0;
       const failed = (res && res.failed) || [];
       if (failed.length) {
@@ -472,7 +517,7 @@ Page({
         const role = options[res.tapIndex];
         if (!role || role.key === member.role) return;
         try {
-          await auth.put(`/api/admin/union/members/${member.id}`, { role: role.key });
+          await auth.put(`/api/union/manage/members/${member.id}`, { role: role.key });
           wx.showToast({ title: '已更新职务', icon: 'success' });
           await this.load(true);
         } catch (err) {
@@ -508,7 +553,7 @@ Page({
           return;
         }
         try {
-          await auth.put(`/api/admin/union/members/${member.id}`, { deptKey: dept.key });
+          await auth.put(`/api/union/manage/members/${member.id}`, { deptKey: dept.key });
           wx.showToast({ title: `已调到${dept.name}`, icon: 'success' });
           await this.load(true);
         } catch (err) {
@@ -525,7 +570,7 @@ Page({
       success: async (r) => {
         if (!r.confirm) return;
         try {
-          await auth.del(`/api/admin/union/members/${member.id}`);
+          await auth.post(`/api/union/manage/members/${member.id}/remove`, {});
           wx.showToast({ title: '已离任', icon: 'success' });
           await this.load(true);
         } catch (err) {
@@ -677,6 +722,29 @@ Page({
 
     this.setData({ saving: true });
     try {
+      // 添加成员：用户端**没有这个接口**（加人走「扫码加人」——学生出示二维码、干部扫码），
+      // 管理端 /api/admin/union/members 要求 union.manage，干部（学生）必然 403。
+      //
+      // 判断口径：持 union.manage / '*' 的是管理员 → 走管理端添加；
+      // 否则是干部（主席团 / 部长，靠身份加人）→ 引导到扫码加人页。
+      const perms = (getApp().globalData.userInfo || {}).effectivePermissions || [];
+      const canAdminAdd = perms.includes('*') || perms.includes('union.manage');
+      if (!canAdminAdd) {
+        this.setData({ saving: false });
+        wx.showModal({
+          title: '请用扫码加人',
+          content:
+            '你的身份是学生会干部（不是管理员），加人需要学生出示「加入学生会二维码」后扫码加入。\n\n现在去扫码加人？',
+          confirmText: '去扫码',
+          success: (r) => {
+            if (r.confirm) {
+              this.closeAdd();
+              wx.navigateTo({ url: '/packageAdmin/union/scan-join/scan-join' });
+            }
+          },
+        });
+        return;
+      }
       if (this.data.picked.length === 1) {
         const one = this.data.picked[0];
         await auth.post('/api/admin/union/members', { ...body, userId: one.userId });

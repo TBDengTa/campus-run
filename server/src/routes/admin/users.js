@@ -889,7 +889,40 @@ async function buildUserMatch(q, omit) {
     const re = new RegExp(kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
     cond.$or = [{ nickname: re }, { realName: re }, { studentId: re }, { openid: kw }, { className: re }];
   }
-  if (q.status) cond.status = q.status;
+  // 状态筛选（用户 2026-10-28「在用户管理中筛选封禁是什么都没有的」）：
+  //
+  // ⚠️ 旧实现只写 `cond.status = q.status`，只能匹配「限制登录」的账号。
+  //   系统里有**三种限制**（services/anticheat.js::SCOPES）：
+  //     login      → 写 user.status='banned'
+  //     sync / gps → 只写 user.restrictions.{sync,gps}.until，**status 仍是 active**
+  //   实测：status='banned' 0 人，但有 16 个 sync + 11 个 gps 限制生效 ——
+  //   点「封禁」一条都出不来，正是用户看到的现象。
+  //
+  // 新口径：
+  //   · banned = **任一限制生效**（登录 / 同步 / GPS），过期的不算
+  //   · active = 没有任何生效中的限制
+  //   · 其它值 = 原样精确匹配（保留旧行为）
+  if (q.status === 'banned') {
+    const now = new Date();
+    and.push({
+      $or: [
+        // 限制登录：无期限或未到期
+        { status: 'banned', bannedUntil: null },
+        { status: 'banned', bannedUntil: { $gt: now } },
+        // 单项限制：until 存在且未过期
+        { 'restrictions.sync.until': { $gt: now } },
+        { 'restrictions.gps.until': { $gt: now } },
+      ],
+    });
+  } else if (q.status === 'active') {
+    const now = new Date();
+    and.push({ status: { $ne: 'banned' } });
+    // $not:{$gt} 同时覆盖「字段不存在」「为 null」「已过期」三种情况
+    and.push({ 'restrictions.sync.until': { $not: { $gt: now } } });
+    and.push({ 'restrictions.gps.until': { $not: { $gt: now } } });
+  } else if (q.status) {
+    cond.status = q.status;
+  }
   if (q.role) cond.role = q.role;
   // 管理员不是角色而是权限：直接权限或所在权限组非空即视为管理员（与登录态 isManager 同义）
   if (q.manager === '1') {
