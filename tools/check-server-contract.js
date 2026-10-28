@@ -876,6 +876,25 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('.env.example 有 CHECK_PHOTO_MAX_MB（100）', /CHECK_PHOTO_MAX_MB=100/.test(envEx));
   // nginx 必须放得下（否则 Nginx 先回 413，Node 根本收不到）
   ok('nginx client_max_body_size 足够', (() => { const m = nginxSrc.match(/client_max_body_size\s+(\d+)m/); return !!m && Number(m[1]) >= 10; })());
+// ===== 学生会成员入口的三级口径（用户 2026-10-28 最终版）=====
+{
+  const navSrc2 = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'utils', 'nav-groups.js'), 'utf8');
+  const mmJs = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'members', 'members.js'), 'utf8');
+  const svcUnion = require('fs').readFileSync(path.join(SERVER, 'services/union.js'), 'utf8');
+
+  // 入口：主席团 + 部长/副部长（可查看）+ 管理员；普通部员无入口
+  ok('成员入口三级口径', /canViewMembers:[\s\S]{0,400}canUnionScanJoin\(user, perms\)/.test(navSrc2));
+  ok('成员入口仍保留管理员通道', /canViewMembers:[\s\S]{0,600}perms\.includes\('union\.view'\)/.test(navSrc2));
+
+  // 页面内写权限必须与「服务端 canManageMembers 同口径」，不能只认 union.manage ——
+  // 主席团是学生、没有该项权限，只认它会把主席团误判成只读（这是本轮修的真实 bug）
+  ok('页面写权限用 canUnionScanJoin 判定', /canManage: canUnionScanJoin\(user, perms\)/.test(mmJs));
+  ok('页面不再只认 union.manage', !/canManage: perms\.includes\('\*'\) \|\| perms\.includes\('union\.manage'\)/.test(mmJs));
+  // 服务端：部长/副部长可管理（限本部门），与页面判定同源
+  ok('服务端部长/副部长可管理本部门', /function canManageMembers\(identity\)[\s\S]{0,200}managerDeptKeys\(identity\)\.size > 0/.test(svcUnion));
+  ok('管理范围限本部门', /function memberInManageScope[\s\S]{0,400}keys\.has\(member\.deptKey\)/.test(svcUnion));
+}
+
 // ===== 部门选择器带校区前缀 + 成员页合并（用户 2026-10-28）=====
 {
   const sjJs = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'scan-join', 'scan-join.js'), 'utf8');
@@ -896,7 +915,8 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('工作台成员管理指向统一页', /goManageMembers\(\)[\s\S]{0,160}packageAdmin\/union\/members\/members/.test(unionJs));
 
   // ③ 「学生会成员」只有主席团（与管理员）能看见，部长/副部长不可见
-  ok('成员入口按主席团判定', /canViewMembers:[\s\S]{0,200}isPresidiumIdentity\(user\)/.test(navSrc));
+  // 2026-10-28 口径修订：入口 = 主席团 + 部长/副部长（可查看）+ 管理员，见上方「成员入口三级口径」
+  ok('成员入口不再只按主席团', !/canViewMembers:[\s\S]{0,120}isPresidiumIdentity\(user\) \|\|/.test(navSrc));
   ok('新增 isPresidiumIdentity（只认主席团）', /function isPresidiumIdentity/.test(navSrc));
   ok('成员入口不再用 canUnionScanJoin 放行', !/canViewMembers: canUnionScanJoin/.test(navSrc));
 }

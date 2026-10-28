@@ -236,15 +236,20 @@ function navCtx(user, opts = {}) {
     isClassRole,
     isUnionMember: !!(user && user.isUnionMember),
     canUnionScanJoin: canUnionScanJoin(user, perms),
-    // 「学生会成员」入口可见性（用户 2026-10-28「只有主席团能看见这个，其他都看不见」）：
+    // 「学生会成员」入口可见性（用户 2026-10-28 最终口径）：
+    //   「主席团会有这个管理权限，非主席团为部长副部长可以查看，其余部员无入口」
     //
-    //   ⚠️ 上一版放的是「干部都可见」（主席团 + 部长 + 副部长 + 总管），用户明确要收紧到**只有主席团**。
-    //   ⚠️ 但**不能**把 union.view / union.manage 的管理员一起关掉：学生处、团委老师
-    //     若也看不见，就再没有任何入口能改成员了（那是他们唯一的入口）。
-    //   所以口径是：**主席团** 或 **持 union.view/union.manage/steward/`*` 的管理员**。
-    //     部长 / 副部长 / 普通部员 → 看不到（他们仍可用「扫码加人」加人，但不能进成员名单）。
+    // 三级口径（**入口可见 ≠ 能改**）：
+    //   · 主席团       → 可查看 + 可管理（加人 / 改职务 / 调部门 / 移出）
+    //   · 部长 / 副部长 → **可查看**（列表与搜索），但改不了（服务端 assertMemberManager 会 403）
+    //   · 普通部员      → 无入口
+    //   · 持 union.view / union.manage / steward / '*' 的管理员 → 可见（学生处、团委老师的唯一入口）
+    //
+    // ⚠️ 上一版我把部长/副部长也挡掉了，那是理解偏了：用户要的是"可查看"。
+    //   真正的写权限由服务端 canManageMembers 判定（主席团/部长/副部长/总管），
+    //   页面内按钮再由 canManage 控制 —— 这里只决定"进不进得去"。
     canViewMembers:
-      isPresidiumIdentity(user) ||
+      canUnionScanJoin(user, perms) || // 主席团 / 部长 / 副部长 / 总管
       isSuper ||
       perms.includes('union.view') ||
       perms.includes('union.manage') ||

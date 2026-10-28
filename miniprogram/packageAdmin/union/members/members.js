@@ -13,6 +13,9 @@ const auth = require('../../../utils/request');
 // 部门「归属校区」判定与配置页共用一份：两页各写必然漂移
 //（配置页只显示本校区部门、成员页却能把人分到别校区的部门）
 const { deptFitsCampus, normalizeScope } = require('../../../utils/union-dept');
+// 写权限的判定与服务端 canManageMembers 同口径（主席团/部长/副部长/总管），
+// 不能再只写 union.manage —— 主席团是学生、没有该项权限，会被误判成只读（用户 2026-10-28 报障）。
+const { canUnionScanJoin } = require('../../../utils/nav-groups');
 
 const ROLES = [
   { key: 'president', label: '主席' },
@@ -38,7 +41,8 @@ Page({
   refreshPermission() {
     const user = getApp().globalData.userInfo || {};
     const perms = user.effectivePermissions || [];
-    this.setData({ canManage: perms.includes('*') || perms.includes('union.manage') });
+    // 用户 2026-10-28：主席团可管理（虽是学生但服务端放行），部长/副部长只读。
+    this.setData({ canManage: canUnionScanJoin(user, perms) });
   },
 
   data: {
@@ -89,7 +93,8 @@ Page({
     if (!getApp().requireLogin()) return;
     const user = getApp().globalData.userInfo || {};
     const perms = user.effectivePermissions || [];
-    this.setData({ canManage: perms.includes('*') || perms.includes('union.manage') });
+    // 用户 2026-10-28：主席团可管理（虽是学生但服务端放行），部长/副部长只读。
+    this.setData({ canManage: canUnionScanJoin(user, perms) });
   },
 
   onShow() {
