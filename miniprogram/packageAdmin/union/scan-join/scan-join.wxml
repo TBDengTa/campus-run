@@ -14,7 +14,9 @@
   </view>
 
   <block wx:else>
-    <!-- ① 先选部门（用户 2026-10-22：「先在扫码页面中设置部门然后直接去扫」） -->
+    <!-- ① 先选部门（用户 2026-10-22：「先在扫码页面中设置部门然后直接去扫」）
+         用户 2026-10-28：「我身为校主席团应该能加载所有部门」+「没有主席团才对」
+         → 主席团可选全校**所有业务部门**（主席团本身被服务端排除，它不是可加入的部门）。 -->
     <view class="tt-card sj-card">
       <view class="sj-step">
         <view class="sj-step-no">1</view>
@@ -36,13 +38,31 @@
             <t-icon name="chevron-down" size="26rpx" color="var(--tt-text-3)" />
           </view>
         </picker>
-        <text class="sj-hint">只能加到自己所在的部门与校区（服务端会再校验一次）</text>
+        <text class="sj-hint">{{isPresidium ? '主席团可往全校任意部门加人（主席团本身不接收部员）' : '只能加到自己所在的部门与校区（服务端会再校验一次）'}}</text>
       </block>
       <view class="sj-empty" wx:else>
         <t-icon name="info-circle" size="44rpx" color="var(--td-warning-color-5)" />
         <text class="sj-empty-t">你在学生会里还没有部门</text>
         <text class="sj-empty-d">请让管理员先在「学生会成员」里把你加进某个部门</text>
       </view>
+
+      <!-- 职务选择（用户 2026-10-28「只能加入部门，成为部员或副部长、部长等」）：
+           默认部员；干部可直接把人加成副部长 / 部长（但不能高于自己，服务端会拦）。 -->
+      <block wx:if="{{deptReady && roleOptions.length}}">
+        <view class="sj-role">
+          <text class="sj-role-label">加入后的职务</text>
+          <view class="sj-role-opts">
+            <view
+              class="sj-role-opt {{roleIndex === index ? 'active' : ''}}"
+              wx:for="{{roleOptions}}"
+              wx:key="key"
+              wx:for-index="index"
+              data-index="{{index}}"
+              bind:tap="onRolePick"
+            >{{item.text}}</view>
+          </view>
+        </view>
+      </block>
     </view>
 
     <!-- ② 扫码：部门选好后才能点 -->

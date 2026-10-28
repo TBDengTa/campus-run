@@ -875,6 +875,39 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('.env.example 有 CHECK_PHOTO_MAX_MB（20）', /CHECK_PHOTO_MAX_MB=20/.test(envEx));
   // nginx 必须放得下（否则 Nginx 先回 413，Node 根本收不到）
   ok('nginx client_max_body_size 足够', (() => { const m = nginxSrc.match(/client_max_body_size\s+(\d+)m/); return !!m && Number(m[1]) >= 10; })());
+// ===== 主席团可加任意部门 + 主席团不可加入 + 可选职务（用户 2026-10-28）=====
+{
+  const uSrc = require('fs').readFileSync(path.join(SERVER, 'routes/union.js'), 'utf8');
+  const sjJs = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'scan-join', 'scan-join.js'), 'utf8');
+  const sjWxml = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'scan-join', 'scan-join.wxml'), 'utf8');
+
+  // ① 主席团可加载全部业务部门（旧实现读 /mine 的 roles，只能加自己部门）
+  ok('扫码页改走 join-options 接口', /\/api\/union\/manage\/join-options/.test(sjJs));
+  ok('join-options 路由存在', /'\/manage\/join-options'/.test(uSrc));
+  ok('主席团标记 presidium 下发给前端', /presidium:\s*isPresidium/.test(uSrc));
+  ok('主席团可加载全部业务部门', /const visible = isPresidium \? joinable/.test(uSrc));
+
+  // ② 主席团不可作为可加入部门
+  ok('主席团从可选部门中排除', /joinable = all\.filter\(\(d\) => d\.key !== unionSvc\.PRESIDIUM_KEY\)/.test(uSrc));
+  ok('服务端拒绝加入主席团', /主席团不是可加入的部门/.test(uSrc));
+
+  // ③ 职务：部员 / 副部长 / 部长，且不能高于自己
+  ok('职务白名单三种', /\['member', 'vice_minister', 'minister'\]\.includes\(role\)/.test(uSrc));
+  ok('写入 role 而非固定 member', /^\s+role,\s*$/m.test(uSrc) && !/role: 'member',\s*\n\s*status: 'active'/.test(uSrc));
+  ok('不能授予高于自己的职务', /不能授予高于你自己的职务/.test(uSrc));
+  ok('roleRank / maxRoleRank 存在', /function roleRank/.test(uSrc) && /function maxRoleRank/.test(uSrc));
+
+  // ④ 部门可用性按 scope 判（旧规则「校级只允许主席团」与 11 个校级部门冲突）
+  ok('部门可用性按 scope 判定', /const scope = String\(dept\.scope \|\| 'both'\)/.test(uSrc));
+  // 去掉注释再判断（注释里故意记了旧报错文案，说明历史）
+  ok('不再用「校级只允许主席团」的旧判据', !/不是学生会主席团，请选择具体院校/.test(require('fs').readFileSync(path.join(SERVER, 'routes/union.js'), 'utf8').replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '')));
+
+  // ⑤ 前端职务选择 UI
+  ok('前端有职务选择', /roleOptions/.test(sjJs) && /onRolePick/.test(sjJs));
+  ok('WXML 渲染职务选项', /sj-role-opt/.test(sjWxml) && /roleOptions/.test(sjWxml));
+  ok('提交时带上 role', /role: role \|\| 'member'/.test(sjJs));
+}
+
 // ===== 学生会控制台要有「扫码加人」入口（用户 2026-10-27）=====
 {
   const unionRouteSrc = require('fs').readFileSync(path.join(SERVER, 'routes/union.js'), 'utf8');
@@ -1765,7 +1798,8 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('我的码对所有用户开放（含教师）', /\/api\/union\/invite\/mine/.test(pfJs) && !/isTeacher[\s\S]{0,80}qrVisible/.test(pfWxml));
   // 干部扫码页：**先选部门**再扫，扫到即加入（用户 2026-10-22）
   ok('扫码页先选部门再扫', /deptReady/.test(sjJs) && /请先选择要加入的部门/.test(sjJs) && /disabled="\{\{!deptReady\}\}"/.test(require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'scan-join', 'scan-join.wxml'), 'utf8')));
-  ok('扫到即加入（部门随扫码请求提交）', /wx\.scanCode/.test(sjJs) && /accept\(token, dept\)/.test(sjJs) && /deptKey: dept\.key/.test(sjJs));
+  // 2026-10-28：accept 多了一个 role 参数（扫码时可直接指定 部员/副部长/部长）
+  ok('扫到即加入（部门与职务随扫码请求提交）', /wx\.scanCode/.test(sjJs) && /accept\(token, dept, role\)/.test(sjJs) && /deptKey: dept\.key/.test(sjJs) && /role: role \|\| 'member'/.test(sjJs));
   ok('加错可当场撤回（走用户端 remove 接口）', /\/manage\/members\/\$\{r\.memberId\}\/remove/.test(sjJs));
   // ⚠️ scan-join 在三级目录，require 必须是 ../../../
   ok('扫码页 require 路径层级正确', /require\('\.\.\/\.\.\/\.\.\/utils\/request'\)/.test(sjJs));

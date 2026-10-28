@@ -26,6 +26,11 @@ Page({
     deptOptions: [],
     deptIndex: 0,
     deptReady: false, // 是否已选定部门（未选不能扫）
+    // 主席团：可选全校所有业务部门（用户 2026-10-28）
+    isPresidium: false,
+    // 职务选项（部员 / 副部长 / 部长）：不高于自己在部门里的职务，主席团不限
+    roleOptions: [],
+    roleIndex: 0,
     // 上一次加入的结果
     lastResult: null, // { realName, className, studentId, deptName, memberId }
     lastJoined: false, // 刚加入（用于显示「撤回」）
@@ -45,31 +50,58 @@ Page({
     if (!getApp().requireLogin()) return;
   },
 
-  // 取自己在学生会里的部门（干部只能往自己的部门加人）
+  // 取「可加入的部门 + 可选职务」（用户 2026-10-28）。
+  //
+  // 旧实现读 /api/union/mine 的 roles（= 自己在哪个部门），于是主席团成员
+  // （deptKey='presidium'）只能往主席团加人 —— 而主席团根本没有部员。
+  // 现在改走 /api/union/manage/join-options：
+  //   · 主席团 → 返回全校**所有业务部门**（主席团本身被服务端排除，它不是可加入的部门）
+  //   · 其它干部 → 只返回自己所在的部门
+  // 同时该接口按「不能授予高于自己的职务」下发每个部门可选的职务。
   async loadDepts() {
     try {
-      const res = await auth.get('/api/union/mine');
-      const roles = (res && res.roles) || [];
-      const opts = [];
-      const seen = new Set();
-      for (const r of roles) {
-        if (!r || !r.deptKey) continue;
-        const key = r.deptKey;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        const name = r.deptName || (key === 'presidium' ? '主席团' : key);
-        const levelText = r.level === 'school' ? '校学生会' : r.orgTitle || r.schoolName || '分院';
-        opts.push({ key, name, levelText });
-      }
-      this.setData({ deptOptions: opts, deptIndex: 0, deptReady: opts.length > 0 });
+      const res = await auth.get('/api/union/manage/join-options');
+      const depts = (res && res.departments) || [];
+      const isPresidium = !!(res && res.presidium);
+      const opts = depts.map((d) => ({
+        key: d.key,
+        name: d.name,
+        // 主席团看的是「全校」；其余干部看自己部门所在层级
+        levelText: isPresidium ? '校学生会' : d.scope === 'branch' ? '本校区' : '校学生会',
+        roles: d.roles || [],
+      }));
+      this.setData({
+        isPresidium,
+        deptOptions: opts,
+        deptIndex: 0,
+        deptReady: opts.length > 0,
+        // 换部门要重置职务（不同部门可授予的职务可能不同）
+        roleIndex: 0,
+        roleOptions: opts.length ? opts[0].roles || [] : [],
+      });
     } catch (e) {
-      this.setData({ deptOptions: [], deptReady: false, error: e.message || '读取你的部门失败' });
+      this.setData({ deptOptions: [], deptReady: false, error: e.message || '读取部门失败' });
     }
   },
 
   onDeptChange(e) {
     const idx = Number(e.detail.value) || 0;
-    this.setData({ deptIndex: idx, deptReady: (this.data.deptOptions[idx] || null) !== null });
+    const dept = this.data.deptOptions[idx] || null;
+    const roles = (dept && dept.roles) || [];
+    this.setData({
+      deptIndex: idx,
+      deptReady: !!dept,
+      // 换部门后职务回到第一个（通常是「部员」），避免残留上一个部门的高职务
+      roleIndex: 0,
+      roleOptions: roles,
+    });
+  },
+
+  // 选职务（部员 / 副部长 / 部长）
+  onRolePick(e) {
+    const idx = Number(e.currentTarget.dataset.index) || 0;
+    if (!this.data.roleOptions[idx]) return;
+    this.setData({ roleIndex: idx });
   },
 
   // 扫码：必须已选部门
@@ -96,7 +128,8 @@ Page({
           wx.showToast({ title: '这不是入会二维码', icon: 'none' });
           return;
         }
-        this.accept(token, dept);
+        const role = (this.data.roleOptions[this.data.roleIndex] || {}).key || 'member';
+        this.accept(token, dept, role);
       },
       fail: () => {
         /* 用户取消扫码不是错误 */
@@ -104,12 +137,14 @@ Page({
     });
   },
 
-  // 扫到即加入（部门已在扫之前选定）
-  async accept(token, dept) {
+  // 扫到即加入（部门与职务已在扫之前选定）
+  // 用户 2026-10-28：「只能加入部门，成为部员或副部长、部长等」—— role 随扫码一起提交。
+  async accept(token, dept, role) {
     this.setData({ loading: true, error: '', lastResult: null, lastJoined: false });
     try {
       const res = await auth.post(`/api/union/invite/${encodeURIComponent(token)}/accept`, {
         deptKey: dept.key,
+        role: role || 'member',
       });
       const m = (res && res.member) || {};
       this.setData({

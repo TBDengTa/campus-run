@@ -182,3 +182,38 @@
   flex: 1;
   min-width: 0;
 }
+
+
+/* ===== 职务选择（用户 2026-10-28「成为部员或副部长、部长等」）===== */
+.sj-role {
+  margin-top: 24rpx;
+  padding-top: 22rpx;
+  border-top: 1rpx solid var(--tt-line);
+}
+
+.sj-role-label {
+  display: block;
+  font-size: 24rpx;
+  color: var(--tt-text-2);
+  margin-bottom: 14rpx;
+}
+
+.sj-role-opts {
+  display: flex;
+  gap: 12rpx;
+  flex-wrap: wrap;
+}
+
+.sj-role-opt {
+  padding: 14rpx 30rpx;
+  border-radius: 12rpx;
+  font-size: 26rpx;
+  color: var(--tt-text-2);
+  background: var(--tt-bg-page);
+}
+
+.sj-role-opt.active {
+  color: #fff;
+  background: var(--tt-brand);
+  font-weight: 600;
+}

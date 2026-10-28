@@ -87,6 +87,31 @@ async function assertMemberManager(req, identity) {
 // 语义与那份逐字一致（有 check-server-contract 断言两边口径相同）。
 const str = (v, max = 120) => String(v === undefined || v === null ? '' : v).trim().slice(0, max);
 
+/**
+ * 业务部门内的职务等级（用户 2026-10-28「只能加入部门，成为部员或副部长、部长等」）。
+ *
+ * 用途：扫码加人时判「不能授予高于自己的职务」。
+ *   部员(0) < 副部长(1) < 部长(2)
+ * 主席 / 副主席不在这个序列里 —— 它们属于主席团（另一个维度），
+ * 由 assertRoleFitsDept 单独拦截（主席团只能有主席/副主席）。
+ */
+const ROLE_RANK = { member: 0, vice_minister: 1, minister: 2 };
+function roleRank(role) {
+  return Object.prototype.hasOwnProperty.call(ROLE_RANK, role) ? ROLE_RANK[role] : -1;
+}
+
+/**
+ * 该干部在某部门能授予的最高职务等级。
+ * 主席团 = 2（可授予任何业务部门职务）；其余取他在该部门的职务等级。
+ */
+function maxRoleRank(identity, deptKey) {
+  if (unionSvc.isPresidiumIdentity(identity)) return 2;
+  const mine = (identity.members || []).filter(
+    (m) => m && m.status === 'active' && m.deptKey === deptKey
+  );
+  return mine.reduce((max, m) => Math.max(max, roleRank(m.role)), -1);
+}
+
 // 部门必须存在（保留 presidium 用于主席团）。返回含 schoolId/scope 的完整关键字段 ——
 // 调用方要用它做校区归属校验，只返回 key/name 就没法判。
 async function assertDept(deptKey, { allowEmpty = true } = {}) {
@@ -100,23 +125,46 @@ async function assertDept(deptKey, { allowEmpty = true } = {}) {
   return { key: dept.key, name: dept.name, schoolId: dept.schoolId || null, scope: dept.scope || 'both' };
 }
 
-// 部门是否可用于该层级/校区：主席团豁免；有 schoolId 只能同校区；无 schoolId 时
-// 校级层只允许主席团（用户 2026-10-21「全校仅有主席团没有其他部门了」）。
+/**
+ * 部门是否可用于该层级 / 校区。
+ *
+ * ⚠️ 历史规则已过时（用户 2026-10-28 实测撞到）：
+ *   旧实现是「无 schoolId 的部门，校级层**只允许主席团**」
+ *   （注释写着 2026-10-21「全校仅有主席团没有其他部门了」）。
+ *   但现在库里有 **11 个校级业务部门**（生活部 / 学习部 / 纪检部 / 体育部 / 文艺部 …），
+ *   它们本来就没有 schoolId（校级部门不属于某个校区）→ 却被这条规则全判成非法，
+ *   主席团往「学习部」加人会报「不是学生会主席团，请选择具体院校（校区）」。
+ *
+ * 正确口径：看部门自己的 **scope** 字段（'school' | 'branch' | 'both'，播种与部门配置里都有），
+ *   而不是「有没有 schoolId」：
+ *     · 校级（level='school'）：只要求部门 scope 含 school；
+ *     · 分院（level='branch'）：要求 scope 含 branch **且**属于本校区。
+ *   schoolId 只用来判「是不是本校区」，不再充当「是不是校级部门」的判据。
+ */
 function assertDeptFitsCampus(dept, level, schoolId) {
   if (!dept || !dept.key) return;
-  if (dept.key === unionSvc.PRESIDIUM_KEY) return;
+  if (dept.key === unionSvc.PRESIDIUM_KEY) return; // 主席团永远豁免
   const want = schoolId ? String(schoolId) : '';
-  if (dept.schoolId) {
-    if (level === 'school') {
-      throw new ApiError(400, 400, `「${dept.name}」属于某个院校的分会，不能作为校学生会部门`);
+  const scope = String(dept.scope || 'both');
+
+  if (level === 'school') {
+    // 校级：部门必须能用于校级（scope 含 school 或 both）
+    if (scope === 'branch') {
+      throw new ApiError(400, 400, `「${dept.name}」只属于院级分会，不能作为校学生会部门`);
     }
-    if (String(dept.schoolId) !== want) {
-      throw new ApiError(400, 400, `「${dept.name}」不属于所选校区，请重新选择部门`);
+    // 挂了具体校区的部门，不能当作校级部门（它是某个分会的部门）
+    if (dept.schoolId) {
+      throw new ApiError(400, 400, `「${dept.name}」属于某个院校的分会，不能作为校学生会部门`);
     }
     return;
   }
-  if (level === 'school') {
-    throw new ApiError(400, 400, `「${dept.name}」不是学生会主席团，请选择具体院校（校区）`);
+
+  // 分院：部门必须能用于院级，且归属本校区
+  if (scope === 'school') {
+    throw new ApiError(400, 400, `「${dept.name}」是校学生会部门，不能用于院校分会`);
+  }
+  if (dept.schoolId && String(dept.schoolId) !== want) {
+    throw new ApiError(400, 400, `「${dept.name}」不属于所选校区，请重新选择部门`);
   }
 }
 
@@ -526,13 +574,43 @@ router.post(
 
     // 部门与层级由干部的**成员记录**决定（他自己在哪个部门/校区，就加到那里），
     // 也允许前端显式传（干部可能同时属于多个部门）——但必须仍在他自己的管理范围内。
+    //
+    // 主席团例外（用户 2026-10-28「我身为校主席团应该能加载所有部门啊」）：
+    //   主席团成员的 deptKey 是 'presidium'（不是业务部门），如果仍按「自己的部门」取，
+    //   他就只能往主席团加人 —— 而主席团根本不该有部员。所以主席团可以选**任意业务部门**。
     let deptKey = str(body.deptKey, 32);
+    const isPresidium = unionSvc.isPresidiumIdentity(identity);
     if (!deptKey) {
       const own = (identity.members || []).filter((m) => m && m.deptKey && m.status === 'active');
       if (!own.length) throw new ApiError(400, 400, '你在学生会里还没有部门，无法加人');
+      // 主席团自身没有可加人的业务部门 → 必须显式指定
+      if (isPresidium && !own.some((m) => m.deptKey !== unionSvc.PRESIDIUM_KEY)) {
+        throw new ApiError(400, 400, '主席团加人请先选择要加入的部门');
+      }
       deptKey = own[0].deptKey;
     }
     const dept = await assertDept(deptKey, { allowEmpty: false });
+    // 主席团不得作为「可加入」的部门（它没有部员，只有主席/副主席）
+    if (dept.key === unionSvc.PRESIDIUM_KEY) {
+      throw new ApiError(400, 400, '主席团不是可加入的部门，请选择具体业务部门');
+    }
+
+    // 职务（用户 2026-10-28「只能加入部门，成为部员或副部长、部长等」）：
+    // 扫码默认加入为「部员」，干部可按住职位直接把 TA 加成副部长 / 部长。
+    // 只允许业务部门内的三种职务；主席 / 副主席必须挂主席团（由 assertRoleFitsDept 兜住），
+    // 这里显式限定白名单，避免绕过前端传个 'president' 进来造出矛盾记录。
+    const role = str(body.role, 24) || 'member';
+    if (!['member', 'vice_minister', 'minister'].includes(role)) {
+      throw new ApiError(400, 400, '职务只能是 部员 / 副部长 / 部长');
+    }
+    // 只能授予**不高于自己**的职务（副部长不能把人加成部长，部长不能凭空造出同级以上的管理权）。
+    // 主席团不受此限（它是全校最高层，可指定任何职务）。
+    if (!isPresidium) {
+      const myMax = maxRoleRank(identity, dept.key);
+      if (roleRank(role) > myMax) {
+        throw new ApiError(403, 403002, '不能授予高于你自己的职务');
+      }
+    }
 
     // 层级/校区：跟干部自己的记录一致（校级干部加校级，分会干部加本校区）
     const ownRec =
@@ -563,7 +641,7 @@ router.post(
       schoolName: level === 'branch' ? ownRec.schoolName || '' : '',
       deptKey: dept.key,
       deptName: dept.name,
-      role: 'member',
+      role,
       status: 'active',
       termId: currentTerm.termId || '',
       termName: currentTerm.termName || '',
@@ -580,6 +658,57 @@ router.post(
       member: presentManageMember(created.toObject()),
       deptName: dept.name,
       realName: created.realName,
+    });
+  })
+);
+
+/**
+ * 扫码加人页需要的「可加入部门 + 可选职务」。
+ *
+ * 用户 2026-10-28：
+ *   · 「我身为校主席团应该能加载所有部门啊」→ 主席团返回**全部**启用部门；
+ *     其它干部只返回自己所在的部门（他只能往自己部门加人）。
+ *   · 「没有主席团才对，只能加入部门，成为部员或副部长、部长等」
+ *     → **过滤掉主席团**（它不是可加入的部门，只有主席/副主席，由管理端单独设置）；
+ *        可选职务只有 部员 / 副部长 / 部长，且不高于自己在该部门的职务
+ *        （主席团不受限，可授予任何业务部门职务）。
+ */
+router.get(
+  '/manage/join-options',
+  wrap(async (req, res) => {
+    const identity = await unionSvc.resolveIdentity(req.user);
+    await assertMemberManager(req, identity);
+    const isPresidium = unionSvc.isPresidiumIdentity(identity);
+
+    const all = await UnionDepartment.find({ enabled: true }).sort({ sort: 1, name: 1 }).lean();
+    // 主席团永远不可加入（业务部门才有人可加）
+    const joinable = all.filter((d) => d.key !== unionSvc.PRESIDIUM_KEY);
+
+    const ownKeys = new Set(
+      (identity.members || [])
+        .filter((m) => m && m.status === 'active' && m.deptKey && m.deptKey !== unionSvc.PRESIDIUM_KEY)
+        .map((m) => m.deptKey)
+    );
+    const visible = isPresidium ? joinable : joinable.filter((d) => ownKeys.has(d.key));
+
+    const departments = visible.map((d) => {
+      const maxRank = isPresidium ? 2 : maxRoleRank(identity, d.key);
+      const roles = Object.keys(ROLE_RANK)
+        .filter((r) => roleRank(r) <= maxRank)
+        .sort((a, b) => roleRank(a) - roleRank(b))
+        .map((r) => ({ key: r, text: UnionMember.ROLE_TEXT[r] || r }));
+      return {
+        key: d.key,
+        name: d.name,
+        scope: d.scope || 'both',
+        roles,
+      };
+    });
+
+    ok(res, {
+      // 主席团 → 全校所有业务部门；其它干部 → 只能选自己的部门
+      presidium: isPresidium,
+      departments,
     });
   })
 );
