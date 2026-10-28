@@ -66,8 +66,13 @@ Page({
       const opts = depts.map((d) => ({
         key: d.key,
         name: d.name,
-        // 主席团看的是「全校」；其余干部看自己部门所在层级
-        levelText: isPresidium ? '校学生会' : d.scope === 'branch' ? '本校区' : '校学生会',
+        // 层级文案**由服务端给**（用户 2026-10-28「为什么全是校学生会啊」）：
+        //   这里是"主席团的部门"，但主席团能看到**各个校区**的部门，
+        //   如果按 isPresidium 一律写「校学生会」，就把「北校区学生会」的部门也说成校级了。
+        //   服务端已按部门自己的 schoolId 算出 levelText（有校区 → 「<校区>学生会」），
+        //   前端只管展示，不要再自己判断。
+        levelText: d.levelText || (d.schoolName ? `${d.schoolName}学生会` : '校学生会'),
+        schoolName: d.schoolName || '',
         roles: d.roles || [],
       }));
       this.setData({

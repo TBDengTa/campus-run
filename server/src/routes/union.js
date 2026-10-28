@@ -416,7 +416,10 @@ function presentManageMember(m) {
     realName: m.realName || '',
     className: m.className || '',
     level: m.level,
-    levelText: m.level === 'school' ? '校学生会' : '分院学生会',
+    // 层级文案带**真实校区名**（用户 2026-10-28「为什么全是校学生会啊」）：
+    //   旧实现分院一律写「分院学生会」，看不出是哪个校区；
+    //   校区名缺失时才退回「分院学生会」。
+    levelText: m.level === 'school' ? '校学生会' : m.schoolName ? `${m.schoolName}学生会` : '分院学生会',
     orgTitle: m.level === 'school' ? '校学生会' : `${m.schoolName || '未设院校'}学生会`,
     schoolName: m.schoolName || '',
     departmentName: m.departmentName || '',
@@ -612,13 +615,22 @@ router.post(
       }
     }
 
-    // 层级/校区：跟干部自己的记录一致（校级干部加校级，分会干部加本校区）
-    const ownRec =
-      (identity.members || []).find((m) => m && m.deptKey === dept.key && m.status === 'active') ||
-      (identity.members || []).find((m) => m && m.status === 'active') ||
-      {};
-    const level = ownRec.level === 'branch' ? 'branch' : 'school';
-    const schoolId = level === 'branch' ? ownRec.schoolId || null : null;
+    // 层级 / 校区**由部门归属决定**（用户 2026-10-28「为什么全是校学生会啊」）。
+    //
+    // ⚠️ 旧实现这里取的是「干部自己的记录」：
+    //   主席团是校级 → 他把人加进「北校区学生会 · 文艺部」时 level 被写成 school、
+    //   校区为空，成员记录从此看起来"挂在总校学生会" —— 数据一开始就是错的，
+    //   而且前端列表也会照着这条错数据渲染。
+    // 正确口径：部门带 schoolId = 属于该校区（branch）；不带 = 校级（school）。
+    const level = dept.schoolId ? 'branch' : 'school';
+    const schoolId = dept.schoolId || null;
+    // 校区名：用于成员记录的 schoolName（展示与导出都要它）
+    let deptSchoolName = '';
+    if (schoolId) {
+      const Organization = require('../models/organization');
+      const org = await Organization.findById(schoolId).select('name').lean();
+      deptSchoolName = (org && org.name) || '';
+    }
 
     // 部门归属校区校验（与成员管理同一份守卫）
     assertDeptFitsCampus(dept, level, schoolId);
@@ -636,9 +648,16 @@ router.post(
       realName: student.realName || student.nickname || student.account || '',
       studentId: student.studentId || '',
       className: student.className || '',
-      level,
-      schoolId,
-      schoolName: level === 'branch' ? ownRec.schoolName || '' : '',
+      // 层级 / 校区**由部门归属决定**（用户 2026-10-28「为什么全是校学生会啊」）。
+      //
+      // ⚠️ 旧实现取的是「干部自己的记录」：
+      //   主席团是校级（level='school'）→ 他把人加进「北校区学生会·文艺部」时，
+      //   成员记录的 level 会被写成 school、schoolName 为空，
+      //   于是这个学生看起来"在总校学生会"而不是北校区分会 —— 数据一开始就错了。
+      // 部门带 schoolId → 就是该校区；否则才是校级。
+      level: dept.schoolId ? 'branch' : 'school',
+      schoolId: dept.schoolId ? dept.schoolId : null,
+      schoolName: dept.schoolId ? deptSchoolName : '',
       deptKey: dept.key,
       deptName: dept.name,
       role,
@@ -691,16 +710,34 @@ router.get(
     );
     const visible = isPresidium ? joinable : joinable.filter((d) => ownKeys.has(d.key));
 
+    // 部门所属校区的名称（用户 2026-10-28「为什么全是校学生会啊」）：
+    //   部门有 schoolId → 它是**该校区**的分会部门，必须把校区名带上，
+    //   否则前端只能猜，全显示成「校学生会」——而库里 8 个部门其实各属不同校区。
+    // 一次性把用到的 Organization 查出来（不逐个 await，避免 N+1）。
+    const schoolIds = [...new Set(visible.map((d) => (d.schoolId ? String(d.schoolId) : '')).filter(Boolean))];
+    const schoolNameById = new Map();
+    if (schoolIds.length) {
+      const Organization = require('../models/organization');
+      const orgs = await Organization.find({ _id: { $in: schoolIds } }).select('name').lean();
+      for (const o of orgs) schoolNameById.set(String(o._id), o.name || '');
+    }
+
     const departments = visible.map((d) => {
       const maxRank = isPresidium ? 2 : maxRoleRank(identity, d.key);
       const roles = Object.keys(ROLE_RANK)
         .filter((r) => roleRank(r) <= maxRank)
         .sort((a, b) => roleRank(a) - roleRank(b))
         .map((r) => ({ key: r, text: UnionMember.ROLE_TEXT[r] || r }));
+      const schoolName = d.schoolId ? schoolNameById.get(String(d.schoolId)) || '' : '';
       return {
         key: d.key,
         name: d.name,
         scope: d.scope || 'both',
+        // 归属：有 schoolId = 该校区分会；无 schoolId = 校级
+        schoolId: d.schoolId ? String(d.schoolId) : '',
+        schoolName,
+        // 层级文案由服务端给（前端不再自己猜），避免「全是校学生会」这类错误
+        levelText: schoolName ? `${schoolName}学生会` : '校学生会',
         roles,
       };
     });

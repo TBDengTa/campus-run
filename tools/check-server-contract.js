@@ -876,6 +876,27 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('.env.example 有 CHECK_PHOTO_MAX_MB（100）', /CHECK_PHOTO_MAX_MB=100/.test(envEx));
   // nginx 必须放得下（否则 Nginx 先回 413，Node 根本收不到）
   ok('nginx client_max_body_size 足够', (() => { const m = nginxSrc.match(/client_max_body_size\s+(\d+)m/); return !!m && Number(m[1]) >= 10; })());
+// ===== 部门层级必须按所属校区显示（用户 2026-10-28「为什么全是校学生会啊」）=====
+{
+  const uSrc2 = require('fs').readFileSync(path.join(SERVER, 'routes/union.js'), 'utf8');
+  const sjJs2 = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'scan-join', 'scan-join.js'), 'utf8');
+
+  // 服务端 join-options 必须按部门 schoolId 算层级，不能一律校学生会
+  ok('join-options 带校区名', /schoolNameById/.test(uSrc2) && /const schoolName = d\.schoolId \? schoolNameById\.get/.test(uSrc2));
+  ok('部门层级按校区（非全校）', /levelText: schoolName \? `\$\{schoolName\}学生会` : '校学生会'/.test(uSrc2));
+  // 前端直接展示服务端给的 levelText，不再自己按 isPresidium 猜
+  ok('前端不再按身份猜层级', !/isPresidium \? '校学生会'/.test(sjJs2));
+  ok('前端用服务端 levelText', /levelText: d\.levelText/.test(sjJs2));
+
+  // 成员记录的 level/schoolId 必须由**部门归属**决定（旧实现用干部自己的记录，
+  // 导致主席团把人加进分院部门时 level 被写成 school）
+  ok('成员层级由部门归属决定', /const level = dept\.schoolId \? 'branch' : 'school'/.test(uSrc2));
+  ok('不再用干部自己的记录定层级', !/ownRec\.level === 'branch'/.test(uSrc2));
+  ok('成员记录写入部门校区名', /schoolName: dept\.schoolId \? deptSchoolName : ''/.test(uSrc2));
+  // 成员展示层级带真实校区名（不再一律「分院学生会」）
+  ok('成员展示层级带校区名', /levelText: m\.level === 'school' \? '校学生会' : m\.schoolName/.test(uSrc2));
+}
+
 // ===== 照片上限 100MB + 失败必提示原因（用户 2026-10-28）=====
 {
   const upRoute = require('fs').readFileSync(path.join(SERVER, 'routes/upload.js'), 'utf8');
