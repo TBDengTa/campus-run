@@ -385,6 +385,9 @@
                     <view class="en-photo-mask" wx:if="{{p.status === 'uploading'}}">
                       <text class="en-photo-pct num-font">{{p.progress}}%</text>
                     </view>
+                    <!-- 失败态（用户 2026-10-28「上传不成功要提示原因」）：
+                         旧实现这里只画一个「重试」图标，error 文案一个字都不显示 ——
+                         用户只知道失败、不知道为什么。现在把原因显示在缩略图下方。 -->
                     <view
                       class="en-photo-mask en-photo-failed"
                       wx:elif="{{p.status === 'failed'}}"
@@ -397,6 +400,11 @@
                     <view class="en-photo-del" data-index="{{pi}}" catch:tap="removePhoto">
                       <t-icon name="close" size="24rpx" color="#ffffff" />
                     </view>
+                  </view>
+                  <!-- 失败原因单独一行（空间足够，长文案也能完整读完） -->
+                  <view class="en-photo-err" wx:if="{{p.status === 'failed' && p.error}}" data-index="{{pi}}" catch:tap="retryPhoto">
+                    <t-icon name="error-circle" size="24rpx" color="var(--td-error-color-6)" />
+                    <text class="en-photo-err-t">{{p.error}}</text>
                   </view>
 
                   <view

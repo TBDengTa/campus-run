@@ -467,6 +467,14 @@ function uploadFile(filePath, options = {}) {
 //
 // 返回 { url }；options.onProgress(percent) 显示单张上传进度。
 function uploadCheckPhoto(filePath, options = {}) {
+  // 用户 2026-10-28「上传不成功要提示原因」：
+  //   旧实现在**解析不出 JSON**时只回「上传失败，请重试」，而且 413 的文案写死「单张最多 5MB」——
+  //   上限后来早就改了，那句 5MB 会误导用户去压缩一张其实完全没超限的照片。
+  // 现在按**失败层次**分别给出可操作的原因：
+  //   · 服务端返回 JSON → 直接用它的 message（服务端会带上真实 MB 上限）
+  //   · 非 JSON + 413    → 被 Nginx/网关拦的（Node 没收到），提示检查 client_max_body_size
+  //   · 非 JSON + 5xx    → 服务器暂时不可用
+  //   · wx.uploadFile 失败 → 区分 超时 / 取消 / 网络
   return new Promise((resolve, reject) => {
     const task = wx.uploadFile({
       url: `${env.BASE_URL}/api/upload/check-photo`,
@@ -474,24 +482,53 @@ function uploadCheckPhoto(filePath, options = {}) {
       name: 'file',
       header: { Authorization: getToken() ? `Bearer ${getToken()}` : '' },
       success: (res) => {
-        let body = {};
+        const status = Number(res.statusCode) || 0;
+        let body = null;
         try {
           body = JSON.parse(res.data);
         } catch (e) {
-          reject(new Error(res.statusCode === 413 ? '照片太大（单张最多 5MB）' : '上传失败，请重试'));
+          body = null;
+        }
+
+        if (!body) {
+          if (status === 413) {
+            reject(
+              new Error(
+                '照片太大，被服务器网关拒绝（Nginx 的 client_max_body_size 需大于单张上限）。请压缩后再传，或联系管理员调整服务器上限'
+              )
+            );
+            return;
+          }
+          if (status === 502 || status === 504) {
+            reject(new Error(`服务器暂时不可用（${status}），请稍后重试`));
+            return;
+          }
+          reject(new Error(`上传失败（HTTP ${status || '无响应'}），请稍后重试`));
           return;
         }
+
         if (body.code === 0 && body.data && body.data.url) {
           resolve(body.data);
           return;
         }
         const err = new Error(body.message || '上传失败');
-        err.code = body.code || res.statusCode;
+        err.code = body.code || status;
         // 401 允许外层重登后重试（与 rawRequest 的 401 语义保持一致）
-        if (res.statusCode === 401) err.code = 401;
+        if (status === 401) err.code = 401;
         reject(err);
       },
-      fail: () => reject(new Error('上传失败，请检查网络后重试')),
+      fail: (e) => {
+        const msg = String((e && e.errMsg) || '');
+        if (/timeout/i.test(msg)) {
+          reject(new Error('上传超时（照片较大或网络较慢），请重试或换小一点的照片'));
+          return;
+        }
+        if (/cancel/i.test(msg)) {
+          reject(new Error('已取消上传'));
+          return;
+        }
+        reject(new Error(`上传失败：${msg || '网络异常'}，请检查网络后重试`));
+      },
     });
     if (options.onProgress && task && typeof task.onProgressUpdate === 'function') {
       task.onProgressUpdate((res) => options.onProgress(res.progress));

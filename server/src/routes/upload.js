@@ -12,18 +12,24 @@ const unionSvc = require('../services/union');
 const AVATAR_MAX_MB = 5;
 const upload = makeUploader({ maxMb: AVATAR_MAX_MB });
 
-// 检查留证照片：现场拍摄需要比头像宽松。用**独立的 multer 实例**，不动头像那条链路。
+// 检查留证照片：现场拍摄需要比其它入口宽松得多。用**独立的 multer 实例**，不动头像链路。
 //
-// 用户 2026-10-26 的两轮要求：
-//   ① 「现场照片选相册的照片上传错误」→ 相册原图 6~12MB，5MB 上限直接拒掉；
-//   ② 「检查录入照片可以大一点 清晰一点」→ 不要为了能传就压得很糊。
+// 用户要求演进（都记下来，避免以后有人"顺手"调小）：
+//   2026-10-26 ① 「现场照片选相册的照片上传错误」→ 相册原图 6~12MB，5MB 上限直接拒掉；
+//   2026-10-26 ② 「检查录入照片可以大一点 清晰一点」→ 别为了能传就压得很糊；
+//   2026-10-28 ③ 「我希望不限制照片大小，或者限制 100MB」→ 上限提到 **100MB**。
 //
-// 现在的前端策略（entry.js::compressForUpload）是**自适应压缩**：
-//   ≤ 8MB 原样上传（一点不压）；更大的才按 quality 85→70→55 逐级压，够小就停。
-// 所以这里的上限只需要「不小于前端安全线 + 余量」，取 **20MB**（与 nginx 的
-// client_max_body_size 20m 对齐，避免 Nginx 先回 413 而 Node 收不到请求）。
-// 想再调整不必改代码：设 .env 的 CHECK_PHOTO_MAX_MB（缺省 20）。
-const CHECK_PHOTO_MAX_MB = Number(process.env.CHECK_PHOTO_MAX_MB || 20) || 20;
+// 为什么是 100MB 而不是"完全不限制"：
+//   完全不限 = 任何人可以往服务器硬盘灌任意大小的文件（一次上传就能占满磁盘），
+//   这在生产上是不可接受的。100MB 已经远超手机原图（iPhone ProRAW 也就 25~75MB），
+//   实际上等于"日常不会撞到上限"，同时仍然有一道防滥用闸门。
+//
+// 上限必须在**三层同时对上**，否则会撞到中间那层却收不到可读的报错：
+//   ① 前端 entry.js 的 PHOTO_SAFE_BYTES / 压缩策略
+//   ② 本文件 CHECK_PHOTO_MAX_MB（multer fileSize）
+//   ③ nginx client_max_body_size（deploy/nginx/*.conf，现为 128m）
+// 想再调整不必改代码：设 .env 的 CHECK_PHOTO_MAX_MB（缺省 100）。
+const CHECK_PHOTO_MAX_MB = Number(process.env.CHECK_PHOTO_MAX_MB || 100) || 100;
 const checkPhotoUpload = makeUploader({ maxMb: CHECK_PHOTO_MAX_MB });
 
 const router = express.Router();

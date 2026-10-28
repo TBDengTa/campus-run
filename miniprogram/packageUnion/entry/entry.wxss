@@ -839,3 +839,26 @@
   padding-left: 12rpx;
   padding-right: 12rpx;
 }
+
+
+/* ===== 照片上传失败原因（用户 2026-10-28「上传不成功要提示原因」）=====
+   旧实现失败时只显示「重试」图标，error 文案一个字都不给 → 用户不知道为什么失败。
+   现在单独一行展示原因，允许两行，点击整行即重试。 */
+.en-photo-err {
+  display: flex;
+  align-items: flex-start;
+  gap: 8rpx;
+  margin-top: 8rpx;
+  padding: 10rpx 14rpx;
+  border-radius: 10rpx;
+  background: var(--td-error-color-1, #fef3f2);
+}
+
+.en-photo-err-t {
+  flex: 1;
+  min-width: 0;
+  font-size: 21rpx;
+  line-height: 1.5;
+  color: var(--td-error-color-7, #d54941);
+  word-break: break-all;
+}

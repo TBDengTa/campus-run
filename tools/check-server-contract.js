@@ -871,10 +871,44 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('压缩用 wx.compressImage', /wx\.compressImage\(/.test(entrySrc4));
   ok('压缩后传给上传接口', /uploadCheckPhoto\(src,/.test(entrySrc4));
   ok('压缩失败退回原图/继续用当前文件', /fail: \(\) => resolve\(''\)/.test(entrySrc4));
-  ok('检查照片上限 20MB（可配，照片要大要清晰）', /CHECK_PHOTO_MAX_MB = Number\(process\.env\.CHECK_PHOTO_MAX_MB \|\| 20\)/.test(routeUpSrc2));
-  ok('.env.example 有 CHECK_PHOTO_MAX_MB（20）', /CHECK_PHOTO_MAX_MB=20/.test(envEx));
+  // 2026-10-28 用户要求「不限制或 100MB」→ 上限从 20 提到 100
+  ok('检查照片上限 100MB（可配）', /CHECK_PHOTO_MAX_MB = Number\(process\.env\.CHECK_PHOTO_MAX_MB \|\| 100\)/.test(routeUpSrc2));
+  ok('.env.example 有 CHECK_PHOTO_MAX_MB（100）', /CHECK_PHOTO_MAX_MB=100/.test(envEx));
   // nginx 必须放得下（否则 Nginx 先回 413，Node 根本收不到）
   ok('nginx client_max_body_size 足够', (() => { const m = nginxSrc.match(/client_max_body_size\s+(\d+)m/); return !!m && Number(m[1]) >= 10; })());
+// ===== 照片上限 100MB + 失败必提示原因（用户 2026-10-28）=====
+{
+  const upRoute = require('fs').readFileSync(path.join(SERVER, 'routes/upload.js'), 'utf8');
+  const errMw = require('fs').readFileSync(path.join(SERVER, 'middlewares/error.js'), 'utf8');
+  const entryJs = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageUnion', 'entry', 'entry.js'), 'utf8');
+  const entryWxml = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageUnion', 'entry', 'entry.wxml'), 'utf8');
+  const reqJs = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'utils', 'request.js'), 'utf8');
+  const nginxConf = (() => {
+    const dir = path.join(__dirname, '..', 'deploy', 'nginx');
+    try {
+      const f = require('fs').readdirSync(dir).find((n) => n.endsWith('.conf'));
+      return f ? require('fs').readFileSync(path.join(dir, f), 'utf8') : '';
+    } catch (e) { return ''; }
+  })();
+
+  // ① 上限 100MB，三层必须对齐（缺一层就会撞在中间那层且收不到可读报错）
+  ok('照片上限 100MB', /CHECK_PHOTO_MAX_MB || 100/.test(upRoute));
+  ok('.env.example 上限 100', /CHECK_PHOTO_MAX_MB=100/.test(require('fs').readFileSync(path.join(__dirname, '..', 'server', '.env.example'), 'utf8')));
+  ok('前端安全线 ≥ 95MB（大图原样传）', /PHOTO_SAFE_BYTES = 95 \* 1024 \* 1024/.test(entryJs));
+  ok('nginx 上限 128m（> 100MB + multipart 余量）', (() => { const m = nginxConf.match(/client_max_body_size\s+(\d+)m/); return !!m && Number(m[1]) >= 128; })());
+
+  // ② 失败必须说明原因
+  ok('multer 超限报出真实上限', /单张最多 \$\{limitMb\} MB/.test(errMw));
+  ok('413 按状态码返回', /res\.status\(413\)/.test(errMw));
+  ok('前端区分网关 413', /client_max_body_size/.test(reqJs));
+  ok('前端区分超时 / 取消 / 网络', /上传超时/.test(reqJs) && /已取消上传/.test(reqJs) && /请检查网络后重试/.test(reqJs));
+  // 去掉注释再判断（注释里解释了历史文案，说明为什么改）
+  ok('不再写死「最多 5MB」', !/单张最多 5MB/.test(reqJs.replace(/\/\/.*$/gm, '')));
+  ok('前端能报出真实上限', /client_max_body_size/.test(reqJs) && /网关拒绝/.test(reqJs));
+  ok('失败原因显示在界面上', /en-photo-err/.test(entryWxml) && /\{\{p\.error\}\}/.test(entryWxml));
+  ok('不再把服务端文案覆盖成笼统提示', !/照片太大（压缩后仍超限）/.test(entryJs));
+}
+
 // ===== 主席团可加任意部门 + 主席团不可加入 + 可选职务（用户 2026-10-28）=====
 {
   const uSrc = require('fs').readFileSync(path.join(SERVER, 'routes/union.js'), 'utf8');
@@ -1134,16 +1168,18 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   })();
   const routeUpSrc3 = require('fs').readFileSync(path.join(SERVER, 'routes/upload.js'), 'utf8');
 
-  ok('自适应压缩：小图原样传', /const PHOTO_SAFE_BYTES = 8 \* 1024 \* 1024/.test(entrySrc5) && /s\.len|size <= PHOTO_SAFE_BYTES\) return src/.test(entrySrc5.replace(/if \(size > 0 && size/g, 'if (size')));
+  // 2026-10-28：安全线从 8MB 提到 95MB（上限 100MB，留 5MB 给 multipart）
+  ok('自适应压缩：小图原样传（≤95MB）', /const PHOTO_SAFE_BYTES = 95 \* 1024 \* 1024/.test(entrySrc5) && /size <= PHOTO_SAFE_BYTES\) return src/.test(entrySrc5));
   ok('自适应压缩：先读原图大小', /getFileInfo\(/.test(entrySrc5) && /getFileSize\(src\)/.test(entrySrc5));
   ok('逐级降质量 85→70→55', /\[85, 70, 55\]/.test(entrySrc5));
   ok('越清晰越好：长边 2560（不是 1280）', /const PHOTO_MAX_EDGE = 2560/.test(entrySrc5));
   ok('够小就停止继续压', /if \(s > 0 && s <= PHOTO_SAFE_BYTES\) return current/.test(entrySrc5));
-  ok('检查照片上限 20MB', /CHECK_PHOTO_MAX_MB \|\| 20/.test(routeUpSrc3));
+  ok('检查照片上限 100MB（上限已放开）', /CHECK_PHOTO_MAX_MB \|\| 100/.test(routeUpSrc3));
   ok('nginx 体积上限 > 20MB', (() => { const m = nginxSrc2.match(/client_max_body_size\s+(\d+)m/); return !!m && Number(m[1]) > 20; })());
 }
 
-  ok('超限时给可操作提示', /照片太大（压缩后仍超限）/.test(entrySrc4));
+  // 旧实现把服务端文案覆盖成笼统的「照片太大」；现在保留服务端原文（含真实上限）
+  ok('超限时保留服务端可操作原因', !/照片太大（压缩后仍超限）/.test(entrySrc4) && /单张最多/.test(require('fs').readFileSync(path.join(SERVER, 'middlewares/error.js'), 'utf8')));
 }
 
 // ===== 图库上传失败：mimetype 不可靠 + 头像 2MB 太小（用户 2026-10-26 第四轮）=====
@@ -1183,7 +1219,7 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('上传 URL 可用 PUBLIC_BASE_URL 覆盖', /config\.publicBaseUrl \|\| config\.adPageBaseUrl/.test(upSrc2));
 
   // 上传失败必须能看出原因（不再只有一句「上传失败」）
-  ok('上传失败区分 403002 / 401 并带 code', /403002/.test(entryJs2) && /code \$\{code\}/.test(entryJs2));
+  ok('上传失败区分 403002 / 401 并保留原因', /403002/.test(entryJs2) && /登录已过期/.test(entryJs2));
 
   // 密码变更选择层：不用原生 ActionSheet（样式不可控、长文案折行）
   // 精确到 changePassword 方法体：文件里别处（解除限制）仍在用 ActionSheet，那是正常的
