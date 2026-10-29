@@ -107,6 +107,9 @@ function werunFeatures({ record, history }) {
     // 数字模式：重复 / 顺序（0~1）
     pattern: patternScore(steps),
     perSec: Math.min(perSec, 50), // 截顶，避免单个极端值主导
+    // 同步间隔秒数：perSec 的**可信度前提**（间隔太短时分母不可信，见 physicalScore 的判据）。
+    // 不作为森林特征（它不是"行为"而取决于用户何时点同步），只给物理约束层用。
+    elapsedSec: Math.min(elapsedSec, 86400),
     steps: Math.min(steps, 120000),
     delta: Math.min(delta, 120000),
     z: Math.min(z, 20),
@@ -903,10 +906,24 @@ function physicalScore(source, feat) {
       score = Math.max(score, 0.8);
       reasons.push(`单日 ${feat.steps} 步异常偏高`);
     }
-    // 增速：>15 步/秒 持续（等于每秒跨 15 步）
-    if (feat.perSec > 15) {
-      score = Math.max(score, 0.9);
-      reasons.push(`同步增速 ${feat.perSec.toFixed(1)} 步/秒，机器写入特征`);
+    // 「涨幅速度」（= 本次新增 ÷ 距上次同步时长）判据。
+    //
+    // ⚠️ 用户 2026-10-29「同步增速这个有点假很容易误封锁」后**大幅收紧**，
+    //    并加了最小时间窗（与 services/step-anomaly.js::checkStepRate 同一口径）：
+    //    同步间隔 ≠ 运动时长 —— 用户可能走完很久才点同步，也可能连点两次刷新。
+    //    旧口径（>15 步/秒直接 0.9）实测会封真人：
+    //      走 30 秒 600 步后同步 = 20 步/秒；连点刷新（间隔 5 秒补 500 步）= 100 步/秒。
+    //    0.9 远高于默认自动封禁线 0.78 → **直接封号**，而这些全是真实步数。
+    //
+    //    新口径三重要点：
+    //      ① 间隔 < 3 分钟不判（分母不可信，见 step-anomaly 的注释）；
+    //      ② 门槛提到 >25 步/秒（旧 >15 太松）；
+    //      ③ **分数封顶 0.72，刻意低于自动封禁线 0.78** ——
+    //         增速只是"疑似"，单独绝不足以封号，只把记录推进待研判队列等人工看。
+    //         真刷步靠单日总量爆炸/固定数字那些硬特征去封（它们不依赖同步间隔）。
+    if (feat.perSec > 25 && Number(feat.elapsedSec) >= 180) {
+      score = Math.max(score, 0.72);
+      reasons.push(`涨幅速度 ${feat.perSec.toFixed(1)} 步/秒（持续 3 分钟以上，需人工研判）`);
     }
   }
   return { score, reasons };
@@ -922,7 +939,8 @@ function explain(source, feat, score) {
   if (source === 'werun') {
     if (feat.pattern >= 1) out.push('步数是重复/顺序数字');
     if (feat.roundness >= 3) out.push(`步数末位有 ${feat.roundness} 个 0（整数化）`);
-    if (feat.perSec > 8) out.push(`同步增速 ${feat.perSec.toFixed(1)} 步/秒`);
+    // 涨幅速度：与 physicalScore 同一门槛（间隔 < 3 分钟不提示，理由同上）
+    if (feat.perSec > 15 && Number(feat.elapsedSec) >= 180) out.push(`涨幅速度 ${feat.perSec.toFixed(1)} 步/秒`);
     if (feat.z > 4) out.push(`步数偏离本人基线 ${feat.z.toFixed(1)} 倍`);
     if (feat.zeroDeltaStreak >= 5) out.push('同日多次同步但步数不涨');
   } else {

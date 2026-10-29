@@ -22,6 +22,8 @@
 const AUTO_BAN_SCORE = 60;
 // 进「异常记录」列表的分数门槛（低于它连记录都不建，避免列表被噪音淹没）
 const SUSPICIOUS_SCORE = 30;
+// 「涨幅速度」的最小可信时间窗（秒）：短于此的同步间隔不判增速（详见 checkStepRate 注释）
+const MIN_WINDOW_SEC = 180;
 
 /**
  * 步数「整数化」程度：真实步数末位通常是随机的，
@@ -58,9 +60,27 @@ function checkPatternNumber(steps) {
 }
 
 /**
- * 步数增速超过人类极限。
- * 人类极速约 5 步/秒（冲刺），长时间平均远低于此。
- * 这里用「距上次同步的时间」算平均增速，> 8 步/秒 就明显不可能是走路。
+ * 步数增速超过人类极限（"涨幅速度"）。
+ *
+ * ===== 口径（用户 2026-10-29「同步增速这个有点假很容易误封锁」后重写）=====
+ * 原来：perSec = 本次新增 / 距上次同步秒数。
+ * 问题：**同步间隔 ≠ 运动时长**，分母根本不代表"这步数是在这段时间里走出来的"。
+ * 实测会误判（括号里是旧口径算出的速率）：
+ *   · 用户走 30 秒 600 步，然后才打开小程序同步 → 600/30 = 20 步/秒（>12 命中 55 分）
+ *   · 用户在办公室走 1000 步、一小时后才同步 → 1000/3600 ≈ 0.28（正常）
+ *   · 连点两次刷新（间隔 5 秒，微信补 500 步）→ 100 步/秒（必然命中）
+ * 这些都是**人正常走路**，只是"什么时候同步"由用户点按钮决定，与走了多久无关。
+ *
+ * 新口径：加**最小可信时间窗** MIN_WINDOW_SEC = 180 秒。
+ *   · 间隔 < 3 分钟（含连点刷新、短间隔补同步）→ **不判定**，因为这么短的时间窗
+ *     里"增量/间隔"的噪声远大于信号，判它只会误伤；
+ *   · 间隔 ≥ 3 分钟才用 perSec，且阈值同时按 2 分钟起步的物理上限校准。
+ * 为什么是 3 分钟：真人从"开始走"到"值得同步"至少几分钟；短于此的两次同步，
+ * 增量反映的是**微信侧延迟**而不是人突然加速（微信步数本身有分钟级聚合延迟）。
+ *
+ * ⚠️ 保留真正的作弊信号：刷步脚本的特征是**单日总量爆炸**（见 checkDailyCap）
+ * 与**固定数字模式**（checkPatternNumber）—— 这两条不受时间窗影响，仍然生效。
+ * 增速只是辅助信号，宁可漏判也不误封（漏判有人工复核兜底，误封要学生申诉）。
  *
  * @param {number} deltaSteps 本次新增步数
  * @param {number} elapsedMs 距上次同步的毫秒数（<=0 表示未知，跳过）
@@ -69,10 +89,14 @@ function checkStepRate(deltaSteps, elapsedMs) {
   const delta = Number(deltaSteps) || 0;
   const ms = Number(elapsedMs) || 0;
   if (delta <= 0 || ms <= 0) return { score: 0, hit: false, label: '' };
+  // 时间窗太短：分母不可信，直接不判（详见上面新口径说明）
+  if (ms < MIN_WINDOW_SEC * 1000) return { score: 0, hit: false, label: '' };
+
   const perSec = delta / (ms / 1000);
-  // 8 步/秒 ≈ 每秒蹦 8 步，持续这种速率只可能是脚本
-  if (perSec >= 12) return { score: 55, hit: true, label: `步数增速 ${perSec.toFixed(1)} 步/秒` };
-  if (perSec >= 8) return { score: 40, hit: true, label: `步数增速偏快 ${perSec.toFixed(1)} 步/秒` };
+  // 阈值提高并拉开档次：人类极速约 5 步/秒（冲刺），长距离平均 2~4。
+  // 取 15/20 而非原来的 8/12 —— 8 步/秒对"快走 + 微信补同步"太容易撞上。
+  if (perSec >= 20) return { score: 45, hit: true, label: `涨幅速度 ${perSec.toFixed(1)} 步/秒（远超人类极限）` };
+  if (perSec >= 15) return { score: 30, hit: true, label: `涨幅速度偏快 ${perSec.toFixed(1)} 步/秒` };
   return { score: 0, hit: false, label: '' };
 }
 

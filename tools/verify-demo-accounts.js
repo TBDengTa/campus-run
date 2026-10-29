@@ -47,14 +47,29 @@ async function main() {
   const uri = `${base.replace(/\/$/, '')}/${process.env.MONGO_DB_NAME || 'campus_run'}${query ? `?${query}` : ''}`;
   await mongoose.connect(uri);
 
-  const className = demo.DEFAULT_CLASS;
-
-  // ===== 前置：记录班级原始状态，最后核对没被改动 =====
-  const beforeClass = await ClassProfile.findOne({ className }).lean();
+  // 目标班级：交给服务端选（传空 → 先试 DEFAULT_CLASS，缺失则「24 级优先 → 任意非毕业班」）。
+  // 这里只**预判**它可能选的班，用于最后核对「班级台账没被改动」；
+  // 实际以 seed 返回的 r1.className 为准（服务端是唯一决策方）。
+  let className = demo.DEFAULT_CLASS;
+  let beforeClass = await ClassProfile.findOne({ className }).lean();
   if (!beforeClass) {
-    console.error(`[中止] 班级 ${className} 不存在 —— 请先确认数据库里有这个班`);
-    await mongoose.disconnect();
-    process.exit(1);
+    const fallback =
+      (await ClassProfile.findOne({ className: /^24/, status: { $ne: 'graduated' }, enabled: { $ne: false } })
+        .sort({ className: 1 })
+        .lean()) ||
+      (await ClassProfile.findOne({ status: { $ne: 'graduated' }, enabled: { $ne: false } })
+        .sort({ className: 1 })
+        .lean());
+    if (!fallback) {
+      console.error('[中止] 库里没有任何可用班级（status != graduated），无法验证示例账户');
+      await mongoose.disconnect();
+      process.exit(1);
+    }
+    className = fallback.className;
+    beforeClass = fallback;
+    console.log(
+      `[提示] DEFAULT_CLASS「${demo.DEFAULT_CLASS}」在库里不存在（可能已改名），预期改用「${className}」`
+    );
   }
   const beforeRealStudents = await User.countDocuments({ className, role: { $ne: 'teacher' }, isDemo: { $ne: true } });
   console.log(`\n[前置] 班级 ${className} 真实学生 ${beforeRealStudents} 人`);
