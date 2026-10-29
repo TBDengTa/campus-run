@@ -345,6 +345,37 @@ const check = (name, cond, detail) => {
     // 管理员侧必须叫「班级管理」。别把入口文案跟页面标题一起改。
     if (myEntry) check('教师条目文案 = 我的班级', myEntry.label === '我的班级', myEntry.label);
     if (adminEntry) check('管理员条目文案 = 班级管理', adminEntry.label === '班级管理', adminEntry.label);
+
+    // ===== 班级状态总览（用户 2026-10-29）=====
+    // 「增加班级状态页面显示所有班级的考勤、校园跑达标(日、周)，
+    //   并且可以复制到文本如未达标班级等」。
+    //
+    // ⚠️ 判定「该轮次应不应有这条」必须只看**权限**，不能看角色名：
+    //   学生会管理员名字里带「管理」，但他没有 class.view，本就不该看到 ——
+    //   按名字匹配会把他误判成"应有"。
+    //   ⚠️ 权限字段是 `r.user.effectivePermissions`，**不是** r.perms（角色对象上没有 perms 字段，
+    //      写成 r.perms 会恒为 undefined → 超级管理员被当成"无权限"，白红一条）。
+    const statusEntry = gg.flatMap((g) => g.items).find((it) => it.key === 'classStatus');
+    const rolePerms = (r.user && r.user.effectivePermissions) || [];
+    const hasClassView = rolePerms.some((p) => p === '*' || p === 'class.view');
+    if (hasClassView) {
+      check(`「班级状态」入口存在（有 class.view：${r.name}）`, !!statusEntry, r.name);
+      if (statusEntry) {
+        check('「班级状态」权限 = class.view（与班级管理同档）', statusEntry.perm === 'class.view', statusEntry.perm);
+        check('「班级状态」指向独立页面', /class-status\/class-status/.test(statusEntry.url), statusEntry.url);
+        navLog.length = 0;
+        hub.go({ currentTarget: { dataset: { url: statusEntry.url, key: statusEntry.key } } });
+        check('管理中枢「班级状态」直跳（不弹选班）', navLog.length === 1 && navLog[0] === statusEntry.url, JSON.stringify(navLog));
+      }
+    } else {
+      // 无 class.view 的账号（教师 / 班委 / 学生 / 学生会管理员）不得看到全校班级状态入口：
+      // 那是学生处 / 年级组长的横比视图，班级域成员用「我的班级」看本班即可。
+      check(
+        `「班级状态」不出现在无 class.view 的账号导航（角色：${r.name}）`,
+        !statusEntry,
+        statusEntry && statusEntry.key
+      );
+    }
   }
 
   // ===== 关于我们：GitHub 开源入口 + 版本一致性（用户 2026-10-23）=====

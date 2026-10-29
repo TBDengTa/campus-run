@@ -208,6 +208,28 @@
 - `/api/auth/me` 必须暴露 `homeroomClasses` 与 `isClassOfficer`：自定义 tabBar 依赖它决定教师中间导航项
   （有管理权限 → 管理中枢；无权限但是班主任 → 班级管理；否则 → 公告）。
 - 班级统计口径与首页数据概况一致；班级排名只统计 `role != 'teacher'` 的学生。
+- **班级状态总览**（用户 2026-10-29「增加班级状态页面显示所有班级的考勤、校园跑达标(日、周)，
+  并且可以复制到文本如未达标班级等」）：页面 `/packageAdmin/class-status/class-status`，
+  接口 `GET /api/admin/class/status-board`（前缀已挂 `class.view`，**不新开权限项** ——
+  新开会让现网只有 class.view 的学生处/年级组长突然失去入口）。
+  口径全在 `services/class-status-board.js`，前端**不做任何二次计算**（否则会出现
+  「列表 87%、复制文案 88%」这种发到群里被问住的不一致）：
+  · 班级范围只含 `status==='normal'`（`ClassProfile.joinsBandChao`）：实习/毕业班不参与考勤与校园跑，
+    算进来会把「本来就没考勤」误报成「未达标」；
+  · 达标 = 生效目标（个人计划优先、否则全局）且步数 ≥ 目标，周起点为 ISO 周一；
+  · 考勤按**应到人数加权**（不是简单平均），早八只记迟到人数、不产生比率；
+  · 可复制文案由**服务端生成**（`buildCopyText`），前端只搬运。
+  ⚠️ 两个 MongoDB 聚合陷阱（都真实踩过，改这段聚合前必读）：
+  ① **同一个 `$addFields` 内不能引用本阶段刚加的字段**（并行求值）——
+     `$gte:['$todaySteps',...]` 拿到旧值 → 达标数恒为 0，全表 2285 人算出「今日 0 人达标」；
+     必须拆成两个 `$addFields`。
+  ② **目标取值不能写 `$toDouble:'$g.daily.steps'`**（先拿对象再取路径）——
+     `g` 为 null 时 `$toDouble` 报错，MongoDB **静默丢弃该文档** → 总数少几个人（819 vs 829，
+     差的正是 10 个没有个人计划的学生）。要写 `$toDouble:{ $arrayElemAt:['$goal.daily.steps',0] }`（先取后转）。
+  性能：聚合全部**下推 Mongo**（网络只传最终 43 行）+ 60 秒缓存。
+  第一版在 Node 侧聚合（`User.find` 2274 个 openid 再 `$in` 查两张表）实测 **17 秒**，不可接受。
+  回归：`tools/verify-class-status.js`（用**独立算法**交叉核对人数，专抓「数字看着正常但算错」）
+  + `tools/check-nav-groups.js`（入口按 `class.view` 判定，且对无该权限的账号必须不可见）。
 
 ## 跑分（积分体系）
 - 配置在单例 `goal_config.points`（系统配置 → 跑分设置）：完成日目标得分、完成周目标得分、

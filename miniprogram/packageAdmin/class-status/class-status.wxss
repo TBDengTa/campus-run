@@ -1,0 +1,277 @@
+/* 班级状态总览样式（白橙设计系统）
+ *
+ * 配色/间距一律用 app.wxss 的 --tt-* 令牌，不硬编码品牌色。
+ * 达标率用「色档」表达（ok / warn / bad / none），避免满屏同色数字看不出轻重。
+ */
+.cs-page {
+  padding-bottom: 24rpx;
+}
+
+/* ===== 顶部汇总 ===== */
+.cs-hero {
+  padding: 26rpx 24rpx;
+}
+.cs-hero-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12rpx;
+}
+.cs-hero-title {
+  font-size: 34rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+.cs-hero-date {
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+.cs-hero-stats {
+  display: flex;
+  margin-top: 22rpx;
+  gap: 8rpx;
+}
+.cs-hero-stat {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4rpx;
+}
+.cs-hero-v {
+  font-size: 38rpx;
+  font-weight: 700;
+  color: var(--tt-text-1);
+  line-height: 1.2;
+}
+.cs-hero-l {
+  font-size: 21rpx;
+  color: var(--tt-text-3);
+}
+.cs-c-ok { color: var(--td-success-color-6); }
+.cs-c-warn { color: var(--td-warning-color-6); }
+.cs-c-bad { color: var(--td-error-color-6); }
+
+.cs-hero-sub {
+  margin-top: 18rpx;
+  padding: 12rpx 14rpx;
+  background: var(--tt-brand-soft);
+  border-radius: var(--tt-radius-sm);
+  font-size: 21rpx;
+  color: var(--tt-text-2);
+  line-height: 1.6;
+}
+
+.cs-hero-acts {
+  display: flex;
+  gap: 12rpx;
+  margin-top: 20rpx;
+}
+.cs-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
+  height: 70rpx;
+  border-radius: var(--tt-radius-sm);
+  font-size: 25rpx;
+  background: var(--tt-brand-soft);
+  color: var(--tt-brand-deep);
+  border: 1rpx solid var(--tt-brand-soft-2);
+}
+.cs-btn.pri {
+  background: var(--tt-brand);
+  color: #ffffff;
+  border-color: var(--tt-brand);
+}
+
+/* ===== tab ===== */
+.cs-tabs {
+  display: flex;
+  gap: 10rpx;
+  padding: 18rpx 0 6rpx;
+}
+.cs-tab {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  padding: 12rpx 26rpx;
+  border-radius: 999rpx;
+  font-size: 26rpx;
+  color: var(--tt-text-2);
+  background: #ffffff;
+  border: 1rpx solid var(--tt-line);
+}
+.cs-tab.active {
+  background: var(--tt-brand-soft);
+  color: var(--tt-brand-deep);
+  border-color: var(--tt-brand-soft-2);
+  font-weight: 600;
+}
+.cs-tab-badge {
+  min-width: 28rpx;
+  height: 28rpx;
+  padding: 0 8rpx;
+  border-radius: 999rpx;
+  background: var(--td-error-color-6);
+  color: #ffffff;
+  font-size: 19rpx;
+  line-height: 28rpx;
+  text-align: center;
+}
+
+/* ===== 工具行 ===== */
+.cs-tools {
+  margin-top: 14rpx;
+}
+.cs-search {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  height: 72rpx;
+  padding: 0 20rpx;
+  background: #ffffff;
+  border-radius: var(--tt-radius-sm);
+  border: 1rpx solid var(--tt-line);
+}
+.cs-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 25rpx;
+  color: var(--tt-text-1);
+}
+.cs-clear {
+  font-size: 22rpx;
+  color: var(--tt-brand);
+}
+
+.cs-days {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  margin-top: 14rpx;
+  flex-wrap: wrap;
+}
+.cs-days-label {
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+.cs-day {
+  padding: 8rpx 20rpx;
+  border-radius: 999rpx;
+  font-size: 23rpx;
+  color: var(--tt-text-2);
+  background: #ffffff;
+  border: 1rpx solid var(--tt-line);
+}
+.cs-day.active {
+  background: var(--tt-brand-soft);
+  color: var(--tt-brand-deep);
+  border-color: var(--tt-brand-soft-2);
+}
+
+/* ===== 列表 ===== */
+.cs-loading {
+  display: flex;
+  justify-content: center;
+  padding: 60rpx 0;
+}
+.cs-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16rpx;
+  padding: 80rpx 0;
+}
+.cs-empty-t {
+  font-size: 25rpx;
+  color: var(--tt-text-3);
+}
+
+.cs-list {
+  margin-top: 16rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+}
+.cs-item {
+  padding: 22rpx 24rpx;
+}
+.cs-item-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12rpx;
+}
+.cs-name {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+.cs-meta {
+  font-size: 21rpx;
+  color: var(--tt-text-3);
+  flex: none;
+}
+
+.cs-item-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10rpx;
+  margin-top: 14rpx;
+}
+.cs-badge {
+  padding: 6rpx 16rpx;
+  border-radius: 8rpx;
+  font-size: 22rpx;
+  font-weight: 600;
+}
+.cs-badge-ok { color: var(--td-success-color-6); background: rgba(43, 164, 113, 0.1); }
+.cs-badge-warn { color: var(--td-warning-color-6); background: rgba(227, 115, 24, 0.1); }
+.cs-badge-bad { color: var(--td-error-color-6); background: rgba(227, 77, 89, 0.1); }
+.cs-badge-none { color: var(--tt-text-3); background: #f2f3f5; }
+.cs-badge-off { color: var(--tt-text-3); background: #f2f3f5; }
+
+.cs-item-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14rpx;
+  padding-top: 12rpx;
+  border-top: 1rpx solid var(--tt-line);
+}
+.cs-foot-t {
+  font-size: 21rpx;
+  color: var(--tt-text-3);
+}
+
+/* 考勤模块细项 */
+.cs-mods {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10rpx;
+  margin-top: 12rpx;
+}
+.cs-mod {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  padding: 8rpx 16rpx;
+  background: #fafbfc;
+  border-radius: 8rpx;
+}
+.cs-mod-name {
+  font-size: 21rpx;
+  color: var(--tt-text-3);
+}
+.cs-mod-v {
+  font-size: 22rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+.cs-mod-off {
+  font-weight: 400;
+  color: var(--tt-text-3);
+}

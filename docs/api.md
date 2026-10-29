@@ -183,10 +183,33 @@
 | 广告 | `/ads/sponsors | /ads/slots | /ads/contents | /ads/pages` 的增删改查；`GET /ads/stats?contentId&sponsorId&start&end`；`GET /ads/pages-link/:id` |
 | 内容 | `/content/announcements | /content/changelogs | /content/holidays | /content/organizations | /content/badges` 的增删改查 |
 | 配置 | `GET|PUT /config`（目标/分时段/反作弊/激励视频） |
+| 班级 | `GET /class/profiles`（台账列表） · `GET|PUT /class/:className/profile` · **`GET /class/status-board?days=7`**（全校班级状态总览，见下） |
 | 上传 | `POST /upload`（multipart，字段 file，返回图片 URL） |
+
+### GET /api/admin/class/status-board（班级状态总览）
+
+用户 2026-10-29「增加班级状态页面显示所有班级的考勤、校园跑达标(日、周)，
+并且可以复制到文本如未达标班级等」。权限：`class.view`（只读，不写任何数据）。
+
+响应要点：
+
+| 字段 | 说明 |
+|---|---|
+| `today` / `from` / `weekStart` / `days` | 统计日、考勤回看区间、本周起点（ISO 周一）、区间天数 |
+| `totals` | `classCount / studentCount / achievedToday / achievedWeek / dailyRate / weeklyRate / skippedClasses` |
+| `rows[]` | 逐班：`run{achievedToday,dailyRate,achievedWeek,weeklyRate,enabled,stepsToday}`、`attendance{modules,ratePercent,hasData}`、`flags` |
+| `notAchieved` | `daily[] / weekly[] / attendanceMissing[]`（**已排除** 不参跑班、空班、无达标率的班，避免误报） |
+| `copyText` | **服务端生成**的可直接粘贴文本（含全校汇总 + 未达标班清单 + 考勤待补清单） |
+
+口径（实现 `services/class-status-board.js`，前端不做二次计算）：
+① 只统计 `status==='normal'` 的班（实习/毕业班不参与考勤与校园跑）；
+② 达标 = 生效目标（个人计划优先、否则全局默认）且步数 ≥ 目标；
+③ 考勤按**应到人数加权**（早操/晚自习用 `shouldCount`、查宿用 `shouldStay`；早八只记迟到人数、无比率）。
 
 ## 其他
 
 - `GET /health` 健康检查
+- `GET /` 与 `GET /console`：Web 控制台（反作弊状态台 + AI 训练台），账号密码登录
+  （内存会话 + HttpOnly Cookie，**与小程序 JWT 隔离**）；接口在 `/console/api/*`
 - `GET /p/:slug` 广告落地页 HTML 直出
 - `GET /uploads/*` 上传文件静态服务

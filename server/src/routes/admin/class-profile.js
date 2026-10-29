@@ -1150,4 +1150,23 @@ router.put(
   })
 );
 
+// ===== 全校班级状态总览（用户 2026-10-29）=====
+//   「增加班级状态页面显示所有班级的考勤、校园跑达标(日、周)，并且可以复制到文本如未达标班级等」
+//
+// 权限：`class.view`（前缀已挂，见 routes/admin/index.js）。
+//   为什么复用它而不是新开权限项：这本来就是「查看班级配置」的读取范畴
+//   （全校班级的考勤与达标），新开一项会让现网只有 class.view 的老师**直接失去入口**，
+//   而他们恰恰是最需要看这张表的人（学生处 / 年级组长）。
+//   写操作仍只走 class.manage，本接口纯只读。
+//
+// 口径实现全在 services/class-status-board.js（跨三张表聚合 + 可复制文案），
+// 这里只做鉴权与取参 —— 避免第二份「达标判定」与班级页/首页漂移。
+router.get(
+  '/status-board',
+  wrap(async (req, res) => {
+    const board = require('../../services/class-status-board');
+    ok(res, await board.classStatusBoard({ today: req.query.today, days: req.query.days }));
+  })
+);
+
 module.exports = router;

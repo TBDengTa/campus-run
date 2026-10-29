@@ -34,6 +34,12 @@ const NAV_GROUPS = [
       // 不写死 ?tab=：由页面自己决定入口 tab（默认「学生名单」；班超类入口带 tab=attendance 直达评比）
       { key: 'classMy', perm: '', only: 'class', icon: 'usergroup', label: '我的班级', url: '/packageAdmin/class/class' },
       { key: 'classManage', perm: 'class.view', only: 'admin', icon: 'city', label: '班级管理', url: '/packageAdmin/class-manage/class-manage' },
+      // 班级状态总览（用户 2026-10-29「增加班级状态页面显示所有班级的考勤、校园跑达标(日、周)，
+      // 并且可以复制到文本如未达标班级等」）：
+      //   与「班级管理」同一权限档（class.view）—— 两者都是看全校班级的读操作。
+      //   刻意只给 admin：班主任/班委是**本班视角**，看自己班用「我的班级」即可；
+      //   全校横向对比属于学生处 / 年级组长的职责，不该塞进班级域成员的导航。
+      { key: 'classStatus', perm: 'class.view', only: 'admin', icon: 'chart-pie', label: '班级状态', url: '/packageAdmin/class-status/class-status' },
       { key: 'classRank', perm: '', only: 'class', icon: 'chart-bar', label: '班超排名', url: '/packageUnion/stats/stats' },
     ],
   },

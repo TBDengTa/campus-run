@@ -43,6 +43,7 @@
         "assessment/plans",
         "class-manage/class-manage",
         "class-manage/dorms/dorms",
+        "class-status/class-status",
         "class/class",
         "config/anticheat",
         "config/anomalies/anomalies",

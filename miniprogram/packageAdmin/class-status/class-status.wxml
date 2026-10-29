@@ -1,0 +1,137 @@
+<!-- 班级状态总览（用户 2026-10-29）：
+     显示所有班级的考勤、校园跑达标（日/周），并可复制成文字（如「未达标班级」清单）。
+
+     布局：
+       ① 顶部汇总卡（全校班数/人数/日周达标率 + 复制按钮）
+       ② tab（总览 / 未达标 / 考勤）+ 搜索 + 天数切换
+       ③ 班级列表卡（逐班一行，达标率用色档区分）
+     数据全部来自服务端 /api/admin/class/status-board，前端不做业务判定。 -->
+<view class="tt-page cs-page">
+  <!-- ===== 顶部汇总 ===== -->
+  <view class="tt-card cs-hero">
+    <view class="cs-hero-top">
+      <text class="cs-hero-title">班级状态</text>
+      <text class="cs-hero-date">{{today}}<text wx:if="{{weekStart}}"> · 本周自 {{weekStart}}</text></text>
+    </view>
+
+    <view class="cs-hero-stats" wx:if="{{totals}}">
+      <view class="cs-hero-stat">
+        <text class="num-font cs-hero-v">{{totals.classCount}}</text>
+        <text class="cs-hero-l">班级</text>
+      </view>
+      <view class="cs-hero-stat">
+        <text class="num-font cs-hero-v">{{totals.studentCount}}</text>
+        <text class="cs-hero-l">学生</text>
+      </view>
+      <view class="cs-hero-stat">
+        <text class="num-font cs-hero-v cs-c-{{totals.dailyRate >= 100 ? 'ok' : totals.dailyRate >= 60 ? 'warn' : 'bad'}}">{{totals.dailyRate === null ? '—' : totals.dailyRate + '%'}}</text>
+        <text class="cs-hero-l">今日达标</text>
+      </view>
+      <view class="cs-hero-stat">
+        <text class="num-font cs-hero-v cs-c-{{totals.weeklyRate >= 100 ? 'ok' : totals.weeklyRate >= 60 ? 'warn' : 'bad'}}">{{totals.weeklyRate === null ? '—' : totals.weeklyRate + '%'}}</text>
+        <text class="cs-hero-l">本周达标</text>
+      </view>
+    </view>
+
+    <view class="cs-hero-sub" wx:if="{{totals && totals.skippedClasses}}">
+      实习 / 毕业班 {{totals.skippedClasses}} 个不参加考勤与校园跑，已排除在统计外
+    </view>
+
+    <view class="cs-hero-acts">
+      <view class="cs-btn pri" bind:tap="copyText">
+        <t-icon name="file-copy" size="26rpx" color="#ffffff" />
+        <text>复制全部（含未达标清单）</text>
+      </view>
+      <view class="cs-btn" bind:tap="copyList">
+        <t-icon name="file-copy" size="26rpx" color="var(--tt-brand)" />
+        <text>复制当前列表</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- ===== tab + 筛选 ===== -->
+  <view class="cs-tabs">
+    <view
+      class="cs-tab {{tab === item.key ? 'active' : ''}}"
+      wx:for="{{tabs}}"
+      wx:key="key"
+      data-tab="{{item.key}}"
+      bind:tap="onTab"
+    >
+      <text>{{item.label}}</text>
+      <text class="cs-tab-badge" wx:if="{{item.key === 'notAchieved' && notAchieved.daily.length}}">{{notAchieved.daily.length}}</text>
+    </view>
+  </view>
+
+  <view class="cs-tools">
+    <view class="cs-search">
+      <t-icon name="search" size="24rpx" color="var(--tt-text-3)" />
+      <input class="cs-input" placeholder="搜索班级 / 系部" value="{{keyword}}" bindinput="onKeyword" />
+      <text class="cs-clear" wx:if="{{keyword}}" bind:tap="clearKeyword">清空</text>
+    </view>
+  </view>
+
+  <view class="cs-days" wx:if="{{tab === 'attendance'}}">
+    <text class="cs-days-label">考勤回看</text>
+    <view
+      class="cs-day {{days === item ? 'active' : ''}}"
+      wx:for="{{dayOptions}}"
+      wx:key="*this"
+      data-days="{{item}}"
+      bind:tap="onDays"
+    >
+      {{item}} 天
+    </view>
+  </view>
+
+  <!-- ===== 列表 ===== -->
+  <view class="cs-loading" wx:if="{{loading}}">
+    <t-loading theme="circular" size="40rpx" text="统计中…" />
+  </view>
+
+  <view class="cs-empty" wx:elif="{{!shown.length}}">
+    <t-icon name="chart-bar" size="56rpx" color="var(--tt-text-3)" />
+    <text class="cs-empty-t">{{keyword ? '没有匹配的班级' : tab === 'notAchieved' ? '没有未达标的班级，全部达标' : '没有数据'}}</text>
+  </view>
+
+  <view class="cs-list" wx:else>
+    <view
+      class="tt-card cs-item"
+      wx:for="{{shown}}"
+      wx:key="className"
+      data-name="{{item.className}}"
+      bind:tap="openClass"
+    >
+      <view class="cs-item-head">
+        <text class="cs-name">{{item.className}}</text>
+        <text class="cs-meta">{{item.studentCount}} 人<text wx:if="{{item.departmentName}}"> · {{item.departmentName}}</text></text>
+      </view>
+
+      <view class="cs-item-badges">
+        <text class="cs-badge cs-badge-{{item.dailyLevel}}">今日 {{item.dailyRateText}}</text>
+        <text class="cs-badge cs-badge-{{item.weeklyLevel}}">本周 {{item.weeklyRateText}}</text>
+        <text class="cs-badge cs-badge-{{item.attendanceLevel}}" wx:if="{{tab !== 'notAchieved'}}">考勤 {{item.attendanceText}}</text>
+        <text class="cs-badge cs-badge-off" wx:if="{{item.runDisabled}}">不参跑</text>
+      </view>
+
+      <view class="cs-item-foot">
+        <text class="cs-foot-t">今日达标 {{item.achievedText}} 人 · 本周 {{item.achievedWeekText}} 人</text>
+        <t-icon name="chevron-right" size="24rpx" color="var(--tt-text-3)" />
+      </view>
+
+      <!-- 考勤 tab：展开四个模块的细项 -->
+      <view class="cs-mods" wx:if="{{tab === 'attendance' && item.attendance.modules}}">
+        <view class="cs-mod" wx:for="{{item.attendance.modules}}" wx:for-item="m" wx:key="key">
+          <text class="cs-mod-name">{{m.name}}</text>
+          <text class="cs-mod-v" wx:if="{{m.ratePercent !== null}}">{{m.ratePercent}}%</text>
+          <text class="cs-mod-v cs-mod-off" wx:elif="{{m.late !== undefined}}">迟到 {{m.late}} 人</text>
+          <text class="cs-mod-v cs-mod-off" wx:else>—</text>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view class="tt-footer">
+    达标口径：个人计划优先、否则全局默认；本周自 ISO 周一（{{weekStart}}）起。考勤按应到人数加权，早八只记迟到人数。
+  </view>
+</view>
