@@ -1,0 +1,201 @@
+/**
+ * Web 控制台样式（白橙设计系统，与小程序 app.wxss 同源取值）。
+ *
+ * 刻意不引外部 CSS 框架：控制台是内网 B 端页面，样式量小，
+ * 外链会带来「CDN 挂了 / 公司网墙了 → 控制台白屏」这种在关键时刻最不能接受的失败。
+ * 变量名与小程序保持一致（--brand / --text / --line ...），改品牌色时两处对照着改。
+ */
+:root {
+  --brand: #ff6b00;
+  --brand-deep: #e25a00;
+  --brand-soft: #fff4ec;
+  --text: #1f2329;
+  --text-2: #4e5969;
+  --text-3: #8a919c;
+  --line: #eceef1;
+  --bg: #f6f7f9;
+  --ok: #2ba471;
+  --warn: #e37318;
+  --bad: #e34d59;
+  --radius: 14px;
+  --shadow: 0 6px 22px rgba(31, 35, 41, 0.07);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.6 -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+.num { font-variant-numeric: tabular-nums; }
+.hide { display: none !important; }
+.spacer { flex: 1; }
+a { color: var(--brand); }
+
+/* ---------- 卡片 ---------- */
+.card {
+  background: #fff;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 18px 20px;
+  margin-bottom: 16px;
+}
+.card-h { display: flex; align-items: center; gap: 9px; margin-bottom: 14px; flex-wrap: wrap; }
+.card-t { font-size: 15px; font-weight: 600; }
+.card-sub { font-size: 12px; color: var(--text-3); }
+.note { font-size: 12px; color: var(--text-3); margin-top: 8px; line-height: 1.7; }
+.note.mb { margin: 0 0 13px; }
+
+/* ---------- 按钮 ---------- */
+.btn {
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 9px;
+  padding: 7px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--text-2);
+  font-family: inherit;
+}
+.btn:hover { border-color: var(--brand); color: var(--brand-deep); }
+.btn.pri { background: var(--brand); border-color: var(--brand); color: #fff; font-weight: 600; }
+.btn.pri:hover { background: var(--brand-deep); color: #fff; border-color: var(--brand-deep); }
+.btn.danger { background: #fff; border-color: #f3c4c8; color: var(--bad); }
+.btn.danger:hover { background: #fdf0f1; border-color: var(--bad); color: var(--bad); }
+.btn.sm { padding: 4px 10px; font-size: 12px; border-radius: 7px; }
+.btn.wide { width: 100%; padding: 10px; }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* ---------- 表单 ---------- */
+.fld { display: flex; flex-direction: column; gap: 5px; margin-top: 13px; }
+.fld label { font-size: 12.5px; color: var(--text-2); }
+input[type='text'], input[type='password'], input[type='number'], select, textarea {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 11px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text);
+  background: #fff;
+}
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--brand); }
+.err { color: var(--bad); font-size: 12.5px; margin-top: 11px; line-height: 1.6; }
+
+/* ---------- 顶栏 ---------- */
+.top {
+  display: flex; align-items: center; gap: 14px;
+  padding: 0 22px; height: 58px; background: #fff;
+  border-bottom: 1px solid var(--line);
+  position: sticky; top: 0; z-index: 20;
+}
+.logo {
+  width: 30px; height: 30px; border-radius: 9px; flex: none;
+  background: linear-gradient(135deg, #ff9a3d, #ff6b00 62%, #f25a00);
+  color: #fff; font-weight: 700; font-size: 15px;
+  display: flex; align-items: center; justify-content: center;
+}
+.app-name { font-weight: 600; font-size: 15px; }
+.tabs { display: flex; gap: 4px; margin-left: 18px; }
+.tab {
+  padding: 7px 15px; border-radius: 999px; font-size: 13px;
+  color: var(--text-2); cursor: pointer; user-select: none;
+}
+.tab:hover { background: var(--bg); }
+.tab.on { background: var(--brand-soft); color: var(--brand-deep); font-weight: 600; }
+.who { font-size: 12.5px; color: var(--text-3); }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 20px 22px 60px; }
+
+/* ---------- 统计块 ---------- */
+.grid { display: grid; gap: 14px; }
+.g4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.g3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.g2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+.stat { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+.stat .k { font-size: 12px; color: var(--text-3); }
+.stat .v { font-size: 24px; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.stat .m { font-size: 11.5px; color: var(--text-3); margin-top: 3px; }
+
+.pill {
+  display: inline-block; padding: 1px 9px; border-radius: 999px;
+  font-size: 11.5px; font-weight: 600;
+}
+.pill.ok { color: var(--ok); background: #ecf9f2; }
+.pill.warn { color: #b25e09; background: #fff1e9; }
+.pill.bad { color: var(--bad); background: #fdf0f1; }
+.pill.mute { color: var(--text-3); background: #f2f3f5; }
+
+.bar { height: 7px; background: #f2f3f5; border-radius: 99px; overflow: hidden; margin: 9px 0; }
+.bar i { display: block; height: 100%; background: var(--brand); border-radius: 99px; }
+.dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); margin-right: 5px; }
+.dot.bad { background: var(--bad); }
+
+/* ---------- 表格 ---------- */
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { padding: 9px 10px; text-align: left; border-bottom: 1px solid var(--line); }
+th { color: var(--text-3); font-weight: 500; font-size: 12px; background: #fafbfc; }
+td.r, th.r { text-align: right; }
+
+/* ---------- 筛选与列表 ---------- */
+.filters { display: flex; gap: 9px; flex-wrap: wrap; align-items: center; margin-bottom: 13px; }
+.seg { display: flex; background: #f2f3f5; border-radius: 9px; padding: 3px; }
+.seg i {
+  font-style: normal; padding: 5px 13px; border-radius: 7px;
+  font-size: 12.5px; color: var(--text-2); cursor: pointer;
+}
+.seg i.on { background: #fff; color: var(--text); font-weight: 600; box-shadow: 0 1px 4px rgba(31, 35, 41, 0.1); }
+
+.row-item { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 11px; background: #fff; }
+.ri-head { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; }
+.ri-name { font-size: 15px; font-weight: 600; }
+.ri-meta { font-size: 12px; color: var(--text-3); }
+.ri-body { display: flex; gap: 22px; flex-wrap: wrap; margin: 11px 0 9px; }
+.ri-kv { display: flex; gap: 6px; font-size: 12.5px; color: var(--text-3); }
+.ri-kv b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.reasons { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
+.reasons span { background: #fff1e9; color: #b25e09; font-size: 11.5px; padding: 2px 9px; border-radius: 6px; }
+.acts { display: flex; gap: 7px; flex-wrap: wrap; align-items: center; }
+.pager { display: flex; gap: 9px; align-items: center; margin-top: 12px; }
+
+/* ---------- 弹层 ---------- */
+.mask {
+  position: fixed; inset: 0; background: rgba(31, 35, 41, 0.42);
+  display: flex; align-items: center; justify-content: center; z-index: 60; padding: 20px;
+}
+.sheet {
+  background: #fff; border-radius: 16px; width: min(460px, 94vw);
+  padding: 22px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+}
+.sheet h3 { margin: 0 0 6px; font-size: 17px; }
+.sheet-foot { display: flex; gap: 10px; margin-top: 20px; justify-content: flex-end; }
+.toast {
+  position: fixed; left: 50%; bottom: 42px; transform: translateX(-50%);
+  background: var(--text); color: #fff; padding: 10px 20px; border-radius: 10px;
+  font-size: 13.5px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25); z-index: 90;
+}
+.toast.bad { background: var(--bad); }
+
+/* ---------- 登录页 ---------- */
+.login { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+.login .card { width: min(430px, 94vw); margin: 0; }
+.login h1 { font-size: 19px; margin: 0 0 4px; }
+.lg-sub { color: var(--text-3); font-size: 12.5px; margin: 0 0 20px; line-height: 1.6; }
+.ops {
+  font-size: 11.5px; color: var(--text-3); border-top: 1px solid var(--line);
+  margin-top: 18px; padding-top: 14px; line-height: 1.9;
+}
+
+/* ---------- 间距工具类（HTML 不用内联 style：CSP 的 style-src 要严格到 'self'） ---------- */
+.gap-top { margin-top: 14px; }
+.mt-18 { margin-top: 18px; }
+
+/* ---------- 响应式 ---------- */
+@media (max-width: 960px) {
+  .g4, .g3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .g4, .g3, .g2 { grid-template-columns: 1fr; }
+  .tabs { margin-left: 0; }
+  .top { flex-wrap: wrap; height: auto; padding: 10px 14px; gap: 8px; }
+  .wrap { padding: 14px 12px 60px; }
+}

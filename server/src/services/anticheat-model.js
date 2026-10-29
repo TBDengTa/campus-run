@@ -50,7 +50,20 @@ const RETRAIN_EVERY_MS = 6 * 60 * 60 * 1000;
 // ① 特征工程（按来源分流）
 // ===========================================================================
 
-/** 微信同步的特征（与 GPS 完全不共用） */
+/** 微信同步的特征（与 GPS 完全不共用）
+ *
+ * 用户 2026-10-29「自动检测也变成 AI」（四期 P2）：
+ * 硬规则（step-anomaly 的重复数字/整数化/增速/单日上限）不再是**另一条独立打分通道**，
+ * 而是作为特征喂进森林：
+ *   · ruleHits：命中了几条规则（0~4）—— 森林自己学「几项同时命中才算异常」；
+ *   · ruleMax ：最强一条规则的相对强度（0~1）—— 66666（50 分）与 8 步/秒（40 分）的差别。
+ * 为什么要这样而不是 `score = 规则分 + 模型分`：两条通道各打各的分、各写各的理由，
+ * 合并只能取 max + 正则去重中文文案（旧实现的 mergeAnomaly），
+ * 「规则 55 分 + 模型 0.6」和「规则 30 分 + 模型 0.9」谁更该封说不清 ——
+ * 现在组合关系交给森林，理由只由 explain()/physicalScore 输出，口径唯一。
+ * 确定性兜底仍在 evaluate 的 physicalScore 层（配速快于世界纪录、单日>10万步这种
+ * 「人根本做不到」的事不依赖样本分布，见该函数注释）。
+ */
 function werunFeatures({ record, history }) {
   const steps = Number(record.steps) || 0;
   const delta = Number(record.deltaSteps) || steps;
@@ -61,6 +74,33 @@ function werunFeatures({ record, history }) {
   const med = Number(hist.medianSteps) || 0;
   const mad = Number(hist.madSteps) || 1;
   const z = mad > 0 ? Math.abs(steps - med) / mad : 0;
+
+  // ===== 规则信号（作为特征，不是独立分数）=====
+  // 复用 step-anomaly 的判定函数（唯一实现），把「命中数 + 最强命中」量化。
+  // 注意同文件里 steps.js 已把 step-anomaly 当作 model 不可用时的 fallback，
+  // 这里 require 不会成环（step-anomaly 不依赖本文件）。
+  let ruleHits = 0;
+  let ruleMax = 0;
+  try {
+    const svc = require('./step-anomaly');
+    const checks = [
+      svc.checkPatternNumber(steps),
+      svc.checkRoundNumber(steps),
+      svc.checkStepRate(delta, Number(record.elapsedMs) || 0),
+      svc.checkDailyCap(steps),
+    ];
+    for (const c of checks) {
+      if (c.hit) {
+        ruleHits += 1;
+        ruleMax = Math.max(ruleMax, (c.score || 0) / 55); // 55 = 单条规则最高分，归一到 0~1
+      }
+    }
+    // 同日多次同步但步数不涨：不经过 checkXxx（是聚合信号），单独算一条
+    if ((Number(hist.zeroDeltaStreak) || 0) >= 5) ruleHits += 1;
+  } catch (e) {
+    /* step-anomaly 缺失/异常时按 0 处理：森林照跑，只是少了这两个特征 */
+  }
+
   return {
     // 整数化：末位为 0 的位数（整千 = 3，整万 = 4）。真实步数几乎总是 0~1。
     roundness: countTrailingZeros(steps),
@@ -73,6 +113,11 @@ function werunFeatures({ record, history }) {
     syncCountToday: Math.min(Number(hist.syncCountToday) || 0, 50),
     // 同一天反复同步但步数不涨 → 脚本心跳的特征
     zeroDeltaStreak: Math.min(Number(hist.zeroDeltaStreak) || 0, 20),
+    // ===== 规则信号（用户 2026-10-29 P2：「自动检测也变成 AI」）=====
+    // 命中了几条硬规则（0~4，含 zeroDeltaStreak 最多 5）与最强一条的相对强度（0~1）。
+    // 森林从历史数据里学「什么组合才真的异常」，而不是规则自己拍分数。
+    ruleHits,
+    ruleMax: Math.min(ruleMax, 1),
   };
 }
 
@@ -257,7 +302,7 @@ function shuffle(a) {
 const cache = { werun: null, gps: null, training: {} };
 
 /** 把特征对象转成向量（字段顺序固定，训练与推理必须一致） */
-const WERUN_ORDER = ['roundness', 'pattern', 'perSec', 'steps', 'delta', 'z', 'syncCountToday', 'zeroDeltaStreak'];
+const WERUN_ORDER = ['roundness', 'pattern', 'perSec', 'steps', 'delta', 'z', 'syncCountToday', 'zeroDeltaStreak', 'ruleHits', 'ruleMax'];
 const GPS_ORDER = ['paceSecPerKm', 'speed', 'distance', 'duration', 'pointCount', 'gapAvg', 'gapMax', 'jitter', 'sparse'];
 function toVector(feat, order) {
   return order.map((k) => Number(feat[k]) || 0);
@@ -399,24 +444,38 @@ const FEEDBACK = { samples: [], threshold: { ...BASE_THRESHOLD }, loadedAt: 0 };
 /**
  * 从数据库加载历史标注（权威来源）。
  * 缓存 5 分钟，避免每次同步都查库。
+ *
+ * ⚠️ 四分类接入后（用户 2026-10-29），校准只吃**可训练**的标注：
+ *   · device（设备/网络问题）**必须排除** —— 它是「数据长得像作弊但人是清白的」，
+ *     算进 normal 会把阈值越训越松（刷步工具想要的就是这个结果）；
+ *     算进 cheat 又冤枉人。这类样本唯一正确的处理是**不进训练集**。
+ *   · minor（轻微违规）算作弊侧但权重 0.5 —— 它确实是修饰过的数据，只是程度轻。
+ *   旧数据 label=null 的按 isCheat 兜底（迁移期兼容，不回填）。
  */
 async function loadFeedback(force = false) {
   if (!force && FEEDBACK.loadedAt && Date.now() - FEEDBACK.loadedAt < 5 * 60 * 1000) return;
   try {
     const StepLabel = require('../models/step-label');
-    // 只取最近 500 条参与阈值校准（太久远的标注反映的是旧手法）
-    const rows = await StepLabel.find({})
+    // 只取最近 500 条**可训练**的参与阈值校准（太久远的标注反映的是旧手法）
+    const rows = await StepLabel.find({
+      $or: [{ label: { $in: StepLabel.TRAINABLE_LABELS } }, { label: null, isCheat: { $exists: true } }],
+    })
       .sort({ createdAt: -1 })
       .limit(500)
-      .select('isCheat modelScore createdAt')
+      .select('isCheat label modelScore createdAt')
       .lean();
     FEEDBACK.samples = rows
-      .map((r) => ({
-        isCheat: !!r.isCheat,
-        score: r.modelScore == null ? null : Number(r.modelScore),
-        at: r.createdAt ? new Date(r.createdAt).getTime() : 0,
-      }))
-      .filter((x) => Number.isFinite(x.score));
+      .map((r) => {
+        const label = r.label || (r.isCheat ? 'cheat' : 'normal'); // 旧数据兜底
+        return {
+          isCheat: label === 'cheat' || label === 'minor',
+          weight: StepLabel.TRAIN_WEIGHTS[label] == null ? 1 : StepLabel.TRAIN_WEIGHTS[label],
+          label,
+          score: r.modelScore == null ? null : Number(r.modelScore),
+          at: r.createdAt ? new Date(r.createdAt).getTime() : 0,
+        };
+      })
+      .filter((x) => Number.isFinite(x.score) && x.label !== 'device');
     FEEDBACK.loadedAt = Date.now();
     // 先刷新档位基线，再校准 —— 顺序不能反，否则本轮校准仍按旧基线筛标注
     // （用户 2026-10-28：管理员调了 AI 严谨度，校准要跟着新基线走）。
@@ -432,42 +491,69 @@ async function loadFeedback(force = false) {
 }
 
 /**
- * 记录一次人工反馈（由 step-anomalies 路由在封禁/排除时调用）。
+ * 记录一次人工标注（由 step-anomalies 路由与 Web 标注台调用）。
  * **落库 + 内存各一份**：落库是为了长期积累（升级有监督模型的训练集），
  * 内存是为了让阈值立刻生效（不用等下一次从库里加载）。
  *
- * @param {boolean} isCheat 人工判定是否作弊
+ * 用户 2026-10-29 两点变化：
+ * ① **四分类**：meta.label ∈ cheat / minor / device / normal。
+ *    isCheat 参数仍接受（旧调用方兼容），但只在 label 缺失时用来推导 label。
+ * ② **改判**（同一 anomalyId 重复标注不再被唯一索引静默吞掉）：
+ *    标错了必须能纠正 —— 旧实现 catch 掉 E11000 直接忽略，等于「第一条永远说了算」，
+ *    错样本会永久留在训练集里。现在改成 upsert：更新 label/isCheat/operator/note，
+ *    revision+1（导出训练集时可用 revision 评估标注质量）。
+ *
+ * @param {boolean} isCheat 兼容旧调用：人工判定是否作弊（label 缺失时用它推导）
  * @param {number} score 当时的模型分
- * @param {object} [meta] 落库所需的额外信息（anomalyId / userId / source / features 等）
+ * @param {object} [meta] anomalyId / userId / source / features / label / operator / note
  */
 async function recordFeedback(isCheat, score, meta = {}) {
   const s = Number(score);
   const safeScore = Number.isFinite(s) ? s : null;
 
-  // 内存：立刻参与阈值校准
-  if (safeScore !== null) {
-    FEEDBACK.samples.push({ isCheat: !!isCheat, score: safeScore, at: Date.now() });
+  const StepLabel = require('../models/step-label');
+  const label = StepLabel.LABEL_KINDS.includes(meta.label)
+    ? meta.label
+    : isCheat ? 'cheat' : 'normal'; // 旧调用方只给 isCheat
+  const cheatSide = label === 'cheat' || label === 'minor';
+  const weight = StepLabel.TRAIN_WEIGHTS[label] == null ? 1 : StepLabel.TRAIN_WEIGHTS[label];
+
+  // 内存：立刻参与阈值校准。device 不进校准（理由见 loadFeedback 注释）。
+  if (safeScore !== null && label !== 'device') {
+    FEEDBACK.samples.push({ isCheat: cheatSide, weight, label, score: safeScore, at: Date.now() });
     if (FEEDBACK.samples.length > 500) FEEDBACK.samples.shift();
     recalibrateThreshold();
   }
 
-  // 落库：长期积累（失败不影响业务）
+  // 落库：长期积累（数据库不可用时不影响业务判定）
   try {
-    const StepLabel = require('../models/step-label');
-    await StepLabel.create({
-      anomalyId: meta.anomalyId || null,
+    const doc = {
       userId: meta.userId,
       openid: meta.openid || '',
       source: meta.source === 'gps' ? 'gps' : 'werun',
-      isCheat: !!isCheat,
+      label,
+      isCheat: cheatSide, // 兼容字段：读取一律以 label 为准
       modelScore: safeScore,
       ruleScore: Number(meta.ruleScore) || 0,
       features: meta.features || null,
       operator: meta.operator || '',
       note: meta.note || '',
-    });
+    };
+    if (meta.anomalyId) {
+      // 改判路径：已有则更新并 revision+1；没有则插入。
+      // 用 findOneAndUpdate(upsert) 而不是 create(catch E11000)：
+      // 后者会把「第一次标错」永久钉死在训练集里。
+      await StepLabel.findOneAndUpdate(
+        { anomalyId: meta.anomalyId },
+        { $set: doc, $inc: { revision: 1 } },
+        { upsert: true, new: true }
+      );
+    } else {
+      await StepLabel.create(doc);
+    }
+    invalidateUpgradeCache(); // 标注数变了，升级进度立刻重算
   } catch (e) {
-    // 唯一索引冲突（同一异常重复标注）属正常情况，忽略
+    // 唯一索引冲突的极端并发（同一毫秒双人标同一条）属正常情况，忽略
   }
   return safeScore;
 }
@@ -481,7 +567,13 @@ function recalibrateThreshold() {
   const base = thresholdCfgCache.base || BASE_THRESHOLD;
   const flagged = list.filter((x) => x.score >= base.suspicious);
   if (!flagged.length) return;
-  const precision = flagged.filter((x) => x.isCheat).length / flagged.length;
+  // 加权准确率（用户 2026-10-29 四分类）：minor（轻微违规）只按 0.5 计入作弊侧，
+  // device 根本不会进到这里（recordFeedback / loadFeedback 两处都过滤掉了）。
+  const totalW = flagged.reduce((a, x) => a + (x.weight == null ? 1 : x.weight), 0);
+  const cheatW = flagged
+    .filter((x) => x.isCheat)
+    .reduce((a, x) => a + (x.weight == null ? 1 : x.weight), 0);
+  const precision = totalW > 0 ? cheatW / totalW : 0;
   const t = FEEDBACK.threshold;
   if (precision < 0.3) {
     // 误报偏多 → 提高阈值（更保守）
@@ -636,8 +728,13 @@ async function checkUpgradeReadiness(force = false) {
   const out = {
     ready: false,
     total: 0,
-    perSource: { werun: { total: 0, cheat: 0, normal: 0 }, gps: { total: 0, cheat: 0, normal: 0 } },
-    perClass: { cheat: 0, normal: 0 },
+    // 来源 × 类别的矩阵（用户 2026-10-29「标注要能分开」）：
+    // 两个模型各训各的，device 单独计数展示但**不进**训练集达标数。
+    perSource: {
+      werun: { total: 0, cheat: 0, minor: 0, device: 0, normal: 0 },
+      gps: { total: 0, cheat: 0, minor: 0, device: 0, normal: 0 },
+    },
+    perClass: { cheat: 0, minor: 0, device: 0, normal: 0 },
     missing: [],
     rule: { ...UPGRADE_RULE },
     suggestion: '',
@@ -648,39 +745,45 @@ async function checkUpgradeReadiness(force = false) {
     const agg = await StepLabel.aggregate([
       {
         $group: {
-          _id: { source: '$source', isCheat: '$isCheat' },
+          _id: { source: '$source', label: '$label', isCheat: '$isCheat' },
           n: { $sum: 1 },
         },
       },
     ]);
     for (const row of agg) {
       const src = row._id && row._id.source === 'gps' ? 'gps' : 'werun';
-      const isCheat = !!(row._id && row._id.isCheat);
-      out.perSource[src].total += row.n;
-      if (isCheat) {
-        out.perSource[src].cheat += row.n;
-        out.perClass.cheat += row.n;
-      } else {
-        out.perSource[src].normal += row.n;
-        out.perClass.normal += row.n;
-      }
-      out.total += row.n;
+      // 旧数据 label=null → 按 isCheat 兜底归入 cheat/normal（迁移期兼容）
+      const label =
+        row._id && StepLabel.LABEL_KINDS.includes(row._id.label)
+          ? row._id.label
+          : row._id && row._id.isCheat
+            ? 'cheat'
+            : 'normal';
+      out.perSource[src].total += row.n; // 含 device 的原始标注数（展示用；达标数另算）
+      out.perSource[src][label] += row.n;
+      out.perClass[label] += row.n;
+      // total 只计**可训练**的（device 排除）：升级达标看的是训练集质量
+      if (label !== 'device') out.total += row.n;
     }
+    // 作弊侧 = cheat + minor（minor 是正样本，只是训练时降权）
+    const cheatSide = out.perClass.cheat + out.perClass.minor;
 
     // 缺什么就明说：管理员看到「还差 62 条作弊标注」比看到「未就绪」有用得多
     if (out.total < UPGRADE_RULE.minTotal) {
-      out.missing.push(`总标注还差 ${UPGRADE_RULE.minTotal - out.total} 条`);
+      out.missing.push(`可训练标注还差 ${UPGRADE_RULE.minTotal - out.total} 条（不含设备问题）`);
     }
-    if (out.perClass.cheat < UPGRADE_RULE.minPerClass) {
-      out.missing.push(`作弊标注还差 ${UPGRADE_RULE.minPerClass - out.perClass.cheat} 条`);
+    if (cheatSide < UPGRADE_RULE.minPerClass) {
+      out.missing.push(`作弊类标注（作弊+轻微）还差 ${UPGRADE_RULE.minPerClass - cheatSide} 条`);
     }
     if (out.perClass.normal < UPGRADE_RULE.minPerClass) {
       out.missing.push(`正常标注还差 ${UPGRADE_RULE.minPerClass - out.perClass.normal} 条`);
     }
     for (const src of ['werun', 'gps']) {
       const label = src === 'gps' ? 'GPS' : '微信同步';
-      if (out.perSource[src].total < UPGRADE_RULE.minPerSource) {
-        out.missing.push(`${label} 标注还差 ${UPGRADE_RULE.minPerSource - out.perSource[src].total} 条`);
+      const trainable =
+        out.perSource[src].cheat + out.perSource[src].minor + out.perSource[src].normal;
+      if (trainable < UPGRADE_RULE.minPerSource) {
+        out.missing.push(`${label} 可训练标注还差 ${UPGRADE_RULE.minPerSource - trainable} 条`);
       }
     }
     out.ready = out.missing.length === 0;
@@ -688,10 +791,10 @@ async function checkUpgradeReadiness(force = false) {
     // 进度条：取三个维度里最小的完成度（短板决定能不能升级）
     const ratios = [
       out.total / UPGRADE_RULE.minTotal,
-      out.perClass.cheat / UPGRADE_RULE.minPerClass,
+      cheatSide / UPGRADE_RULE.minPerClass,
       out.perClass.normal / UPGRADE_RULE.minPerClass,
-      out.perSource.werun.total / UPGRADE_RULE.minPerSource,
-      out.perSource.gps.total / UPGRADE_RULE.minPerSource,
+      (out.perSource.werun.cheat + out.perSource.werun.minor + out.perSource.werun.normal) / UPGRADE_RULE.minPerSource,
+      (out.perSource.gps.cheat + out.perSource.gps.minor + out.perSource.gps.normal) / UPGRADE_RULE.minPerSource,
     ].map((x) => Math.min(1, Math.max(0, x || 0)));
     out.progress = Math.round(Math.min(...ratios) * 100);
 

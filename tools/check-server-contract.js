@@ -1191,7 +1191,7 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   // 理由语义去重（同一件事不该出现两三次）
   ok('理由语义去重', /function dedupeReasons/.test(model3) && /REASON_KINDS/.test(model3));
   ok('evaluate 使用语义去重', /dedupeReasons\(\[\.\.\.hardScore\.reasons/.test(model3));
-  ok('合并理由也走去重', /dedupeReasons\(\[\.\.\.\(rule\.reasons/.test(require('fs').readFileSync(path.join(SERVER, 'services/steps.js'), 'utf8')));
+  ok('合并理由走去重（model 与 rule 两来源都参与）', /dedupeReasons\(\[[\s\S]{0,160}model\.reasons[\s\S]{0,160}rule\.reasons/.test(require('fs').readFileSync(path.join(SERVER, 'services/steps.js'), 'utf8')));
 }
 
 // ===== 标注积累与升级提示（用户 2026-10-27）=====
@@ -1199,6 +1199,10 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   const model2 = require('fs').readFileSync(path.join(SERVER, 'services/anticheat-model.js'), 'utf8');
   const labelModel = require('fs').readFileSync(path.join(SERVER, 'models/step-label.js'), 'utf8');
   const anoRoute2 = require('fs').readFileSync(path.join(SERVER, 'routes/admin/step-anomalies.js'), 'utf8');
+  // 2026-10-29 处置逻辑（标注/封禁/排除）收敛到 services/anomaly-disposal.js：
+  // 管理端路由与 Web 控制台（/console）共用同一份，避免「一边封禁喂了反馈、另一边没喂」的分裂。
+  // 所以「持久标注 / 清缓存 / 喂反馈」这几条现在钉的是 **disposal**，而不是路由。
+  const disposal2 = require('fs').readFileSync(path.join(SERVER, 'services/anomaly-disposal.js'), 'utf8');
   const anomalModel2 = require('fs').readFileSync(path.join(SERVER, 'models/step-anomaly.js'), 'utf8');
 
   // 标注必须持久化（上一版只在内存，重启丢失 + 多进程不一致）
@@ -1206,14 +1210,20 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('标注记录来源与特征快照', /source: \{ type: String, enum: \['werun', 'gps'\]/.test(labelModel) && /features:/.test(labelModel));
   ok('一条异常最多一条标注（偏导唯一索引）', /partialFilterExpression/.test(labelModel) && !/sparse: true/.test(labelModel));
   ok('标注从库里加载（不只内存）', /async function loadFeedback/.test(model2) && /StepLabel\.find/.test(model2));
-  ok('封禁/排除写入持久标注', /recordFeedback\([\s\S]{0,400}anomalyId: rec\._id/.test(anoRoute2));
+  // ⚠️ 用户 2026-10-29「标注要能分开」：四分类 label 字段 + device 不进训练集
+  ok('标注支持四分类 label 字段', /label: \{ type: String, enum: \['cheat', 'minor', 'device', 'normal'/.test(labelModel));
+  ok('device（设备问题）被排除出训练集', /TRAIN_WEIGHTS\s*=\s*\{[^}]*\}/.test(labelModel) && !/device:\s*[0-9.]/.test((labelModel.match(/TRAIN_WEIGHTS\s*=\s*\{([^}]*)\}/) || [, ''])[1]));
+  ok('校准/加载都排除 device', /label !== 'device'/.test(model2) && /TRAINABLE_LABELS|device/.test(model2));
+  ok('封禁/排除写入持久标注（在 disposal）', /recordFeedback\([\s\S]{0,400}anomalyId: rec\._id/.test(disposal2));
+  // 路由**不得**再有第二份训练集写入（必须复用 disposal）
+  ok('管理端路由复用 disposal（无第二份反馈写入）', /anomaly-disposal/.test(anoRoute2) && !/acModel\.recordFeedback/.test(anoRoute2));
 
   // 升级提示：自动判断标注是否攒够
   ok('升级就绪度自动评估', /async function checkUpgradeReadiness/.test(model2));
   ok('升级阈值：总数/每类/每来源', /minTotal: 200/.test(model2) && /minPerClass: 40/.test(model2) && /minPerSource: 80/.test(model2));
   ok('缺什么要明说（还差 N 条）', /还差 \$\{/.test(model2));
   ok('升级状态接口存在', /\/upgrade-status/.test(anoRoute2));
-  ok('标注变化后清进度缓存', /invalidateUpgradeCache/.test(model2) && /invalidateUpgradeCache\(\)/.test(anoRoute2));
+  ok('标注变化后清进度缓存（在 disposal）', /invalidateUpgradeCache/.test(model2) && /invalidateUpgradeCache\(\)/.test(disposal2));
 
   // 前端展示升级进度
   const anoJs2 = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'config', 'anomalies', 'anomalies.js'), 'utf8');
@@ -1229,6 +1239,7 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   const stepsSrc3 = require('fs').readFileSync(path.join(SERVER, 'services/steps.js'), 'utf8');
   const anomalModel = require('fs').readFileSync(path.join(SERVER, 'models/step-anomaly.js'), 'utf8');
   const anoRoute = require('fs').readFileSync(path.join(SERVER, 'routes/admin/step-anomalies.js'), 'utf8');
+  const disposalSvc = require('fs').readFileSync(path.join(SERVER, 'services/anomaly-disposal.js'), 'utf8');
 
   // ① 真正的学习部件（不是硬编码阈值）
   ok('Isolation Forest 无监督模型', /function buildIsolationForest/.test(model) && /function scoreForest/.test(model));
@@ -1240,7 +1251,12 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
 
   // ② 在线学习：人工反馈校准阈值
   ok('人工反馈驱动阈值自校准', /function recordFeedback/.test(model) && /function recalibrateThreshold/.test(model));
-  ok('封禁/排除都喂反馈', /recordFeedback\(\s*true/.test(anoRoute) && /recordFeedback\(\s*false/.test(anoRoute));
+  // 2026-10-29：封禁与排除都喂反馈（实现搬到 disposal，两个函数各自调用 recordFeedback）
+  ok(
+    '封禁/排除都喂反馈（disposal 两个处置入口都调用）',
+    /async function banAnomaly[\s\S]{0,1200}await recordFeedback\(/.test(disposalSvc) &&
+      /async function dismissAnomaly[\s\S]{0,900}await recordFeedback\(/.test(disposalSvc)
+  );
 
   // ③ 训练性能红线（实测 30 秒超时 → 必须库侧聚合）
   ok('GPS 训练在库侧聚合（不拉轨迹点）', /\$project:[\s\S]{0,400}pointCount: \{ \$size/.test(model));

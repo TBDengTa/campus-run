@@ -47,208 +47,74 @@ function createApp() {
   // version=应用版本号（来自 package.json），与状态页标题保持同源
   app.get('/health', (req, res) => res.json({ ok: true, ts: Date.now(), build: buildTag, version: appVersion }));
 
+  // 控制台页面与 API 要读这两份运行指标（见 routes/console.js 的 /public-status 与 dashboard）。
+  // 用 app.set 传而不是把它们搬进全局：served / bootAt 是本函数的闭包变量，
+  // 保持「谁产生谁持有」，静态目录与路由只读快照。
+  app.set('consoleVersion', appVersion);
+  app.set('consoleBuild', buildTag);
+  app.set('consoleOps', () => ({
+    served,
+    bootAt,
+    rssMb: Math.round(process.memoryUsage().rss / 1024 / 1024),
+  }));
+
   /**
-   * 根路径：给人看的状态页。
+   * 根路径 = Web 控制台（用户 2026-10-29：「就直接 / 路径为登录页面，
+   * 进入后是状态台与 AI 训练台的 B 端页面」）。
    *
-   * 为什么需要它：这个服务是纯 API，站点根路径本来没有任何页面。
-   * 部署完用浏览器访问域名时，若只返回 `{"code":404,"message":"接口不存在"}`，
-   * 运维根本分不清「服务正常但没这个路由」还是「服务挂了/反代没通」——
-   * 用户就反馈过「我都不知道通没通」。给一个明确说「服务运行中」的页面最省事。
+   * 旧版这里是一段内联 HTML 的「后端状态页」。现在换成控制台后，
+   * 运维原来靠它确认的那几件事（进程活着没 / 数据库连上没 / 部署的是哪个构建）
+   * 由控制台登录页的 /console/api/public-status 继续提供 —— 只给运行指标，
+   * **不再公开**待研判数量与 AI 判定阈值（根路径对公网开放，
+   * 「刷到多少分会被封」告诉任何人等于教人绕过硬禁）。
    *
-   * 只暴露非敏感信息（是否运行、运行多久、数据库连接状态）；
-   * 不输出连接串、主机名、环境变量，避免信息泄漏。
+   * 页面骨架是静态文件（不含任何业务数据），数据一律登录后走 /console/api/*。
+   * 未登录者拿到的 HTML 里没有任何数字，因此不需要鉴权。
    */
-  app.get('/', (req, res) => {
-    const mongoose = require('mongoose');
-    // readyState: 0 未连接 / 1 已连接 / 2 连接中 / 3 断开中
-    const dbReady = mongoose.connection && mongoose.connection.readyState === 1;
-    const apiOk = dbReady; // 页面能渲染出来 = HTTP 层正常；数据库不可用则整体判定为异常
-
-    // 运行时长：按天/时/分/秒各自显示，天以上也看得懂
-    const upSec = Math.floor(process.uptime());
-    const d = Math.floor(upSec / 86400);
-    const h = Math.floor((upSec % 86400) / 3600);
-    const m = Math.floor((upSec % 3600) / 60);
-    const s = upSec % 60;
-    const upParts = [];
-    if (d) upParts.push(`${d} 天`);
-    if (h) upParts.push(`${h} 小时`);
-    if (m) upParts.push(`${m} 分`);
-    upParts.push(`${s} 秒`);
-    const upText = upParts.join(' ');
-
-    const fmt = (ts) =>
-      new Date(ts).toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-');
-    const bootText = fmt(bootAt);
-    const time = fmt(Date.now());
-
-    // 本次请求在服务端花了多久（从中间件计时到渲染前），单位毫秒，保留 1 位
-    const costMs = req.__t0 ? Number(process.hrtime.bigint() - req.__t0) / 1e6 : 0;
-    const costText = costMs < 10 ? costMs.toFixed(1) : String(Math.round(costMs));
-
-    const rssMb = Math.round(process.memoryUsage().rss / 1024 / 1024);
-
-    // ===== 唐跑AI数据模型（用户 2026-10-27）=====
-    // 状态页要能看出「反作弊学习引擎活着没有、学了多少、当前判定阈值」。
-    //
-    // ⚠️ 这里**只读缓存**（peekModel），绝不触发训练：
-    //   状态页每 30 秒自动刷新，而一次训练要 2~3 秒（GPS 甚至曾达 30 秒），
-    //   放在渲染路径里会把页面拖垮（这正是 /model-status 超时那次的教训）。
-    //   缓存为空时显示「预热中」，同时在后台静默预热，下次刷新就能看到数据。
-    const ai = (() => {
-      try {
-        const acModel = require('./services/anticheat-model');
-        const w = acModel.peekModel('werun');
-        const g = acModel.peekModel('gps');
-        const th = acModel.currentThreshold();
-        if (!w) acModel.getModel('werun').catch(() => {});
-        if (!g) acModel.getModel('gps').catch(() => {});
-        const trees = (m) => (m && m.forest ? m.forest.length : 0);
-        const stamp = Math.max((w && w.trainedAt) || 0, (g && g.trainedAt) || 0);
-        return {
-          ok: true,
-          ready: !!(w && g),
-          werunReady: !!w,
-          gpsReady: !!g,
-          werunRows: (w && w.rows) || 0,
-          gpsRows: (g && g.rows) || 0,
-          werunTrees: trees(w),
-          gpsTrees: trees(g),
-          trainedAt: stamp ? fmt(stamp) : '—',
-          threshold: `可疑 ${Number(th.suspicious).toFixed(2)} / 自动封禁 ${Number(th.autoBan).toFixed(2)}`,
-        };
-      } catch (e) {
-        return { ok: false, ready: false };
-      }
-    })();
-
-    res.set('Content-Type', 'text/html; charset=utf-8');
-    res.send(`<!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<!-- 状态页每 30 秒自动刷新：运维盯屏时不用手动 F5 也能看到最新运行时长 -->
-<meta http-equiv="refresh" content="30">
-<title>唐唐快跑 · 后端服务</title>
-<style>
-  :root{--brand:#ff6b00;--text:#1f2329;--sub:#646a73;--ok:#2ba471;--bad:#e34d59;--line:#eceef1}
-  *{box-sizing:border-box}
-  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
-       background:#f6f7f9;color:var(--text);
-       font:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
-  .card{width:min(580px,92vw);background:#fff;border-radius:16px;padding:32px 28px;
-        box-shadow:0 8px 28px rgba(31,35,41,.08)}
-  .row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
-  .dot{width:10px;height:10px;border-radius:50%;background:var(--ok);flex:none;
-       box-shadow:0 0 0 4px rgba(43,164,113,.15)}
-  .dot.bad{background:var(--bad);box-shadow:0 0 0 4px rgba(227,77,89,.15)}
-  h1{font-size:20px;margin:0}
-  .brand{color:var(--brand)}
-  .sub{color:var(--sub);font-size:13px;line-height:1.8;margin:12px 0 20px}
-  .kv{display:grid;grid-template-columns:auto 1fr;gap:11px 18px;font-size:14px;
-      padding:18px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
-  .k{color:var(--sub);white-space:nowrap}
-  .v{font-weight:600;font-variant-numeric:tabular-nums;word-break:break-all}
-  .ok{color:var(--ok)} .bad{color:var(--bad)}
-  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px}
-  .links{display:flex;gap:12px;flex-wrap:wrap;margin-top:20px}
-  a{display:inline-block;padding:9px 16px;border-radius:999px;text-decoration:none;
-    font-size:13px;font-weight:600;color:var(--brand);background:#fff4ec}
-  a.primary{background:var(--brand);color:#fff}
-  code{background:#f2f3f5;padding:1px 6px;border-radius:4px;font-size:12px}
-  /* ===== 唐跑AI数据模型 ===== */
-  .ai{margin-top:20px;padding:18px;border-radius:14px;
-      background:linear-gradient(135deg,#fff8f3,#fff);border:1px solid #ffe3cc}
-  .ai-head{display:flex;align-items:center;gap:9px}
-  .ai-badge{width:26px;height:26px;border-radius:8px;background:var(--brand);color:#fff;
-            font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:none}
-  .ai-title{font-size:15px;font-weight:600;flex:1}
-  .ai-state{font-size:12px;font-weight:600;color:#b25e09;background:#fff1e9;
-            padding:2px 10px;border-radius:999px}
-  .ai-state.ok{color:var(--ok);background:#ecf9f2}
-  .ai-desc{margin:9px 0 14px;font-size:12.5px;color:var(--sub);line-height:1.6}
-  .ai-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-  .ai-item{background:#fff;border:1px solid var(--line);border-radius:10px;padding:11px 13px;
-           display:flex;flex-direction:column;gap:3px}
-  .ai-name{font-size:12px;color:var(--sub)}
-  .ai-val{font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}
-  .ai-val.ok{color:var(--ok)} .ai-val.warn{color:#b25e09}
-  .ai-meta{font-size:11px;color:var(--sub)}
-  .ai-foot{display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;
-           margin-top:13px;font-size:11.5px;color:var(--sub)}
-  .ai-foot strong{color:var(--text);font-weight:600;font-variant-numeric:tabular-nums}
-</style></head>
-<body><div class="card">
-  <div class="row"><span class="dot${apiOk ? '' : ' bad'}"></span>
-    <h1>唐唐快跑 <span class="brand">${appVersion}</span> 后端服务${apiOk ? '运行中' : '异常'}</h1></div>
-  <p class="sub">这是一个纯 API 服务，没有网页界面。<br>
-    如果你看到这个页面，说明<strong>服务进程正常、反向代理也通了</strong>。</p>
-  <div class="kv">
-    <span class="k">API 运行状态</span>
-    <span class="v ${apiOk ? 'ok' : 'bad'}">${apiOk ? '正常' : '异常'} · 本次响应 ${costText} ms</span>
-
-    <span class="k">累计处理请求</span>
-    <span class="v">${served.toLocaleString('zh-CN')} 次</span>
-
-    <span class="k">后端启动时间</span>
-    <span class="v mono">${bootText}</span>
-
-    <span class="k">运行时长</span>
-    <span class="v">${upText}</span>
-
-    <span class="k">数据库</span>
-    <span class="v ${dbReady ? 'ok' : 'bad'}">${dbReady ? '已连接' : '未连接'}</span>
-
-    <span class="k">内存占用</span>
-    <span class="v">${rssMb} MB</span>
-
-    <span class="k">服务器时间</span>
-    <span class="v mono">${time}</span>
-  </div>
-
-  <!-- ===== 唐跑AI数据模型（用户 2026-10-27）=====
-       反作弊的学习引擎状态：两个模型各自学了多少条历史、判定阈值是多少。
-       单独一块而不是塞进上面的 kv：它是「模型」而不是「服务运行指标」，
-       混在一起会让运维分不清哪个是健康检查、哪个是业务能力。 -->
-  <div class="ai">
-    <div class="ai-head">
-      <span class="ai-badge">AI</span>
-      <span class="ai-title">唐跑AI数据模型</span>
-      <span class="ai-state ${ai.ready ? 'ok' : ''}">${
-        !ai.ok ? '不可用' : ai.ready ? '运行中' : '预热中'
-      }</span>
-    </div>
-    <p class="ai-desc">从历史运动数据中学习真实与机器的行为差异，按来源分开判定。</p>
-    <div class="ai-grid">
-      <div class="ai-item">
-        <span class="ai-name">微信同步模型</span>
-        <span class="ai-val ${ai.werunReady ? 'ok' : 'warn'}">${
-          ai.werunReady ? `${ai.werunRows.toLocaleString('zh-CN')} 条样本` : '预热中…'
-        }</span>
-        <span class="ai-meta">${ai.werunTrees ? `${ai.werunTrees} 棵决策树` : '—'}</span>
-      </div>
-      <div class="ai-item">
-        <span class="ai-name">GPS 实跑模型</span>
-        <span class="ai-val ${ai.gpsReady ? 'ok' : 'warn'}">${
-          ai.gpsReady ? `${ai.gpsRows.toLocaleString('zh-CN')} 条样本` : '预热中…'
-        }</span>
-        <span class="ai-meta">${ai.gpsTrees ? `${ai.gpsTrees} 棵决策树` : '—'}</span>
-      </div>
-    </div>
-    <div class="ai-foot">
-      <span>判定阈值 <strong>${ai.threshold || '—'}</strong></span>
-      <span>最近训练 ${ai.trainedAt || '—'}</span>
-    </div>
-  </div>
-
-  <div class="links">
-    <a class="primary" href="/health">健康检查 /health</a>
-    <a href="/api/content/announcements">公告接口示例</a>
-    <a href="/">刷新</a>
-  </div>
-  <p class="sub" style="margin-top:18px">小程序端请求的是 <code>/api/*</code> 接口；
-    本页仅用于确认部署是否成功。页面每 30 秒自动刷新。</p>
-</div></body></html>`);
+  app.get(['/', '/console', '/console/'], (req, res, next) => {
+    // 控制台的响应头。页面本身不含业务数据，但它是「会带着会话凭证运行的页面」，
+    // 所以安全头必须齐全：
+    //   CSP：script-src 'self'（不放行内联脚本 → XSS 想执行代码必须先把文件落到服务器）；
+    //        CSS 也是 'self'（因此 HTML 里禁止内联 style=""，已改为 class 工具类）。
+    //   X-Frame-Options：DENY —— 防止把登录页框进钓鱼页面做点击劫持。
+    //   no-store：登录页不缓存，避免共享电脑上留驻。
+    const csp = [
+      "default-src 'self'",
+      "script-src 'self'",
+      "style-src 'self'",
+      "img-src 'self' data:",
+      "font-src 'self'",
+      "connect-src 'self'",
+      "frame-ancestors 'none'",
+      "base-uri 'none'",
+      "form-action 'self'",
+    ].join('; ');
+    res.set('Content-Security-Policy', csp);
+    res.set('X-Frame-Options', 'DENY');
+    res.set('X-Content-Type-Options', 'nosniff');
+    res.set('Referrer-Policy', 'same-origin');
+    res.set('Cache-Control', 'no-store');
+    res.sendFile(path.join(__dirname, '../public/console/index.html'), (err) => {
+      if (err) next(err);
+    });
   });
+
+  // 控制台静态资源（CSS / JS 外链，配合 CSP 不放行内联脚本，见 routes/console.js）。
+  // maxAge 1 小时：改样式后不用重启也能在一小时内自然生效；
+  // 不用 etag 关闭是因为 express 默认 etag 已能命中「内容没变 → 304」。
+  app.use(
+    '/console',
+    express.static(path.join(__dirname, '../public/console'), {
+      maxAge: '1h',
+      index: false, // 目录索引关掉：/console/ 由上面的显式路由发页面
+      setHeaders(res2) {
+        res2.set('X-Content-Type-Options', 'nosniff');
+      },
+    })
+  );
+
+  // 控制台 API（账号密码登录 + HttpOnly Cookie 会话，与小程序 JWT 完全隔离）
+  app.use('/console/api', require('./routes/console'));
 
   // 广告落地页直出
   app.get('/p/:slug', async (req, res, next) => {

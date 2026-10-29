@@ -41,6 +41,23 @@ permissionGroupSchema.statics.DEFAULT_GROUPS = [
     description: '教师默认管理权限：查看看板/用户/申诉/内容/配置/运动考核，可审核申诉（教师不接触广告）',
     builtIn: true,
   },
+  // ===== 反作弊独立权限组（用户 2026-10-29：「需要独立权限组」）=====
+  // 刻意**不**并进教师管理组：反作弊能封号、能喂训练集，默认给所有教师等于
+  // 每个老师都能处置学生 —— 与「教师只管自己班」的边界冲突。要参与的人单独授予组。
+  {
+    key: 'anticheat_analyst',
+    name: '反作弊研判员',
+    permissions: ['anticheat.view', 'anticheat.label'],
+    description: '查看状态台与异常记录、做 AI 标注（作弊/轻微/设备问题/正常）；不能封禁、不能改模型',
+    builtIn: true,
+  },
+  {
+    key: 'anticheat_admin',
+    name: '反作弊管理员',
+    permissions: ['anticheat.view', 'anticheat.label', 'anticheat.manage', 'anticheat.ban'],
+    description: '反作弊全部事务：标注 + 批准封禁/解封 + 调 AI 严谨度 + 重训模型',
+    builtIn: true,
+  },
 ];
 
 module.exports = mongoose.model('PermissionGroup', permissionGroupSchema);

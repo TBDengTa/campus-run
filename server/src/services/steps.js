@@ -140,36 +140,45 @@ async function recordStepAnomaly(user, { dateKey, cumulativeSteps, deltaSteps, e
 }
 
 /**
- * 合并「硬规则分」与「模型分」。
+ * 合并「硬规则」与「AI 判定」。
  *
- * 口径（刻意保守，避免模型误伤）：
- *   · 分数取二者较大值 —— 任一方认为很可疑，就值得人工看一眼；
- *   · **自动封禁要求硬规则也认可或模型分极高**：模型单独不足以直接封号，
- *     因为无监督模型没有标签校验，误封成本远高于漏判（用户可申诉，但体验极差）。
- *   · 硬规则 autoBan → 必定 autoBan（物理上不可能的事，不需要模型背书）
+ * ===== 用户 2026-10-29 决定：「自动检测也变成 AI」（P2）=====
+ * 旧口径是 `finalScore = max(规则分, 模型分×250映射)` + 两份理由正则去重 ——
+ * 两条通道各打各的分，「规则 55 分」和「模型 0.8」在量纲上根本不可比，
+ * 合并只能靠拍系数与取大，管理员看到的分数说不清是谁给的。
+ *
+ * 新口径：**分数与理由都以 AI 为准**。硬规则已作为特征（ruleHits/ruleMax）
+ * 喂进森林（见 anticheat-model::werunFeatures），规则信号仍在决定分数，
+ * 只是从「并行打分」变成「输入」；物理不可能值（配速快于世界纪录、单日>10万步）
+ * 由 evaluate 内部的 physicalScore 兜底取 max，不依赖样本分布。
+ *
+ * 唯一保留的规则独立路径：**模型不可用时**（首次启动还没训练 / 训练异常）
+ * 完全退回硬规则 —— 同步链路不能因为模型没热起来就裸奔，
+ * 没有反作弊的窗口期比误判更危险。
  */
 function mergeAnomaly(rule, model) {
-  if (!model) return rule;
-  const score = Math.max(rule.score || 0, Math.round((model.score || 0) * 100) * 0.6);
-  // 模型分映射到与硬规则相近的量级（0.78 → 约 47 分；0.92 → 约 55 分），
-  // 这样「模型很确信」时能单独进入待研判（>=30），但要到自动封禁仍需硬规则或极高模型分。
-  const modelScaled = Math.max(0, Math.min(100, Math.round(((model.score || 0) - 0.5) * 250)));
-  const finalScore = Math.max(rule.score || 0, modelScaled);
-  // 语义级去重：硬规则与模型可能用不同措辞描述同一件事（用户 2026-10-27 反馈重复）
-  const reasons = require('./anticheat-model').dedupeReasons([...(rule.reasons || []), ...(model.reasons || [])]);
-  const ruleAuto = rule.level === 'autoBan';
-  // 模型极高（>=0.95）也允许自动封禁；否则模型只能把记录推到待研判
-  const modelAuto = model.score >= 0.95;
-  const autoBan = ruleAuto || modelAuto;
-  const level = autoBan ? 'autoBan' : finalScore >= 30 ? 'suspicious' : rule.level || 'ok';
+  if (!model) return rule; // 模型未就绪：退回硬规则（fallback，不是并行通道）
+  // AI 分（0~1）→ 管理端百分制：0.62（可疑线）→ 30，0.78（封禁线）→ 70，≥0.9 → 100
+  const score = Math.max(0, Math.min(100, Math.round((model.score - 0.5) * 250)));
+  const level =
+    model.level === 'autoBan' ? 'autoBan' : model.level === 'suspicious' ? 'suspicious' : 'ok';
+  // 理由以 AI 输出为准（physicalScore 命中的硬理由在前，模型解释在后，已在 evaluate 内去重）。
+  // 规则命中的中文理由也带上：不是为了让它「参与打分」（分数已经通过特征体现），
+  // 而是管理员要看懂「重复数字 66666」这种直白证据 —— 比「roundness=4」好懂得多。
+  const reasons = require('./anticheat-model').dedupeReasons([
+    ...(model.reasons || []),
+    ...(rule.reasons || []),
+  ]);
   return {
     ...rule,
-    score: finalScore,
+    score,
     level,
     reasons,
-    autoBan,
+    autoBan: level === 'autoBan',
     shouldRecord: level === 'suspicious' || level === 'autoBan',
     modelScore: model.score,
+    // 判定来源标注：管理端列表据此显示「AI 判定」徽标（fallback 时显示「规则判定」）
+    judgedBy: 'ai',
   };
 }
 

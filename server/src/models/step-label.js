@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 
 /**
- * 反作弊**人工标注**（用户 2026-10-27：「标注积累到阈值后自动提示升级」）。
+ * 反作弊**人工标注**（用户 2026-10-27 建立；2026-10-29 扩展为四分类并要求按来源分开）。
  *
  * ===== 为什么必须单独落库，而不是留在内存 =====
  * 上一版把反馈放在内存数组 `FEEDBACK.samples` 里，这有两个致命问题：
@@ -13,6 +13,20 @@ const mongoose = require('mongoose');
  * step_anomalies 记的是「一条待研判的线索」，本表记的是「管理员对某条线索的判定」。
  * 一条线索只会产生 0 或 1 条标注（open 时没有标注），所以用 anomalyId 唯一索引防重。
  * 但**也允许没有 anomalyId 的标注**（将来管理员可能直接对某个用户标注，不经过线索表）。
+ *
+ * ===== 四分类（用户 2026-10-29：「标注要能分开」）=====
+ * 旧版只有 isCheat 二元，问题是「数据异常但人没问题」（手机放桌上被微信补同步、
+ * 网络重传导致 delta 异常大）会被归成 normal 喂进训练集 ——
+ * 模型会学到「这种特征组合是正常的」，阈值越训越松，正是刷步工具最想要的结果。
+ * 现在四类：
+ *   · cheat   作弊            → 训练集正样本（权重 1）
+ *   · minor   轻微违规        → 训练集正样本但**降权 0.5**（如整千步但量级合理），
+ *                               处置上给警告而非封禁
+ *   · device  设备/网络问题    → **完全排除出训练集**：既不是作弊也不是"正常的刷步特征"，
+ *                               留在任何一侧都会污染分布
+ *   · normal  正常            → 训练集负样本
+ * isCheat 字段保留（= label 是 cheat/minor），老数据不迁移也不出错；
+ * 新写入时两者都填，读取一律以 label 为准（isCheat 只为兼容旧查询）。
  */
 const stepLabelSchema = new mongoose.Schema(
   {
@@ -21,10 +35,12 @@ const stepLabelSchema = new mongoose.Schema(
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     openid: { type: String, default: '' },
 
-    // 来源分流：微信同步 / GPS 两套模型各自积累标注
+    // 来源分流：微信同步 / GPS 两套模型各自积累标注（用户 2026-10-29 要求界面上也分开）
     source: { type: String, enum: ['werun', 'gps'], default: 'werun', index: true },
 
-    // 人工判定结果（**唯一监督信号**）
+    // ===== 人工判定结果（**唯一监督信号**，四分类）=====
+    label: { type: String, enum: ['cheat', 'minor', 'device', 'normal'], default: null, index: true },
+    // 兼容字段：label ∈ {cheat, minor} 时为 true。新代码读 label、写两处。
     isCheat: { type: Boolean, required: true, index: true },
 
     // 判定当时的模型分与规则分：训练有监督模型时作为特征输入
@@ -37,6 +53,8 @@ const stepLabelSchema = new mongoose.Schema(
 
     operator: { type: String, default: '' }, // 哪个管理员标的
     note: { type: String, default: '' },
+    // 改判次数：>0 说明这条标注被纠正过（导出训练集时可用来评估标注质量）
+    revision: { type: Number, default: 0 },
   },
   { timestamps: true }
 );
@@ -52,5 +70,22 @@ stepLabelSchema.index(
 );
 // 统计/导出：按来源 + 时间
 stepLabelSchema.index({ source: 1, createdAt: -1 });
+// 按类别统计（升级进度页要按 来源×类别 分别数）
+stepLabelSchema.index({ source: 1, label: 1 });
+
+// ===== 训练集口径（唯一来源，anticheat-model 与统计都从这里取）=====
+// device 排除的理由见文件头；minor 降权而不是排除：它确实是作弊，只是程度轻，
+// 全排除会让模型学不到「轻度修饰」这一档。
+const TRAIN_WEIGHTS = { cheat: 1, minor: 0.5, normal: 1 };
 
 module.exports = mongoose.model('StepLabel', stepLabelSchema, 'step_labels');
+module.exports.LABEL_KINDS = ['cheat', 'minor', 'device', 'normal'];
+module.exports.LABEL_TEXT = {
+  cheat: '作弊',
+  minor: '轻微违规',
+  device: '设备/网络问题',
+  normal: '正常',
+};
+module.exports.TRAIN_WEIGHTS = TRAIN_WEIGHTS;
+// 进训练集（有监督升级 + 在线校准）的类别过滤条件
+module.exports.TRAINABLE_LABELS = Object.keys(TRAIN_WEIGHTS);

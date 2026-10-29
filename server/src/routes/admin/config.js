@@ -4,6 +4,7 @@ const { requirePermission } = require('../../middlewares/admin');
 const GoalConfig = require('../../models/goal-config');
 const pointsSvc = require('../../services/points');
 const rewardVideoSvc = require('../../services/reward-video');
+const acSvc = require('../../services/anticheat-config');
 
 const router = express.Router();
 
@@ -99,31 +100,13 @@ router.put(
       throw new ApiError(403, 403002, '无权限修改计分/反作弊/北斗配置（需要 config.manage）');
     }
     if (anticheat) {
-      doc.anticheat.enabled = anticheat.enabled !== false;
-      if (anticheat.maxStepJumpPerSync != null) doc.anticheat.maxStepJumpPerSync = Number(anticheat.maxStepJumpPerSync);
-      if (anticheat.minPaceSecondsPerKm != null) doc.anticheat.minPaceSecondsPerKm = Number(anticheat.minPaceSecondsPerKm);
-      if (anticheat.banDays != null) doc.anticheat.banDays = Number(anticheat.banDays);
-      // ===== AI 严谨度（用户 2026-10-28「可以调整 AI 封禁的严谨程度」）=====
-      // 档位：loose / balanced / strict / custom。非法值一律回落 balanced（不改坏）。
-      if (anticheat.aiStrictness != null) {
-        const mode = String(anticheat.aiStrictness);
-        doc.anticheat.aiStrictness = ['loose', 'balanced', 'strict', 'custom'].includes(mode) ? mode : 'balanced';
-      }
-      // 自定义阈值的钳位与服务端 currentThreshold 同一口径（0.3~0.95 / 0.4~0.99，
-      // 且自动封禁必须高于待研判 0.02）—— 两处口径必须一致，否则页面预览与实际生效不符。
-      if (anticheat.aiSuspiciousThreshold != null) {
-        const v = Number(anticheat.aiSuspiciousThreshold);
-        if (Number.isFinite(v)) doc.anticheat.aiSuspiciousThreshold = Math.min(0.95, Math.max(0.3, v));
-      }
-      if (anticheat.aiAutoBanThreshold != null) {
-        const v = Number(anticheat.aiAutoBanThreshold);
-        if (Number.isFinite(v)) doc.anticheat.aiAutoBanThreshold = Math.min(0.99, Math.max(0.4, v));
-      }
-      // 保证「自动封禁线 ≥ 待研判线 + 0.02」，否则可疑一档就封了，等于没有中间态
-      doc.anticheat.aiAutoBanThreshold = Math.max(
-        Number(doc.anticheat.aiAutoBanThreshold || 0.78),
-        Number(doc.anticheat.aiSuspiciousThreshold || 0.62) + 0.02
-      );
+      // ===== AI 严谨度与阈值（用户 2026-10-28「可以调整 AI 封禁的严谨程度」）=====
+      // 口径唯一实现：services/anticheat-config.js::applyAnticheatInput
+      // （Web 控制台 PUT /console/model-config 走同一份 —— 两处各写一套钳位，
+      //   就会漂移出「页面预览 0.78、实际生效 0.70」，管理员按预览理解系统行为）。
+      // 包含：档位名白名单（非法回落 balanced）、自定义阈值 0.3~0.95 / 0.4~0.99 夹紧、
+      // 以及「自动封禁线 ≥ 待研判线 + 0.02」（否则一到可疑就封，等于取消人工研判档）。
+      acSvc.applyAnticheatInput(doc, anticheat);
     }
     if (rewardVideo) {
       doc.rewardVideo.enabled = rewardVideo.enabled !== false;

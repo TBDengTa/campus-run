@@ -73,7 +73,29 @@
   ③ 删除前必须确认没有账号在用（`user.permissionGroups` 引用检查），内置组一律不可删；
   ④ 权限项必须存在于权限目录（`assertPermsExist`）。
   管理端页面：`packageAdmin/permissions/groups`（账户编辑页与用户详情页都有「管理权限组 ›」入口）。
-- 本地测试登录：后端 `DEV_LOGIN=true` + 前端 `env.js` `DEV_LOGIN: true, DEV_ROLE: 'dev-student|dev-teacher|dev-admin'`；生产必须关闭。
+- **反作弊独立权限组**（用户 2026-10-29「需要独立权限组」）：权限项 `anticheat.view/label/manage/ban` 四项，
+  内置两个组 `anticheat_analyst`（view+label）与 `anticheat_admin`（四项全）。**刻意不并进教师管理组**——
+  反作弊能封号、能喂训练集，默认给所有教师等于每个老师都能处置学生。
+  蕴含关系（`Permission.PERM_IMPLIES`）：label / manage / ban 都蕴含 view（给了处置权必须能打开列表，
+  否则只能靠猜 ID 调接口）。**标注（label）与封禁（ban）是两个权限、两条正交线**：
+  标注进 AI 训练集（可改判），封禁直接限制学生；分开才能走「研判员标注 → 管理员批准」的复核流程。
+  旧实现 GET 列表**无任何守卫**（前缀未挂权限 + 路由无 MANAGE），任何登录用户带 token 都能拉
+  全员疑似作弊清单——本次一并堵（读接口 `anticheat.view` 兼容 `user.view`，不让现网教师一夜白屏）。
+- **Web 控制台 `/console`**（用户 2026-10-29「后端状态台支持登录，进入后有状态台与 AI 训练台」）：
+  账号密码登录 → 内存会话（`services/console-session.js`）→ HttpOnly + SameSite=Strict Cookie。
+  **与小程序 JWT 完全隔离**（`/console/api/*` 只认 Cookie，`/api/*` 只认 JWT）：
+  浏览器的凭证绝不能调小程序接口（XSS 偷到的会话若也能改步数/发徽章，爆炸半径大一个量级）。
+  登录三道门（缺一不可）：密码正确 → 有 `anticheat.*` 权限 → **提交口令不是本人的初始密码**
+  （教师 123456 / 学生学号后 8 —— 这两个值不是秘密，只校密码等于把门牌写成「知道学号就能进」）。
+  ⚠️ 控制台失败计数**单独记内存**，绝不写 `user.failedLogins`：否则有人在浏览器里狂试他人密码，
+  会把那个人**小程序**也锁死（用管理端入口把学生锁在门外）。
+  页面是 `server/public/console/{index.html,app.css,app.js}` **静态文件**（无构建链），
+  根路径 `/` 即登录页；CSP 严格到 `script-src/style-src 'self'`，因此
+  **HTML 禁止内联 `style=` 与 `onclick`**（一律 class + addEventListener），
+  客户端渲染一律 `textContent`（绝不 innerHTML 拼服务端字段：列表里有学生姓名与备注）。
+  根路径**不公开**反作弊参数（待研判数 / AI 阈值只在登录后的 `/dashboard`）；
+  `/console/api/public-status` 只给运行指标（部署自检要用）。
+  回归：`tools/verify-console.js`（真实起 app 走完整 Cookie 链路，含清理与配置恢复）。
 - **只读账号不显示写入口**（用户 2026-10-22「只有查看权限时应该不显示操作功能按钮，而不是点击后被后端拒绝掉」）：
   ① 每个管理端页面在 `onShow`/`load` 里调 `utils/admin-perm.js::applyManage(this, '<模块>.manage')`
      得到 `data.canManage`（`*` 或该项），写入口一律 `wx:if="{{canManage}}"`，输入框 `disabled="{{!canManage}}"`；

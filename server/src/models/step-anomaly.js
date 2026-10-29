@@ -45,6 +45,17 @@ const stepAnomalySchema = new mongoose.Schema(
     handledBy: { type: String, default: '' }, // 处置的管理员 openid
     handledAt: { type: Date },
     handleNote: { type: String, default: '' }, // 管理员备注
+
+    // ===== 四分类标注（用户 2026-10-29「标注要能分开」）=====
+    // 与 status 的关系（刻意正交）：
+    //   · status 是**处置线**（封没封），由 anticheat.ban 驱动；
+    //   · label 是**认知线**（是不是作弊），由 anticheat.label 驱动，进训练集。
+    // 研判员标完 cheat 不必能封（等管理员批准），标 device 也不动 status ——
+    // 两条线分开才能做「研判员标注 → 管理员批准」的复核流程。
+    // null = 还没人标过。权威副本在 step_labels（本字段是列表展示的冗余，改判时两处同步）。
+    label: { type: String, enum: ['cheat', 'minor', 'device', 'normal', null], default: null, index: true },
+    labeledBy: { type: String, default: '' },
+    labeledAt: { type: Date },
   },
   { timestamps: true }
 );

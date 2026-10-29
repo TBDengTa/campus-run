@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>唐唐快跑 · 反作弊控制台</title>
+<!--
+  站点根路径 = 控制台登录页（用户 2026-10-29：「就直接 / 路径为登录页面，进入后是状态台与 AI 训练台的 B 端页面」）。
+
+  ⚠️ 这一份 HTML 是**不含任何业务数据的静态骨架**：
+  旧版根路径是「后端状态页」，直接渲染了待研判数量与 AI 判定阈值。
+  现在根路径要对公网开放（谁都能访问域名），那两个数字属于反作弊参数：
+  「刷到多少分才会被封」告诉给任何访问者，等于教人怎么绕过封禁。
+  所以：未登录时只显示「服务是否在跑 / 版本 / 数据库连没连上」（部署自检需要的），
+  业务数字必须登录后由 /console/api/dashboard 取（服务端按 anticheat.view 校验）。
+
+  CSS / JS 都是外链文件，配合 CSP 的 script-src 'self'（不放行内联脚本），
+  这样 XSS 想注入脚本必须先把文件写到服务器上 —— 难度与内联放行完全不是一个量级。
+-->
+<link rel="stylesheet" href="/console/app.css">
+</head>
+<body>
+
+<!-- ==================== 登录 ==================== -->
+<div id="viewLogin" class="login hide">
+  <div class="card">
+    <h1>反作弊控制台</h1>
+    <p class="lg-sub">唐唐快跑 2.0 · 状态台与 AI 训练台</p>
+    <div class="fld"><label for="inAccount">姓名（登录账号）</label><input type="text" id="inAccount" autocomplete="username"></div>
+    <div class="fld"><label for="inPassword">密码</label><input type="password" id="inPassword" autocomplete="current-password"></div>
+    <div class="mt-18"><button class="btn pri wide" id="btnLogin">登录</button></div>
+    <div class="err hide" id="loginErr"></div>
+    <div class="ops" id="opsStatus">正在检查服务状态…</div>
+  </div>
+</div>
+
+<!-- ==================== 控制台 ==================== -->
+<div id="viewApp" class="hide">
+  <div class="top">
+    <div class="logo">唐</div>
+    <div class="app-name">反作弊控制台</div>
+    <div class="tabs">
+      <div class="tab on" data-v="dash">状态台</div>
+      <div class="tab" data-v="train">AI 训练台</div>
+      <div class="tab" data-v="cfg">模型配置</div>
+    </div>
+    <div class="spacer"></div>
+    <div class="who" id="who"></div>
+    <button class="btn sm" id="btnRefresh">刷新</button>
+    <button class="btn sm" id="btnLogout">退出</button>
+  </div>
+
+  <div class="wrap">
+    <!-- ---------- 状态台 ---------- -->
+    <div id="vDash">
+      <div class="card">
+        <div class="card-h"><div class="card-t">待研判与处置</div><div class="card-sub" id="autoTag">数据每 30 秒自动刷新</div></div>
+        <div class="grid g4" id="svcGrid"></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><div class="card-t">唐跑AI数据模型</div><div class="card-sub" id="aiStateTag"></div></div>
+        <div class="grid g2" id="modelGrid"></div>
+        <div class="grid g3 gap-top" id="threshGrid"></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><div class="card-t">待研判队列（按来源与标注分开）</div></div>
+        <div id="matrixBox"></div>
+        <div class="note">「未标注」是研判员要处理的量。device（设备/网络问题）不进 AI 训练集，也不会被当作作弊样本。</div>
+      </div>
+      <div class="card">
+        <div class="card-h"><div class="card-t">有监督模型升级进度</div><div class="card-sub">靠人工标注积累</div></div>
+        <div id="upgradeBox"></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><div class="card-t">最近封禁处置</div></div>
+        <div id="recentBox"></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><div class="card-t">服务运行</div></div>
+        <div class="grid g4" id="opsGrid"></div>
+      </div>
+    </div>
+
+    <!-- ---------- AI 训练台（标注） ---------- -->
+    <div id="vTrain" class="hide">
+      <div class="card">
+        <div class="filters">
+          <div class="seg" id="segStatus"></div>
+          <div class="seg" id="segSource"></div>
+          <select id="selLabel"></select>
+          <input type="text" id="inKeyword" placeholder="姓名 / 学号 / 班级">
+          <button class="btn sm" id="btnSearch">查询</button>
+          <div class="spacer"></div>
+          <div class="card-sub" id="listCount"></div>
+        </div>
+        <div class="note mb">
+          标注 = 告诉 AI「这人是不是作弊」，是系统唯一的人工监督信号，长期积累用于升级有监督模型。
+          封禁需要单独的 anticheat.ban 权限，与标注分开（研判员标注 → 管理员批准）。
+        </div>
+        <div id="listBox"></div>
+        <div class="pager">
+          <button class="btn sm" id="btnPrev">上一页</button>
+          <span class="card-sub" id="pageTag"></span>
+          <button class="btn sm" id="btnNext">下一页</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------- 模型配置 ---------- -->
+    <div id="vCfg" class="hide">
+      <div class="card">
+        <div class="card-h"><div class="card-t">AI 严谨度</div><div class="card-sub">需要 anticheat.manage 权限</div></div>
+        <div id="strictBox"></div>
+        <div class="note">档位是基线，在线校准会在基线上下浮动（封顶 ±0.06），所以「生效值」与档位数字略有差异属正常。</div>
+      </div>
+      <div class="card">
+        <div class="card-h"><div class="card-t">自动处置开关</div></div>
+        <div id="enableBox"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ---------- 封禁弹层 ---------- -->
+<div class="mask hide" id="banMask">
+  <div class="sheet">
+    <h3>封禁确认</h3>
+    <p class="lg-sub" id="banWho"></p>
+    <div class="fld"><label for="banDays">限制微信同步天数</label>
+      <input type="number" id="banDays" value="7" min="1" max="365"></div>
+    <div class="fld"><label for="banNote">备注（会写进处置原因与学生申诉页）</label>
+      <textarea id="banNote" rows="3" maxlength="200"></textarea></div>
+    <div class="err hide" id="banErr"></div>
+    <div class="sheet-foot">
+      <button class="btn" id="banCancel">取消</button>
+      <button class="btn pri" id="banOk">确认封禁</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast hide" id="toast"></div>
+
+<script src="/console/app.js"></script>
+</body>
+</html>

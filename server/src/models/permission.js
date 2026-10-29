@@ -52,6 +52,16 @@ permissionSchema.statics.DEFAULT_CATALOG = [
   { key: 'class.view', name: '查看班级配置', module: '班级', sort: 73 },
   { key: 'class.manage', name: '管理班级配置（早操/校园跑标记、人数）', module: '班级', sort: 74 },
   { key: 'permission.manage', name: '管理用户权限', module: '权限', sort: 60 },
+  // ===== 反作弊 / AI 训练（用户 2026-10-29 要求独立权限组）=====
+  // 四项刻意拆开，核心是「标注」与「封禁」分离（用户确认「分开」）：
+  //   · 标注会进 AI 训练集，是长期资产，误标只是模型学偏（可纠正）；
+  //   · 封禁是不可逆处置，直接影响学生。
+  // 让同一人「谁标谁杀」等于没有复核 —— 拆开后走「研判员标注 → 管理员批准封禁」。
+  // 也不放进内置「教师管理组」：反作弊能封号，不该默认给所有教师。
+  { key: 'anticheat.view', name: '查看反作弊状态台与异常记录', module: '反作弊', sort: 80 },
+  { key: 'anticheat.label', name: 'AI 标注（判定作弊/轻微/设备问题/正常）', module: '反作弊', sort: 81 },
+  { key: 'anticheat.manage', name: '管理 AI 模型（严谨度档位/重训/自动封禁开关）', module: '反作弊', sort: 82 },
+  { key: 'anticheat.ban', name: '执行封禁/解封（反作弊处置）', module: '反作弊', sort: 83 },
 ];
 
 // 权限蕴含表：持有 key 即自动拥有 values（由 user.js::getEffectivePermissions 在**唯一出口**展开）。
@@ -61,6 +71,12 @@ permissionSchema.statics.DEFAULT_CATALOG = [
 permissionSchema.statics.PERM_IMPLIES = {
   // 学生会总管 = 查看 + 管理学生会（成员、部门、检查模块、班级台账、宿舍、卫生区、记录与导出）
   'union.steward': ['union.view', 'union.manage'],
+  // 反作弊（用户 2026-10-29）：能处置的人必然能看列表 —— 否则给了 ban 却打不开待研判页，
+  // 只能靠猜 anomalyId 调接口，等于不可用。蕴含关系放在这里展开一次，
+  // 有效权限、Web 控制台入口、小程序导航三条链路自动一致。
+  'anticheat.label': ['anticheat.view'],
+  'anticheat.manage': ['anticheat.view'],
+  'anticheat.ban': ['anticheat.view'],
 };
 
 permissionSchema.statics.expandImplies = function expandImplies(perms) {
