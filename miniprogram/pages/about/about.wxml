@@ -79,7 +79,7 @@
     <view class="ab-row ab-row-tap" bind:tap="goChangelogs">
       <view class="ab-row-icon"><t-icon name="history" size="30rpx" color="var(--tt-brand)" /></view>
       <text class="ab-label">版本日志</text>
-      <text class="ab-value">v2.0.0 → v2.0.4</text>
+      <text class="ab-value">v2.0.0 → v2.0.5</text>
       <t-icon name="chevron-right" size="30rpx" color="var(--tt-text-3)" />
     </view>
   </view>

@@ -1,6 +1,6 @@
 {
   "name": "campus-run-server",
-  "version": "2.0.4",
+  "version": "2.0.5",
   "description": "校园跑小程序 2.0 后端服务",
   "main": "src/index.js",
   "scripts": {
