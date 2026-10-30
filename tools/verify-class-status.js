@@ -226,8 +226,96 @@ function assert(cond, label, extra) {
     assert(/未达标班级（今日）：无/.test(r.copyText), '全部达标时文案明确写「无」');
   }
 
-  // ---- [8] 缓存不返回过期数据 ----
-  console.log('\n[8] 缓存一致性');
+  // ---- [8] 筛选与「复制筛选后的内容」（用户 2026-10-30「支持筛选，复制时复制的是筛选后的相应内容」）----
+  //
+  // 为什么必须验到 copyText 而不是只验行数：这个功能的核心承诺是
+  // 「复制出去的 = 屏幕上看到的」。若筛选在前端、文案在服务端，
+  // 两者会用不同的行集合 —— 页面显示 5 个班、粘出去是全校 43 个班的报告。
+  console.log('\n[8] 筛选 + 筛选后的复制文案');
+  const fDaily = board.applyBoardFilter(r, { quick: 'notDaily' });
+  assert(fDaily.rows.length > 0 && fDaily.rows.length <= r.rows.length, '今日未达标筛出子集', {
+    filtered: fDaily.rows.length,
+    total: r.rows.length,
+  });
+  assert(
+    fDaily.rows.every((x) => x.run.enabled && x.studentCount > 0 && x.run.dailyRate !== null && x.run.dailyRate < 100),
+    '筛出的每一行确实今日未达标（不参跑/空班不误报）',
+    fDaily.rows.filter((x) => !(x.run.dailyRate < 100)).map((x) => x.className)
+  );
+  assert(fDaily.activeFilters.includes('今日未达标'), '筛选标签回显', fDaily.activeFilters);
+  assert(fDaily.filtered.classCount === fDaily.rows.length, '筛选小计与行数一致', fDaily.filtered);
+  // 关键：文案标题写明筛选，且列出的班数 = 筛选后的行数
+  assert(/【班级状态 .*｜今日未达标】/.test(fDaily.copyText), '文案标题标明筛选条件', fDaily.copyText.split('\n')[0]);
+  assert(fDaily.copyText.includes(`共 ${fDaily.rows.length} 个班`), '文案班数 = 筛选后班数', fDaily.rows.length);
+  assert(
+    (fDaily.copyText.match(/^· /gm) || []).length === fDaily.rows.length,
+    '文案逐行列出的班数 = 筛选行数（复制的就是看到的）',
+    { lines: (fDaily.copyText.match(/^· /gm) || []).length, rows: fDaily.rows.length }
+  );
+  // 每个筛出的班都要真的出现在文案里（点名用的，漏一个就会漏催）
+  const missF = fDaily.rows.filter((x) => !fDaily.copyText.includes(x.className));
+  assert(missF.length === 0, '筛选出的班级都写进了文案', missF.map((x) => x.className));
+  // 未筛选的班不得混进筛选文案（否则「筛选」只是前端假象）
+  const outNames = r.rows.filter((x) => !fDaily.rows.includes(x)).slice(0, 3).map((x) => x.className);
+  assert(
+    outNames.every((n) => !fDaily.copyText.includes(`· ${n}：`)),
+    '未入选的班不出现在筛选文案里',
+    outNames
+  );
+  // 保留全校对照：否则老师看到 5 个班会以为只剩 5 个班
+  assert(/全校合计 \d+ 个班/.test(fDaily.copyText), '筛选文案保留全校对照', fDaily.copyText.split('\n')[2]);
+
+  const fZero = board.applyBoardFilter(r, { quick: 'zeroToday' });
+  assert(fZero.rows.every((x) => x.run.achievedToday === 0), '今日零达标筛选正确', fZero.rows.slice(0, 2).map((x) => x.run.achievedToday));
+  const fAtt = board.applyBoardFilter(r, { quick: 'attMissing' });
+  assert(fAtt.rows.every((x) => !x.attendance.hasData && x.studentCount > 0), '考勤待补筛选正确', fAtt.rows.length);
+
+  // 系部 + 关键词可叠加（交集）
+  if (r.departments && r.departments.length) {
+    const dept = r.departments[0];
+    const fDept = board.applyBoardFilter(r, { department: dept });
+    assert(fDept.rows.every((x) => x.departmentName === dept), `系部筛选（${dept}）每行匹配`, fDept.rows.slice(0, 2).map((x) => x.departmentName));
+    const fBoth = board.applyBoardFilter(r, { quick: 'notDaily', department: dept });
+    assert(
+      fBoth.rows.every((x) => x.departmentName === dept && x.run.dailyRate < 100),
+      '两条件叠加 = 交集',
+      fBoth.rows.length
+    );
+    assert(fBoth.activeFilters.length === 2, '标签含两个条件', fBoth.activeFilters);
+  }
+  if (r.rows.length) {
+    const kw = (r.rows[0].className || '').slice(2, 5);
+    const fKw = board.applyBoardFilter(r, { keyword: kw });
+    assert(
+      fKw.rows.length > 0 && fKw.rows.every((x) => `${x.className}${x.departmentName || ''}`.includes(kw)),
+      `关键词「${kw}」命中且不越界`,
+      fKw.rows.map((x) => x.className)
+    );
+  }
+
+  // 空参数与非法值必须等于全量（不能让一个拼错的 URL 参数悄悄把数据筛没）
+  const fNone = board.applyBoardFilter(r, {});
+  assert(fNone.rows.length === r.rows.length && /全校 \d+ 个班/.test(fNone.copyText), '空参数 = 全量口径', fNone.rows.length);
+  const fBad = board.applyBoardFilter(r, { quick: 'notARealFilter' });
+  assert(fBad.rows.length === r.rows.length && (!fBad.activeFilters || !fBad.activeFilters.length), '非法 quick 被忽略而非筛空', fBad.activeFilters);
+  // 筛到 0 行时文案要明确说明，不能留空让老师以为统计失败
+  const fEmpty = board.applyBoardFilter(r, { keyword: '一定不存在的班级名XYZ' });
+  assert(fEmpty.rows.length === 0 && /没有班级/.test(fEmpty.copyText), '筛到 0 行时文案明确说明', fEmpty.copyText);
+  // 关键词含正则元字符不得抛错（前端可输入任意文本）
+  let threw = false;
+  try {
+    board.applyBoardFilter(r, { keyword: '.*+?^${}()|[]\\' });
+  } catch (e) {
+    threw = true;
+  }
+  assert(!threw, '含正则元字符的关键词不抛错');
+
+  // 筛选不得污染缓存里的全量结果（缓存的是全量，筛选在内存做）
+  const r3 = await board.classStatusBoard();
+  assert(r3.rows.length === r.rows.length, '筛选后重新取仍是全量', { now: r3.rows.length, before: r.rows.length });
+
+  // ---- [9] 缓存不返回过期数据 ----
+  console.log('\n[9] 缓存一致性');
   const r2 = await board.classStatusBoard();
   assert(
     JSON.stringify(r2.totals) === JSON.stringify(r.totals),

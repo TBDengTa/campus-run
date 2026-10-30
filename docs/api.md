@@ -202,28 +202,44 @@
 | 广告 | `/ads/sponsors | /ads/slots | /ads/contents | /ads/pages` 的增删改查；`GET /ads/stats?contentId&sponsorId&start&end`；`GET /ads/pages-link/:id` |
 | 内容 | `/content/announcements | /content/changelogs | /content/holidays | /content/organizations | /content/badges` 的增删改查 |
 | 配置 | `GET|PUT /config`（目标/分时段/反作弊/激励视频） |
-| 班级 | `GET /class/profiles`（台账列表） · `GET|PUT /class/:className/profile` · **`GET /class/status-board?days=7`**（全校班级状态总览，见下） |
+| 班级 | `GET /class/profiles`（台账列表） · `GET|PUT /class/:className/profile` · **`GET /class/status-board?days=7&quick&department&keyword`**（全校班级状态总览，见下） |
 | 上传 | `POST /upload`（multipart，字段 file，返回图片 URL） |
 
 ### GET /api/admin/class/status-board（班级状态总览）
 
 用户 2026-10-29「增加班级状态页面显示所有班级的考勤、校园跑达标(日、周)，
-并且可以复制到文本如未达标班级等」。权限：`class.view`（只读，不写任何数据）。
+并且可以复制到文本如未达标班级等」；2026-10-30 加筛选「复制时复制的是筛选后的相应内容」。
+权限：`class.view`（只读，不写任何数据）。
+
+查询参数：
+
+| 参数 | 说明 |
+|---|---|
+| `days` | 考勤回看天数（默认 7） |
+| `today` | 统计日 `YYYY-MM-DD`（默认今天） |
+| `quick` | 快捷筛选：`notDaily` 今日未达标 / `zeroToday` 今日零达标 / `notWeek` 本周未达标 / `attMissing` 考勤待补。**非法值忽略**（等于不筛） |
+| `department` | 系部精确匹配 |
+| `keyword` | 班名 / 系部 模糊（服务端已转义正则元字符） |
 
 响应要点：
 
 | 字段 | 说明 |
 |---|---|
 | `today` / `from` / `weekStart` / `days` | 统计日、考勤回看区间、本周起点（ISO 周一）、区间天数 |
-| `totals` | `classCount / studentCount / achievedToday / achievedWeek / dailyRate / weeklyRate / skippedClasses` |
-| `rows[]` | 逐班：`run{achievedToday,dailyRate,achievedWeek,weeklyRate,enabled,stepsToday}`、`attendance{modules,ratePercent,hasData}`、`flags` |
+| `totals` | **全校口径**（不随筛选变）：`classCount / studentCount / achievedToday / achievedWeek / dailyRate / weeklyRate / skippedClasses` |
+| `rows[]` | 逐班：`run{achievedToday,dailyRate,achievedWeek,weeklyRate,enabled,stepsToday}`、`attendance{modules,ratePercent,hasData}`、`flags`。**有筛选时只含筛出的行** |
+| `departments[]` | 系部候选（取自实际有数据的班，不查组织架构） |
+| `filtered` | **筛选后小计**（与 `rows` 同集合）；未筛选时等于 `totals` |
+| `activeFilters[]` | 生效的筛选标签（如 `['今日未达标','机电建工系']`）；空数组 = 未筛选 |
 | `notAchieved` | `daily[] / weekly[] / attendanceMissing[]`（**已排除** 不参跑班、空班、无达标率的班，避免误报） |
-| `copyText` | **服务端生成**的可直接粘贴文本（含全校汇总 + 未达标班清单 + 考勤待补清单） |
+| `copyText` | **服务端生成**的可直接粘贴文本。未筛选 = 全校完整报告；有筛选 = **只列筛出的行**并在标题写明筛选条件与班数，另附一行全校对照 |
 
 口径（实现 `services/class-status-board.js`，前端不做二次计算）：
 ① 只统计 `status==='normal'` 的班（实习/毕业班不参与考勤与校园跑）；
 ② 达标 = 生效目标（个人计划优先、否则全局默认）且步数 ≥ 目标；
-③ 考勤按**应到人数加权**（早操/晚自习用 `shouldCount`、查宿用 `shouldStay`；早八只记迟到人数、无比率）。
+③ 考勤按**应到人数加权**（早操/晚自习用 `shouldCount`、查宿用 `shouldStay`；早八只记迟到人数、无比率）；
+④ **筛选在服务端做**（缓存存全量、筛选在内存）：文案必须服务端单点生成，
+若筛选在前端、文案在服务端，两者用的是不同行集合，复制出去仍是全量报告。
 
 ## 其他
 

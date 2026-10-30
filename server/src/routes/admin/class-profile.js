@@ -1161,11 +1161,26 @@ router.put(
 //
 // 口径实现全在 services/class-status-board.js（跨三张表聚合 + 可复制文案），
 // 这里只做鉴权与取参 —— 避免第二份「达标判定」与班级页/首页漂移。
+//
+// 筛选参数（用户 2026-10-30「支持筛选，复制时复制的是筛选后的相应内容」）：
+//   quick=notDaily|notWeek|zeroToday|attMissing  快捷筛选（白名单，非法值忽略）
+//   department=系部名  keyword=班名/系部关键词   view=前端视图名（原样回显）
+// 筛选放服务端而不是前端：可复制文案必须服务端单点生成（否则「列表 87%、文案 88%」），
+// 若筛选在前端、文案在服务端，两者用的就是不同的行集合 —— 正是要避免的那类不一致。
 router.get(
   '/status-board',
   wrap(async (req, res) => {
     const board = require('../../services/class-status-board');
-    ok(res, await board.classStatusBoard({ today: req.query.today, days: req.query.days }));
+    const full = await board.classStatusBoard({ today: req.query.today, days: req.query.days });
+    ok(
+      res,
+      board.applyBoardFilter(full, {
+        view: String(req.query.view || ''),
+        quick: String(req.query.quick || ''),
+        department: String(req.query.department || ''),
+        keyword: String(req.query.keyword || ''),
+      })
+    );
   })
 );
 
