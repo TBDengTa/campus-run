@@ -1,23 +1,24 @@
 /* 班级状态总览样式（白橙设计系统）
  *
- * 用户 2026-10-30「这个页面太难看了，要紧凑排版」—— 对照上一版的三个具体毛病：
- *   ① 顶部一整张白卡只放两个复制按钮（占 1/4 屏，信息量为零）；
- *   ② 列表每行一张带阴影的卡片 + 大间距，43 个班要滑十几屏；
- *   ③ 底部说明句里「本周自 ISO 周一（）起」在数据没到时留下空括号。
- * 现在改成：指标条 → 筛选 chips → 系部/搜索 → 天数/复制 → 表格化列表（行高 76rpx）。
+ * 用户 2026-10-30 第二轮「这太难看了」—— 对照截图的具体毛病：
+ *   ① 筛选区 4 行且每行一套控件（5 个大圆角 chip 占满一行 + 一排天数 pill + 一行搜索），
+ *      视觉上极碎：现在压成紧凑的 4 行「工具条」，每行 40~56rpx 高，字号统一 22~24rpx；
+ *   ② 列表表头「日 / 本周 / 考勤」与数据列没对齐（截图里"今日"在列中间）；
+ *      列宽按 display 开关动态分配（cs-list-1/2/3），数字列定宽右对齐；
+ *   ③ 考勤列永远是「—」。整块考勤控件（含天数选择）在当前无数据时隐藏，
+ *      不留一排点了没反应的按钮。
  *
  * 配色/间距一律用 app.wxss 的 --tt-* 令牌与 TDesign 色板，不硬编码品牌色。
- * 达标率用「色档」表达（ok / warn / bad / none），避免满屏同色数字看不出轻重。
  */
 .cs-page {
-  padding: 0 0 24rpx;
+  padding-bottom: 20rpx;
 }
 
-/* ===== ① 指标条：一行四个数，压缩掉原来那张大卡 ===== */
+/* ===== 指标条（一行四个数，替代原来那张大卡）===== */
 .cs-metrics {
   display: flex;
   align-items: stretch;
-  padding: 18rpx 8rpx;
+  padding: 14rpx 8rpx;
   background: var(--tt-card);
   border-bottom: 1rpx solid var(--tt-line);
 }
@@ -27,19 +28,19 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2rpx;
+  gap: 1rpx;
 }
 .cs-metric-v {
-  font-size: 32rpx;
+  font-size: 30rpx;
   font-weight: 700;
   line-height: 1.2;
   color: var(--tt-text-1);
 }
 .cs-metric-k {
-  font-size: 20rpx;
+  font-size: 19rpx;
   color: var(--tt-text-3);
 }
-/* 色档：达标率与考勤共用（数值语义相同：绿=达标、琥珀=临界、红=落后） */
+/* 色档：绿=达标、琥珀=临界、红=落后、none=无数据 */
 .cs-lv-ok {
   color: var(--td-success-color-7, #0e6e33);
 }
@@ -53,138 +54,140 @@
   color: var(--tt-text-3);
 }
 
-/* 口径说明（有筛选时显示筛选条件，否则显示排除说明） */
+/* 口径说明 + 清除筛选 */
 .cs-scope {
-  padding: 10rpx 24rpx;
-  font-size: 21rpx;
-  line-height: 1.5;
+  display: flex;
+  align-items: center;
+  padding: 8rpx 22rpx;
+  font-size: 20rpx;
+  line-height: 1.4;
   color: var(--tt-text-3);
   background: var(--tt-card);
   border-bottom: 1rpx solid var(--tt-line);
 }
-
-/* ===== ② 快捷筛选 chips（横向可滑，不换行 —— 换行会把列表推下去）===== */
-.cs-chips {
-  display: flex;
-  padding: 16rpx 16rpx 4rpx;
-  white-space: nowrap;
-}
-.cs-chip {
+.cs-reset {
   flex: none;
-  margin-right: 12rpx;
-  padding: 10rpx 22rpx;
+  margin-left: 12rpx;
+  padding: 2rpx 14rpx;
   border-radius: 999rpx;
-  font-size: 24rpx;
-  line-height: 1.2;
-  color: var(--tt-text-2);
-  background: var(--tt-card);
-  box-shadow: inset 0 0 0 2rpx var(--tt-line);
-}
-.cs-chip.on {
-  font-weight: 600;
-  color: #fff;
-  background: var(--tt-brand);
-  box-shadow: none;
-}
-
-/* ===== ③ 系部 + 搜索（同一行，各占一半）===== */
-.cs-tools {
-  display: flex;
-  align-items: center;
-  padding: 12rpx 16rpx;
-  gap: 12rpx;
-}
-.cs-picker {
-  flex: 0 0 240rpx;
-}
-.cs-field {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 60rpx;
-  padding: 0 18rpx;
-  border-radius: var(--tt-radius-sm);
-  background: var(--tt-card);
-  box-shadow: inset 0 0 0 2rpx var(--tt-line);
-}
-/* 系部名可能很长（「智能制造与汽车系」），限宽并省略 —— 挤掉搜索框比看不全更糟 */
-.cs-field-t {
-  max-width: 170rpx;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  font-size: 24rpx;
-  color: var(--tt-text-1);
-}
-.cs-search {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  height: 60rpx;
-  padding: 0 18rpx;
-  border-radius: var(--tt-radius-sm);
-  background: var(--tt-card);
-  box-shadow: inset 0 0 0 2rpx var(--tt-line);
-}
-.cs-search-i {
-  flex: 1;
-  min-width: 0;
-  margin-left: 10rpx;
-  font-size: 24rpx;
-  color: var(--tt-text-1);
-}
-.cs-x {
-  flex: none;
-  padding: 0 6rpx;
-  font-size: 34rpx;
-  line-height: 1;
-  color: var(--tt-text-3);
-}
-
-/* ===== ④ 天数 + 复制（一行：左边选择器，右边唯一的主动作按钮）===== */
-.cs-days {
-  display: flex;
-  align-items: center;
-  padding: 0 16rpx 14rpx;
-  gap: 8rpx;
-}
-.cs-days-k {
-  flex: none;
-  margin-right: 4rpx;
-  font-size: 22rpx;
-  color: var(--tt-text-3);
-}
-.cs-day {
-  flex: none;
-  padding: 8rpx 16rpx;
-  border-radius: 999rpx;
-  font-size: 22rpx;
-  color: var(--tt-text-2);
-  background: var(--tt-card);
-  box-shadow: inset 0 0 0 2rpx var(--tt-line);
-}
-.cs-day.on {
-  font-weight: 600;
+  font-size: 19rpx;
   color: var(--tt-brand-deep);
   background: var(--tt-brand-soft);
-  box-shadow: inset 0 0 0 2rpx var(--tt-brand);
+}
+
+/* ===== 工具条（统一行高与字号，这是「紧凑」的关键）===== */
+.cs-bar {
+  display: flex;
+  align-items: center;
+  padding: 10rpx 16rpx;
+  gap: 10rpx;
+  background: var(--tt-card);
+  border-bottom: 1rpx solid var(--tt-line);
+}
+.cs-bar-k {
+  flex: none;
+  font-size: 21rpx;
+  color: var(--tt-text-3);
 }
 .cs-grow {
   flex: 1;
   min-width: 0;
 }
-/* 复制按钮：整页唯一的主动作，实心橙。
-   上一版给两个按钮（复制全部 / 复制当前列表）—— 现在筛选即视图，
-   复制的就是看到的那些行，两个按钮反而让人纠结该点哪个。 */
+
+/* 下拉/输入框统一 56rpx 高（上一版 60rpx + 更大内距，一屏放不下） */
+.cs-pick {
+  flex: 1;
+  min-width: 0;
+}
+.cs-pick-copy {
+  flex: none;
+  width: 200rpx;
+}
+.cs-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 56rpx;
+  padding: 0 14rpx;
+  border-radius: 10rpx;
+  background: var(--tt-bg-page);
+}
+.cs-field-sm {
+  height: 52rpx;
+}
+.cs-field-t {
+  max-width: 160rpx;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 22rpx;
+  color: var(--tt-text-1);
+}
+.cs-search {
+  flex: 1.1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  height: 56rpx;
+  padding: 0 12rpx;
+  border-radius: 10rpx;
+  background: var(--tt-bg-page);
+}
+.cs-search-i {
+  flex: 1;
+  min-width: 0;
+  margin-left: 8rpx;
+  font-size: 22rpx;
+  color: var(--tt-text-1);
+}
+.cs-x {
+  flex: none;
+  padding: 0 4rpx;
+  font-size: 30rpx;
+  line-height: 1;
+  color: var(--tt-text-3);
+}
+
+/* ===== 快捷 chip（横向滑动，不换行——换行会把列表推下去）===== */
+.cs-chips {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  white-space: nowrap;
+}
+.cs-chips-level {
+  flex: 1;
+  min-width: 0;
+}
+.cs-chip {
+  flex: none;
+  margin-right: 8rpx;
+  padding: 8rpx 18rpx;
+  border-radius: 999rpx;
+  font-size: 22rpx;
+  line-height: 1.2;
+  color: var(--tt-text-2);
+  background: var(--tt-bg-page);
+}
+.cs-chip-sm {
+  padding: 6rpx 16rpx;
+  font-size: 21rpx;
+}
+.cs-chip.on {
+  font-weight: 600;
+  color: #fff;
+  background: var(--tt-brand);
+}
+
+/* 复制按钮：整页唯一主动作，实心橙 */
 .cs-copy {
   flex: none;
   display: flex;
   align-items: center;
-  height: 56rpx;
-  padding: 0 20rpx;
+  height: 54rpx;
+  padding: 0 18rpx;
   border-radius: 999rpx;
-  font-size: 24rpx;
+  font-size: 22rpx;
   font-weight: 600;
   color: #fff;
   background: var(--tt-brand);
@@ -193,10 +196,73 @@
   margin-left: 6rpx;
 }
 
-/* ===== ⑤ 列表：表格化（表头 + 行），行高压到 76rpx ===== */
+/* 日/周 分段器：决定档位筛选作用在哪一列 */
+.cs-seg {
+  flex: none;
+  display: flex;
+  padding: 3rpx;
+  border-radius: 999rpx;
+  background: var(--tt-bg-page);
+}
+.cs-seg-i {
+  padding: 5rpx 16rpx;
+  border-radius: 999rpx;
+  font-size: 21rpx;
+  color: var(--tt-text-2);
+}
+.cs-seg-i.on {
+  font-weight: 600;
+  color: var(--tt-brand-deep);
+  background: var(--tt-card);
+}
+
+/* 显示内容开关 */
+.cs-opt {
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding: 6rpx 12rpx;
+  border-radius: 8rpx;
+  font-size: 21rpx;
+  color: var(--tt-text-3);
+  background: var(--tt-bg-page);
+}
+.cs-opt text {
+  margin-left: 4rpx;
+}
+.cs-opt.on {
+  color: var(--tt-text-1);
+  background: var(--tt-brand-soft);
+}
+
+/* 考勤天数 */
+.cs-bar-days {
+  gap: 8rpx;
+}
+.cs-day {
+  flex: none;
+  padding: 6rpx 14rpx;
+  border-radius: 999rpx;
+  font-size: 21rpx;
+  color: var(--tt-text-2);
+  background: var(--tt-bg-page);
+}
+.cs-day.on {
+  font-weight: 600;
+  color: var(--tt-brand-deep);
+  background: var(--tt-brand-soft);
+}
+.cs-bar-s {
+  flex: none;
+  margin-left: 4rpx;
+  font-size: 19rpx;
+  color: var(--tt-text-3);
+}
+
+/* ===== 列表：表格化，行高压到 72rpx ===== */
 .cs-list {
-  margin: 0 16rpx;
-  border-radius: var(--tt-radius-sm);
+  margin: 12rpx 14rpx 0;
+  border-radius: 14rpx;
   background: var(--tt-card);
   overflow: hidden;
   box-shadow: var(--tt-card-shadow);
@@ -205,20 +271,20 @@
 .cs-row {
   display: flex;
   align-items: center;
-  /* 表头与数据行必须同一套列宽，否则数字会错位（这是表格化最容易错的地方） */
-  padding: 0 18rpx;
+  padding: 0 16rpx;
 }
 .cs-thead {
-  height: 48rpx;
-  font-size: 20rpx;
+  height: 44rpx;
+  font-size: 19rpx;
   color: var(--tt-text-3);
   background: var(--tt-bg-page);
 }
 .cs-row {
-  height: 76rpx;
+  height: 72rpx;
   border-top: 1rpx solid var(--tt-line);
 }
-/* 列宽：班级名占剩余，三个数值列固定等宽（右对齐，方便纵向比大小） */
+/* 班级名列吃剩余宽度；数值列定宽右对齐（表头与数据行同一套类名，
+   否则数字会错位 —— 这是表格化最容易错的地方） */
 .cs-c1 {
   flex: 1;
   min-width: 0;
@@ -226,33 +292,38 @@
   flex-direction: column;
   justify-content: center;
 }
-.cs-c2,
-.cs-c3,
-.cs-c4 {
-  flex: 0 0 108rpx;
+.cs-cn {
+  flex: none;
+  width: 108rpx;
   text-align: right;
+}
+/* 只有三列（勾掉考勤）时数值列加宽，避免右侧大片空白 */
+.cs-list-2 .cs-cn {
+  width: 150rpx;
+}
+.cs-list-1 .cs-cn {
+  width: 200rpx;
 }
 .cs-name {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-size: 26rpx;
+  font-size: 25rpx;
   font-weight: 500;
-  line-height: 1.3;
+  line-height: 1.25;
   color: var(--tt-text-1);
 }
-/* 副行（人数 · 系部 · 不参跑）：刻意只占一行高，不做多行换行 ——
-   一旦换行行高就不一致，43 行的表格会看起来歪歪扭扭 */
+/* 副行：人数 · 系部 · 不参跑。只占一行高，不换行（换行会让 43 行的表格看起来歪） */
 .cs-sub {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-size: 19rpx;
-  line-height: 1.3;
+  font-size: 18rpx;
+  line-height: 1.25;
   color: var(--tt-text-3);
 }
 .cs-num {
-  font-size: 25rpx;
+  font-size: 24rpx;
   font-weight: 600;
 }
 
@@ -260,29 +331,27 @@
 .cs-loading {
   display: flex;
   justify-content: center;
-  padding: 80rpx 0;
+  padding: 70rpx 0;
 }
-/* 错误态与空态分开：上一版请求失败也只弹 toast 后留空列表，
-   于是「后端没部署」和「今天确实没数据」在页面上长得一模一样。 */
 .cs-error {
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin: 24rpx 16rpx;
-  padding: 48rpx 24rpx;
-  border-radius: var(--tt-radius-sm);
+  margin: 16rpx 14rpx;
+  padding: 44rpx 22rpx;
+  border-radius: 14rpx;
   background: var(--tt-card);
 }
 .cs-error-t {
-  margin: 14rpx 0 20rpx;
-  font-size: 24rpx;
+  margin: 12rpx 0 18rpx;
+  font-size: 23rpx;
   text-align: center;
   color: var(--tt-text-2);
 }
 .cs-error-b {
-  padding: 10rpx 34rpx;
+  padding: 10rpx 32rpx;
   border-radius: 999rpx;
-  font-size: 24rpx;
+  font-size: 23rpx;
   font-weight: 600;
   color: #fff;
   background: var(--tt-brand);
@@ -291,15 +360,18 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 90rpx 0;
+  padding: 80rpx 0;
 }
 .cs-empty-t {
-  margin-top: 14rpx;
-  font-size: 25rpx;
+  margin-top: 12rpx;
+  font-size: 24rpx;
   color: var(--tt-text-3);
 }
 .cs-empty-s {
-  margin-top: 8rpx;
-  font-size: 21rpx;
-  color: var(--tt-text-3);
+  margin-top: 10rpx;
+  padding: 6rpx 18rpx;
+  border-radius: 999rpx;
+  font-size: 20rpx;
+  color: var(--tt-brand-deep);
+  background: var(--tt-brand-soft);
 }

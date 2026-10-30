@@ -404,13 +404,18 @@ function buildResult({ day, from, weekStart, span, rows, skipped }) {
     totals,
     rows,
     departments,
+    // 院校候选（用户 2026-10-30「没有院系筛选」）：与系部成对，因为两个校区都有「计财系」，
+    // 只给系部会把两校混筛。取自实际有数据的行，不查组织架构。
+    schools: [...new Set(rows.map((r) => r.schoolName).filter(Boolean))].sort((a, b) =>
+      String(a).localeCompare(String(b), 'zh-CN')
+    ),
     notAchieved: {
       daily: notAchievedDaily.map(brief),
       weekly: notAchievedWeekly.map(brief),
       attendanceMissing: attendanceMissing.map(brief),
     },
     // 未筛选态的完整报告（有筛选时由 applyBoardFilter 重新生成对应文案）
-    copyText: buildCopyText({ day, from, weekStart, totals, filtered: null, tags: [], rows, quick: '' }),
+    copyText: buildCopyText({ day, from, weekStart, totals, filtered: null, tags: [], rows, copy: 'all' }),
   };
 }
 
@@ -420,14 +425,46 @@ function buildResult({ day, from, weekStart, span, rows, skipped }) {
  * 缓存的是**全量聚合结果**，筛选只在内存里做 —— 切换筛选不必重算 Mongo 聚合（那要 3 秒），
  * 而且保证「同一批数据」：不会出现两次请求之间数据变了、筛选前后对不上。
  *
- * 返回里 copyText 是**按当前筛选**重新生成的，所以前端复制到的永远是看到的那些行。
+ * 返回里 copyText 是**按当前筛选 + 复制口径**重新生成的，
+ * 所以前端复制到的永远是看到的那些行、且只含要的那个指标。
+ *
+ * @param {object} board 全量聚合结果
+ * @param {object} p
+ * @param {string} [p.school]     院校（与 department 成对，消歧同名系部）
+ * @param {string} [p.department] 系部
+ * @param {string} [p.quick]      快捷筛选键（QUICK_FILTERS）
+ * @param {string} [p.level]      达标档位（LEVELS，与 metric 组合）
+ * @param {string} [p.metric]     档位针对的指标 daily|weekly
+ * @param {string} [p.keyword]    班名/系部/院校 关键词
+ * @param {string} [p.copy]       复制口径 all|daily|weekly（文案强调哪个指标）
  */
-function applyBoardFilter(board, { view, quick, department, keyword } = {}) {
-  const { rows, filtered, tags } = filterBoard(board, { view, quick, department, keyword });
-  if (!tags.length) return { ...board, view: view || 'overview', filtered: board.totals, activeFilters: [] };
+function applyBoardFilter(board, { school, department, quick, level, metric, keyword, copy } = {}) {
+  const { rows, filtered, tags } = filterBoard(board, { school, department, quick, level, metric, keyword });
+  const copyScope = ['daily', 'weekly'].includes(copy) ? copy : 'all';
+  if (!tags.length) {
+    return {
+      ...board,
+      filtered: board.totals,
+      activeFilters: [],
+      // 无筛选但复制口径收窄时，文案仍要按复制口径重生成（用户「只需要日达标这种的」）
+      copyText:
+        copyScope === 'all'
+          ? board.copyText
+          : buildCopyText({
+              day: board.today,
+              from: board.from,
+              weekStart: board.weekStart,
+              totals: board.totals,
+              filtered: null,
+              tags: [],
+              rows: board.rows,
+              copy: copyScope,
+            }),
+      copyScope,
+    };
+  }
   return {
     ...board,
-    view: view || 'overview',
     // rows 换成筛选后的（前端直接渲染，不再自己过滤）
     rows,
     // 全校口径保留在 totals，筛选口径放 filtered —— 两个都要给：
@@ -442,8 +479,9 @@ function applyBoardFilter(board, { view, quick, department, keyword } = {}) {
       filtered,
       tags,
       rows,
-      quick,
+      copy: copyScope,
     }),
+    copyScope,
   };
 }
 
@@ -492,26 +530,63 @@ const QUICK_FILTERS = {
   },
 };
 
-/** 对全量聚合结果做筛选 + 重算小计（缓存的是全量，筛选在内存里做，切筛选不重算 Mongo） */
-function filterBoard(board, { view, quick, department, keyword } = {}) {
+/**
+ * 达标档位（用户 2026-10-30「如只需要日达标这种的」）。
+ *
+ * 为什么把「未达标」拆成档位：实测今日全校达标率只有 5.3%（下午四点，
+ * 学生还没怎么同步），43 个班**全部** <100% —— 「今日未达标」筛出来还是 43 个班，
+ * 等于没筛（用户截图里正是这个现象）。给三档才能真的把该催的那批挑出来。
+ */
+const LEVELS = {
+  notFull: { label: '未达标', test: (rate) => rate !== null && rate !== undefined && rate < 100 },
+  belowHalf: { label: '低于一半', test: (rate) => rate !== null && rate !== undefined && rate < 50 },
+  zero: { label: '零达标', test: (rate) => rate === 0 },
+};
+
+/** 指标维度：日 / 周（决定筛哪一列，也决定筛选标签怎么措辞） */
+const METRICS = {
+  daily: { label: '日达标', rate: (r) => r.run.dailyRate },
+  weekly: { label: '周达标', rate: (r) => r.run.weeklyRate },
+};
+
+/**
+ * 对全量聚合结果做筛选 + 重算小计（缓存的是全量，筛选在内存里做，切筛选不重算 Mongo）。
+ *
+ * 院校与系部**必须成对使用**：实测两个校区都有「计财系」，
+ * 只按系部名筛会把北校区和洋河校区的计财系混在一起 —— 看着能筛，筛出来是错的。
+ * 所以：给了 school 就校内筛系部；只给 department 时按同名全筛，
+ * 并在标签上写明「各校区同名」，让结果自己说明口径。
+ */
+function filterBoard(board, { school, department, quick, level, metric, keyword } = {}) {
   const q = String(keyword || '').trim();
   const tags = [];
   let rows = board.rows;
 
+  if (school) {
+    rows = rows.filter((r) => (r.schoolName || '') === String(school));
+    tags.push(String(school));
+  }
+  if (department) {
+    rows = rows.filter(
+      (r) => (r.departmentName || '') === String(department) && (!school || (r.schoolName || '') === String(school))
+    );
+    tags.push(school ? String(department) : `${department}（各校区同名）`);
+  }
   const def = QUICK_FILTERS[quick];
   if (def) {
     rows = rows.filter(def.test);
     tags.push(def.label);
-  }
-  if (department) {
-    rows = rows.filter((r) => r.departmentName === String(department));
-    // 条件在 if 分支里恒真，写成 `rows.length || department` 只会让人误以为
-    // 「筛出 0 个班时不打标签」——实际也会打。直接 push，行为不变、意图更清楚。
-    tags.push(String(department));
+  } else if (LEVELS[level]) {
+    const m = METRICS[metric] || METRICS.daily;
+    // enabled/空班排除与 QUICK_FILTERS 同一口径：不参跑的班不该出现在任何催办筛选里
+    rows = rows.filter((r) => r.run.enabled && r.studentCount > 0 && LEVELS[level].test(m.rate(r)));
+    tags.push(`${m.label}${LEVELS[level].label}`);
   }
   if (q) {
     const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-    rows = rows.filter((r) => re.test(r.className) || re.test(r.departmentName || ''));
+    rows = rows.filter(
+      (r) => re.test(r.className) || re.test(r.departmentName || '') || re.test(r.schoolName || '')
+    );
     tags.push(`搜索「${q}」`);
   }
 
@@ -526,7 +601,7 @@ function filterBoard(board, { view, quick, department, keyword } = {}) {
     dailyRate: pct(aToday, students),
     weeklyRate: pct(aWeek, students),
   };
-  return { rows, filtered, tags, view: view || 'overview', quick: def ? quick : '' };
+  return { rows, filtered, tags, metric: METRICS[metric] ? metric : 'daily', level: LEVELS[level] ? level : '' };
 }
 
 /**
@@ -542,70 +617,81 @@ function filterBoard(board, { view, quick, department, keyword } = {}) {
  *  · 有筛选 → **只列筛选后的行**，并在标题写明筛选条件与班数。
  *    标题必须写：否则粘出 5 个班却顶着「全校 43 个班」，群里的人会把
  *    「没列出来」理解成「那些班没问题」—— 这是筛选型报告最容易造成的误读。
+ *
+ * 复制口径 copy（用户 2026-10-30「可以查看显示内容与复制内容，如只需要日达标这种的」）：
+ *  · all    → 每行同时写今日与本周（默认）；
+ *  · daily  → 只写今日达标，标题标注「日达标」；
+ *  · weekly → 只写本周达标，标题标注「周达标」。
+ *  与「显示内容」是两回事：可以列表看着三列、复制时只要日达标那份名单，
+ *  所以它是独立参数，不由列显隐推导。
  */
-function buildCopyText({ day, from, weekStart, totals, filtered, tags, rows, quick }) {
+function buildCopyText({ day, from, weekStart, totals, filtered, tags, rows, copy }) {
   const scoped = Array.isArray(tags) && tags.length > 0;
+  const scope = copy === 'daily' || copy === 'weekly' ? copy : 'all';
+  const scopeLabel = { daily: '日达标', weekly: '周达标' }[scope];
   const lines = [];
-  const head = scoped ? `【班级状态 ${day}｜${tags.join(' · ')}】` : `【班级状态 ${day}】`;
+  const marks = [scopeLabel, ...(scoped ? tags : [])].filter(Boolean);
+  const head = marks.length ? `【班级状态 ${day}｜${marks.join(' · ')}】` : `【班级状态 ${day}】`;
   lines.push(head);
 
+  // 汇总行：按复制口径只写要的那个指标（复制「只要日达标」却附一句本周，是噪音）
+  const st = scoped ? filtered || {} : totals;
+  const rateOf = (v) => (v === null || v === undefined ? '—' : `${v}%`);
+  const seg = [];
+  if (scope !== 'weekly') seg.push(`今日达标 ${st.achievedToday || 0} 人（${rateOf(st.dailyRate)}）`);
+  if (scope !== 'daily') seg.push(`本周达标 ${st.achievedWeek || 0} 人（${rateOf(st.weeklyRate)}）`);
   if (scoped) {
-    const st = filtered || {};
-    lines.push(
-      `筛选出 ${st.classCount ?? rows.length} 个班 / ${st.studentCount ?? 0} 人；` +
-        `今日达标 ${st.achievedToday ?? 0} 人（${st.dailyRate === null || st.dailyRate === undefined ? '—' : st.dailyRate + '%'}），` +
-        `本周达标 ${st.achievedWeek ?? 0} 人（${st.weeklyRate === null || st.weeklyRate === undefined ? '—' : st.weeklyRate + '%'}）`
-    );
-    lines.push(`（全校合计 ${totals.classCount} 个班 / ${totals.studentCount} 人，今日 ${totals.dailyRate ?? '—'}%）`);
+    lines.push(`筛选出 ${st.classCount ?? (rows || []).length} 个班 / ${st.studentCount ?? 0} 人；${seg.join('，')}`);
+    lines.push(`（全校合计 ${totals.classCount} 个班 / ${totals.studentCount} 人）`);
   } else {
-    lines.push(
-      `全校 ${totals.classCount} 个班 / ${totals.studentCount} 人；` +
-        `今日校园跑达标 ${totals.achievedToday} 人（${totals.dailyRate === null ? '—' : totals.dailyRate + '%'}），` +
-        `本周达标 ${totals.achievedWeek} 人（${totals.weeklyRate === null ? '—' : totals.weeklyRate + '%'}）`
-    );
+    lines.push(`全校 ${totals.classCount} 个班 / ${totals.studentCount} 人；${seg.join('，')}`);
     if (totals.skippedClasses) lines.push(`（实习/毕业班 ${totals.skippedClasses} 个不参与统计，已排除）`);
   }
 
   lines.push('');
   const list = rows || [];
   if (!list.length) {
-    lines.push(scoped ? '当前筛选条件下没有班级' : '未达标班级（今日）：无，全部达标');
+    lines.push(scoped ? '当前筛选条件下没有班级' : `未达标班级（${scopeLabel || '今日'}）：无，全部达标`);
     return lines.join('\n');
   }
 
-  // 筛选态只列一份清单（就是筛出来的这些）；未筛选才分三段列
-  const title = scoped
-    ? `${tags[tags.length - 1] || '筛选结果'}（共 ${list.length} 个班）：`
-    : `未达标班级（今日，共 ${list.filter(QUICK_FILTERS.notDaily.test).length} 个）：`;
-  lines.push(title);
-  const src = scoped ? list : list.filter(QUICK_FILTERS.notDaily.test);
-  for (const r of src) {
-    lines.push(
-      `· ${r.className}：今日 ${r.run.achievedToday}/${r.studentCount} 人（${r.run.dailyRate ?? '—'}%）` +
-        `，本周 ${r.run.achievedWeek}/${r.studentCount} 人（${r.run.weeklyRate ?? '—'}%）` +
-        (r.departmentName ? `｜${r.departmentName}` : '')
-    );
-  }
-  if (scoped) return lines.join('\n');
+  // 逐行：按复制口径只写要的那个指标
+  const rowLine = (r) => {
+    const parts = [];
+    if (scope !== 'weekly') parts.push(`今日 ${r.run.achievedToday}/${r.studentCount} 人（${rateOf(r.run.dailyRate)}）`);
+    if (scope !== 'daily') parts.push(`本周 ${r.run.achievedWeek}/${r.studentCount} 人（${rateOf(r.run.weeklyRate)}）`);
+    return `· ${r.className}：${parts.join('，')}${r.departmentName ? `｜${r.departmentName}` : ''}`;
+  };
 
-  const notWeek = list.filter(QUICK_FILTERS.notWeek.test);
-  lines.push('');
-  if (notWeek.length) {
-    lines.push(`未达标班级（本周 ${weekStart} 起，共 ${notWeek.length} 个）：`);
-    for (const r of notWeek) {
-      lines.push(`· ${r.className}：达标 ${r.run.achievedWeek}/${r.studentCount} 人（${r.run.weeklyRate}%）`);
-    }
-  } else {
-    lines.push(`未达标班级（本周 ${weekStart} 起）：无，全部达标`);
+  if (scoped) {
+    // 筛选态只列一份清单（就是筛出来的这些）
+    lines.push(`${tags[tags.length - 1] || '筛选结果'}（共 ${list.length} 个班）：`);
+    for (const r of list) lines.push(rowLine(r));
+    return lines.join('\n');
   }
 
-  const attMissing = list.filter(QUICK_FILTERS.attMissing.test);
-  if (attMissing.length) {
+  // 未筛选：按复制口径分段落列（daily/weekly 只列对应那一段）
+  const notDaily = list.filter(QUICK_FILTERS.notDaily.test);
+  if (scope !== 'weekly') {
+    lines.push(`未达标班级（今日，共 ${notDaily.length} 个）：`);
+    for (const r of notDaily) lines.push(rowLine(r));
+    if (!notDaily.length) lines.push('（无，全部达标）');
+  }
+  if (scope !== 'daily') {
+    const notWeek = list.filter(QUICK_FILTERS.notWeek.test);
     lines.push('');
-    lines.push(`考勤待补班级（${from} 至今无任何考勤记录，共 ${attMissing.length} 个）：`);
-    for (const r of attMissing) lines.push(`· ${r.className}`);
+    lines.push(`未达标班级（本周 ${weekStart} 起，共 ${notWeek.length} 个）：`);
+    for (const r of notWeek) lines.push(rowLine(r));
+    if (!notWeek.length) lines.push('（无，全部达标）');
   }
-  void quick;
+
+  const attendanceMissing = list.filter(QUICK_FILTERS.attMissing.test);
+  if (attendanceMissing.length) {
+    lines.push('');
+    lines.push(`考勤待补班级（${from} 至今无任何考勤记录，共 ${attendanceMissing.length} 个）：`);
+    for (const r of attendanceMissing) lines.push(`· ${r.className}`);
+  }
+
   return lines.join('\n');
 }
 

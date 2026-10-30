@@ -217,9 +217,13 @@
 |---|---|
 | `days` | 考勤回看天数（默认 7） |
 | `today` | 统计日 `YYYY-MM-DD`（默认今天） |
-| `quick` | 快捷筛选：`notDaily` 今日未达标 / `zeroToday` 今日零达标 / `notWeek` 本周未达标 / `attMissing` 考勤待补。**非法值忽略**（等于不筛） |
-| `department` | 系部精确匹配 |
-| `keyword` | 班名 / 系部 模糊（服务端已转义正则元字符） |
+| `school` | 院校（**与 `department` 成对使用**：实测多校区都有「计财系」，只按系部筛会跨校区混出） |
+| `department` | 系部。未传 `school` 时按同名全筛，`activeFilters` 会标注「各校区同名」如实提示 |
+| `quick` | 快捷筛选：`notDaily` / `zeroToday` / `notWeek` / `attMissing`。**非法值忽略**（等于不筛）；与 `level` 互斥，同时传入时 `quick` 优先 |
+| `level` | 达标档位：`notFull` 未达标 / `belowHalf` 低于一半 / `zero` 零达标。与 `metric` 组合（如「日达标零达标」）。**没有这个档位时「今日未达标」会筛出全部班级**（今日全校达标率个位数，没有班到 100%），等于没筛 |
+| `metric` | 档位针对的指标：`daily`（默认）/ `weekly` |
+| `keyword` | 班名 / 系部 / 院校 模糊（服务端已转义正则元字符） |
+| `copy` | **复制口径**：`all` 全部指标（默认）/ `daily` 只要日达标 / `weekly` 只要周达标。收窄后 `copyText` 的标题与正文都不再出现另一指标 |
 
 响应要点：
 
@@ -227,19 +231,22 @@
 |---|---|
 | `today` / `from` / `weekStart` / `days` | 统计日、考勤回看区间、本周起点（ISO 周一）、区间天数 |
 | `totals` | **全校口径**（不随筛选变）：`classCount / studentCount / achievedToday / achievedWeek / dailyRate / weeklyRate / skippedClasses` |
-| `rows[]` | 逐班：`run{achievedToday,dailyRate,achievedWeek,weeklyRate,enabled,stepsToday}`、`attendance{modules,ratePercent,hasData}`、`flags`。**有筛选时只含筛出的行** |
-| `departments[]` | 系部候选（取自实际有数据的班，不查组织架构） |
+| `rows[]` | 逐班：`className / schoolName / departmentName / studentCount`、`run{achievedToday,dailyRate,achievedWeek,weeklyRate,enabled}`、`attendance{modules,ratePercent,hasData}`、`flags`。**有筛选时只含筛出的行** |
+| `schools[]` / `departments[]` | 院校 / 系部候选（取自实际有数据的班，不查组织架构） |
 | `filtered` | **筛选后小计**（与 `rows` 同集合）；未筛选时等于 `totals` |
-| `activeFilters[]` | 生效的筛选标签（如 `['今日未达标','机电建工系']`）；空数组 = 未筛选 |
+| `activeFilters[]` | 生效的筛选标签（如 `['北校区','计财系','日达标零达标']`）；空数组 = 未筛选 |
+| `copyScope` | 回显生效的复制口径 |
 | `notAchieved` | `daily[] / weekly[] / attendanceMissing[]`（**已排除** 不参跑班、空班、无达标率的班，避免误报） |
-| `copyText` | **服务端生成**的可直接粘贴文本。未筛选 = 全校完整报告；有筛选 = **只列筛出的行**并在标题写明筛选条件与班数，另附一行全校对照 |
+| `copyText` | **服务端生成**的可直接粘贴文本。未筛选 = 全校完整报告；有筛选 = **只列筛出的行**并在标题写明筛选条件与班数，另附一行全校对照；并按 `copy` 口径只写对应指标 |
 
 口径（实现 `services/class-status-board.js`，前端不做二次计算）：
 ① 只统计 `status==='normal'` 的班（实习/毕业班不参与考勤与校园跑）；
 ② 达标 = 生效目标（个人计划优先、否则全局默认）且步数 ≥ 目标；
 ③ 考勤按**应到人数加权**（早操/晚自习用 `shouldCount`、查宿用 `shouldStay`；早八只记迟到人数、无比率）；
 ④ **筛选在服务端做**（缓存存全量、筛选在内存）：文案必须服务端单点生成，
-若筛选在前端、文案在服务端，两者用的是不同行集合，复制出去仍是全量报告。
+若筛选在前端、文案在服务端，两者用的是不同行集合，复制出去仍是全量报告；
+⑤ 「考勤统计 N 天」只在区间内**确有考勤记录**时展示（`rows` 里任一 `attendance.hasData`）：
+当前 `check_records` 里没有早操/早八/晚自习/查宿数据，整块控件隐藏，不留一排点了没反应的按钮。
 
 ## 其他
 

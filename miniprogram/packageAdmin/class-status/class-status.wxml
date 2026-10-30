@@ -1,49 +1,116 @@
-<!-- 班级状态总览（用户 2026-10-30「要紧凑排版，并支持筛选，复制时复制的是筛选后的相应内容」）
+<!-- 班级状态总览（用户 2026-10-30 第二轮：
+     「这太难看了…可以查看显示内容与复制内容，如只需要日达标这种的，
+       而且考勤回看是什么，并且没有院系筛选」）
 
-     排版原则（对照上一版的问题）：
-       · 上一版顶部一张大卡只放两个复制按钮，中间大片空白，底部还有一句
-         「本周自 ISO 周一（）起」的空括号（weekStart 没值时照样渲染）。
-       · 现在：指标条（一行四个数）→ 筛选 chips（一行，横向可滑）→ 系部+搜索（一行）
-         → 列表（每行一条，班名 + 三个百分比，无卡片间距浪费）。
+     这次针对截图的具体改动：
+     ① 筛选区从 4 行压到 2 行：第一行 院校+系部+搜索，第二行 快捷档位+复制；
+        上一版 5 个圆角 chip 横着排占满满一行、下面再来一排天数选择器，视觉上非常碎。
+     ② 院校/系部**两级**下拉（同名系部跨校区，见 JS 注释）。
+     ③ 「考勤统计 N 天」只在**真有考勤数据**时出现（当前全库 4 条且都不是考勤模块，
+        那个永远为空的控件是"难看"的主要来源）。
+     ④ 列宽随「显示内容」变化：勾掉考勤，剩下的列自动变宽，不再留大片空白。
      所有展示字段由 JS 预计算，模板里不做表达式拼接（仓库约定）。 -->
 <view class="tt-page cs-page">
-  <!-- ===== ① 指标条 ===== -->
-  <!-- 加载失败时整条隐藏：留一条四个 0 的指标条，会被读成「今天真的一个班都没达标」 -->
+  <!-- ===== 指标条 ===== -->
+  <!-- 加载失败时整条隐藏：留一条四个 0 的指标条会被读成「今天真没一个班达标」 -->
   <view class="cs-metrics" wx:if="{{metrics.length && !errorText}}">
     <view class="cs-metric" wx:for="{{metrics}}" wx:key="k">
       <text class="cs-metric-v cs-lv-{{item.lv}}">{{item.v}}</text>
       <text class="cs-metric-k">{{item.k}}</text>
     </view>
   </view>
-  <view class="cs-scope" wx:if="{{scopeText}}">{{scopeText}}</view>
+  <view class="cs-scope" wx:if="{{scopeText && !errorText}}">
+    <text>{{scopeText}}</text>
+    <text class="cs-reset" wx:if="{{hasFilter}}" bind:tap="resetFilters">清除筛选</text>
+  </view>
 
-  <!-- ===== ② 快捷筛选（每个 chip = 一次服务端筛选，复制内容随之变化）===== -->
-  <scroll-view class="cs-chips" scroll-x enable-flex>
-    <view
-      class="cs-chip {{quick === item.key ? 'on' : ''}}"
-      wx:for="{{chips}}"
-      wx:key="key"
-      data-key="{{item.key}}"
-      bind:tap="onChip"
-    >{{item.label}}</view>
-  </scroll-view>
-
-  <!-- ===== ③ 系部 / 关键词 / 考勤天数 ===== -->
-  <view class="cs-tools">
-    <picker class="cs-picker" range="{{deptLabels}}" value="{{deptIndex}}" bindchange="onDept">
+  <!-- ===== 筛选第 1 行：院校 / 系部 / 搜索 ===== -->
+  <view class="cs-bar">
+    <picker class="cs-pick" range="{{schoolLabels}}" value="{{schoolIndex}}" bindchange="onSchool">
+      <view class="cs-field">
+        <text class="cs-field-t">{{schoolLabels[schoolIndex]}}</text>
+        <t-icon name="chevron-down" size="20rpx" color="var(--tt-text-3)" />
+      </view>
+    </picker>
+    <picker class="cs-pick" range="{{deptLabels}}" value="{{deptIndex}}" bindchange="onDept">
       <view class="cs-field">
         <text class="cs-field-t">{{deptLabels[deptIndex]}}</text>
-        <t-icon name="chevron-down" size="22rpx" color="var(--tt-text-3)" />
+        <t-icon name="chevron-down" size="20rpx" color="var(--tt-text-3)" />
       </view>
     </picker>
     <view class="cs-search">
-      <t-icon name="search" size="24rpx" color="var(--tt-text-3)" />
-      <input class="cs-search-i" placeholder="班名 / 系部" value="{{keyword}}" bindinput="onKeyword" confirm-type="search" />
+      <t-icon name="search" size="22rpx" color="var(--tt-text-3)" />
+      <input class="cs-search-i" placeholder="班名" value="{{keyword}}" bindinput="onKeyword" confirm-type="search" />
       <text class="cs-x" wx:if="{{keyword}}" bind:tap="clearKeyword">×</text>
     </view>
   </view>
-  <view class="cs-days">
-    <text class="cs-days-k">考勤回看</text>
+
+  <!-- ===== 筛选第 2 行：快捷 chip + 复制 ===== -->
+  <view class="cs-bar cs-bar-chips">
+    <scroll-view class="cs-chips" scroll-x enable-flex>
+      <view
+        class="cs-chip {{quick === item.key ? 'on' : ''}}"
+        wx:for="{{chips}}"
+        wx:key="key"
+        data-key="{{item.key}}"
+        bind:tap="onChip"
+      >{{item.label}}</view>
+    </scroll-view>
+    <view class="cs-copy" bind:tap="copyText">
+      <t-icon name="file-copy" size="22rpx" color="#ffffff" />
+      <text>{{copyLabel}}</text>
+    </view>
+  </view>
+
+  <!-- ===== 筛选第 3 行：档位（解决「今日未达标 = 全部 43 个班」）===== -->
+  <view class="cs-bar cs-bar-level">
+    <text class="cs-bar-k">达标情况</text>
+    <view class="cs-seg">
+      <view
+        class="cs-seg-i {{metric === item.key ? 'on' : ''}}"
+        wx:for="{{metricChips}}"
+        wx:key="key"
+        data-key="{{item.key}}"
+        bind:tap="onMetric"
+      >{{item.label}}</view>
+    </view>
+    <scroll-view class="cs-chips cs-chips-level" scroll-x enable-flex>
+      <view
+        class="cs-chip cs-chip-sm {{level === item.key ? 'on' : ''}}"
+        wx:for="{{levelChips}}"
+        wx:key="key"
+        data-key="{{item.key}}"
+        bind:tap="onLevel"
+      >{{item.label}}</view>
+    </scroll-view>
+  </view>
+
+  <!-- ===== 显示内容 / 复制内容 ===== -->
+  <view class="cs-bar cs-bar-opts">
+    <text class="cs-bar-k">显示</text>
+    <view
+      class="cs-opt {{columns[item.key] ? 'on' : ''}}"
+      wx:for="{{columnToggles}}"
+      wx:key="key"
+      data-key="{{item.key}}"
+      bind:tap="onToggleColumn"
+    >
+      <t-icon name="{{columns[item.key] ? 'check' : 'circle'}}" size="20rpx" color="{{columns[item.key] ? 'var(--tt-brand)' : 'var(--tt-text-3)'}}" />
+      <text>{{item.label}}</text>
+    </view>
+    <view class="cs-grow"></view>
+    <text class="cs-bar-k">复制</text>
+    <picker class="cs-pick-copy" range="{{copyScopes}}" range-key="label" value="{{copyScopeIndex}}" bindchange="onCopyScopePick">
+      <view class="cs-field cs-field-sm">
+        <text class="cs-field-t">{{copyScopeLabel}}</text>
+        <t-icon name="chevron-down" size="20rpx" color="var(--tt-text-3)" />
+      </view>
+    </picker>
+  </view>
+
+  <!-- 「考勤统计 N 天」只在真有考勤数据时出现（当前全库无考勤记录 → 整块隐藏） -->
+  <view class="cs-bar cs-bar-days" wx:if="{{hasAttendance}}">
+    <text class="cs-bar-k">考勤统计</text>
     <view
       class="cs-day {{days === item ? 'on' : ''}}"
       wx:for="{{dayOptions}}"
@@ -51,20 +118,16 @@
       data-days="{{item}}"
       bind:tap="onDays"
     >{{item}}天</view>
-    <view class="cs-grow"></view>
-    <view class="cs-copy" bind:tap="copyText">
-      <t-icon name="file-copy" size="24rpx" color="#ffffff" />
-      <text>{{copyLabel}}</text>
-    </view>
+    <text class="cs-bar-s">早操/早八/晚自习/查宿</text>
   </view>
 
-  <!-- ===== ④ 列表 ===== -->
+  <!-- ===== 列表 ===== -->
   <view class="cs-loading" wx:if="{{loading}}">
     <t-loading theme="circular" size="36rpx" text="统计中…" />
   </view>
 
-  <!-- 错误态与空态必须分开：上一版请求失败也显示「没有数据」，
-       于是「后端没部署」和「今天真的没数据」在页面上长得一模一样。 -->
+  <!-- 错误态与空态分开：上一版请求失败也显示「没有数据」，
+       于是「后端没部署」和「今天真没数据」在页面上长得一模一样。 -->
   <view class="cs-error" wx:elif="{{errorText}}">
     <t-icon name="error-circle" size="34rpx" color="var(--td-error-color-6)" />
     <text class="cs-error-t">{{errorText}}</text>
@@ -74,24 +137,24 @@
   <view class="cs-empty" wx:elif="{{!shown.length}}">
     <t-icon name="chart-bar" size="46rpx" color="var(--tt-text-3)" />
     <text class="cs-empty-t">{{emptyTitle}}</text>
-    <text class="cs-empty-s" wx:if="{{hasFilter}}">换个筛选条件，或点「全部班级」</text>
+    <text class="cs-empty-s" wx:if="{{hasFilter}}" bind:tap="resetFilters">点此清除筛选</text>
   </view>
 
-  <view class="cs-list" wx:else>
+  <view class="cs-list cs-list-{{colCount}}" wx:else>
     <view class="cs-thead">
       <text class="cs-c1">班级</text>
-      <text class="cs-c2">今日</text>
-      <text class="cs-c3">本周</text>
-      <text class="cs-c4">考勤</text>
+      <text class="cs-cn" wx:if="{{columns.daily}}">日</text>
+      <text class="cs-cn" wx:if="{{columns.weekly}}">周</text>
+      <text class="cs-cn" wx:if="{{columns.attendance}}">考勤</text>
     </view>
     <view class="cs-row" wx:for="{{shown}}" wx:key="className" data-name="{{item.className}}" bind:tap="openClass">
       <view class="cs-c1">
         <text class="cs-name">{{item.className}}</text>
         <text class="cs-sub">{{item.studentCount}}人<text wx:if="{{item.departmentName}}"> · {{item.departmentName}}</text><text wx:if="{{item.runDisabled}}"> · 不参跑</text></text>
       </view>
-      <text class="cs-c2 cs-num cs-lv-{{item.dailyLevel}}">{{item.dailyText}}</text>
-      <text class="cs-c3 cs-num cs-lv-{{item.weeklyLevel}}">{{item.weeklyText}}</text>
-      <text class="cs-c4 cs-num cs-lv-{{item.attLevel}}">{{item.attText}}</text>
+      <text class="cs-cn cs-num cs-lv-{{item.dailyLevel}}" wx:if="{{columns.daily}}">{{item.dailyText}}</text>
+      <text class="cs-cn cs-num cs-lv-{{item.weeklyLevel}}" wx:if="{{columns.weekly}}">{{item.weeklyText}}</text>
+      <text class="cs-cn cs-num cs-lv-{{item.attLevel}}" wx:if="{{columns.attendance}}">{{item.attText}}</text>
     </view>
   </view>
 

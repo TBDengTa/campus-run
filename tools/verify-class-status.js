@@ -209,8 +209,20 @@ function assert(cond, label, extra) {
   console.log('\n[7] 复制文案一致性');
   assert(r.copyText.includes(day), `文案含日期 ${day}`);
   assert(r.copyText.includes(`${r.totals.classCount} 个班`), '文案的班数与 totals 一致', r.totals.classCount);
-  assert(r.copyText.includes(`今日校园跑达标 ${r.totals.achievedToday} 人`), '文案的今日达标人数与 totals 一致', r.totals.achievedToday);
+  // 措辞在 2026-10-30 第二轮统一为「今日达标」（旧文案「今日校园跑达标」已废弃：
+  // 复制口径支持「只要日达标」，标题里已写明指标，正文不必再重复"校园跑"）。
+  // 这里断言的是**数字**（与 totals 逐字一致），措辞只保证不漂移成另一个说法。
+  assert(r.copyText.includes(`今日达标 ${r.totals.achievedToday} 人`), '文案的今日达标人数与 totals 一致', r.totals.achievedToday);
   assert(r.copyText.includes(`本周达标 ${r.totals.achievedWeek} 人`), '文案的本周达标人数与 totals 一致', r.totals.achievedWeek);
+
+  // 复制口径（用户 2026-10-30「如只需要日达标这种的」）：收窄后另一指标必须消失，
+  // 否则「只要日达标」的名单里还混着本周数据，等于没按口径生成。
+  const cDaily = board.applyBoardFilter(r, { copy: 'daily' });
+  assert(/｜日达标/.test(cDaily.copyText), 'copy=daily 标题标注日达标', cDaily.copyText.split('\n')[0]);
+  assert(!cDaily.copyText.includes('本周达标'), 'copy=daily 文案不含本周汇总', cDaily.copyText.split('\n')[1]);
+  const cWeek = board.applyBoardFilter(r, { copy: 'weekly' });
+  assert(/｜周达标/.test(cWeek.copyText), 'copy=weekly 标题标注周达标', cWeek.copyText.split('\n')[0]);
+  assert(!cWeek.copyText.includes('今日达标'), 'copy=weekly 文案不含今日汇总', cWeek.copyText.split('\n')[1]);
   // 未达标班必须逐个出现在文案里（老师要照着点名）
   if (r.notAchieved.daily.length) {
     const missing = r.notAchieved.daily.filter((x) => !r.copyText.includes(x.className));
@@ -313,6 +325,76 @@ function assert(cond, label, extra) {
   // 筛选不得污染缓存里的全量结果（缓存的是全量，筛选在内存做）
   const r3 = await board.classStatusBoard();
   assert(r3.rows.length === r.rows.length, '筛选后重新取仍是全量', { now: r3.rows.length, before: r.rows.length });
+
+  // ---- [8b] 第二轮：院校级联 / 档位筛选 / 复制口径（用户 2026-10-30「没有院系筛选」「只需要日达标」）----
+  console.log('\n[8b] 院校级联 + 档位 + 复制口径');
+
+  // 院校筛选：多个校区都有同名系部（实测北校区/洋河校区都有「计财系」），
+  // 只按系部筛会把两校混在一起 —— 必须能按院校收窄，且收窄后校名唯一。
+  assert(Array.isArray(r.schools) && r.schools.length > 0, '响应含院校候选', r.schools);
+  const sch = r.schools[0];
+  const fSch = board.applyBoardFilter(r, { school: sch });
+  assert(fSch.rows.length > 0, `院校「${sch}」筛出班级`, fSch.rows.length);
+  assert(
+    new Set(fSch.rows.map((x) => x.schoolName)).size === 1 && fSch.rows.every((x) => x.schoolName === sch),
+    '院校筛选后只剩该院校',
+    [...new Set(fSch.rows.map((x) => x.schoolName))]
+  );
+  // 同名系部跨校区：只给 department 时如实标注「各校区同名」，不能假装已消歧
+  const deptShared = r.departments.find((d) => {
+    const schoolsOfDept = new Set(r.rows.filter((x) => x.departmentName === d).map((x) => x.schoolName));
+    return schoolsOfDept.size > 1;
+  });
+  if (deptShared) {
+    const fDept = board.applyBoardFilter(r, { department: deptShared });
+    assert(
+      new Set(fDept.rows.map((x) => x.schoolName)).size > 1,
+      `同名系部「${deptShared}」跨校区（如实保留）`,
+      [...new Set(fDept.rows.map((x) => x.schoolName))]
+    );
+    assert(
+      fDept.activeFilters[0].includes('各校区同名'),
+      '只按系部筛时标签注明「各校区同名」',
+      fDept.activeFilters
+    );
+    // 加上院校才真正消歧
+    const fBoth2 = board.applyBoardFilter(r, { school: sch, department: deptShared });
+    assert(
+      fBoth2.rows.every((x) => x.schoolName === sch && x.departmentName === deptShared),
+      '院校 + 系部 两级才消歧',
+      fBoth2.rows.slice(0, 2).map((x) => `${x.schoolName}/${x.departmentName}`)
+    );
+  }
+
+  // 档位筛选：解决「今日未达标筛出全部 43 个班」（今日全校达标率个位数，没有班到 100%）。
+  // 三档必须真的分层，否则用户还是只能在「全部」和「全部」之间选。
+  const fZero2 = board.applyBoardFilter(r, { level: 'zero', metric: 'daily' });
+  assert(
+    fZero2.rows.every((x) => x.run.dailyRate === 0 && x.run.enabled && x.studentCount > 0),
+    '档位「日达标零达标」每行确实是 0%',
+    fZero2.rows.slice(0, 2).map((x) => x.run.dailyRate)
+  );
+  const fHalf = board.applyBoardFilter(r, { level: 'belowHalf', metric: 'daily' });
+  assert(
+    fHalf.rows.every((x) => x.run.dailyRate !== null && x.run.dailyRate < 50),
+    '档位「日达标低于一半」每行 <50%',
+    fHalf.rows.slice(0, 2).map((x) => x.run.dailyRate)
+  );
+  assert(fZero2.rows.length <= fHalf.rows.length, '零达标是低于一半的子集（档位真的分层）', {
+    zero: fZero2.rows.length,
+    half: fHalf.rows.length,
+  });
+  assert(fHalf.activeFilters[0].includes('日达标'), '档位标签写明指标（日）', fHalf.activeFilters);
+  const fWeekHalf = board.applyBoardFilter(r, { level: 'belowHalf', metric: 'weekly' });
+  assert(fWeekHalf.activeFilters[0].includes('周达标'), '切换指标后标签变「周达标」', fWeekHalf.activeFilters);
+  assert(
+    fWeekHalf.rows.every((x) => x.run.weeklyRate !== null && x.run.weeklyRate < 50),
+    '周达标档位筛的是周列而不是日列',
+    fWeekHalf.rows.slice(0, 2).map((x) => x.run.weeklyRate)
+  );
+  // 档位与快捷 chip 互斥（前端选了 chip 会清档位）；服务端同时收到时快捷优先，不得筛成空
+  const fMix = board.applyBoardFilter(r, { quick: 'zeroToday', level: 'zero', metric: 'daily' });
+  assert(fMix.rows.length > 0, 'chip 与档位同时传入时不筛成空', fMix.rows.length);
 
   // ---- [9] 缓存不返回过期数据 ----
   console.log('\n[9] 缓存一致性');

@@ -1167,18 +1167,26 @@ router.put(
 //   department=系部名  keyword=班名/系部关键词   view=前端视图名（原样回显）
 // 筛选放服务端而不是前端：可复制文案必须服务端单点生成（否则「列表 87%、文案 88%」），
 // 若筛选在前端、文案在服务端，两者用的就是不同的行集合 —— 正是要避免的那类不一致。
+// 回落：白名单外的取值一律当「未指定」，前端拼错参数时退回全量而不是筛成空。
 router.get(
   '/status-board',
   wrap(async (req, res) => {
     const board = require('../../services/class-status-board');
-    const full = await board.classStatusBoard({ today: req.query.today, days: req.query.days });
+    const str = (v) => String(v ?? '').trim();
+    const full = await board.classStatusBoard({ today: str(req.query.today) || undefined, days: req.query.days });
     ok(
       res,
       board.applyBoardFilter(full, {
-        view: String(req.query.view || ''),
-        quick: String(req.query.quick || ''),
-        department: String(req.query.department || ''),
-        keyword: String(req.query.keyword || ''),
+        // 院校 + 系部成对（同名系部跨校区，只能靠 school 消歧）
+        school: str(req.query.school),
+        department: str(req.query.department),
+        quick: str(req.query.quick),
+        // 档位筛选：level × metric（日/周）
+        level: str(req.query.level),
+        metric: str(req.query.metric),
+        keyword: str(req.query.keyword),
+        // 复制口径（文案强调哪个指标）
+        copy: str(req.query.copy),
       })
     );
   })
