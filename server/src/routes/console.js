@@ -59,6 +59,21 @@ router.use((req, res, next) => {
 const hasPerm = (perms, need) =>
   Array.isArray(perms) && (perms.includes('*') || perms.includes(need));
 
+/**
+ * 逐项能力表（**唯一定义**，/login 与 /me 共用）。
+ *
+ * 为什么要提成模块级：登录响应与 /me 各写一份时必然漂移 ——
+ * 早前登录响应根本没给 caps，页面把 login 的返回值直接当 me 用，
+ * caps 恒为 undefined → 前端退回 {view:false} → **超级管理员（'*'）也被判「没有任何查看权限」**。
+ * 能力只在这里算一次，两个出口都读它。
+ */
+const capsOf = (perms) => ({
+  view: hasPerm(perms, 'anticheat.view'),
+  label: hasPerm(perms, 'anticheat.label'),
+  manage: hasPerm(perms, 'anticheat.manage'),
+  ban: hasPerm(perms, 'anticheat.ban'),
+});
+
 /** 会话守卫：没登录 401；权限不足 403。挂在每个需要身份的接口上。 */
 function requireConsole(...needs) {
   return (req, res, next) => {
@@ -200,6 +215,10 @@ router.post(
       name: user.realName || user.account || '',
       role: user.role,
       perms: CONSOLE_PERMS.filter((p) => hasPerm(perms, p)),
+      // caps 与 /me 同源同口径（同一份模块级 capsOf）：登录响应早前没有这个字段，
+      // 页面直接拿登录返回值当 me 用 → caps undefined → 超级管理员也被判「无权限」。
+      // 现在两处都给，前端无论用哪个都不会错。
+      caps: capsOf(perms),
     });
   })
 );
@@ -224,12 +243,8 @@ router.get(
       account: s.account,
       role: s.role,
       // 逐项能力：前端只读这份画按钮（与小程序 capabilities 同一思路）
-      caps: {
-        view: hasPerm(s.perms, 'anticheat.view'),
-        label: hasPerm(s.perms, 'anticheat.label'),
-        manage: hasPerm(s.perms, 'anticheat.manage'),
-        ban: hasPerm(s.perms, 'anticheat.ban'),
-      },
+      // 与 /login 共用一个 capsOf —— 两份实现必然漂移
+      caps: capsOf(s.perms),
       since: new Date(s.createdAt).toISOString(),
     });
   })

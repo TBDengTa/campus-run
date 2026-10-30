@@ -140,8 +140,16 @@ function doLogin() {
   $('btnLogin').disabled = true;
   show('loginErr', false);
   api('/login', { method: 'POST', body: { account: acc, password: pw } })
-    .then(function (me) {
+    .then(function () {
       $('inPassword').value = '';
+      // ⚠️ 登录响应只有 {account,name,role,perms}，**没有 caps**；
+      // enterApp 读的是 me.caps（能力表）。早前把 login 的返回值直接丢给 enterApp，
+      // 于是 caps 恒为 undefined → 取默认 {view:false,...} → 页面报
+      // 「这个账号没有任何反作弊查看权限」—— 连超级管理员（'*'）都被挡在门外。
+      // 能力表只有 /me 一处产出（服务端逐项 hasPerm 计算），登录后必须再取一次。
+      return api('/me');
+    })
+    .then(function (me) {
       $('btnLogin').disabled = false;
       enterApp(me);
     })

@@ -224,8 +224,30 @@ function setCookieHeader(res) {
     assert(/Path=\/console/.test(okLogin.setCookie), 'Cookie 限定 Path=/console（不给全站带上会话凭证）', okLogin.setCookie);
     const analystCookie = okLogin.cookie;
 
+    // 登录响应必须自带 caps（与 /me 同一份 capsOf）。
+    // 回归点：早前 /login 只回 {account,name,role,perms} 没有 caps，
+    // 而页面把登录返回值直接当 me 传给 enterApp → caps undefined →
+    // 前端按 {view:false} 渲染 → **超级管理员也被判「没有任何反作弊查看权限」**
+    // （用户 2026-10-30「我有全部权限啊」）。
+    assert(
+      okLogin.data && okLogin.data.data && typeof okLogin.data.data.caps === 'object' && okLogin.data.data.caps !== null,
+      '登录响应含 caps（页面不必再猜一次）',
+      okLogin.data && okLogin.data.data
+    );
+    assert(
+      okLogin.data.data.caps.label === true && okLogin.data.data.caps.ban === false,
+      '登录响应的 caps 与 /me 一致（研判员：可标注、不可封禁）',
+      okLogin.data.data.caps
+    );
+
     const meA = await req('GET', '/console/api/me', { cookie: analystCookie });
     assert(meA.data.data && meA.data.data.caps.label === true && meA.data.data.caps.ban === false, 'me 的能力表：可标注、不可封禁', meA.data.data && meA.data.data.caps);
+    // 两个出口必须逐字段相同（口径只有一份；不同就说明又在别处算了一遍）
+    assert(
+      JSON.stringify(okLogin.data.data.caps) === JSON.stringify(meA.data.data.caps),
+      '/login 与 /me 的 caps 逐字段一致',
+      { login: okLogin.data.data.caps, me: meA.data.data.caps }
+    );
 
     const adminLogin = await req('POST', '/console/api/login', { body: { account: adminUser.account, password: STRONG_PW } });
     const adminCookie = adminLogin.cookie;
