@@ -181,6 +181,21 @@
   color: var(--td-error-color-6);
 }
 
+/* 判定依据徽标（用户 2026-10-30「人封、机封、AI封」）：
+   刻意比标题弱、比时间更中性 —— 它回答「谁判的」，是辅助信息，
+   不能抢「限制了什么」这个主事实。
+   描边（inset 阴影）而不是填色：与同屏的 danger 红条区分，避免被误读成又一条警告；
+   不写 border 是因为 border 会加高盒子、破坏标题行的基线对齐（同 users 页 -fold 的取舍）。 */
+.ud-limit-src {
+  padding: 1rpx 10rpx;
+  border-radius: 6rpx;
+  font-size: 20rpx;
+  font-weight: 400;
+  color: var(--tt-text-2);
+  background: var(--tt-bg-page);
+  box-shadow: inset 0 0 0 2rpx var(--tt-line);
+}
+
 .ud-limit-reason {
   margin-top: 4rpx;
   font-size: 23rpx;

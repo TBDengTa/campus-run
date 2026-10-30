@@ -81,6 +81,28 @@
   标注进 AI 训练集（可改判），封禁直接限制学生；分开才能走「研判员标注 → 管理员批准」的复核流程。
   旧实现 GET 列表**无任何守卫**（前缀未挂权限 + 路由无 MANAGE），任何登录用户带 token 都能拉
   全员疑似作弊清单——本次一并堵（读接口 `anticheat.view` 兼容 `user.view`，不让现网教师一夜白屏）。
+- **封禁来源分类（用户 2026-10-30「用户管理列表中的封禁用户要有分类 如人封、机封、AI封」）**：
+  `source` 与 `operator` **正交**——operator 记「谁执行」（追责用），source 记「凭什么判定」（分类用），
+  不可混用一个字段（历史数据里 operator='system' 已把规则判定与模型判定揉成一团，无法还原）。
+  取值 `manual 人封 / ai AI封 / rule 机封 / legacy 早期`（+ 解封用 appeal）。
+  ① 文案**唯一定义在 `models/ban-record.js::SOURCE_TEXT`**，由接口下发 `sourceText`，
+     前端只 `r.sourceText || 本地兜底`（与仓库既有 `classStatusText || CLASS_STATUS_TEXT` 同一模式）；
+     前端自己映射一份中文必然与服务端漂移。legacy 用短词「早期」：chip 有宽度预算，
+     长文案会把同排其它标签挤成 +N 折叠。
+  ② **source 只在写入时定**（`anticheat.restrict({source})`：steps.js 两处自动处置标 `ai`、
+     checkStepJump / checkPace 标 `rule`、manualBan 显式标 `manual`），读取时不重新判定；
+     历史记录按 operator 保守推断（非 system→manual，system→legacy）——**绝不猜规则还是 AI**，
+     否则「AI 误封率」这类统计直接失真。
+  ③ legacy 必须**单列成一个筛选项**而不是藏掉：否则管理员会觉得
+     「明明封了 N 人，分类加起来对不上」，反而怀疑筛选坏了。
+  ④ 「封禁类型」是第 9 个筛选维度，与 status 是「与」关系；选项计数、分面、列表筛选
+     **共用 `banSourceCond` 一份条件**。加维度时 `FILTER_LABELS / FILTER_OPTION_KEYS /
+     buildQuery 维度数组 / clearFilters / filterBase / WXML 下拉项`六处都要补，漏一处就是
+     「能选但没反应」的静默失效（有契约检查器逐项盯）。
+  ⑤ 详情页流水不能再只看 `operator === 'system'`（那正是用户抱怨的「系统自动」四个字）；
+     两条读路径（管理端详情 / 班级域 manage）都要给 banSourceLabel，只给一边班主任看不到。
+  回归：`tools/check-ban-source.js`（分类齐全、文案单点、六处接线、条件单一口径、
+  WXML 引用的字段 JS 必须产出）+ `tools/verify-console.js` / 真实库链路实测。
 - **「涨幅速度」的误封边界（用户 2026-10-29「同步增速这个有点假很容易误封锁」，必读）**：
   这个指标 = 本次新增步数 ÷ 距上次同步时长，**分母是用户点同步的时机，不是运动时长** ——
   它是全库唯一一个「会随用户操作习惯变化而误判」的特征（其他特征反映数据本身长什么样）。

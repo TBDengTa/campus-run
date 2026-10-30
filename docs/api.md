@@ -178,7 +178,26 @@
 | 模块 | 路径 |
 |---|---|
 | 看板 | `GET /dashboard/overview` · `GET /dashboard/trend?days=30` |
-| 用户 | `GET /users?keyword&status&page` · `GET /users/:id`（含流水） · `POST /users/:id/ban {reason,days}` · `POST /users/:id/unban` |
+| 用户 | `GET /users?keyword&status&page&banSource` · `GET /users/:id`（含流水） · `POST /users/:id/ban {reason,days}` · `POST /users/:id/unban` |
+
+##### 封禁来源分类（用户 2026-10-30「封禁用户要有分类 如人封、机封、AI封」）
+
+`source` 与 `operator` **正交**：operator 记「谁执行」（追责），source 记「凭什么判定」（分类）。
+历史数据里 operator 只有 `system` / 管理员 openid 两种，已无法还原规则判定与模型判定，故必须新增字段。
+
+| 值 | 文案 | 触发者 |
+|---|---|---|
+| `manual` | 人封 | 管理员 / 班主任手动处置 |
+| `ai` | AI封 | AI 模型判定达到自动封禁线 |
+| `rule` | 机封 | 确定性规则（单次暴增超阈值 / 配速低于阈值） |
+| `legacy` | 早期 | 老记录 source 缺失且 operator=system，**无法还原规则还是 AI**（不猜，单列一项） |
+
+· 筛选 `?banSource=manual|ai|rule|legacy`（与 `status=banned` 是「与」关系，可叠加）
+· 每行带 `banInfo = { source, sourceText, sources[{scope,source,sourceText}], mixed, reason, until }`
+· `GET /users/filters` 返回 `banSources[]`（选项 + 全库计数）；列表带 `withFacets=1` 时
+  `facets.banSource = {manual,ai,rule,legacy}` 随其它筛选实时变化（三者共用一份条件）
+· 文案由服务端 `models/ban-record.js::SOURCE_TEXT` 单点定义并随接口下发 `sourceText`，
+  前端只 `sourceText || 本地兜底` —— 前端各映射一份中文必然与服务端漂移
 | 申诉 | `GET /appeals?status` · `POST /appeals/:id/review {approve, reply}`（通过即解封） |
 | 广告 | `/ads/sponsors | /ads/slots | /ads/contents | /ads/pages` 的增删改查；`GET /ads/stats?contentId&sponsorId&start&end`；`GET /ads/pages-link/:id` |
 | 内容 | `/content/announcements | /content/changelogs | /content/holidays | /content/organizations | /content/badges` 的增删改查 |

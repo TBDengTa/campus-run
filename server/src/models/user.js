@@ -10,7 +10,10 @@ const restrictionSchema = new Schema(
     reason: { type: String, default: '' },
     at: { type: Date }, // 最近一次限制时间（用于「24h 内重犯升级」判断）
     count: { type: Number, default: 0 }, // 累计次数
-    operator: { type: String, default: 'system' }, // system 自动 / 管理员 openid
+    operator: { type: String, default: 'system' }, // 执行主体：system 自动 / 管理员 openid
+    // 判定依据（用户 2026-10-30「封禁用户要有分类 人封/机封/AI封」）：
+    // 与 operator 正交 —— operator 记「谁执行」，source 记「凭什么判定」。
+    source: { type: String, default: '' }, // manual 人封 / ai AI封 / rule 机封
   },
   { _id: false }
 );
@@ -79,6 +82,9 @@ const userSchema = new Schema(
     banType: { type: String, default: '' }, // login 限制登录 / sync 限制微信同步 / gps 限制 GPS（历史 'manual' 视为 login）
     bannedUntil: { type: Date },
     bannedAt: { type: Date },
+    // 当前「限制登录」的来源（用户 2026-10-30「封禁要有分类」）：manual 人封 / ai AI封 / rule 机封。
+    // 只对应 status=banned 这一档；sync/gps 的限制来源在各 restrictions 项里。
+    banSource: { type: String, default: '' },
     // 单项能力限制（限制登录走上面的 status/bannedUntil，这里只放 sync / gps）
     restrictions: {
       sync: { type: restrictionSchema, default: () => ({}) },

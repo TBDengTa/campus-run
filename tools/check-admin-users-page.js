@@ -382,9 +382,21 @@ function makeInstance() {
   i12.onDropdownChange({ currentTarget: { dataset: { key: 'identity' } }, detail: { value: 'officer' } });
   ok('身份回填', i12.data.filterLabels.identity === '班委', i12.data.filterLabels.identity);
   ok('未选的其它项仍是维度名', i12.data.filterLabels.school === '院校', i12.data.filterLabels.school);
-  // 触发器必须是动态 label：静态写法会让 computedLabel 永久失效
-  ok('WXML 触发器用动态 label', (wxml.match(/label="\{\{filterLabels\.\w+\}\}"/g) || []).length === 8, String((wxml.match(/label="\{\{filterLabels\.\w+\}\}"/g) || []).length));
-  ok('WXML 不再有静态中文 label', !/label="(院校|系部|专业|年级|日目标|周目标|班级状态|身份)"/.test(wxml.replace(/<!--[\s\S]*?-->/g, '')));
+  // 触发器必须是动态 label：静态写法会让 computedLabel 永久失效。
+  // ⚠️ 数量**不写死**（原来是 === 8）：写死后每加一个筛选维度都要记得来这里改数字，
+  //    忘了就是一条与功能无关的假失败（用户 2026-10-30 加「封禁类型」时正是这样撞上红的）。
+  //    真正要守的语义是「FILTER_LABELS 里每个维度都在 WXML 有一个动态 label 触发器」，
+  //    所以从维度数推导，并逐个键比对 —— 漏配某个键也能被抓到（计数相等但键不对的场合）。
+  const usersSrcForLabels = require('fs').readFileSync(path.join(MINI, 'packageAdmin/users/users.js'), 'utf8');
+  const labelBlockSrc = (usersSrcForLabels.match(/const FILTER_LABELS = \{([\s\S]*?)\};/) || ['', ''])[1];
+  const filterKeys = [...labelBlockSrc.matchAll(/^\s*(\w+):/gm)].map((m) => m[1]);
+  const dynLabels = [...wxml.matchAll(/label="\{\{filterLabels\.(\w+)\}\}"/g)].map((m) => m[1]);
+  ok('筛选维度数与触发器数一致', filterKeys.length > 0 && dynLabels.length === filterKeys.length, { filterKeys: filterKeys.length, dynLabels: dynLabels.length });
+  const missingTriggers = filterKeys.filter((k) => !dynLabels.includes(k));
+  ok('每个筛选维度都有动态 label 触发器', missingTriggers.length === 0, missingTriggers);
+  const extraTriggers = dynLabels.filter((k) => !filterKeys.includes(k));
+  ok('WXML 不存在多余的 filterLabels 引用', extraTriggers.length === 0, extraTriggers);
+  ok('WXML 不再有静态中文 label', !/label="(院校|系部|专业|年级|日目标|周目标|班级状态|身份|封禁类型)"/.test(wxml.replace(/<!--[\s\S]*?-->/g, '')));
   // 清除筛选后必须复位（同一份状态两处计算必然漂移 → 必须走 updateFilterState）
   i12.clearFilters();
   ok('清除后触发器回到维度名', i12.data.filterLabels.grade === '年级' && i12.data.filterLabels.classStatus === '班级状态', JSON.stringify(i12.data.filterLabels));

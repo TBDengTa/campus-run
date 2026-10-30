@@ -763,6 +763,22 @@ router.get(
         { value: 'homeroom', label: '班主任', count: homeroomN || 0 },
         { value: 'union', label: '学生会成员', count: unionN || 0 },
       ],
+      // ===== 封禁来源分类（用户 2026-10-30「封禁用户要有分类 如人封、机封、AI封」）=====
+      // 与 status='banned' 是「与」关系：先筛封禁中，再按来源细分。
+      // 计数口径 = 全库生效中的该类封禁（选项本身不带其它筛选，与 classStatus/identity 同做法；
+      // 列表接口返回的 facets.banSource 才是随筛选实时变化的）。
+      // 实现与列表筛选、分面计数共用 banSourceCond / banSourceCounts（一份口径）。
+      // legacy = 上线前的老记录（source 缺失且无法从 operator 还原）：单列出来而不是藏掉，
+      // 否则管理员会觉得「明明封了这么多人，分类加起来对不上」。
+      banSources: await (async () => {
+        const c = await banSourceCounts({});
+        return [
+          { value: 'manual', label: '人封', count: c.manual },
+          { value: 'ai', label: 'AI封', count: c.ai },
+          { value: 'rule', label: '机封', count: c.rule },
+          { value: 'legacy', label: '早期未分类', count: c.legacy },
+        ];
+      })(),
     });
   })
 );
@@ -923,6 +939,12 @@ async function buildUserMatch(q, omit) {
   } else if (q.status) {
     cond.status = q.status;
   }
+
+  // 封禁来源分类（用户 2026-10-30「用户管理列表中的封禁用户要有分类 如人封、机封、AI封」）。
+  // 与 status 维度是「与」关系（先筛「封禁中」，再按来源细分）；匹配条件见 banSourceCond（三处共用）。
+  if (q.banSource) {
+    and.push(banSourceCond(q.banSource, new Date()));
+  }
   if (q.role) cond.role = q.role;
   // 管理员不是角色而是权限：直接权限或所在权限组非空即视为管理员（与登录态 isManager 同义）
   if (q.manager === '1') {
@@ -1008,15 +1030,17 @@ async function identityCondition(kind) {
 async function userFacets(q) {
   const pick = (v) => (['0', '1'].includes(String(v ?? '')) ? String(v) : '');
   if (pick(q.dailyAchieved) || pick(q.weeklyAchieved)) return null;
-  const [school, department, specialty, grade, classStatus, identity] = await Promise.all([
+  const [school, department, specialty, grade, classStatus, identity, banSource] = await Promise.all([
     groupCount(await buildUserMatch(q, 'school'), 'schoolName'),
     groupCount(await buildUserMatch(q, 'department'), 'departmentName'),
     groupCount(await buildUserMatch(q, 'specialty'), 'specialty'),
     gradeFacet(await buildUserMatch(q, 'grade')),
     classStatusFacet(await buildUserMatch(q, 'classStatus')),
     identityFacet(await buildUserMatch(q, 'identity')),
+    // 封禁来源分面（用户 2026-10-30「封禁用户要有分类 人封/机封/AI封」）
+    banSourceFacet(q),
   ]);
-  return { school, department, specialty, grade, classStatus, identity };
+  return { school, department, specialty, grade, classStatus, identity, banSource };
 }
 
 /** 一次 $group 拿到某字段的全部取值人数（空值不计数） */
@@ -1114,9 +1138,140 @@ async function identityFacet(match) {
   return { officer, homeroom, union };
 }
 
+/**
+ * 封禁来源分面（用户 2026-10-30「封禁用户要有分类」）。
+ *
+ * 与其它分面同一套口径：**除自身之外**的所有已选条件命中的人里，按来源分组计数
+ * （排除自身是必须的：否则选了「人封」后其它分类全变 0，管理员没法切换）。
+ * 只数「生效中的」限制（过期的封禁不该出现在计数里）。
+ */
+async function banSourceFacet(q) {
+  // 「除 banSource 外」的全部已选条件 + 一份 banSourceCounts（与列表筛选、/filters 同口径）
+  const base = await buildUserMatch({ ...q, banSource: '' }, 'banSource');
+  return banSourceCounts(base);
+}
+
 /** cond 里可能已有 $and/$or，追加条件必须并进 $and，不能覆盖 */
 function andWrap(cond, extra) {
   return { ...cond, $and: [...(cond.$and || []), extra] };
+}
+
+/**
+ * 封禁来源的匹配条件（列表筛选 / filters 选项计数 / 分面计数 **三处共用**，
+ * 口径只有一份 —— 各写一遍必然漂移，出现「选项写着 3、点进去 5 个」）。
+ *
+ * 数据来源两处（各自带 source，与 operator 正交）：
+ *   · 限制登录 → user.status='banned' + user.banSource
+ *   · sync/gps → user.restrictions.{sync,gps}.source
+ * 历史数据（本功能上线前被封的）没有 source：
+ *   · 存了管理员 openid 的 → 归 manual（能确定是人操作的）
+ *   · 只存 'system'/空的 → **无法区分规则与 AI**，归 legacy，不猜
+ *     （猜错会让「AI 误封率」这类统计失真，这正是这次分类要回答的问题）。
+ */
+function banSourceCond(src, now) {
+  // 「登录限制仍生效」：无期限或未到期
+  const liveLogin = { $or: [{ bannedUntil: null }, { bannedUntil: { $gt: now } }] };
+  // 「source 缺失」= 字段不存在 / null / 空串 三种（mongoose 的 default:'' 会真写空串进库，
+  //  只查 $exists:false 会漏 —— 这正是「legacy 一个都查不到」的一半成因）。
+  // ⚠️ 不能写 $in:[{$exists:false},null,'']：$in 不接受操作符表达式，
+  //    语法合法但永不匹配（静默错，比报错更难查）。
+  const missing = (field) => ({ $or: [{ [field]: { $exists: false } }, { [field]: null }, { [field]: '' }] });
+  // 一个分支内要同时满足多个「$or 形状」的条件时，必须用 $and 包起来：
+  // 对象字面量里同写两个 $or 键，后者会**静默覆盖**前者（丢条件 → 误捞）。
+  const all = (...conds) => ({ $and: conds });
+
+  if (src === 'manual') {
+    return {
+      $or: [
+        all({ status: 'banned', banSource: 'manual' }, liveLogin),
+        { 'restrictions.sync.source': 'manual', 'restrictions.sync.until': { $gt: now } },
+        { 'restrictions.gps.source': 'manual', 'restrictions.gps.until': { $gt: now } },
+        // 老的人工封禁：没存 source，但 operator 是管理员 openid（人操作的证据）
+        all(missing('restrictions.sync.source'), { 'restrictions.sync.operator': { $ne: 'system' } }, { 'restrictions.sync.until': { $gt: now } }),
+        all(missing('restrictions.gps.source'), { 'restrictions.gps.operator': { $ne: 'system' } }, { 'restrictions.gps.until': { $gt: now } }),
+      ],
+    };
+  }
+  if (src === 'legacy') {
+    return {
+      $or: [
+        all({ status: 'banned' }, missing('banSource'), liveLogin),
+        all(missing('restrictions.sync.source'), { 'restrictions.sync.operator': 'system' }, { 'restrictions.sync.until': { $gt: now } }),
+        all(missing('restrictions.sync.source'), missing('restrictions.sync.operator'), { 'restrictions.sync.until': { $gt: now } }),
+        all(missing('restrictions.gps.source'), { 'restrictions.gps.operator': 'system' }, { 'restrictions.gps.until': { $gt: now } }),
+        all(missing('restrictions.gps.source'), missing('restrictions.gps.operator'), { 'restrictions.gps.until': { $gt: now } }),
+      ],
+    };
+  }
+  // ai / rule：只按显式 source 匹配（历史数据本来就没有这两种标记）
+  return {
+    $or: [
+      all({ status: 'banned', banSource: src }, liveLogin),
+      { 'restrictions.sync.source': src, 'restrictions.sync.until': { $gt: now } },
+      { 'restrictions.gps.source': src, 'restrictions.gps.until': { $gt: now } },
+    ],
+  };
+}
+
+/**
+ * 四个封禁来源各数一次人数（用户 2026-10-30）。
+ * /filters 的选项计数、列表的 facets.banSource 都调这里 —— **一份实现**。
+ *
+ * @param {object} baseMatch buildUserMatch 产出的 cond（分面时传「除 banSource 外」的条件；
+ *                           /filters 传空 = 全库口径）
+ */
+async function banSourceCounts(baseMatch) {
+  const now = new Date();
+  const cond = baseMatch && baseMatch.cond ? baseMatch.cond : {};
+  const countOf = (src) =>
+    User.countDocuments({ ...cond, $and: [...(cond.$and || []), banSourceCond(src, now)] });
+  const [manual, ai, rule, legacy] = await Promise.all([
+    countOf('manual'),
+    countOf('ai'),
+    countOf('rule'),
+    countOf('legacy'),
+  ]);
+  return { manual, ai, rule, legacy };
+}
+
+// 列表行附带封禁来源分类（用户 2026-10-30「封禁用户要有分类 如人封、机封、AI封」）。
+//
+// 数据源是 anticheat.activeRestrictions（**唯一实现**，与用户详情、申诉页同一口径），
+// 不在这里自己读 restrictions 拼一套 —— 拼了就会出现「列表显示人封、详情显示机封」。
+// 一行可能同时有多种限制（如 login 人封 + sync AI封）：
+//   · banScopes 列出全部（详情用）；
+//   · banSource 取**权重最高的一个**（login > sync > gps：能挡住登录的那条决定学生被怎么对待），
+//     列表标签只放一个词，多个来源进括号计数。
+async function attachBanInfo(list) {
+  const anticheat = require('../../services/anticheat');
+  const BanRecord = require('../../models/ban-record');
+  const RANK = { login: 0, sync: 1, gps: 2 };
+  for (const u of list) {
+    // lean 对象没有实例方法，activeRestrictions 只读字段（status/banSource/restrictions），直接可用
+    const rs = anticheat.activeRestrictions(u);
+    if (!rs.length) {
+      u.banInfo = null;
+      continue;
+    }
+    const sorted = [...rs].sort((a, b) => (RANK[a.scope] ?? 9) - (RANK[b.scope] ?? 9));
+    const distinct = [...new Set(sorted.map((r) => r.source))];
+    u.banInfo = {
+      source: sorted[0].source,
+      sourceText: BanRecord.SOURCE_TEXT[sorted[0].source] || sorted[0].source,
+      // 每一项都带上文案：前端要按 scope 找对应分类显示，
+      // 只给 source 会逼前端再映射一份中文（两份文案必然漂移）
+      sources: sorted.map((r) => ({
+        scope: r.scope,
+        source: r.source,
+        sourceText: BanRecord.SOURCE_TEXT[r.source] || r.source,
+      })),
+      // 一行里出现多个不同来源（少见但真实：AI 封了同步、管理员又封了登录）
+      mixed: distinct.length > 1,
+      reason: sorted[0].reason || '',
+      until: sorted[0].until || null,
+    };
+  }
+  return list;
 }
 
 router.get(
@@ -1185,6 +1340,7 @@ router.get(
       ]);
       // 目标与宿舍都在 list 上就地补字段（批量查询，互不依赖，并发跑）
       await Promise.all([attachGoals(list), attachDorms(list), attachClassAndUnion(list)]);
+      await attachBanInfo(list);
       // 达标筛选存在时 userFacets 直接返回 null（见其注释），await 它没有额外开销
       return ok(res, { list, total: countAgg[0]?.n || 0, page, limit, facets: await facetsP });
     }
@@ -1194,6 +1350,7 @@ router.get(
       User.countDocuments(cond),
     ]);
     await Promise.all([attachGoals(list), attachDorms(list), attachClassAndUnion(list)]);
+    await attachBanInfo(list);
     ok(res, { list, total, page, limit, facets: await facetsP });
   })
 );
@@ -1449,6 +1606,15 @@ router.get(
       .lean();
     if (!user) throw new ApiError(404, 404, '用户不存在');
     const bans = await BanRecord.find({ userId: user._id }).sort({ createdAt: -1 }).limit(50).lean();
+    // 流水带上「判定依据」文案（用户 2026-10-30「人封、机封、AI封」）：
+    // 旧前端只有 operator==='system' 一个判断，于是显示「系统自动」——
+    // 把规则判定与模型判定混成同一件事，排查误封时看不出该找谁。
+    // 文案与推断都走 model 的唯一定义（SOURCE_TEXT / normalizeSource），
+    // 不在前端再映射一份中文（两份必然漂移）。
+    for (const b of bans) {
+      b.source = BanRecord.normalizeSource(b);
+      b.sourceText = BanRecord.SOURCE_TEXT[b.source] || '';
+    }
     const openid = user.openid || '';
     const [recentRuns, waterToday, badgeCount, effective, userGoal, devices, wxSession, dorm] = await Promise.all([
       openid ? RunRecord.find({ openid }).sort({ date: -1, createdAt: -1 }).limit(10).select('date steps distance calories durationSeconds source goalAchieved').lean() : Promise.resolve([]),

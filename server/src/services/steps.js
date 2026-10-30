@@ -273,6 +273,10 @@ async function syncWerunDay(user, dateKey, cumulativeSteps, { checkJump = true }
           scope: 'sync',
           days: 7,
           operator: 'system',
+          // 判定依据 = AI（用户 2026-10-30「人封/机封/AI封」分类）：
+          // 走到这里说明 AI 的 score 达到自动封禁线（或物理约束命中），
+          // 与 checkStepJump 的「单次暴增超阈值」规则不是一回事 —— 两者必须在流水里分开。
+          source: 'ai',
           escalate: true,
           reason: `步数异常（${(anomaly.reasons || []).join('、') || '可疑'}）`,
         });
@@ -360,6 +364,8 @@ async function saveGpsRun(user, { date, distance, durationSeconds, calories, ste
       scope: 'gps',
       days: 7,
       operator: 'system',
+      // 判定依据 = AI（同微信同步那处的理由：与 checkPace 的规则拦截分开记）
+      source: 'ai',
       escalate: true,
       reason: `GPS 轨迹异常（${(anomaly.reasons || []).join('、') || '可疑'}）`,
     });

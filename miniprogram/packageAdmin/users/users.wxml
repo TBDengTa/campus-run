@@ -72,13 +72,16 @@
       </t-dropdown-menu>
     </view>
 
-    <!-- 班级状态 / 身份：与院校三级、年级、达标情况都是正交维度，可任意叠加。
+    <!-- 班级状态 / 身份 / 封禁类型：与院校三级、年级、达标情况都是正交维度，可任意叠加。
          「班级状态」筛的是该生**所在班**在班级台账里的状态（实习/毕业班不参加班超与校园跑），
-         「正常」含老数据没有该字段的班 —— 与台账页口径一致。 -->
+         「正常」含老数据没有该字段的班 —— 与台账页口径一致。
+         「封禁类型」（用户 2026-10-30「封禁用户要有分类 如人封、机封、AI封」）：
+         回答「谁凭什么拦的这个人」，是排查误封时第一个要问的维度。 -->
     <view class="users-dd">
       <t-dropdown-menu>
         <t-dropdown-item label="{{filterLabels.classStatus}}" value="{{filters.classStatus}}" options="{{filterOptions.classStatus}}" bind:change="onDropdownChange" data-key="classStatus" />
         <t-dropdown-item label="{{filterLabels.identity}}" value="{{filters.identity}}" options="{{filterOptions.identity}}" bind:change="onDropdownChange" data-key="identity" />
+        <t-dropdown-item label="{{filterLabels.banSource}}" value="{{filters.banSource}}" options="{{filterOptions.banSource}}" bind:change="onDropdownChange" data-key="banSource" />
       </t-dropdown-menu>
     </view>
 

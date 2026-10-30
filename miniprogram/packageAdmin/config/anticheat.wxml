@@ -16,10 +16,15 @@
   </view>
 
   <view class="tt-card cfg-card">
+    <!-- 「启用自动检测」改名（用户 2026-10-30「反作弊中依然存在自动检测，是不是UI没有重新适配」）：
+         旧文案是纯规则时代的说法。现在检测由 AI 统一负责（硬规则已并入 AI 特征），
+         而这个开关实际控制的是「判定成立后要不要自动执行处置」——
+         关掉之后 AI 照样打分、照样进「异常记录」，只是不再自动封。
+         名字不改，管理员会以为关掉它就不检测了（其实只是不自动动手）。 -->
     <view class="cfg-fitem cfg-fitem-switch">
       <view class="cfg-flabel-col">
-        <text class="cfg-switch-label">启用自动检测</text>
-        <text class="cfg-fdesc">关闭后不再自动判定异常步数与配速</text>
+        <text class="cfg-switch-label">自动执行处置</text>
+        <text class="cfg-fdesc">关闭后 AI 仍会检测并记录异常，但不再自动限制学生（需人工在「步数异常记录」里处置）</text>
       </view>
       <t-switch disabled="{{!canManage}}" value="{{config.anticheat.enabled}}" bind:change="onAnticheat" data-field="enabled" />
     </view>
@@ -36,6 +41,10 @@
       <text class="cfg-flabel">自动封禁天数</text>
       <input class="cfg-input" disabled="{{!canManage}}" type="number" value="{{config.anticheat.banDays}}" bindinput="onAnticheat" data-field="banDays" />
     </view>
+    <text class="cfg-hint">
+      上面两项是「确定性兜底」：配速快于人极限、单日步数超生理上限这类物理不可能的情况，不经 AI 直接判。
+      涨幅速度、整数化、重复数字等软特征已并入 AI 统一打分，见下方严谨度。
+    </text>
   </view>
 
   <!-- ===== AI 封禁严谨度（用户 2026-10-28）=====

@@ -112,6 +112,36 @@ function buildBadgeItems(definitions, prevItems) {
   return entries.map((e) => e.item);
 }
 
+// 封禁/限制的判定依据（用户 2026-10-30「封禁用户要有分类 如人封、机封、AI封」）。
+//
+// 文案**以服务端为准**（唯一定义处 models/ban-record.js::SOURCE_TEXT，
+// 由 activeRestrictions / attachBanInfo 一并下发 sourceText）；
+// 这里这张表只是**旧服务端没下发时的兜底** —— 与仓库既有的
+// `u.classStatusText || CLASS_STATUS_TEXT[...]` 同一套模式。
+// legacy：本功能上线前的老记录没存 source，且 operator='system' 时无法还原
+// 当时是规则命中还是模型判定 —— **不猜**（猜错会让「AI 误封率」统计失真）。
+const BAN_SOURCE_TEXT = { manual: '人封', ai: 'AI封', rule: '机封', legacy: '早期' };
+const banSourceLabel = (r) => {
+  // 服务端已算好（含历史推断）→ 直接用
+  if (r && r.sourceText) return r.sourceText;
+  const src = (r && r.source) || '';
+  if (BAN_SOURCE_TEXT[src]) return BAN_SOURCE_TEXT[src];
+  const op = String((r && r.operator) || '');
+  if (op && op !== 'system') return BAN_SOURCE_TEXT.manual; // 有 openid 执行 = 人操作，可确定
+  // source 与 operator 都为空（异常空对象）→ 不显示，别硬套「早期」
+  if (!src && !op) return '';
+  return BAN_SOURCE_TEXT.legacy;
+};
+
+/**
+ * 徽标要不要显示（WXML 只读这个布尔，不在模板里比中文）。
+ *
+ * 规则：只给**非人封**显示。「人封」就是当前操作人自己，写出来是噪音；
+ * 而 AI封 / 机封 / 早期未分类 才是「不是我干的，我得知道是谁干的」——
+ * 尤其 AI封（模型判定，可能误伤，用户最初的抱怨正是「容易误封锁」）。
+ */
+const showBanSource = (label) => !!label && label !== BAN_SOURCE_TEXT.manual;
+
 // 合并两份能力表（/overview 面向班委可看的宿舍场景，/manage 是班主任的完整能力表）。
 // 规则：**任一为 true 即 true**（取并集）。
 // 为什么安全：两个来源都来自服务端、都做了同样的成员资格校验；
@@ -441,12 +471,22 @@ Page({
           ...b,
           timeText: fmtTime(b.createdAt),
           typeText: SCOPE_TEXT[b.banType] || (b.banType === 'manual' ? '限制登录' : '功能限制'),
+          // 判定依据（用户 2026-10-30「人封、机封、AI封」）：流水里必须能看出是谁判的，
+          // 否则「系统自动」四个字把规则判定和模型判定混成一件，排查误封时无从下手。
+          // 字段名刻意用 banSourceLabel 而不是 sourceText：本文件里运动记录已有 sourceText
+          //   （值是「GPS 实跑 / 微信运动」），同名两义会让后来者读错上下文。
+          banSourceLabel: banSourceLabel(b),
         })),
-        restrictions: (restrictions || []).map((r) => ({
-          ...r,
-          icon: SCOPE_ICON[r.scope] || 'lock-on',
-          untilText: r.until ? fmtTime(r.until) : '永久',
-        })),
+        restrictions: (restrictions || []).map((r) => {
+          const label = banSourceLabel(r);
+          return {
+            ...r,
+            icon: SCOPE_ICON[r.scope] || 'lock-on',
+            untilText: r.until ? fmtTime(r.until) : '永久',
+            banSourceLabel: label,
+            showBanSource: showBanSource(label),
+          };
+        }),
         sport: {
           totalStepsText: fmt.formatNumber(user.totalSteps || 0),
           totalDistanceText: fmt.formatDistance(user.totalDistance || 0),
@@ -589,10 +629,17 @@ Page({
       badgeItems: [],
       bans: [],
       // 生效中的限制（班主任可解除自己下的 sync/gps 限制）
-      restrictions: ((manage && manage.restrictions) || []).map((r) => ({
-        ...r,
-        untilText: r.until ? fmtTime(r.until) : '永久',
-      })),
+      // banSourceLabel 两条读路径都要给（与上面管理端分支同字段）：
+      // 只在一边给，班主任看到的就永远没有分类，正是历史上「两条路径漂移」的老坑。
+      restrictions: ((manage && manage.restrictions) || []).map((r) => {
+        const label = banSourceLabel(r);
+        return {
+          ...r,
+          untilText: r.until ? fmtTime(r.until) : '永久',
+          banSourceLabel: label,
+          showBanSource: showBanSource(label),
+        };
+      }),
       loginInfo: null,
       rates: null,
       goal: null,

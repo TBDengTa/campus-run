@@ -132,6 +132,12 @@
           <view class="flex-1">
             <view class="ud-limit-title">
               <text>{{item.text}}</text>
+              <!-- 判定依据（用户 2026-10-30「人封、机封、AI封」）：
+                   只给**非人封**显示徽标 —— 「人封」就是操作人自己，管理员已知，
+                   给每条都挂一个反而稀释真正需要留意的（模型判定的可能是误封）。
+                   显示与否由 JS 预算（showBanSource），WXML 不做字符串比较：
+                   仓库约定展示字段一律预计算，模板里比中文一旦漂移不会报错。 -->
+              <text class="ud-limit-src" wx:if="{{item.showBanSource}}">{{item.banSourceLabel}}</text>
               <text class="ud-limit-until">至 {{item.untilText}}</text>
             </view>
             <view class="ud-limit-reason">{{item.reason || '违反社区规范'}}</view>
@@ -522,7 +528,11 @@
         <view class="flex-1">
           <view class="tt-row-title">{{item.typeText}} · {{item.reason || '—'}}</view>
           <view class="tt-row-sub">
-            {{item.timeText}} · {{item.operator === 'system' ? '系统自动' : '管理员'}}{{item.durationDays ? ' · ' + item.durationDays + ' 天' : (item.action === 'ban' ? ' · 永久' : '')}}
+            <!-- 「系统自动」改成服务端下发的判定依据（用户 2026-10-30「人封、机封、AI封」）：
+                 旧写法只判断 operator==='system'，于是规则判定和模型判定都显示「系统自动」，
+                 排查误封时看不出这条到底是 AI 判的还是规则判的。
+                 没下发时（旧服务端）退回原来的「系统自动 / 管理员」，不显示空白。 -->
+            {{item.timeText}} · {{item.banSourceLabel || (item.operator === 'system' ? '系统自动' : '管理员')}}{{item.durationDays ? ' · ' + item.durationDays + ' 天' : (item.action === 'ban' ? ' · 永久' : '')}}
           </view>
         </view>
         <t-tag theme="{{item.action === 'ban' ? 'danger' : 'success'}}" variant="light" size="small">

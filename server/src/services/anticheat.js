@@ -40,16 +40,58 @@ function isRestricted(user, scope) {
 }
 
 // 生效中的全部限制（给接口/小程序展示与申诉用）
+//
+// 用户 2026-10-30「封禁用户要有分类 如人封、机封、AI封」：
+// 每条限制都带 source（manual 人封 / ai AI封 / rule 机封），前端据此打标签与筛选。
+// 历史记录没有 source → 按 operator 推断（见 models/ban-record.js::normalizeSource 的说明：
+// 推断不到的标 legacy，**不猜**，否则「AI 误封率」这类统计会失真）。
 function activeRestrictions(user) {
   const now = new Date();
+  const BanRecord = require('../models/ban-record');
+  // 局部归一化：优先用 model 上的唯一实现，model 不可用时退化为「有 source 用 source」。
+  // （之所以容错：本文件被 run/auth 等热路径引用，绝不能因为一个 require 失败而整体崩）
+  const norm = (src, operator) => {
+    try {
+      return BanRecord.normalizeSource({ source: src, operator });
+    } catch (e) {
+      return src || (operator && operator !== 'system' ? 'manual' : 'legacy');
+    }
+  };
   const out = [];
+  // 文案也在这里出（本函数已是「给接口/小程序展示」的唯一出口）：
+  // 只给 source 会逼每个消费方再映射一份中文，两份文案必然漂移。
+  const textOf = (src) => {
+    try {
+      return BanRecord.SOURCE_TEXT[src] || '';
+    } catch (e) {
+      return '';
+    }
+  };
   if (user.status === 'banned' && (!user.bannedUntil || user.bannedUntil > now)) {
-    out.push({ scope: 'login', text: scopeText('login'), reason: user.banReason || '', until: user.bannedUntil || null });
+    const src = norm(user.banSource, '');
+    out.push({
+      scope: 'login',
+      text: scopeText('login'),
+      reason: user.banReason || '',
+      until: user.bannedUntil || null,
+      // 账号级封禁的来源存在 user.banSource 上（restrict 写入时同步落库）。
+      // 历史账号没有这个字段 → norm 退化为 legacy（不猜规则/AI）。
+      source: src,
+      sourceText: textOf(src),
+    });
   }
   for (const s of ['sync', 'gps']) {
     const r = (user.restrictions || {})[s];
     if (r && r.until && r.until > now) {
-      out.push({ scope: s, text: scopeText(s), reason: r.reason || '', until: r.until });
+      const src = norm(r.source, r.operator);
+      out.push({
+        scope: s,
+        text: scopeText(s),
+        reason: r.reason || '',
+        until: r.until,
+        source: src,
+        sourceText: textOf(src),
+      });
     }
   }
   return out;
@@ -72,11 +114,20 @@ function activeRestriction(user, scope) {
  * @param {Boolean} p.escalate 同类 24h 内重犯 → 升级为限制登录
  * @returns {{ scope, until, escalated }}
  */
-async function restrict({ user, scope, reason, days = 0, operator = 'system', escalate = false }) {
+async function restrict({ user, scope, reason, days = 0, operator = 'system', escalate = false, source = '' }) {
   const target = normalizeScope(scope);
   const now = new Date();
   const until = days > 0 ? new Date(now.getTime() + days * DAY_MS) : null;
   const baseReason = String(reason || '').trim() || '数据异常';
+
+  // 判定依据（用户 2026-10-30「封禁要有分类」）：
+  //   manual 人封 / ai AI封 / rule 机封。缺省按 operator 推断，
+  //   保证「旧调用点忘了传 source」时不会写出空值（人工调用自动落 manual）。
+  const finalSource = ['manual', 'ai', 'rule'].includes(source)
+    ? source
+    : operator && operator !== 'system'
+      ? 'manual'
+      : 'rule';
 
   let finalScope = target;
   if (escalate && target !== 'login') {
@@ -95,6 +146,9 @@ async function restrict({ user, scope, reason, days = 0, operator = 'system', es
     user.banType = 'login';
     user.bannedAt = now;
     user.bannedUntil = until;
+    // 账号级状态也带上来源：用户列表里「当前封禁原因」要能显示是人封还是 AI 封
+    // （只存在 restrictions 里的 sync/gps 限制没有这个位置，靠 ban_records 查）
+    user.banSource = finalSource;
   } else {
     const prev = (user.restrictions || {})[finalScope] || {};
     user.restrictions[finalScope] = {
@@ -103,6 +157,7 @@ async function restrict({ user, scope, reason, days = 0, operator = 'system', es
       at: now,
       count: (prev.count || 0) + 1,
       operator,
+      source: finalSource,
     };
   }
   await user.save();
@@ -115,6 +170,8 @@ async function restrict({ user, scope, reason, days = 0, operator = 'system', es
     durationDays: days || 0,
     bannedUntil: until,
     operator,
+    // 判定依据：manual 人封 / ai AI封 / rule 机封（用户 2026-10-30）
+    source: finalSource,
   });
   // ===== 徽章撤销（产品口径）=====
   // 撤销触发源只有两处：① 反作弊判定成立（checkStepJump / checkPace）；② 封禁（人工 manualBan 与申诉外的限制）。
@@ -233,6 +290,8 @@ async function checkStepJump(user, date, previousSteps, newSteps, ctx = {}) {
       scope: 'sync',
       days,
       operator: 'system',
+      // 判定依据 = 机封（确定性规则）：单次同步暴增超阈值，不经过 AI 模型
+      source: 'rule',
       escalate: true,
       reason: `单次同步暴增${jump.toLocaleString()}步，数据异常`,
     });
@@ -256,6 +315,8 @@ async function checkPace(user, distanceMeters, durationSeconds) {
         scope: 'gps',
         days,
         operator: 'system',
+        // 判定依据 = 机封（确定性规则）：配速低于阈值，不经过 AI 模型
+        source: 'rule',
         escalate: true,
         reason: `配速${m}'${String(s).padStart(2, '0')}/公里，低于${Math.floor(config.anticheat.minPaceSecondsPerKm / 60)}分钟/公里，异常`,
       });
@@ -268,7 +329,10 @@ async function checkPace(user, distanceMeters, durationSeconds) {
 // ===== 管理端（人工）=====
 // scope: login 限制登录（默认，整账号）/ sync 限制微信同步 / gps 限制 GPS
 async function manualBan(user, { reason, days, operator, scope = 'login' }) {
-  return restrict({ user, scope, reason: reason || '违反社区规范', days: days || 0, operator });
+  // 显式标 manual（用户 2026-10-30「人封/机封/AI封」分类）：
+  // 虽然 restrict 会按 operator 推断，但显式写更稳 ——
+  // 万一将来有调用方用 operator='system' 做人工批量封禁（如运维脚本），推断会误判成机封。
+  return restrict({ user, scope, reason: reason || '违反社区规范', days: days || 0, operator, source: 'manual' });
 }
 
 // scope 省略时解除全部限制

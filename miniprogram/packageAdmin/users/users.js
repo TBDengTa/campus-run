@@ -25,7 +25,27 @@ const FILTER_LABELS = {
   weeklyAchieved: '周目标',
   classStatus: '班级状态',
   identity: '身份',
+  banSource: '封禁类型',
 };
+
+// ===== 封禁类型（用户 2026-10-30「用户管理列表中的封禁用户要有分类 如人封、机封、AI封」）=====
+// 与「限制了什么能力」（登录/微信同步/GPS）是**两个维度**：
+// 这里回答「封他的依据是什么」—— 谁、凭什么把这名学生拦在门外，是排查误封时第一个要问的问题。
+//
+// legacy（早期未分类）单列而不是隐藏：本功能上线前的老记录没存 source，
+// 且 operator='system' 时无法还原当时是规则命中还是模型判定 —— **不猜**
+// （猜错会让「AI 误封率」这类统计直接失真，而这正是分类要回答的问题）。
+// 不列出来，管理员会觉得「明明封了 N 人，几个分类加起来对不上」。
+// 文案与服务端 models/ban-record.js::SOURCE_TEXT 逐字一致（契约检查器把守）。
+const BAN_SOURCE_OPTIONS = [
+  { label: '全部', value: '' },
+  { label: '人封（管理员操作）', value: 'manual' },
+  { label: 'AI封（模型判定）', value: 'ai' },
+  { label: '机封（规则判定）', value: 'rule' },
+  { label: '早期未分类', value: 'legacy' },
+];
+// 行内标签用的短词（一行放不下长文案）
+const BAN_SOURCE_TEXT = { manual: '人封', ai: 'AI封', rule: '机封', legacy: '早期' };
 
 // 班级状态（与 server/src/models/class-profile.js::STATUS_TEXT 同口径）
 // 注意「正常」在服务端包含**老数据没有 status 字段**的班，所以选项文案要说明这点，
@@ -72,6 +92,7 @@ const FILTER_OPTION_KEYS = {
   weeklyAchieved: 'weeklyAchieved',
   classStatus: 'classStatus',
   identity: 'identity',
+  banSource: 'banSource',
 };
 
 // 日/周目标筛的是「当日 / 当周是否达标」，不是目标步数
@@ -265,6 +286,8 @@ Page({
       weeklyAchieved: ACHIEVE_OPTIONS,
       classStatus: CLASS_STATUS_OPTIONS,
       identity: IDENTITY_OPTIONS,
+      // 封禁类型（用户 2026-10-30）：与「班级状态/身份」平级的独立维度，可叠加
+      banSource: BAN_SOURCE_OPTIONS,
     },
     filters: {
       school: '',
@@ -275,12 +298,13 @@ Page({
       weeklyAchieved: '',
       classStatus: '',
       identity: '',
+      banSource: '',
     },
     // 联动数据源：filterTree 来自接口（院校 → 系部 → 专业），filterFlat 是旧接口/异常时的兜底选项
     filterTree: [],
     filterFlat: null,
     // 不带人数的基础选项（label 干净）；人数由 renderFilterOptions 统一装饰成 filterOptions
-    filterBase: { schools: [], departments: [], specialties: [], grades: [], classStatus: [], identity: [] },
+    filterBase: { schools: [], departments: [], specialties: [], grades: [], classStatus: [], identity: [], banSource: [] },
     // 服务端随列表返回的实时人数；null = 当前条件下刻意不计数；undefined = 还没到货
     facetCounts: undefined,
     // 每个下拉触发器显示的标题：未选=维度名，已选=选中值（见 computeFilterLabels）
@@ -374,6 +398,9 @@ Page({
           grades: (opt.grades || []).map((v) => ({ label: `${v}级`, value: String(v) })),
           classStatus: plain(opt.classStatuses, CLASS_STATUS_OPTIONS),
           identity: plain(opt.identities, IDENTITY_OPTIONS),
+          // 封禁类型（用户 2026-10-30）：服务端给了就用服务端的（将来可能新增分类，
+          // 如「申诉解封」），没给退回静态兜底 —— 与班级状态/身份完全同一套做法。
+          banSource: plain(opt.banSources, BAN_SOURCE_OPTIONS),
         },
       });
       this.renderFilterOptions();
@@ -421,6 +448,8 @@ Page({
         grades: dec(base.grades, f && f.grade),
         classStatus: dec(base.classStatus, f && f.classStatus),
         identity: dec(base.identity, f && f.identity),
+        // 封禁类型计数（服务端 facets.banSource = {manual,ai,rule,legacy}）
+        banSource: dec(base.banSource, f && f.banSource),
       },
     });
     // label 变了，触发器标题也要跟着重算（它取的是选项 label）
@@ -473,6 +502,10 @@ Page({
         summary.push(`${FILTER_LABELS[k]} ${IDENTITY_TEXT[f[k]] || ''}`);
         continue;
       }
+      if (k === 'banSource') {
+        summary.push(`${FILTER_LABELS[k]} ${BAN_SOURCE_TEXT[f[k]] || f[k]}`);
+        continue;
+      }
       summary.push(`${FILTER_LABELS[k]} ${f[k]}`);
     }
     if (this.data.status === 'active') summary.push('状态 正常');
@@ -503,6 +536,7 @@ Page({
       weeklyAchieved: '',
       classStatus: '',
       identity: '',
+      banSource: '',
     };
     this.setData({
       filters: empty,
@@ -576,7 +610,8 @@ Page({
     if (status) q.status = status;
     if (role) q.role = role;
     if (manager) q.manager = manager;
-    for (const k of ['school', 'department', 'specialty', 'grade', 'dailyAchieved', 'weeklyAchieved', 'classStatus', 'identity']) {
+    // 所有筛选维度都必须在这个列表里，漏一个就是「下拉里能选、点了请求也不带」的静默失效
+    for (const k of ['school', 'department', 'specialty', 'grade', 'dailyAchieved', 'weeklyAchieved', 'classStatus', 'identity', 'banSource']) {
       if (filters[k]) q[k] = filters[k];
     }
     return q;
@@ -643,7 +678,24 @@ Page({
         if (item.isSuper) chips.push({ text: '管理员', cls: 'role' });
         else if (item.isTeacher) chips.push({ text: '教师', cls: 'neutral' });
         // 生效中的限制放在状态类之前：它是管理员最需要立刻看到的（可操作信号）
-        item.activeScopes.forEach((s) => chips.push({ text: SCOPE_LABELS[s], cls: 'danger' }));
+        //
+        // 用户 2026-10-30「封禁要有分类 人封/机封/AI封」：
+        // 标签从单纯「限制登录」升级为带来源「限制登录·AI封」—— 回答「谁凭什么拦的这个人」，
+        // 是排查误封时第一个要问的问题（旧标签只有能力维度，看不出来该找规则还是找模型）。
+        // 数据来源 u.banInfo：服务端 anticheat.activeRestrictions 算好的唯一口径，
+        // 前端**不再自己读 restrictions 判一遍**（两处判断必漂移成「列表显示人封、详情显示机封」）。
+        const banSources = (u.banInfo && u.banInfo.sources) || [];
+        item.activeScopes.forEach((s) => {
+          const one = banSources.find((x) => x.scope === s);
+          // 优先服务端文案（唯一定义处），本地表只在旧服务端没下发时兜底
+          const short = one ? one.sourceText || BAN_SOURCE_TEXT[one.source] : '';
+          // 颜色统一保持 danger：这一档表达「此人正被限制」这个事实，
+          // 谁判的（分类）由文字后缀承载。仓库现存色板已全部占用：
+          //   primary橙=管理员、渐变橙=学生会、warn琥珀=实习、success绿=班委/班主任、neutral=教师/毕业。
+          // 为 AI 另造一色要么与实习撞色，要么得硬编码新色板（AGENTS.md 禁止）。
+          // 「只想看 AI 封的学生」这类需求由上方「封禁类型」筛选满足，不靠颜色扫视。
+          chips.push({ text: short ? `${SCOPE_LABELS[s]}·${short}` : SCOPE_LABELS[s], cls: 'danger' });
+        });
         // 班级状态只给实习/毕业加标签：全校 54 个班里 45 个是正常，
         // 给正常也打标签等于没打（一屏全是灰点，反而看不出谁特殊）。
         if (item.classStatus && item.classStatus !== 'normal') {
