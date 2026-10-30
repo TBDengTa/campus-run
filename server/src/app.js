@@ -94,19 +94,41 @@ function createApp() {
     res.set('X-Content-Type-Options', 'nosniff');
     res.set('Referrer-Policy', 'same-origin');
     res.set('Cache-Control', 'no-store');
-    res.sendFile(path.join(__dirname, '../public/console/index.html'), (err) => {
-      if (err) next(err);
+    // 资源引用注入 `?v=<buildTag>`：
+    // 早前是死引用 /console/app.js，而服务器给它发 max-age=3天，
+    // 于是「后端已修、前端文件已换」时浏览器还在跑旧版本 ——
+    // 用户看到的报错与实际代码不同步，排查会被彻底带偏（2026-10-30 真实踩过）。
+    // buildTag = server/src/index.js 的 mtime，代码一部署就变 → URL 必变 → 必然重新拉取。
+    // 读文件（而不是 sendFile）只为做这一次字符串替换；文件极小（<20KB），无需缓存。
+    fs.readFile(path.join(__dirname, '../public/console/index.html'), 'utf8', (err, html) => {
+      if (err) return next(err);
+      const v = encodeURIComponent(String(buildTag || appVersion || '1'));
+      const out = html
+        .replace('/console/app.css"', `/console/app.css?v=${v}"`)
+        .replace('/console/app.js"', `/console/app.js?v=${v}"`);
+      res.set('Content-Type', 'text/html; charset=utf-8');
+      res.send(out);
     });
   });
 
   // 控制台静态资源（CSS / JS 外链，配合 CSP 不放行内联脚本，见 routes/console.js）。
-  // maxAge 1 小时：改样式后不用重启也能在一小时内自然生效；
-  // 不用 etag 关闭是因为 express 默认 etag 已能命中「内容没变 → 304」。
+  //
+  // ⚠️ 缓存策略曾害过一次「改了但没生效」（用户 2026-10-30：控制台登录报
+  // 「没有任何反作弊查看权限」，后端与前端都已修好并推送，浏览器却还在跑旧 app.js）。
+  // 线上实测响应头是 max-age=259200（3 天），改一版控制台要等三天才被看到。
+  // 现在两层都拆掉：
+  //   ① 页面里的资源引用带 `?v=<buildTag>`（见下面 /console、/ 的 sendFile 前的替换），
+  //      代码一换 URL 就变，浏览器必然重新拉；
+  //   ② 静态资源本身仍留 1 小时缓存（同一次会话内复用），但配 etag/last-modified，
+  //      内容没变就是 304，变了立刻命中。
+  // 于是「改了没生效」不再需要靠清缓存解释。
   app.use(
     '/console',
     express.static(path.join(__dirname, '../public/console'), {
       maxAge: '1h',
       index: false, // 目录索引关掉：/console/ 由上面的显式路由发页面
+      etag: true,
+      lastModified: true,
       setHeaders(res2) {
         res2.set('X-Content-Type-Options', 'nosniff');
       },

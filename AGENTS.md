@@ -131,6 +131,16 @@
   根路径**不公开**反作弊参数（待研判数 / AI 阈值只在登录后的 `/dashboard`）；
   `/console/api/public-status` 只给运行指标（部署自检要用）。
   回归：`tools/verify-console.js`（真实起 app 走完整 Cookie 链路，含清理与配置恢复）。
+  ⚠️ **`caps` 只有一份定义（模块级 `capsOf`），/login 与 /me 都读它**：
+  早前 `/login` 不返回 `caps`、页面又直接拿登录返回值当 me 用 → `caps` 恒 undefined →
+  前端退回 `{view:false}` → **任何账号（含超级管理员 `'*'`）都被判「没有任何反作弊查看权限」**
+  （用户 2026-10-30 报「我有全部权限啊」）。两个出口给同一份，页面也不再假设登录响应就是 me
+  （`doLogin` 成功后统一再取一次 `/me`）。回归断言：登录响应含 caps、与 /me 逐字段一致。
+  ⚠️ **控制台静态资源引用必须带 `?v=<buildTag>`**：线上曾给 `app.js` 发 `max-age=259200`（3 天），
+  于是「后端已改、文件已换」时浏览器仍跑旧版，用户看到的报错与实际代码不同步 ——
+  排查会被彻底带偏（2026-10-30 真实踩过：修好了但线上看到的还是旧行为）。
+  `buildTag` = `server/src/index.js` 的 mtime，一部署就变 → URL 必变 → 必然重新拉取。
+  回归断言：页面里 `app.js`/`app.css` 都带版本参数，且带参数的 URL 仍 200（query 不影响静态解析）。
 - **只读账号不显示写入口**（用户 2026-10-22「只有查看权限时应该不显示操作功能按钮，而不是点击后被后端拒绝掉」）：
   ① 每个管理端页面在 `onShow`/`load` 里调 `utils/admin-perm.js::applyManage(this, '<模块>.manage')`
      得到 `data.canManage`（`*` 或该项），写入口一律 `wx:if="{{canManage}}"`，输入框 `disabled="{{!canManage}}"`；

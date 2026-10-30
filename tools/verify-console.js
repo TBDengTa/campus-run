@@ -185,10 +185,22 @@ function setCookieHeader(res) {
     assert((home.headers.get('x-frame-options') || '').toUpperCase() === 'DENY', 'X-Frame-Options=DENY');
     const chome = await fetch(`${BASE}/console`);
     assert(chome.status === 200, 'GET /console 同页可访问', chome.status);
+    // 资源引用必须带 ?v=：线上曾给 app.js 发 max-age=3天，
+    // 于是「后端已修、app.js 已换」时浏览器还在跑旧文件 —— 用户看到的报错与代码不同步。
+    // 带版本参数后代码一部署 URL 就变，必然重新拉取。
+    const chomeText = await chome.text();
+    const jsRef = (chomeText.match(/app\.js[^"']*/) || [''])[0];
+    const cssRef = (chomeText.match(/app\.css[^"']*/) || [''])[0];
+    assert(/app\.js\?v=\w/.test(jsRef), `页面里的 app.js 带版本参数（实际「${jsRef}」）`, jsRef);
+    assert(/app\.css\?v=\w/.test(cssRef), `页面里的 app.css 带版本参数（实际「${cssRef}」）`, cssRef);
+    // 页面的 strip 必须仍与静态文件可比：去掉 ?v= 后要能 200
     const cssRes = await fetch(`${BASE}/console/app.css`);
     assert(cssRes.status === 200, '静态 app.css 可加载（外链，供 CSP style-src self）');
     const jsRes = await fetch(`${BASE}/console/app.js`);
     assert(jsRes.status === 200, '静态 app.js 可加载');
+    // 带 ?v= 的 URL 也必须 200（Express 静态会忽略 query，这里钉住这个假设）
+    const jsVer = await fetch(`${BASE}${jsRef.startsWith('/') ? jsRef : '/console/' + jsRef}`);
+    assert(jsVer.status === 200, '带 ?v= 的 app.js 也能 200（query 不影响静态解析）', jsVer.status);
 
     const pub = await req('GET', '/console/api/public-status');
     assert(pub.status === 200 && pub.data.code === 0, '未登录可读 public-status');
