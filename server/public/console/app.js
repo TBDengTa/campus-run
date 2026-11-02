@@ -475,8 +475,8 @@ function renderItem(r) {
   if (r.autoBanned) tags.appendChild(el('span', 'pill warn', '系统自动封禁'));
   tags.appendChild(el(
     'span',
-    'pill ' + (r.status === 'banned' ? 'bad' : r.status === 'dismissed' ? 'mute' : 'warn'),
-    r.status === 'banned' ? '已封禁' : r.status === 'dismissed' ? '已排除' : '待研判'
+    'pill ' + (r.status === 'banned' ? 'bad' : r.status === 'dismissed' ? 'mute' : r.label ? 'ok' : 'warn'),
+    r.status === 'banned' ? '已封禁' : r.status === 'dismissed' ? '已排除' : r.label ? '待处置' : '待研判'
   ));
   var labCls = !r.label ? 'mute' : r.label === 'normal' ? 'ok' : r.label === 'device' ? 'mute' : 'bad';
   tags.appendChild(el('span', 'pill ' + labCls, '标注：' + (r.labelText || '未标注')));
@@ -543,7 +543,11 @@ function labelIt(id, kind, btn) {
   btn.disabled = true;
   api('/anomalies/' + encodeURIComponent(id) + '/label', { method: 'POST', body: { label: kind } })
     .then(function (r) {
-      toast('已标注为「' + (r.labelText || LABEL_TEXT[kind]) + '」' + (r.trainable ? '' : '（不进训练集）'));
+      // 必须说明「移出还是留下」（用户 2026-11-02「标注后依然显示待研判」）：
+      // 旧实现只说「已标注为正常」，但卡片上「待研判」标签没变 → 用户以为没生效。
+      toast('已标注「' + (r.labelText || LABEL_TEXT[kind]) + '」→ '
+        + (r.status === 'dismissed' ? '移出待研判' : r.status === 'banned' ? '已封禁' : '仍在待研判（需处置）')
+        + (r.trainable ? '' : ' · 不进训练集'));
       loadList();
     })
     .catch(function (e) {

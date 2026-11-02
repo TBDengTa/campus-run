@@ -49,11 +49,31 @@ async function labelAnomaly(anomalyId, label, { note = '', operator = '' } = {})
   rec.label = label;
   rec.labeledBy = operator || 'admin';
   rec.labeledAt = new Date();
-  if (label === 'device' && rec.status === 'open') {
+  // ===== 标注与「移出待研判」必须联动（用户 2026-11-02「标注后依然显示待研判」）=====
+  //
+  // 旧实现只有 device 会改 status，normal 标完 status 仍是 open ——
+  // 而列表默认按 status=open 筛，于是点了「正常」之后卡片上同时挂着
+  // 「标注：正常」和「待研判」两个自相矛盾的标签，看起来就像标注没生效。
+  // 实测库里 27 条 normal 仍留在 open 队列中。
+  //
+  // 语义（与 AGENTS.md「研判员标注 → 管理员批准」的复核流程一致）：
+  //   · normal / device = 已确认无需处置 → 移出待研判队列
+  //   · cheat / minor   = 仍需处置（等封禁/管理员批准）→ 留在队列里
+  // ⚠️ 刻意**不动 status='banned'** 的记录：解封是另一条线（申诉 / 管理员 unban），
+  //   改标注绝不能顺手把人放出去。
+  if ((label === 'normal' || label === 'device') && rec.status === 'open') {
     rec.status = 'dismissed';
-    rec.handleNote = noteText || '标注为设备/网络问题，移出待研判';
+    rec.handleNote = noteText || (label === 'device' ? '标注为设备/网络问题，移出待研判' : '标注为正常，移出待研判');
     rec.handledBy = rec.labeledBy;
     rec.handledAt = rec.labeledAt;
+  }
+  // 改判回滚：先前被 dismiss 的记录改标成作弊/轻微违规 → 重新进入待研判队列。
+  // 否则「误点正常后改判作弊」的记录永远看不见，也没法封禁。
+  if ((label === 'cheat' || label === 'minor') && rec.status === 'dismissed') {
+    rec.status = 'open';
+    rec.handleNote = noteText || `改判为${StepLabel.LABEL_TEXT[label]}，重新进入待研判`;
+    rec.handledBy = '';
+    rec.handledAt = null;
   }
   await rec.save();
 

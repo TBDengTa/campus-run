@@ -956,6 +956,26 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   // 修它会改变线上封禁分数，需重训，刻意未在本轮顺手改 —— 这里钉住「峰值展示已绕开它」，
   // 并保留 bug 现状可被检测（万一有人误以为已修）。
   ok('（记录）anticheat-model 内部 haversine 仍是双重开方（jitter 待单独决策修复）', /Math\.sqrt\(Math\.min\(1,Math\.sqrt\(x\)\)\)|Math\.sqrt\(Math\.min\(1, Math\.sqrt\(x\)\)\)/.test(modelSrc2.replace(/\s+/g,'').length?modelSrc2:modelSrc2));
+  // ===== 标注与「移出待研判」联动（用户 2026-11-02「标注后依然显示待研判」）=====
+  {
+    const disposalSrc = require('fs').readFileSync(path.join(SERVER, 'services/anomaly-disposal.js'), 'utf8');
+    const cApp = require('fs').readFileSync(path.join(SERVER, '..', 'public/console/app.js'), 'utf8');
+    // normal / device 都要移出队列（旧实现只移 device，normal 标完仍显示「待研判」）
+    ok('标注 normal 会移出待研判', /label === 'normal' \|\| label === 'device'[\s\S]{0,120}status = 'dismissed'/.test(disposalSrc));
+    // 改判回滚：dismissed 改标 cheat/minor 要回到队列（否则误点正常后无法再封禁）
+    ok('改判 cheat/minor 会回到待研判', /label === 'cheat' \|\| label === 'minor'[\s\S]{0,160}status = 'open'/.test(disposalSrc));
+    // 绝不能顺手解封：banned 记录改标注不得改 status
+    ok('改标注不会解除封禁', !/status === 'banned'[\s\S]{0,80}status = 'dismissed'/.test(disposalSrc) && /labelAnomaly[\s\S]{0,1400}/.test(disposalSrc));
+    // 界面必须说明去向（否则用户以为没生效）
+    ok('控制台标注后说明去向', /移出待研判/.test(cApp) && /仍在待研判/.test(cApp));
+    // 状态标签要区分「待研判（没人看过）」与「待处置（已标注但未封禁）」
+    ok('已标注记录不再显示「待研判」', /r\.label \? '待处置' : '待研判'/.test(cApp));
+    // 两端共用一份实现（禁止各写一套）
+    const adminRoute = require('fs').readFileSync(path.join(SERVER, 'routes/admin/step-anomalies.js'), 'utf8');
+    const consoleRoute2 = require('fs').readFileSync(path.join(SERVER, 'routes/console.js'), 'utf8');
+    ok('小程序侧复用 disposal', /disposal\.labelAnomaly/.test(adminRoute));
+    ok('控制台侧复用 disposal', /disposal\.labelAnomaly/.test(consoleRoute2));
+  }
 
   // ④ 升级进度不再恒为 0（总进度用平均、短板单独给）
   ok('升级进度用平均（不再 min 恒为 0）', /out\.progress = Math\.round\(\(ratios\.reduce/.test(modelSrc2));
