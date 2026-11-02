@@ -35,20 +35,48 @@
 </div>
 
 <!-- ==================== 控制台 ==================== -->
-<div id="viewApp" class="hide">
-  <div class="top">
-    <div class="logo">唐</div>
-    <div class="app-name">反作弊控制台</div>
-    <div class="tabs">
-      <div class="tab on" data-v="dash">状态台</div>
-      <div class="tab" data-v="train">AI 训练台</div>
-      <div class="tab" data-v="cfg">模型配置</div>
+<!--
+  B 端布局（用户 2026-11-02「后端WEB不是B端风格」）：
+    左侧固定导航栏 + 右侧内容区（而不是原来的顶部横条）。
+  ⚠️ 只改**容器结构**，不动 id 与 .tab[data-v] 语义 —— app.js 靠
+     `$('vDash'/'vTrain'/'vCfg')` 与 `querySelectorAll('.tab')` 切换视图，
+     这些约定保持不变，所以 JS 不用改。
+-->
+<div id="viewApp" class="hide console-shell">
+  <!-- 侧边栏 -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="logo">唐</div>
+      <div class="brand-text">
+        <div class="app-name">反作弊控制台</div>
+        <div class="app-sub">唐唐快跑 2.0</div>
+      </div>
     </div>
-    <div class="spacer"></div>
-    <div class="who" id="who"></div>
-    <button class="btn sm" id="btnRefresh">刷新</button>
-    <button class="btn sm" id="btnLogout">退出</button>
-  </div>
+    <nav class="tabs">
+      <div class="tab on" data-v="dash">
+        <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 9h3l1.5-4 2 7 1.5-3H14" /></svg>
+        <span>状态台</span>
+      </div>
+      <div class="tab" data-v="train">
+        <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13V6m4 7V3m4 10V8m3-2v1" /></svg>
+        <span>AI 训练台</span>
+      </div>
+      <div class="tab" data-v="cfg">
+        <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="2.5" /><path d="M8 1v2m0 10v2M1 8h2m10 0h2" /></svg>
+        <span>模型配置</span>
+      </div>
+    </nav>
+    <div class="sidebar-foot">
+      <div class="who" id="who"></div>
+      <div class="side-actions">
+        <button class="btn sm" id="btnRefresh">刷新</button>
+        <button class="btn sm" id="btnLogout">退出</button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- 内容区 -->
+  <main class="main">
 
   <div class="wrap">
     <!-- ---------- 状态台 ---------- -->
@@ -119,6 +147,7 @@
       </div>
     </div>
   </div>
+  </main>
 </div>
 
 <!-- ---------- 封禁弹层 ---------- -->

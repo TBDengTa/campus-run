@@ -9,6 +9,8 @@ Page({
     markers: [],
     isAdminView: false, // 管理端 / 班级域查看他人记录：隐藏「再跑一次」等本人操作
     readonlyView: false, // 只读视角（班级域）：页脚写明仅查看
+    // GPS 派生指标（用户 2026-11-02）：服务端已算好，前端只做单位格式化
+    gpsMetrics: null,
     scope: 'self', // self 本人 | admin 管理端 | class 班级域（只读）
   },
 
@@ -69,6 +71,43 @@ Page({
               callout: { content: '终点', display: 'ALWAYS', borderRadius: 8, padding: 4 },
             },
           ],
+        });
+      }
+
+      // ===== GPS 派生指标（用户 2026-11-02「GPS 实跑需要看到更多数据如
+      //       平均速度、峰值速度、距离、路线图等」）=====
+      // 服务端 /api/run/detail/:id 已算好 metrics（见 routes/run.js::withGpsMetrics），
+      // 前端**只做单位格式化与展示**，绝不自己遍历 routePoints（一次跑步上万点，
+      // 前端算容易写错，且速度单位/时间基准各写一份必然漂移）。
+      if (record.source === 'gps') {
+        const m = record.metrics || {};
+        const speedText = (v) => (v == null || v <= 0 ? '' : `${(v * 3.6).toFixed(1)} km/h`);
+        const paceText = (secPerKm) => {
+          if (!secPerKm || secPerKm <= 0) return '';
+          const mm = Math.floor(secPerKm / 60);
+          const ss = Math.round(secPerKm % 60);
+          return `${mm}'${String(ss).padStart(2, '0')}"`;
+        };
+        this.setData({
+          gpsMetrics: {
+            avgSpeedText: speedText(m.avgSpeed),
+            avgPaceText: paceText(m.avgPaceSecPerKm),
+            peakSpeedText: speedText(m.peakSpeed),
+            pointCount: m.pointCount || 0,
+            // 丑话前置：点数太少时说明轨迹可能不完整，别让人以为是系统丢了数据
+            pointHint:
+              (m.pointCount || 0) > 0 && m.pointCount < 10
+                ? '轨迹点较少，可能因后台被系统暂停'
+                : '',
+            // 分段列表（负分段分析）：只给前 20 段，避免长距离把页面撑爆
+            segments: (m.segments || []).slice(0, 20).map((s) => ({
+              km: s.km,
+              speedText: speedText(s.speed),
+              paceText: paceText(s.paceSecPerKm),
+              lengthText: `${s.meters}m`,
+            })),
+            hasSegments: (m.segments || []).length > 0,
+          },
         });
       }
     } catch (e) {

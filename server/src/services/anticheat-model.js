@@ -791,19 +791,51 @@ async function checkUpgradeReadiness(force = false) {
     }
     out.ready = out.missing.length === 0;
 
-    // 进度条：取三个维度里最小的完成度（短板决定能不能升级）
+    // ===== 进度条（用户 2026-11-02「有监督模型升级进度我标注了，但是并没有增加」）=====
+    //
+    // ⚠️ 旧实现：`Math.min(...五项比例)` —— 只要有一项是 0，进度**恒为 0%**。
+    //   而 GPS 标注在早期几乎必然是 0（学生大多用微信同步），于是：
+    //   用户辛苦标了 46 条，进度条一动不动，看起来像「标注没生效 / 系统坏了」。
+    //   实测：total 46（23%）、作弊类 5/40（12.5%）、微信 46/80（57.5%）、GPS 0/80（0%）
+    //   → 旧算法显示 0%。
+    //
+    // 新口径分两个数，两个都要给（管理员需要知道"有没有进展"和"还差在哪"）：
+    //   · progress：**真实总进度** = 各维度完成度的加权平均（不含 GPS 时不会把进度钉死在 0）。
+    //     GPS 为 0 只是"少一半能力"，不代表"一条都没标"。
+    //   · minRatio：**木桶短板**（原来那个最严格的数），单独保留，用于回答"最快能升级还差什么"。
+    //   两者同时展示，管理员既能看见自己的努力在累积，也知道卡在哪一项。
     const ratios = [
-      out.total / UPGRADE_RULE.minTotal,
-      cheatSide / UPGRADE_RULE.minPerClass,
-      out.perClass.normal / UPGRADE_RULE.minPerClass,
-      (out.perSource.werun.cheat + out.perSource.werun.minor + out.perSource.werun.normal) / UPGRADE_RULE.minPerSource,
-      (out.perSource.gps.cheat + out.perSource.gps.minor + out.perSource.gps.normal) / UPGRADE_RULE.minPerSource,
-    ].map((x) => Math.min(1, Math.max(0, x || 0)));
-    out.progress = Math.round(Math.min(...ratios) * 100);
+      { key: 'total', label: '总标注', value: out.total / UPGRADE_RULE.minTotal },
+      { key: 'cheat', label: '作弊类', value: cheatSide / UPGRADE_RULE.minPerClass },
+      { key: 'normal', label: '正常类', value: out.perClass.normal / UPGRADE_RULE.minPerClass },
+      {
+        key: 'werun',
+        label: '微信同步',
+        value: (out.perSource.werun.cheat + out.perSource.werun.minor + out.perSource.werun.normal) /
+          UPGRADE_RULE.minPerSource,
+      },
+      {
+        key: 'gps',
+        label: 'GPS 实跑',
+        value: (out.perSource.gps.cheat + out.perSource.gps.minor + out.perSource.gps.normal) /
+          UPGRADE_RULE.minPerSource,
+      },
+    ].map((r) => ({ ...r, ratio: Math.min(1, Math.max(0, r.value || 0)) }));
+
+    out.dimensions = ratios.map((r) => ({
+      key: r.key,
+      label: r.label,
+      percent: Math.round(r.ratio * 100),
+    }));
+    // 木桶短板（升不升级看它）
+    out.minPercent = Math.round(Math.min(...ratios.map((r) => r.ratio)) * 100);
+    // 真实平均进度（展示"我在积累"这件事）
+    out.progress = Math.round((ratios.reduce((a, r) => a + r.ratio, 0) / ratios.length) * 100);
 
     out.suggestion = out.ready
       ? '标注数量已达标：可以升级为有监督模型，判定准确率会有明显提升（建议在数据量再增后操作）。'
-      : `继续积累标注即可升级为有监督模型。当前进度 ${out.progress}%：${out.missing.join('；')}`;
+      : `已标注 ${out.total} 条（总进度 ${out.progress}%，最短板 ${out.minPercent}%）。` +
+        `继续积累即可升级为有监督模型：${out.missing.join('；')}`;
   } catch (e) {
     out.suggestion = '标注统计失败（数据库不可用）';
   }

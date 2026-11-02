@@ -895,6 +895,45 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('check-app-json 会反查未声明的定位接口', /requiredPrivateInfos 未声明/.test(appChecker));
 }
 
+// ===== 控制台 B 端布局 + 配置缓存自检 + GPS 指标 + 升级进度（用户 2026-11-02）=====
+{
+  const consoleHtml = require('fs').readFileSync(path.join(SERVER, '..', 'public/console/index.html'), 'utf8');
+  const consoleCss = require('fs').readFileSync(path.join(SERVER, '..', 'public/console/app.css'), 'utf8');
+  const consoleRoute = require('fs').readFileSync(path.join(SERVER, 'routes/console.js'), 'utf8');
+  const runRoute = require('fs').readFileSync(path.join(SERVER, 'routes/run.js'), 'utf8');
+  const modelSrc2 = require('fs').readFileSync(path.join(SERVER, 'services/anticheat-model.js'), 'utf8');
+  const runDetailJs = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'pages', 'run', 'detail.js'), 'utf8');
+  const runDetailWxml = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'pages', 'run', 'detail.wxml'), 'utf8');
+
+  // ① 控制台是 B 端布局（侧边栏 + 内容区），不是顶部横条
+  ok('控制台有侧边栏', /class="sidebar"/.test(consoleHtml) && /<aside/.test(consoleHtml));
+  ok('控制台有独立内容区', /<main class="main"/.test(consoleHtml));
+  ok('CSS 有 B 端侧边栏样式', /\.sidebar\s*\{/.test(consoleCss) && /\.tab\.on/.test(consoleCss));
+  ok('窄屏有响应式（侧边栏转横向）', /@media \(max-width: 820px\)/.test(consoleCss));
+  // ⚠️ 只改视觉不改 JS 契约：视图 id 与 .tab[data-v] 必须还在
+  ok('视图 id 未被破坏', /id="vDash"/.test(consoleHtml) && /id="vTrain"/.test(consoleHtml) && /id="vCfg"/.test(consoleHtml));
+  ok('tab 仍带 data-v（JS 靠它切视图）', /data-v="dash"/.test(consoleHtml) && /data-v="train"/.test(consoleHtml));
+
+  // ② /model-status 做一致性自检（档位与生效阈值不能不同步）
+  ok('model-status 自检缓存一致性', /effective\.mode !== wantMode/.test(consoleRoute));
+  ok('不一致时清缓存并预热', /clearThresholdCache\(\)[\s\S]{0,200}warmThreshold/.test(consoleRoute));
+
+  // ③ GPS 详情返回平均/峰值速度与路线包围盒
+  ok('GPS 详情有 withGpsMetrics', /function withGpsMetrics/.test(runRoute));
+  ok('返回 avgSpeed / peakSpeed', /avgSpeed:/.test(runRoute) && /peakSpeed:/.test(runRoute));
+  ok('返回包围盒（画路线图）', /let bounds = null/.test(runRoute) && /minLat: Math\.min/.test(runRoute));
+  ok('返回千米分段', /const segments = \[\]/.test(runRoute) && /segments,/.test(runRoute));
+  // ⚠️ 字段名必须是 latitude/longitude/timestamp（曾误写 lat/lng/ts → 指标全空但接口仍 200）
+  ok('轨迹字段名与 schema 一致', /p\.latitude/.test(runRoute) && /p\.timestamp/.test(runRoute));
+  ok('峰值速度有异常过滤（防 GPS 漂移）', /v > 15/.test(runRoute) && /dt > 60/.test(runRoute));
+  ok('小程序详情页展示速度指标', /gpsMetrics/.test(runDetailJs) && /平均速度/.test(runDetailWxml) && /峰值速度/.test(runDetailWxml));
+
+  // ④ 升级进度不再恒为 0（总进度用平均、短板单独给）
+  ok('升级进度用平均（不再 min 恒为 0）', /out\.progress = Math\.round\(\(ratios\.reduce/.test(modelSrc2));
+  ok('短板单独保留为 minPercent', /out\.minPercent =/.test(modelSrc2));
+  ok('逐维度进度对外暴露', /out\.dimensions =/.test(modelSrc2));
+}
+
 // ===== 申诉解封重置重犯时钟 + AI 严谨度可调（用户 2026-10-28）=====
 {
   const acSrc = require('fs').readFileSync(path.join(SERVER, 'services/anticheat.js'), 'utf8');

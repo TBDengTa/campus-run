@@ -175,3 +175,53 @@
   padding: 16rpx 0 24rpx;
   font-size: 21rpx;
 }
+
+
+/* ===== GPS 速度指标（用户 2026-11-02）===== */
+.rd-gps-hint {
+  margin-top: 10rpx;
+  font-size: 22rpx;
+  line-height: 1.5;
+  color: var(--td-warning-color-6, #d54941);
+}
+
+/* 分段行：四列等宽对齐，数值用等宽字体 */
+.rd-seg-row {
+  display: flex;
+  align-items: center;
+  padding: 14rpx 0;
+  border-bottom: 1rpx solid var(--tt-line);
+}
+
+.rd-seg-row:last-child {
+  border-bottom: 0;
+}
+
+.rd-seg-km {
+  flex: 0 0 130rpx;
+  font-size: 25rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.rd-seg-len {
+  flex: 0 0 100rpx;
+  font-size: 23rpx;
+  color: var(--tt-text-3);
+}
+
+.rd-seg-speed {
+  flex: 1;
+  min-width: 0;
+  font-size: 24rpx;
+  color: var(--tt-text-2);
+  text-align: right;
+}
+
+.rd-seg-pace {
+  flex: 0 0 140rpx;
+  font-size: 24rpx;
+  color: var(--tt-brand);
+  text-align: right;
+  font-weight: 600;
+}

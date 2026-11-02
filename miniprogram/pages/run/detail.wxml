@@ -43,6 +43,47 @@
     </view>
   </view>
 
+  <!-- ===== GPS 速度指标（用户 2026-11-02「需要看到平均速度、峰值速度」）=====
+       数据来自服务端 /api/run/detail/:id 的 metrics（routes/run.js::withGpsMetrics），
+       前端只展示格式化后的文本，不自己遍历轨迹点。 -->
+  <block wx:if="{{gpsMetrics}}">
+    <view class="tt-section"><text>速度与配速</text></view>
+    <view class="tt-card rd-card">
+      <view class="tt-stat-row rd-stat-row">
+        <view class="tt-stat">
+          <view class="tt-stat-value rd-stat-value num-font">{{gpsMetrics.avgSpeedText || '—'}}</view>
+          <view class="tt-stat-label rd-stat-label">平均速度</view>
+        </view>
+        <view class="tt-stat">
+          <view class="tt-stat-value rd-stat-value num-font">{{gpsMetrics.peakSpeedText || '—'}}</view>
+          <view class="tt-stat-label rd-stat-label">峰值速度</view>
+        </view>
+        <view class="tt-stat" wx:if="{{gpsMetrics.avgPaceText}}">
+          <view class="tt-stat-value rd-stat-value num-font">{{gpsMetrics.avgPaceText}}</view>
+          <view class="tt-stat-label rd-stat-label">平均配速/公里</view>
+        </view>
+        <view class="tt-stat">
+          <view class="tt-stat-value rd-stat-value num-font">{{gpsMetrics.pointCount}}</view>
+          <view class="tt-stat-label rd-stat-label">轨迹点数</view>
+        </view>
+      </view>
+      <view class="rd-gps-hint" wx:if="{{gpsMetrics.pointHint}}">{{gpsMetrics.pointHint}}</view>
+    </view>
+
+    <!-- 分段（负分段分析）：哪一公里跑得快，比只看平均更有指导意义 -->
+    <block wx:if="{{gpsMetrics.hasSegments}}">
+      <view class="tt-section"><text>分段配速</text></view>
+      <view class="tt-card rd-card">
+        <view class="rd-seg-row" wx:for="{{gpsMetrics.segments}}" wx:key="km">
+          <text class="rd-seg-km num-font">第 {{item.km}} km</text>
+          <text class="rd-seg-len num-font">{{item.lengthText}}</text>
+          <text class="rd-seg-speed num-font">{{item.speedText}}</text>
+          <text class="rd-seg-pace num-font">{{item.paceText}}</text>
+        </view>
+      </view>
+    </block>
+  </block>
+
   <!-- ===== 记录信息 ===== -->
   <view class="tt-section"><text>记录信息</text></view>
   <view class="tt-card rd-card">

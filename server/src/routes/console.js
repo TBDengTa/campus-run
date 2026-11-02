@@ -471,6 +471,29 @@ router.get(
     const GoalConfig = require('../models/goal-config');
     const cfg = await GoalConfig.getSingleton();
     const ac = cfg.anticheat || {};
+
+    // ===== 一致性自检（用户 2026-11-02「切换模型配置时可能存在缓存」）=====
+    //
+    // 这里有两个独立的取值路径：
+    //   · aiStrictness / aiSuspiciousThreshold / aiAutoBanThreshold → **直读数据库**（永远最新）
+    //   · effective → acModel.currentThreshold() → **进程内缓存**（30s，或直到 clearThresholdCache）
+    //
+    // 只要出现下列任一情况，页面就会「选中的档位」与「下面显示的生效阈值」对不上，
+    // 管理员看到的就是"改了没生效"，实际是两个数不同步：
+    //   · 缓存还没过期（刚在别处改过配置）
+    //   · 多进程部署，改配置的进程清了缓存、读的进程没清
+    //   · 服务刚重启，缓存里是空的/默认值
+    //
+    // 修法：读接口时自检。库里的档位与缓存里的档位不一致 → 当场失效并重建，
+    // 保证返回的 effective 永远是「按当前库里配置算出来的」，管理员不需要猜要不要等 30 秒。
+    let effective = acModel.currentThreshold();
+    const wantMode = ac.aiStrictness || 'balanced';
+    if (effective && effective.mode && effective.mode !== wantMode) {
+      acModel.clearThresholdCache();
+      await acModel.warmThreshold().catch(() => {});
+      effective = acModel.currentThreshold();
+    }
+
     ok(res, {
       enabled: ac.enabled !== false,
       aiStrictness: ac.aiStrictness || 'balanced',
@@ -481,7 +504,7 @@ router.get(
       banDays: ac.banDays,
       // 档位基线（页面预览用）与实际生效值（含在线校准）分开返回，
       // 别让管理员拿预览当绝对真值 —— 校准会在基线 ±0.06 内浮动。
-      effective: acModel.currentThreshold(),
+      effective,
       strictnessOptions: acModel.STRICTNESS_PRESETS || null,
     });
   })
