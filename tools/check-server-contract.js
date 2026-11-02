@@ -957,6 +957,15 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   // 并保留 bug 现状可被检测（万一有人误以为已修）。
   ok('（记录）anticheat-model 内部 haversine 仍是双重开方（jitter 待单独决策修复）', /Math\.sqrt\(Math\.min\(1,Math\.sqrt\(x\)\)\)|Math\.sqrt\(Math\.min\(1, Math\.sqrt\(x\)\)\)/.test(modelSrc2.replace(/\s+/g,'').length?modelSrc2:modelSrc2));
   // ===== 标注与「移出待研判」联动（用户 2026-11-02「标注后依然显示待研判」）=====
+  // ===== 复审台照片隐私：队列必须按权限裁剪（宿舍原图不下发给无权者）=====
+  {
+    const urSrc = require('fs').readFileSync(path.join(SERVER, 'routes/union.js'), 'utf8');
+    // 队列与详情都走同一份 cropPhotos（判定不在前端，也不各写一套）
+    ok('复审队列按权限裁剪照片', /review\/queue[\s\S]{0,3000}unionSvc\.cropPhotos/.test(urSrc));
+    ok('队列只下发前 3 张照片', /photos: photoView\.photos\.slice\(0, 3\)/.test(urSrc));
+    ok('无权者零原图 URL（photosBlurred 标记）', /photosBlurred: photoView\.photosBlurred/.test(urSrc));
+    ok('照片裁剪判定单点在 services/union.js', /function cropPhotos/.test(require('fs').readFileSync(path.join(SERVER, 'services/union.js'), 'utf8')));
+  }
   {
     const disposalSrc = require('fs').readFileSync(path.join(SERVER, 'services/anomaly-disposal.js'), 'utf8');
     const cApp = require('fs').readFileSync(path.join(SERVER, '..', 'public/console/app.js'), 'utf8');

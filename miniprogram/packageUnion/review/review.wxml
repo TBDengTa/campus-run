@@ -1,0 +1,115 @@
+<view class="page tt-page rv-page">
+  <!-- ===== 顶部：分档（分数分类）+ 模块筛选 ===== -->
+  <view class="rv-head">
+    <view class="rv-head-title">
+      <text>复审台</text>
+      <text class="rv-head-count">待复核 {{total}} 条</text>
+    </view>
+    <!-- 分档 chip：每档带条数（来自服务端 bands），点一下筛到该档、再点取消 -->
+    <scroll-view class="rv-bands" scroll-x enable-flex show-scrollbar="{{false}}">
+      <view class="rv-band {{band === '' ? 'on' : ''}}" data-key="" bind:tap="onBandTap">
+        <text class="rv-band-l">全部</text>
+        <text class="num-font rv-band-n">{{total}}</text>
+      </view>
+      <view
+        class="rv-band rv-band-{{item.key}} {{band === item.key ? 'on' : ''}}"
+        wx:for="{{bands}}"
+        wx:key="key"
+        data-key="{{item.key}}"
+        bind:tap="onBandTap"
+      >
+        <text class="rv-band-l">{{item.label}}</text>
+        <text class="num-font rv-band-n">{{item.count}}</text>
+      </view>
+    </scroll-view>
+
+    <!-- 模块筛选：只在确实有多个模块有待复核时出现（否则是纯噪音） -->
+    <view class="rv-row" wx:if="{{modules.length > 1}}">
+      <picker mode="selector" range="{{modules}}" range-key="label" bindchange="onModuleChange">
+        <view class="rv-pill {{moduleKey ? 'on' : ''}}">
+          <t-icon name="app" size="22rpx" />
+          <text>{{moduleKey ? '已筛模块' : '全部模块'}}</text>
+          <t-icon name="chevron-down" size="20rpx" />
+        </view>
+      </picker>
+      <text class="rv-tip">{{moduleKey ? '仅显示所选模块' : '按检查模块筛选'}}</text>
+    </view>
+
+    <!-- 选中态工具条：只选得中「可复核」的条目 -->
+    <view class="rv-row rv-selbar">
+      <view class="rv-btn-ghost" bind:tap="onSelectPage">本页全选</view>
+      <view class="rv-btn-ghost" wx:if="{{selectedCount}}" bind:tap="onClearSel">清空</view>
+      <text class="rv-selcount" wx:if="{{selectedCount}}">已选 {{selectedCount}} 条</text>
+    </view>
+  </view>
+
+  <!-- ===== 记录卡片 ===== -->
+  <view class="rv-list">
+    <view class="rv-card {{item.checked ? 'checked' : ''}} {{item.canReview ? '' : 'locked'}}" wx:for="{{list}}" wx:key="id">
+      <view class="rv-card-top">
+        <!-- 勾选区（单独热区，避免与「进详情」冲突） -->
+        <view class="rv-check" data-id="{{item.id}}" catch:tap="onToggle">
+          <t-icon
+            name="{{item.checked ? 'check-circle-filled' : 'circle'}}"
+            size="40rpx"
+            color="{{item.checked ? 'var(--tt-brand)' : (item.canReview ? 'var(--tt-text-3)' : 'var(--td-gray-color-4)')}}"
+          />
+        </view>
+
+        <view class="rv-card-main" data-id="{{item.id}}" bind:tap="goDetail">
+          <view class="rv-card-head">
+            <text class="rv-module">{{item.moduleName}}</text>
+            <text class="rv-bandtag rv-bandtag-{{item.bandKey}}">{{item.bandLabel}}</text>
+            <text class="num-font rv-deduct">{{item.deductText}}</text>
+          </view>
+          <view class="rv-card-target">
+            {{item.targetName}}<text class="rv-class" wx:if="{{item.className && item.className !== item.targetName}}"> · {{item.className}}</text>
+          </view>
+          <view class="rv-card-sub">{{item.dateText}} · 检查人 {{item.inspectorName || '—'}}</view>
+          <!-- 简化检查信息（服务端拼好：评价 / 关键指标 / 备注摘要） -->
+          <view class="rv-card-sum" wx:if="{{item.summary}}">{{item.summary}}</view>
+        </view>
+      </view>
+
+      <!-- 检查图片：前 3 张缩略图，点开大图；被裁剪时显示原因 -->
+      <view class="rv-photos" wx:if="{{item.photos.length}}">
+        <image
+          class="rv-photo"
+          wx:for="{{item.photos}}"
+          wx:for-item="p"
+          wx:for-index="pi"
+          wx:key="*this"
+          src="{{p}}"
+          mode="aspectFill"
+          data-id="{{item.id}}"
+          data-index="{{pi}}"
+          catch:tap="previewPhoto"
+        />
+        <text class="rv-photo-more" wx:if="{{item.photoCount > item.photos.length}}">+{{item.photoCount - item.photos.length}}</text>
+      </view>
+      <view class="rv-photo-mask" wx:elif="{{item.photosBlurred}}">
+        <t-icon name="secured" size="26rpx" color="var(--tt-text-3)" />
+        <text>{{item.photoMaskText}}</text>
+      </view>
+
+      <!-- 不可复核的原因（自审禁令 / 已复核等），必须显示：否则用户奇怪「为什么勾不上」 -->
+      <view class="rv-lock" wx:if="{{!item.canReview}}">
+        <t-icon name="info-circle" size="24rpx" color="var(--tt-text-3)" />
+        <text>{{item.reviewBlockReason}}</text>
+      </view>
+    </view>
+  </view>
+
+  <view class="rv-empty" wx:if="{{!loading && !list.length}}">当前没有待复核的记录</view>
+  <view class="rv-more" wx:if="{{loadingMore}}">加载中…</view>
+  <view class="rv-more" wx:elif="{{!hasMore && list.length}}">没有更多了</view>
+
+  <!-- ===== 底部批量操作条（选中后才出现，避免常驻遮挡） ===== -->
+  <view class="rv-bar" wx:if="{{selectedCount}}">
+    <view class="rv-bar-count">已选 <text class="num-font">{{selectedCount}}</text> 条</view>
+    <view class="rv-bar-btn rv-bar-reject" bind:tap="onBatchReject">批量退回</view>
+    <view class="rv-bar-btn rv-bar-approve" bind:tap="onBatchApprove">批量通过</view>
+  </view>
+
+  <view class="tt-footer">复审通过后才计入班级班超总评；退回必须填写原因，会写入该记录的留痕</view>
+</view>

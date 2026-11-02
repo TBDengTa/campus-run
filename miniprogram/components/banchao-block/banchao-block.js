@@ -318,8 +318,10 @@ Component({
       wx.navigateTo({ url: '/packageUnion/records/records?mine=1' });
     },
 
+    // 待复核 → 复审台（用户 2026-11-02：复审支持分数分类 + 检查人/简化信息/图片 + 批量审核）。
+    // 与 pages/union 的「待复核」入口指向同一页，两处不能各跳各的。
     goReview() {
-      wx.navigateTo({ url: '/packageUnion/records/records?status=submitted' });
+      wx.navigateTo({ url: '/packageUnion/review/review' });
     },
   },
 });

@@ -82,6 +82,42 @@ function marqueeFor(text) {
   return { marquee: true, duration: Math.min(40, Math.max(8, Math.round(len * 0.2))) };
 }
 
+/**
+ * 封禁公告条的文案（用户 2026-11-02「如果用户被封禁应该在首页中的公告栏中显示，
+ * 并闪烁红色警告状态，点击可以进入详细并申诉等」）
+ *
+ * 三条约束（都踩过坑，改之前先读）：
+ *   ① **整句在 JS 里拼**，WXML 不写三元拼接 —— 字段为空时会留下「到期：；」这种断句
+ *      （与 docs/ui-design.md 里班级状态那条是同一个规矩）。
+ *   ② 封禁类型 / 来源文案**全部来自服务端**（`/api/appeals/restrictions` 的 text / sourceText）：
+ *      前端自己映射「人封 / AI封 / 机封」必然与服务端漂移（见 AGENTS.md 封禁来源分类）。
+ *      拿不到服务端数据时（接口失败）**不猜分类**，只给通用文案。
+ *   ③ 已提交待审核的申诉要显式说明：「已提交申诉，等待处理」，否则用户会反复点进申诉页
+ *      再被「已有待审核的申诉」拒一次（真实体验问题）。
+ *
+ * @param {Object} user  /api/auth/me 的用户
+ * @param {Array}  restrictions 生效中的限制（/api/appeals/restrictions）
+ * @param {boolean} appealPending 是否已有待处理申诉
+ */
+function buildBanNotice(user, restrictions, appealPending) {
+  const u = user || {};
+  const login = (restrictions || []).find((r) => r.scope === 'login');
+  const until = u.bannedUntil || (login && login.until) || null;
+  const reason = String((login && login.reason) || u.banReason || '').trim();
+  // 来源分类：服务端 sourceText 优先（唯一文案源），没有就不显示这一截
+  const sourceText = String((login && login.sourceText) || '').trim();
+  const head = ['账号已被限制登录', sourceText ? `（${sourceText}）` : ''].join('');
+  const untilText = until ? `${fmt.formatDateTime(until)} 解除` : '无固定期限（永久）';
+  const parts = [untilText];
+  if (reason) parts.push(reason.length > 30 ? `${reason.slice(0, 30)}…` : reason);
+  if (appealPending) parts.push('申诉已提交，等待处理');
+  return {
+    banTitle: head,
+    banSub: parts.join(' · '),
+    banActionText: appealPending ? '查看进度' : '去申诉',
+  };
+}
+
 // 管理端导航分类：与管理中枢**共用同一份数据**（utils/nav-groups.js）。
 // 以前这里与 hub.js 各写一套 HOME_ENTRIES / GROUPS + entryVisible，权限 key 与分组名都会漂移；
 // 用户要求「管理中枢也一并跟这样重新分类显示」，所以两处一律从共享模块取。
@@ -171,6 +207,10 @@ Page({
     pointsTotal: '',
     pointsEnabled: false,
     banned: false,
+    // 封禁公告条（用户 2026-11-02）：文案与按钮文案全部在 JS 预计算，见 buildBanNotice
+    banTitle: '',
+    banSub: '',
+    banActionText: '去申诉',
     syncing: false,
     // ===== 角色权限 =====
     role: 'student',
@@ -301,6 +341,21 @@ Page({
       if (user.status === 'banned' && (!user.bannedUntil || new Date(user.bannedUntil) > new Date())) {
         banned = true;
       }
+      // 封禁公告条的细节（到期时间 / 原因 / 人封机封 AI封 的分类 / 申诉进度）：
+      // 只有封禁态才拉这两个接口 —— 未封禁用户根本用不到，白拉两次会拖慢首页首屏。
+      // 两个接口都在服务端「被封禁仍可访问」白名单里（middlewares/auth.js::BANNED_ALLOW），
+      // 但**各自 .catch(() => null)**：封禁页的数据绝不能拖垮整个首页渲染。
+      let banNotice = buildBanNotice(user, [], false);
+      if (banned) {
+        const [resRes, appealRes] = await Promise.allSettled([
+          auth.get('/api/appeals/restrictions'),
+          auth.get('/api/appeals/mine', { limit: 20 }),
+        ]);
+        const restrictions = resRes.status === 'fulfilled' && resRes.value ? resRes.value.restrictions || [] : [];
+        const appeals = appealRes.status === 'fulfilled' && appealRes.value ? appealRes.value.list || [] : [];
+        const appealPending = appeals.some((a) => a && a.status === 'pending');
+        banNotice = buildBanNotice(user, restrictions, appealPending);
+      }
       const isManager = !!user.isManager;
       const perms = user.effectivePermissions || [];
       // 按权限 + 身份过滤的管理入口（WXML 无法调用方法，这里预计算）
@@ -355,6 +410,9 @@ Page({
         ads: adList,
         announcements: annList,
         banned,
+        banTitle: banNotice.banTitle,
+        banSub: banNotice.banSub,
+        banActionText: banNotice.banActionText,
         noticeText: noticeTitle,
         noticeMarquee: marquee.marquee,
         noticeDuration: marquee.duration,

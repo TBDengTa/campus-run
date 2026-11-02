@@ -24,6 +24,8 @@ const UnionDepartment = require('../models/union-department');
 const UnionInvite = require('../models/union-invite');
 
 const unionSvc = require('../services/union');
+// 复审台（分数分类 / 批量审核）的唯一实现：单条复核也走它，见 services/union-review.js 文件头
+const reviewSvc = require('../services/union-review');
 const checkModules = require('../services/check-modules');
 const bandChao = require('../services/band-chao');
 const roster = require('../services/roster');
@@ -1941,8 +1943,180 @@ router.get(
 );
 
 
-// ===== 复核 =====
+// ===== 复审台（用户 2026-11-02 需求二）=====
+//
+// 「在学生会检查中的复审中，支持分数分类，并对每块显示检查人、检查信息(简化)、检查图片，
+//  并增加批量审核功能。」
+//
+// 权限：与既有复核权**完全一致**（unionSvc.canReview + 自审禁令，见 services/union-review.js），
+// 不新增任何权限项。范围仍是 scopeFilter（校级全校 / 分院本院系），越权读不出去。
+//
+// 为什么要服务端一次算好分类、分类计数、每条的可复核标记：
+//   ① 分档边界只有一份（reviewSvc.SCORE_BANDS / bandCond），前端只搬 key；
+//   ② 每条是否可复核由服务端判定（自审禁令在客户端无法可靠判定）；
+//   ③ 批量选择要能「只选可复核的」，否则用户勾了 20 条有 5 条选不中，会以为批量坏了。
+router.get(
+  '/review/queue',
+  wrap(async (req, res) => {
+    const identity = await unionSvc.resolveIdentity(req.user);
+    assertMember(identity);
+    if (!unionSvc.canReviewAny(identity)) throw new ApiError(403, 403002, '只有部门部长或主席团可以进入复审');
 
+    const scope = unionSvc.scopeFilter(identity) || {};
+    const { page, limit, skip } = parsePagination(req.query, { page: 1, limit: 20 });
+    const band = String(req.query.band || '').trim();
+    const moduleKey = String(req.query.moduleKey || '').trim();
+
+    const base = { status: 'submitted', voided: { $ne: true }, ...scope };
+    if (moduleKey) base.moduleKey = moduleKey;
+    const bandCondition = reviewSvc.bandCond(band);
+    const filter = bandCondition ? { ...base, ...bandCondition } : { ...base };
+
+    const modules = await checkModules.listModules();
+    const moduleMap = new Map(modules.map((m) => [m.key, m]));
+    const nameOf = new Map(modules.map((m) => [m.key, m.shortName || m.name]));
+
+    // 分类计数：**一次聚合**，不在 Node 侧拉全量。
+    // ⚠️ 分组口径必须与 bandOf 完全一致，否则「徽标上的数字」与「点进去的条数」对不上 ——
+    //   这里直接把每条记录的 deduct 映射成档位 key 再 $group（不写第二份区间条件）。
+    const aggRows = await CheckRecord.aggregate([
+      { $match: base },
+      {
+        $addFields: {
+          band: {
+            $switch: {
+              branches: [
+                { case: { $lte: [{ $ifNull: ['$deduct', 0] }, 0] }, then: 'full' },
+                { case: { $lte: ['$deduct', 2] }, then: 'low' },
+                { case: { $lte: ['$deduct', 5] }, then: 'mid' },
+              ],
+              default: 'high',
+            },
+          },
+        },
+      },
+      { $group: { _id: '$band', n: { $sum: 1 } } },
+    ]);
+    const countBy = new Map(aggRows.map((r) => [r._id, r.n]));
+    const total = [...countBy.values()].reduce((a, b) => a + b, 0);
+
+    const [rows, moduleCounts] = await Promise.all([
+      CheckRecord.find(filter).sort({ date: -1, createdAt: -1 }).skip(skip).limit(limit).lean(),
+      // 模块筛选下拉的计数：同样只下发「我范围内待复核」的数字，避免选完是空列表
+      CheckRecord.aggregate([{ $match: base }, { $group: { _id: '$moduleKey', n: { $sum: 1 } } }]),
+    ]);
+    const moduleCountBy = new Map(moduleCounts.map((r) => [r._id, r.n]));
+
+    // viewer 只在循环外算一次（与 /records 同一条铁律：放进 map 里就是 N 次 resolveIdentity）
+    const viewer = { openid: req.user.openid || '', role: req.user.role || '', identity };
+    const me = req.user.openid || '';
+
+    const list = rows.map((r) => {
+      const moduleDef = moduleMap.get(r.moduleKey);
+      const check = reviewSvc.reviewableOf(r, { identity, openid: me, moduleDef });
+      const band = reviewSvc.bandOf(r.deduct);
+      // 照片在这里就要**按权限裁剪**（presentRecord 的同一份 cropPhotos）：
+      // 宿舍照片对无权者不下发原图 URL，列表出口尤其不能漏（列表是"随手一刷"的场景）。
+      const photoView = unionSvc.cropPhotos(r, { viewer });
+      return {
+        id: String(r._id),
+        moduleKey: r.moduleKey,
+        moduleName: nameOf.get(r.moduleKey) || r.moduleKey,
+        date: r.date,
+        dateText: `${Number(String(r.date).slice(5, 7))}/${Number(String(r.date).slice(8, 10))}`,
+        period: r.period || '',
+        targetName: r.targetName || r.className || '',
+        className: r.className || '',
+        departmentId: r.departmentId ? String(r.departmentId) : '',
+        inspectorName: r.inspectorName || '',
+        inspectorDeptKey: r.inspectorDeptKey || '',
+        deduct: Number.isFinite(Number(r.deduct)) ? Number(r.deduct) : 0,
+        score: Number.isFinite(Number(r.score)) ? Number(r.score) : 0,
+        // 简化检查信息（评价 / 关键指标 / 备注摘要），文案在服务端拼，前端只渲染
+        summary: reviewSvc.summarizeRecord(r, moduleDef),
+        // 检查图片：只给前 3 张（复审扫一眼即可），完整照片在详情页
+        photos: photoView.photos.slice(0, 3),
+        photoCount: photoView.photoCount,
+        photosBlurred: photoView.photosBlurred,
+        photoNote: photoView.photoNote,
+        bandKey: band.key,
+        bandLabel: band.label,
+        canReview: check.ok,
+        reviewBlockReason: check.reason,
+        appealPending: !!(r.appeal && r.appeal.status === 'pending'),
+        createdAt: r.createdAt,
+      };
+    });
+
+    ok(res, {
+      page,
+      limit,
+      total,
+      hasMore: skip + rows.length < total,
+      // 分档元信息（含当前选中档与每条档下的条数）：前端标题与筛选条直接用，不再各写一份中文
+      bands: reviewSvc.SCORE_BANDS.map((b) => ({
+        key: b.key,
+        label: b.label,
+        hint: b.hint,
+        count: countBy.get(b.key) || 0,
+      })),
+      band,
+      moduleKey,
+      // 模块下拉（只列**有权限复核**且当前有待复核的模块；附条数）
+      modules: modules
+        .filter((m) => m.enabled !== false)
+        .map((m) => ({
+          key: m.key,
+          label: m.shortName || m.name,
+          count: moduleCountBy.get(m.key) || 0,
+        }))
+        .filter((m) => m.count > 0),
+      list,
+    });
+  })
+);
+
+// 批量审核（通过 / 退回）
+//
+// 逐条走 services/union-review.js::reviewOne（**不做任何批量捷径**）：
+//   · 每条都要过 canReview + 自审禁令，和单条复核逐字同一口径；
+//   · 单条失败只记进 results 反馈给用户，不整批回滚（10 条里 2 条是自审，另 8 条该通过）；
+//   · 每次最多 50 条（防止一次点全库；前端也有同样的上限提示）。
+router.post(
+  '/review/batch',
+  wrap(async (req, res) => {
+    const identity = await unionSvc.resolveIdentity(req.user);
+    assertMember(identity);
+    if (!unionSvc.canReviewAny(identity)) throw new ApiError(403, 403002, '只有部门部长或主席团可以复核记录');
+
+    const body = req.body || {};
+    const approve = body.approve === true || String(body.action || '') === 'approve';
+    const reason = String(body.reason || '').trim();
+    if (!approve && reason.length < 2) throw new ApiError(400, 400, '批量退回时必须填写原因');
+
+    const data = await reviewSvc.reviewBatch({
+      ids: body.ids,
+      user: req.user,
+      identity,
+      approve,
+      reason,
+      limit: 50,
+    });
+    ok(res, {
+      ...data,
+      // 给用户一句可直接展示的结论（前端不必自己拼「成功 8 条 / 失败 2 条」这类句子）
+      message: data.failed
+        ? `已处理 ${data.success} 条，${data.failed} 条未通过（见明细）`
+        : `已全部处理（共 ${data.success} 条）`,
+    });
+  })
+);
+
+
+//
+// ⚠️ 判定与写入都已抽到 `services/union-review.js`（reviewableOf / reviewOne）：
+//   复审队列 `/review/queue` 与批量审核 `/review/batch` 必须与这里**逐字同一口径**
+//   （历史上批量接口自己写一套判定，于是「能批量通过自己提交的记录」绕过了自审禁令）。
 router.post(
   '/records/:id/review',
   wrap(async (req, res) => {
@@ -1951,37 +2125,14 @@ router.post(
     if (!mongoose.isValidObjectId(req.params.id)) throw new ApiError(404, 404, '记录不存在');
     const record = await CheckRecord.findById(req.params.id);
     if (!record || record.voided) throw new ApiError(404, 404, '记录不存在');
-    const dep = record.departmentId ? String(record.departmentId) : '';
-    const moduleDef = await checkModules.getModule(record.moduleKey);
-    if (!unionSvc.canReview(identity, dep, record.inspectorDeptKey, (moduleDef && moduleDef.entryDeptKeys) || [])) throw new ApiError(403, 403002, '只有部门部长或主席团可以复核记录');
-    // 禁止自审：**仅对非主席团**（部长/副部长）生效。
-    // 主席团可以复核自己提交的记录 —— 否则主席团代录的记录会**没有人能复核**（用户 2026-10-19 口径）。
-    if (record.inspectorOpenid && record.inspectorOpenid === req.user.openid && !unionSvc.canSelfReview(identity)) {
-      throw new ApiError(403, 403002, '不能复核自己提交的记录');
-    }
 
     const body = req.body || {};
     const approve = body.approve === true || String(body.action || '') === 'approve';
     const reason = String(body.reason || '').trim();
     if (!approve && reason.length < 2) throw new ApiError(400, 400, '退回时必须填写原因');
 
-    record.status = approve ? 'approved' : 'rejected';
-    record.rejectReason = approve ? '' : reason.slice(0, 200);
-    record.reviewedBy = req.user.openid || '';
-    record.reviewedByName = req.user.realName || req.user.nickname || '';
-    record.reviewedAt = new Date();
-    record.revision = (record.revision || 1) + 1;
-    record.history = [
-      ...(record.history || []).slice(-19),
-      {
-        revision: record.revision,
-        at: new Date(),
-        by: req.user.openid || '',
-        byName: record.reviewedByName,
-        changes: { status: { from: 'submitted', to: record.status }, rejectReason: { to: record.rejectReason } },
-      },
-    ];
-    await record.save();
+    const moduleDef = await checkModules.getModule(record.moduleKey);
+    await reviewSvc.reviewOne({ record, user: req.user, identity, moduleDef, approve, reason });
     ok(res, {
       record: presentRecord(record.toObject(), {
         viewer: { openid: req.user.openid || '', role: req.user.role || '', identity },

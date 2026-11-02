@@ -2,14 +2,32 @@
   <!-- ===== 封禁状态卡 ===== -->
   <view class="banned-hero">
     <view class="banned-hero-icon">
-      <t-icon name="error-circle" size="64rpx" color="var(--td-error-color-6)" />
+      <t-icon name="error-circle-filled" size="64rpx" color="var(--td-error-color-6)" />
     </view>
     <view class="banned-hero-title">账号已被限制登录</view>
     <view class="banned-hero-sub">申诉提交后管理员会尽快核实处理</view>
+    <!-- 封禁分类（人封 / AI封 / 机封）：服务端下发才显示，未分类的历史记录不硬猜 -->
+    <view class="banned-hero-src" wx:if="{{sourceText}}">{{sourceText}}</view>
   </view>
 
-  <!-- ===== 封禁详情 ===== -->
-  <view class="banned-info">
+  <!-- ===== 生效中的限制（可能不止「限制登录」一条：还有限制同步 / 限制 GPS） ===== -->
+  <view class="tt-section">
+    <text>当前生效的限制</text>
+    <text class="tt-section-extra" wx:if="{{restrictions.length}}">{{restrictions.length}} 项</text>
+  </view>
+
+  <view class="tt-card" wx:if="{{restrictions.length}}">
+    <view class="banned-limit" wx:for="{{restrictions}}" wx:key="scope">
+      <view class="banned-limit-top">
+        <text class="banned-limit-name">{{item.text}}</text>
+        <text class="banned-limit-src" wx:if="{{item.sourceText}}">{{item.sourceText}}</text>
+        <text class="banned-limit-until">{{item.untilText}}</text>
+      </view>
+      <view class="banned-limit-reason">{{item.reason}}</view>
+    </view>
+  </view>
+  <!-- 接口没拿到限制列表时的兜底（只显示 me 里的原因，不让区块空着） -->
+  <view class="banned-info" wx:else>
     <view class="banned-info-row">
       <text class="banned-info-label">限制类型</text>
       <text class="banned-info-value">限制登录（其它限制可在申诉页按类型申诉）</text>
@@ -25,23 +43,47 @@
     </view>
   </view>
 
+  <!-- ===== 最近一条申诉进度（有待审核申诉时，主按钮改为「查看申诉进度」） ===== -->
+  <block wx:if="{{latestAppeal}}">
+    <view class="tt-section">最近一条申诉</view>
+    <view class="tt-card banned-appeal">
+      <view class="banned-appeal-top">
+        <text class="banned-appeal-status banned-appeal-{{latestAppeal.status}}">{{latestAppeal.statusText}}</text>
+        <text class="banned-appeal-time">{{latestAppeal.createdAtText}}</text>
+      </view>
+      <view class="banned-appeal-content">{{latestAppeal.content}}</view>
+      <view class="banned-appeal-result" wx:if="{{latestAppeal.reply}}">处理意见：{{latestAppeal.reply}}</view>
+    </view>
+  </block>
+
   <!-- ===== 可执行操作 ===== -->
   <view class="tt-section">你可以这样做</view>
   <view class="tt-card">
-    <view class="tt-pill-btn primary" bind:tap="goSubmit">
+    <view class="tt-pill-btn primary" wx:if="{{!appealPending}}" bind:tap="goSubmit">
       <t-icon name="edit-1" size="34rpx" color="#ffffff" />
       <text>提交申诉</text>
     </view>
+    <view class="tt-pill-btn primary" wx:else bind:tap="goList">
+      <t-icon name="view-list" size="34rpx" color="#ffffff" />
+      <text>查看申诉进度（等待处理）</text>
+    </view>
 
-    <view class="tt-pill-btn ghost banned-btn-gap" bind:tap="goList">
+    <!-- 已在审核中时，主按钮就是「查看进度」，不再重复摆一个「查看全部申诉进度」
+         （两个按钮同一个跳转 = 用户点哪个都一样，纯噪音） -->
+    <view class="tt-pill-btn ghost banned-btn-gap" wx:if="{{!appealPending}}" bind:tap="goList">
       <t-icon name="view-list" size="34rpx" color="var(--tt-brand)" />
-      <text>查看申诉进度</text>
+      <text>查看全部申诉进度</text>
     </view>
 
     <view class="banned-refresh" bind:tap="refreshStatus">
       <t-icon name="refresh" size="28rpx" color="var(--tt-text-3)" />
       <text>刷新封禁状态</text>
     </view>
+  </view>
+
+  <!-- 已提交待审核时把话说清楚：否则用户会反复点「提交申诉」再被「已有待审核申诉」拒一次 -->
+  <view class="banned-note" wx:if="{{appealPending}}">
+    你已提交一条待审核的申诉，管理员核实后会处理；也可以在这里刷新封禁状态看是否已解除。
   </view>
 
   <view class="tt-footer">若认为封禁有误（如步数为微信运动原始数据），提交申诉后管理员会尽快核实</view>

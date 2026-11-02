@@ -183,6 +183,8 @@ box-shadow: 0 12rpx 32rpx rgba(255, 107, 0, 0.24);
    - WXML 中引用的每个图标名都已确认存在
    - 所有 `bind:tap` 指向的方法在对应 `.js` 中存在
    - `node tools/check-miniprogram.js`（WXSS 选择器、体积、图标、处理函数一把过）
+   - 动过封禁/申诉链路时再跑 `node tools/check-ban-banner.js`；动过复审台再跑
+     `node tools/check-union-review.js` + `node tools/verify-union-review.js`
 8. **WXSS 不支持通配符选择器 `*`**：`.tt-sheet-foot > * { flex: 1 }` 这类写法在开发者工具里是
    **编译期**失败，上传会报 `./xxx.wxss(1:18082): error at token '*'`（2026-10-26 真实事故，
    `packageAdmin/user-detail`）。要让底部两个按钮等分，给每个 `t-button` **各包一层**

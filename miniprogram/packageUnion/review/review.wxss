@@ -1,0 +1,354 @@
+/* 学生会 · 复审台：分档 chip + 记录卡（勾选 / 简化信息 / 图片）+ 底部批量条
+   白橙设计系统：颜色只用 --tt-* 与 TDesign 语义令牌，扣分用 error 语义色。 */
+
+.rv-page {
+  padding: 0 0 calc(180rpx + env(safe-area-inset-bottom));
+}
+
+/* ===== 顶部（吸顶）：分档 + 模块筛选 + 选中工具条 ===== */
+.rv-head {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: 14rpx var(--tt-gap) 10rpx;
+  background: var(--tt-bg-page);
+}
+
+.rv-head-title {
+  display: flex;
+  align-items: baseline;
+  gap: 12rpx;
+  font-size: 27rpx;
+  font-weight: 700;
+  color: var(--tt-text-1);
+}
+
+.rv-head-count {
+  font-size: 20rpx;
+  font-weight: 400;
+  color: var(--tt-text-3);
+}
+
+/* 分档横向滚动条 */
+.rv-bands {
+  display: flex;
+  white-space: nowrap;
+  margin-top: 12rpx;
+}
+
+.rv-band {
+  display: inline-flex;
+  align-items: center;
+  gap: 6rpx;
+  margin-right: 10rpx;
+  padding: 10rpx 22rpx;
+  border-radius: 999rpx;
+  border: 2rpx solid var(--tt-line);
+  background: var(--tt-card);
+  font-size: 22rpx;
+  color: var(--tt-text-2);
+}
+
+.rv-band.on {
+  color: #ffffff;
+  border-color: var(--tt-brand);
+  background: var(--tt-brand);
+  font-weight: 600;
+}
+
+.rv-band-l {
+  font-size: 22rpx;
+  line-height: 1;
+}
+
+.rv-band-n {
+  font-size: 20rpx;
+  opacity: 0.9;
+}
+
+/* 档位语义色（未选中时用浅底提示，选中时统一品牌色，避免一个页面出现四五种高亮） */
+.rv-band-low {
+  border-color: var(--td-warning-color-2);
+  color: var(--td-warning-color-7);
+}
+
+.rv-band-mid {
+  border-color: var(--td-warning-color-4);
+  color: var(--td-warning-color-8);
+}
+
+.rv-band-high {
+  border-color: var(--td-error-color-2);
+  color: var(--td-error-color-7);
+}
+
+/* 筛选行 */
+.rv-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-top: 10rpx;
+}
+
+.rv-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6rpx;
+  padding: 8rpx 20rpx;
+  border-radius: 999rpx;
+  font-size: 21rpx;
+  color: var(--tt-text-2);
+  background: var(--tt-bg-page);
+}
+
+.rv-pill.on {
+  color: var(--tt-brand-deep);
+  background: var(--tt-brand-soft);
+}
+
+.rv-tip {
+  font-size: 19rpx;
+  color: var(--tt-text-3);
+}
+
+.rv-selbar {
+  justify-content: flex-start;
+}
+
+.rv-btn-ghost {
+  padding: 8rpx 20rpx;
+  border-radius: 999rpx;
+  border: 2rpx dashed var(--tt-line);
+  font-size: 20rpx;
+  color: var(--tt-text-2);
+  background: var(--tt-card);
+}
+
+.rv-selcount {
+  margin-left: auto;
+  font-size: 20rpx;
+  color: var(--tt-brand-deep);
+  font-weight: 600;
+}
+
+/* ===== 卡片列表 ===== */
+.rv-list {
+  padding: 4rpx var(--tt-gap) 0;
+}
+
+.rv-card {
+  margin-bottom: 14rpx;
+  padding: 18rpx 20rpx;
+  border-radius: var(--tt-radius);
+  background: var(--tt-card);
+  box-shadow: var(--tt-card-shadow);
+  border: 2rpx solid transparent;
+}
+
+.rv-card.checked {
+  border-color: var(--tt-brand);
+  background: var(--tt-brand-soft);
+}
+
+/* 不可复核：整卡降权，但仍可点进详情（用户要看内容才能判断为什么不能审） */
+.rv-card.locked {
+  opacity: 0.82;
+}
+
+.rv-card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 14rpx;
+}
+
+.rv-check {
+  flex-shrink: 0;
+  padding: 6rpx;
+}
+
+.rv-card-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.rv-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+}
+
+.rv-module {
+  font-size: 24rpx;
+  font-weight: 700;
+  color: var(--tt-text-1);
+}
+
+.rv-bandtag {
+  flex-shrink: 0;
+  padding: 2rpx 12rpx;
+  border-radius: 999rpx;
+  font-size: 18rpx;
+  color: var(--tt-text-2);
+  background: var(--tt-line);
+}
+
+.rv-bandtag-full {
+  color: var(--td-success-color-5, #16a34a);
+  background: var(--td-success-color-1);
+}
+
+.rv-bandtag-low {
+  color: var(--td-warning-color-7);
+  background: var(--td-warning-color-1);
+}
+
+.rv-bandtag-mid {
+  color: var(--td-warning-color-8);
+  background: var(--td-warning-color-2);
+}
+
+.rv-bandtag-high {
+  color: var(--td-error-color-6, #e5484d);
+  background: var(--td-error-color-1);
+}
+
+.rv-deduct {
+  margin-left: auto;
+  font-size: 26rpx;
+  font-weight: 700;
+  color: var(--td-error-color-6, #e5484d);
+}
+
+.rv-card-target {
+  margin-top: 8rpx;
+  font-size: 25rpx;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--tt-text-1);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.rv-class {
+  font-weight: 400;
+  color: var(--tt-text-3);
+}
+
+.rv-card-sub {
+  margin-top: 4rpx;
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+}
+
+/* 简化检查信息：一行两行封顶（复审要一屏扫多条） */
+.rv-card-sum {
+  margin-top: 8rpx;
+  font-size: 21rpx;
+  line-height: 1.45;
+  color: var(--tt-text-2);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* ===== 检查图片 ===== */
+.rv-photos {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  margin-top: 12rpx;
+}
+
+.rv-photo {
+  width: 136rpx;
+  height: 136rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-bg-page);
+}
+
+.rv-photo-more {
+  align-self: flex-end;
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+}
+
+.rv-photo-mask {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  margin-top: 10rpx;
+  padding: 12rpx 16rpx;
+  border-radius: var(--tt-radius-sm);
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+  background: var(--tt-bg-page);
+}
+
+/* 不可复核原因 */
+.rv-lock {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  margin-top: 10rpx;
+  padding: 10rpx 14rpx;
+  border-radius: var(--tt-radius-sm);
+  font-size: 20rpx;
+  color: var(--tt-text-2);
+  background: var(--tt-bg-page);
+}
+
+.rv-empty,
+.rv-more {
+  padding: 32rpx 0;
+  text-align: center;
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+/* ===== 底部批量操作条 ===== */
+.rv-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  padding: 16rpx 24rpx calc(16rpx + env(safe-area-inset-bottom));
+  background: var(--tt-card);
+  box-shadow: 0 -8rpx 24rpx rgba(28, 31, 35, 0.08);
+}
+
+.rv-bar-count {
+  flex: 1;
+  min-width: 0;
+  font-size: 22rpx;
+  color: var(--tt-text-2);
+}
+
+.rv-bar-btn {
+  flex-shrink: 0;
+  padding: 16rpx 34rpx;
+  border-radius: 999rpx;
+  font-size: 25rpx;
+  font-weight: 600;
+}
+
+.rv-bar-reject {
+  color: var(--td-error-color-6, #e5484d);
+  border: 2rpx solid var(--td-error-color-3);
+  background: var(--tt-card);
+}
+
+.rv-bar-approve {
+  color: #ffffff;
+  background: linear-gradient(135deg, #ff9a3d, var(--tt-brand));
+  box-shadow: 0 8rpx 18rpx rgba(255, 107, 0, 0.22);
+}
+
+.rv-bar-btn:active {
+  opacity: 0.85;
+}

@@ -77,6 +77,123 @@
   color: var(--tt-text-2);
 }
 
+/* 封禁分类徽标（人封 / AI封 / 机封；服务端下发才出现） */
+.banned-hero-src {
+  margin-top: 16rpx;
+  padding: 6rpx 22rpx;
+  border-radius: 999rpx;
+  font-size: 22rpx;
+  font-weight: 600;
+  color: var(--td-error-color-7, #c02f38);
+  background: var(--td-error-color-1);
+}
+
+/* ===== 生效中的限制列表 ===== */
+.banned-limit + .banned-limit {
+  margin-top: 26rpx;
+  padding-top: 26rpx;
+  border-top: 2rpx solid var(--tt-line);
+}
+
+.banned-limit-top {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+}
+
+.banned-limit-name {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.banned-limit-src {
+  flex-shrink: 0;
+  padding: 2rpx 12rpx;
+  border-radius: 999rpx;
+  font-size: 18rpx;
+  color: var(--td-error-color-7, #c02f38);
+  background: var(--td-error-color-1);
+}
+
+.banned-limit-until {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+}
+
+.banned-limit-reason {
+  margin-top: 10rpx;
+  font-size: 24rpx;
+  line-height: 1.5;
+  color: var(--tt-text-2);
+  word-break: break-all;
+}
+
+/* ===== 最近一条申诉 ===== */
+.banned-appeal-top {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.banned-appeal-status {
+  padding: 4rpx 16rpx;
+  border-radius: 999rpx;
+  font-size: 21rpx;
+  color: var(--tt-text-2);
+  background: var(--tt-line);
+}
+
+.banned-appeal-pending {
+  color: var(--tt-brand-deep);
+  background: var(--tt-brand-soft);
+}
+
+.banned-appeal-approved {
+  color: var(--td-success-color-5, #16a34a);
+  background: var(--td-success-color-1);
+}
+
+.banned-appeal-rejected {
+  color: var(--td-error-color-6, #e5484d);
+  background: var(--td-error-color-1);
+}
+
+.banned-appeal-time {
+  margin-left: auto;
+  font-size: 21rpx;
+  color: var(--tt-text-3);
+}
+
+.banned-appeal-content {
+  margin-top: 14rpx;
+  font-size: 24rpx;
+  line-height: 1.55;
+  color: var(--tt-text-1);
+  word-break: break-all;
+}
+
+.banned-appeal-result {
+  margin-top: 12rpx;
+  padding-top: 12rpx;
+  border-top: 2rpx solid var(--tt-line);
+  font-size: 23rpx;
+  color: var(--tt-text-2);
+}
+
+/* 待审核说明 */
+.banned-note {
+  margin: 0 var(--tt-gap) var(--tt-gap);
+  padding: 20rpx 24rpx;
+  border-radius: var(--tt-radius-sm);
+  font-size: 22rpx;
+  line-height: 1.6;
+  color: var(--tt-text-2);
+  background: var(--tt-brand-soft);
+}
+
 /* 操作按钮 */
 .banned-btn-gap {
   margin-top: 20rpx;

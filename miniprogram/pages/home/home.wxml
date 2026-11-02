@@ -22,11 +22,29 @@
     </block>
   </view>
 
-  <!-- ===== 封禁提醒 ===== -->
-  <view class="ban-banner" wx:if="{{banned}}" bind:tap="goBanned">
-    <t-icon name="error-circle" size="36rpx" />
-    <text>账号已被封禁，点击查看详情并申诉</text>
-    <t-icon name="chevron-right" size="32rpx" />
+  <!-- ===== 封禁提醒（用户 2026-11-02「如果用户被封禁应该在首页中的公告栏中显示，
+        并闪烁红色警告状态，点击可以进入详细并申诉等」）=====
+       放在公告条**之前**：封禁是账号级状态，优先级高于普通公告。
+       闪烁用 CSS 动画（.ban-banner-alert），不做定时器 —— 页面隐藏时动画自动暂停，
+       不会出现「切后台再回来闪烁错位」这类只有真机才复现的问题。
+       文案全部由 home.js 预计算（banTitle / banSub / banActionText，见 buildBanNotice）：WXML 里不拼三元与整句。 -->
+  <view
+    class="ban-banner ban-banner-alert {{banned ? '' : 'off'}}"
+    wx:if="{{banned}}"
+    bind:tap="goBanned"
+    hover-class="ban-banner-hover"
+  >
+    <view class="ban-banner-icon">
+      <t-icon name="error-circle-filled" size="36rpx" color="#ffffff" />
+    </view>
+    <view class="ban-banner-main">
+      <view class="ban-banner-title">{{banTitle}}</view>
+      <view class="ban-banner-sub">{{banSub}}</view>
+    </view>
+    <view class="ban-banner-cta">
+      <text>{{banActionText}}</text>
+      <t-icon name="chevron-right" size="26rpx" color="#ffffff" />
+    </view>
   </view>
 
   <!-- ===== 公告条（跑马灯滚动） ===== -->

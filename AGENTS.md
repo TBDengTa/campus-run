@@ -103,6 +103,39 @@
      两条读路径（管理端详情 / 班级域 manage）都要给 banSourceLabel，只给一边班主任看不到。
   回归：`tools/check-ban-source.js`（分类齐全、文案单点、六处接线、条件单一口径、
   WXML 引用的字段 JS 必须产出）+ `tools/verify-console.js` / 真实库链路实测。
+- **首页封禁公告条（用户 2026-11-02「如果用户被封禁应该在首页中的公告栏中显示，
+  并闪烁红色警告状态，点击可以进入详细并申诉等」）**：
+  ① 位置在**普通公告条之前**（账号级状态优先级高于公告），`wx:if="{{banned}}"`，
+     红色 `ban-pulse` 闪烁**只动 box-shadow / 背景、不动 opacity**（动 opacity 会让白字一起闪淡）；
+  ② 文案整句在 `home.js::buildBanNotice` 拼好再下发（`banTitle/banSub/banActionText`），
+     WXML 不写三元拼接 —— 字段为空时会留下「到期：；」这种断句；
+  ③ 封禁分类（人封 / AI封 / 机封）**只用服务端 `sourceText`**（`/api/appeals/restrictions`），
+     接口失败就不显示这一截，绝不前端猜；已提交待审核的申诉要显式写「申诉已提交」，
+     否则用户会反复点申诉再被「已有待审核申诉」拒一次；
+  ④ 两个读接口（restrictions / mine）只在**封禁态**才拉（未封禁用户白拉两次拖慢首屏），
+     且 `Promise.allSettled` —— 封禁页数据绝不能拖垮首页渲染；
+  ⑤ 详情页（`pages/banned`）列出**全部生效限制**（login / sync / gps）、分类、到期、最近一条申诉进度；
+     有待审核申诉时主按钮改「查看进度」，避免两个按钮同一跳转。
+  回归：`tools/check-ban-banner.js`。
+- **学生会复审台（用户 2026-11-02「在学生会检查中的复审中，支持分数分类，并对每块显示
+  检查人、检查信息(简化)、检查图片，并增加批量审核功能」）**：
+  页面 `packageUnion/review/review`（接口 `/api/union/review/queue`、`/api/union/review/batch`），
+  **实现全部在 `server/src/services/union-review.js`，路由只做鉴权与取参**。五条硬约束：
+  ① **单条复核 / 队列 / 批量共用一份判定与写入**（`reviewableOf` / `reviewOne`）：
+     单条 `POST /records/:id/review` 已改成走它。历史踩点：批量接口自己写一套判定 →
+     能批量通过「自己提交的记录」，绕过自审禁令；批量不复用写入 → 单条写 history、批量不写，留痕断档。
+  ② **分数分档按 `record.deduct`（扣分）** 而不是 score：deduct 是**所有模块都有**的落库字段，
+     score 只在 percent 模式有意义（rate/deduct 模块恒为 0，用它分档会把「出勤率 60%」归进 0 分档）。
+     四档 `full ≤0 / low ≤2 / mid ≤5 / high >5`，闭区间、逐档递减；
+     `SCORE_BANDS`/`bandOf`/`bandCond` 是唯一实现，前端只搬 key（自己写区间一定与徽标对不上）。
+     「满分档」用 `$not: {$gt: 0}` 而不是 `deduct: 0`：历史记录有没写 deduct 的，等值会漏掉它们。
+  ③ 队列**必须带 `scopeFilter`**（分院部长读不到全校）+ `cropPhotos`（宿舍照片原图不下发），
+     每条下发 `canReview / reviewBlockReason`（自审禁令在客户端无法可靠判定）。
+  ④ 批量**逐条**走 `reviewOne`：一条失败只记进 results 反馈（不整批回滚），单次上限 50。
+  ⑤ 简化检查信息由服务端 `summarizeRecord` 拼（评价 + `bandChao.metricText` + 备注摘要 24 字），
+     明细里的**名单**刻意不进摘要（可能上百人，会把一屏撑爆）。
+  回归：`tools/check-union-review.js`（分档边界逐例 + 单一实现 + 队列范围/裁剪 + 前端接线）
+  + `tools/verify-union-review.js`（真连库跑完整链路，含自审禁令、批量留痕、权限闸门、清理核对）。
 - **「涨幅速度」的误封边界（用户 2026-10-29「同步增速这个有点假很容易误封锁」，必读）**：
   这个指标 = 本次新增步数 ÷ 距上次同步时长，**分母是用户点同步的时机，不是运动时长** ——
   它是全库唯一一个「会随用户操作习惯变化而误判」的特征（其他特征反映数据本身长什么样）。

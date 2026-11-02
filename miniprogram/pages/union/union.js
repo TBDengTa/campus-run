@@ -147,8 +147,13 @@ Page({
     wx.navigateTo({ url: '/packageUnion/records/records?mine=1' });
   },
 
+  // 待复核 → **复审台**（用户 2026-11-02「在学生会检查中的复审中，支持分数分类，
+  // 并对每块显示检查人、检查信息(简化)、检查图片，并增加批量审核功能」）。
+  //
+  // 旧实现跳 `records?status=submitted`（普通记录列表，只能逐条点进详情复核）；
+  // 复审台是同一批「待复核」记录，但按扣分分档、带检查人/简化信息/图片、支持批量审核。
   goReviewList() {
-    wx.navigateTo({ url: '/packageUnion/records/records?status=submitted' });
+    wx.navigateTo({ url: '/packageUnion/review/review' });
   },
 
   goAppeals() {
