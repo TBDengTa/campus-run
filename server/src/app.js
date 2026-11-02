@@ -94,18 +94,30 @@ function createApp() {
     res.set('X-Content-Type-Options', 'nosniff');
     res.set('Referrer-Policy', 'same-origin');
     res.set('Cache-Control', 'no-store');
-    // 资源引用注入 `?v=<buildTag>`：
+    // 资源引用注入 `?v=<该资源自己的 mtime>`：
     // 早前是死引用 /console/app.js，而服务器给它发 max-age=3天，
     // 于是「后端已修、前端文件已换」时浏览器还在跑旧版本 ——
     // 用户看到的报错与实际代码不同步，排查会被彻底带偏（2026-10-30 真实踩过）。
-    // buildTag = server/src/index.js 的 mtime，代码一部署就变 → URL 必变 → 必然重新拉取。
-    // 读文件（而不是 sendFile）只为做这一次字符串替换；文件极小（<20KB），无需缓存。
+    //
+    // ⚠️ 版本必须取**资源文件自己**的 mtime，不能取 buildTag（用户 2026-11-02「缓存问题没有修复」）：
+    //   buildTag = server/src/index.js 的 mtime，而控制台代码在 public/console/app.js。
+    //   只改 app.js 时 index.js 的 mtime 纹丝不动（实测线上 index.js 是 11 天前），
+    //   于是 ?v= 永远不变 —— 缓存刷新的整套设计形同虚设。
+    //   现在 css / js 各自取自己的 mtime：改了哪个就只让哪个失效，另一个继续复用缓存。
+    // 读文件（而不是 sendFile）只为做这一次字符串替换；文件极小（<30KB），无需缓存。
+    const assetVersion = (file) => {
+      try {
+        return encodeURIComponent(fs.statSync(path.join(__dirname, '../public/console', file)).mtime.toISOString());
+      } catch (e) {
+        // 读不到（文件缺失/权限）回落到构建号/版本号，至少 URL 稳定，不影响页面可用
+        return encodeURIComponent(String(buildTag || appVersion || '1'));
+      }
+    };
     fs.readFile(path.join(__dirname, '../public/console/index.html'), 'utf8', (err, html) => {
       if (err) return next(err);
-      const v = encodeURIComponent(String(buildTag || appVersion || '1'));
       const out = html
-        .replace('/console/app.css"', `/console/app.css?v=${v}"`)
-        .replace('/console/app.js"', `/console/app.js?v=${v}"`);
+        .replace('/console/app.css"', `/console/app.css?v=${assetVersion('app.css')}"`)
+        .replace('/console/app.js"', `/console/app.js?v=${assetVersion('app.js')}"`);
       res.set('Content-Type', 'text/html; charset=utf-8');
       res.send(out);
     });

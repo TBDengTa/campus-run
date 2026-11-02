@@ -443,22 +443,44 @@ function kv(k, v) {
   return n;
 }
 
+// 配速秒数 → 12'03" 文本
+function paceText(secPerKm) {
+  var v = Number(secPerKm);
+  if (!v || v <= 0 || !isFinite(v)) return '—';
+  var m = Math.floor(v / 60);
+  var ss = Math.round(v % 60);
+  return m + "'" + (ss < 10 ? '0' + ss : ss) + '"';
+}
+// m/s → km/h 文本（保留一位）
+function kmh(mps) {
+  var v = Number(mps);
+  if (!v || v <= 0) return '—';
+  return (v * 3.6).toFixed(1) + ' km/h';
+}
+function num2(v) { var n = Number(v); return isFinite(n) ? n.toFixed(2) : '—'; }
+
 function renderItem(r) {
   var box = el('div', 'row-item');
 
+  // 头部拆两行（用户 2026-11-02「页面太脏太乱」）：
+  //   第一行 = 身份（姓名 + 班级 · 学号 · 日期），第二行 = 状态标签。
+  //   原来全挤在一行，基线不齐，扫读时找不到锚点。
   var head = el('div', 'ri-head');
   head.appendChild(el('span', 'ri-name', r.realName));
   head.appendChild(el('span', 'ri-meta', (r.className || '') + (r.studentId ? ' · ' + r.studentId : '') + ' · ' + r.date));
-  head.appendChild(el('span', 'pill mute', r.sourceText));
-  if (r.autoBanned) head.appendChild(el('span', 'pill warn', '系统自动封禁'));
-  head.appendChild(el(
+  box.appendChild(head);
+
+  var tags = el('div', 'ri-tags');
+  tags.appendChild(el('span', 'pill mute', r.sourceText));
+  if (r.autoBanned) tags.appendChild(el('span', 'pill warn', '系统自动封禁'));
+  tags.appendChild(el(
     'span',
     'pill ' + (r.status === 'banned' ? 'bad' : r.status === 'dismissed' ? 'mute' : 'warn'),
     r.status === 'banned' ? '已封禁' : r.status === 'dismissed' ? '已排除' : '待研判'
   ));
   var labCls = !r.label ? 'mute' : r.label === 'normal' ? 'ok' : r.label === 'device' ? 'mute' : 'bad';
-  head.appendChild(el('span', 'pill ' + labCls, '标注：' + (r.labelText || '未标注')));
-  box.appendChild(head);
+  tags.appendChild(el('span', 'pill ' + labCls, '标注：' + (r.labelText || '未标注')));
+  box.appendChild(tags);
 
   var body = el('div', 'ri-body');
   if (r.source !== 'gps') {
@@ -468,7 +490,27 @@ function renderItem(r) {
   body.appendChild(kv('可疑分', fmt(r.score) + ' / 100'));
   body.appendChild(kv('AI 分', r.modelScore == null ? '—' : Number(r.modelScore).toFixed(3)));
   if (r.labeledBy) body.appendChild(kv('标注人', r.labeledBy + '（' + ago(r.labeledAt) + '）'));
-  box.appendChild(body);
+  // GPS 实跑：展示判定用的速度/配速/轨迹质量（用户 2026-11-02「依旧没有 GPS 详情新增速度指标」）
+  // features 是判定时的输入快照，研判光看「AI 分 0.92」不够，必须看到原始数字。
+  if (r.source === 'gps' && r.features) {
+    var f = r.features;
+    body.appendChild(kv('平均速度', kmh(f.speed)));
+    // 峰值速度（用户 2026-11-02 明确点名要看）：features 快照里的 peakSpeed
+    body.appendChild(kv('峰值速度', f.peakSpeed ? kmh(f.peakSpeed) : '—'));
+    body.appendChild(kv('配速', paceText(f.paceSecPerKm) + '/km'));
+    body.appendChild(kv('距离', fmt(Math.round(f.distance || 0)) + 'm'));
+    body.appendChild(kv('时长', fmt(Math.round(f.duration || 0)) + 's'));
+    body.appendChild(kv('轨迹点', fmt(f.pointCount || 0)));
+    box.appendChild(body);
+    // 轨迹质量三项：脚本/瞬移的特征就藏在这里
+    var q = el('div', 'ri-body ri-quality');
+    q.appendChild(kv('点间隔均值', num2((f.gapAvg || 0) / 1000) + 's'));
+    q.appendChild(kv('最大间隔', num2((f.gapMax || 0) / 1000) + 's'));
+    q.appendChild(kv('平滑度', num2(f.jitter)));
+    box.appendChild(q);
+  } else {
+    box.appendChild(body);
+  }
 
   var rs = el('div', 'reasons');
   var reasons = r.reasons || [];

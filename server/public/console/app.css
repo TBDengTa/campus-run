@@ -389,3 +389,120 @@ td.r, th.r { text-align: right; }
   .side-actions { flex: 0 0 auto; }
   .main { padding: 14px 12px 40px; }
 }
+
+
+/* ============================================================================
+   第二轮收紧（用户 2026-11-02「页面太脏太乱，并不像B端页面，可以使用双列」）
+   ============================================================================
+   截图里的问题很具体：
+     · 训练台单列大卡片，每张 4 行信息，右侧大片空白 —— 一屏只能看 4 条，
+       研判 153 条 GPS 记录要翻 40 屏，这是"乱"的主因（不是配色，是密度）。
+     · 圆角 12px + 阴影 + 11px 间距 → 卡片像"漂浮的便利贴"，B 端要的是表格感。
+     · 一行里名字/班级/学号/日期/4 个 pill 混排，基线不齐，扫读时找不到锚点。
+   改法：双列网格 + 收紧圆角与间距 + 头部两行分区（身份行 / 状态行）。
+*/
+
+/* ---------- 训练台列表：双列网格 ---------- */
+#listBox {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  align-items: start;
+}
+
+/* 窄屏退回单列（双列会把 ri-body 的数字挤成两行，反而更乱） */
+@media (max-width: 1180px) {
+  #listBox { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* 卡片：去阴影、小圆角、紧凑内距 —— 表格感而不是便利贴 */
+.row-item {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 11px 12px;
+  margin-bottom: 0;
+  background: #fff;
+  min-width: 0;
+}
+
+.row-item:hover { border-color: #d8dce2; }
+
+/* 头部两行分区：第一行身份（名字 + 班级学号日期），第二行状态 pill */
+.ri-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  line-height: 1.5;
+}
+
+.ri-name { font-size: 14px; font-weight: 600; letter-spacing: 0.2px; }
+.ri-meta { font-size: 11.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+
+/* 状态 pill 换到独立一行：与身份行分开，扫读时先找人再看状态 */
+.ri-tags {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+/* 数据行：等宽标签 + 右对齐数值，密度提高 */
+.ri-body {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin: 9px 0 0;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+}
+
+.ri-quality {
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 0;
+  opacity: 0.85;
+}
+
+.ri-kv { display: flex; gap: 4px; font-size: 12px; color: var(--text-3); white-space: nowrap; }
+.ri-kv b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* 理由：改成小号灰底标签，避免整片橙色"警告色"糊满屏幕 */
+.reasons { display: flex; flex-wrap: wrap; gap: 4px; margin: 7px 0 0; }
+.reasons span {
+  background: #f7f8fa;
+  color: var(--text-2);
+  border: 1px solid var(--line);
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 4px;
+  line-height: 1.7;
+}
+
+/* 操作区：贴底，与数据区分开 */
+.acts {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+/* pill 收紧：小圆角、小字号 */
+.pill { font-size: 11px; padding: 1px 7px; border-radius: 4px; line-height: 1.7; }
+
+/* 按钮统一小尺寸，减少视觉重量 */
+.btn { border-radius: 6px; font-size: 12.5px; }
+.btn.sm { padding: 3px 9px; font-size: 12px; }
+
+/* 卡片外框统一收紧 */
+.card { border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; }
+.stat { border-radius: 8px; padding: 11px 13px; }
+.stat .v { font-size: 21px; }
+.sheet { border-radius: 10px; }
+
+/* 空列表提示跨满两列（否则孤零零占半格，看着像渲染坏了） */
+#listBox > .note { grid-column: 1 / -1; }

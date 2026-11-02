@@ -10,6 +10,8 @@ const anticheat = require('../services/anticheat');
 const goalsSvc = require('../services/goals');
 const pointsSvc = require('../services/points');
 const wechat = require('../services/wechat');
+// GPS 派生指标（平均/峰值速度、配速、分段、包围盒）：三条读路径共用一份实现
+const gpsMetrics = require('../services/gps-metrics');
 const { todayKey, monthRange, isValidDateKey, addDays } = require('../utils/dates');
 
 const router = express.Router();
@@ -213,141 +215,9 @@ router.get(
   wrap(async (req, res) => {
     const record = await RunRecord.findOne({ _id: req.params.id, openid: req.user.openid }).lean();
     if (!record) throw new ApiError(404, 404, '记录不存在');
-    ok(res, withGpsMetrics(record));
+    ok(res, gpsMetrics.withGpsMetrics(record));
   })
 );
-
-/**
- * 给记录补「GPS 实跑」的派生指标（用户 2026-11-02：
- * 「GPS 实跑需要看到更多数据如平均速度、峰值速度、距离、路线图等」）。
- *
- * 为什么在服务端算而不是前端算：
- *   · 前端拿到的是 `routePoints` 原始点串（一次跑步可能上万点，几十~几百 KB），
- *     让它自己遍历容易写错（速度单位、时间基准、暂停段处理各写一份必然漂移）；
- *   · 微信步数（werun）**没有轨迹**，这些指标必须是 gps 专属，不能对 werun 也瞎算。
- *
- * 指标口径（与小程序端展示单位一致：距离米、时长秒、速度 m/s）：
- *   · avgSpeed        = 总距离 ÷ 总时长（m/s）；时长 0 → null（不是 0，0 会被读成"停着不动"）
- *   · avgPaceSecPerKm = 1000 ÷ avgSpeed（秒/公里），即配速；速度 0 → null
- *   · peakSpeed       = 相邻两点瞬时速度的最大值（m/s），带**异常过滤**：
- *                       dt <= 0 或 dt > 60s（暂停/断连）跳过，瞬时 > 15 m/s（超世界纪录）跳过，
- *                       否则一次 GPS 漂移就能造出 100 m/s 的"峰值"，用户会以为是系统错误。
- *   · segments        按 1 公里分段的速度/配速（负分段分析用），最多 60 段防大轨迹撑爆响应
- *   · bounds          经纬度包围盒（前端画路线图时先定视窗，不用自己遍历）
- *   · hasRoute        是否有可画轨迹的点（>= 2 点）
- */
-function haversineMeters(a, b) {
-  const R = 6371000;
-  const toRad = (d) => (d * Math.PI) / 180;
-  const dLat = toRad(b.lat - a.lat);
-  const dLng = toRad(b.lng - a.lng);
-  const lat1 = toRad(a.lat);
-  const lat2 = toRad(b.lat);
-  const h =
-    Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
-}
-
-function withGpsMetrics(record) {
-  if (!record || record.source !== 'gps') return record;
-
-  // ⚠️ 字段名以 models/run-record.js::routePointSchema 为准：
-  //   { latitude, longitude, timestamp }（timestamp 是毫秒数）
-  //   曾误写成 lat/lng/ts，结果 pointCount 恒为 0、路线图与峰值速度全部算不出来
-  //   ——但接口仍返回 200，只有数值是错的（这类"静默错"最难发现）。
-  const pts = (record.routePoints || [])
-    .map((p) => {
-      if (!p) return null;
-      const lat = Number(p.latitude != null ? p.latitude : p.lat);
-      const lng = Number(p.longitude != null ? p.longitude : p.lng);
-      const t = Number(p.timestamp != null ? p.timestamp : p.ts);
-      if (!Number.isFinite(lat) || !Number.isFinite(lng) || !Number.isFinite(t) || t <= 0) return null;
-      return { lat, lng, t };
-    })
-    .filter(Boolean)
-    .sort((a, b) => a.t - b.t);
-
-  const duration = Number(record.durationSeconds) || 0;
-  const distance = Number(record.distance) || 0;
-
-  // 平均速度 / 配速（用整条记录的总量，最稳）
-  const avgSpeed = duration > 0 ? distance / duration : null;
-  const avgPaceSecPerKm = avgSpeed && avgSpeed > 0 ? 1000 / avgSpeed : null;
-
-  // 峰值速度（相邻点瞬时速度的最大值，带异常过滤）
-  let peakSpeed = null;
-  const instants = [];
-  for (let i = 1; i < pts.length; i += 1) {
-    const dt = (pts[i].t - pts[i - 1].t) / 1000; // 秒
-    if (dt <= 0 || dt > 60) continue; // 同一时刻 / 暂停断连：分母不可信
-    const dm = haversineMeters(pts[i - 1], pts[i]);
-    if (dm <= 0 || dm > 500) continue; // 瞬移（GPS 漂移）跳过
-    const v = dm / dt;
-    if (v > 15) continue; // 超人类极限（约 27 km/h），视为漂移
-    instants.push(v);
-    if (peakSpeed == null || v > peakSpeed) peakSpeed = v;
-  }
-
-  // 1 公里分段（负分段分析）
-  const segments = [];
-  if (distance > 0 && pts.length >= 2) {
-    const totalM = pts.reduce((acc, p, i) => (i ? acc + haversineMeters(pts[i - 1], p) : 0), 0);
-    const segCount = Math.min(60, Math.max(1, Math.floor(totalM / 1000) + (totalM % 1000 > 200 ? 1 : 0)));
-    if (segCount > 0 && totalM > 0) {
-      let accM = 0;
-      let segStartT = pts[0].t;
-      let segStartDist = 0;
-      let segIdx = 1;
-      for (let i = 1; i < pts.length && segIdx <= segCount; i += 1) {
-        accM += haversineMeters(pts[i - 1], pts[i]);
-        if (accM - segStartDist >= 1000 || i === pts.length - 1) {
-          const dt = (pts[i].t - segStartT) / 1000;
-          const dm = accM - segStartDist;
-          if (dt > 0 && dm > 0) {
-            const v = dm / dt;
-            segments.push({
-              km: segIdx,
-              meters: Math.round(dm),
-              seconds: Math.round(dt),
-              speed: Number(v.toFixed(2)),
-              paceSecPerKm: v > 0 ? Math.round(1000 / v) : null,
-            });
-          }
-          segIdx += 1;
-          segStartT = pts[i].t;
-          segStartDist = accM;
-        }
-      }
-    }
-  }
-
-  // 包围盒（画路线图定视窗用）
-  let bounds = null;
-  if (pts.length >= 2) {
-    const lats = pts.map((p) => p.lat);
-    const lngs = pts.map((p) => p.lng);
-    bounds = {
-      minLat: Math.min(...lats),
-      maxLat: Math.max(...lats),
-      minLng: Math.min(...lngs),
-      maxLng: Math.max(...lngs),
-    };
-  }
-
-  return {
-    ...record,
-    // 服务端算好的指标，前端直接展示（不再自己遍历点串）
-    metrics: {
-      avgSpeed: avgSpeed == null ? null : Number(avgSpeed.toFixed(2)),
-      avgPaceSecPerKm: avgPaceSecPerKm == null ? null : Math.round(avgPaceSecPerKm),
-      peakSpeed: peakSpeed == null ? null : Number(peakSpeed.toFixed(2)),
-      pointCount: pts.length,
-      hasRoute: pts.length >= 2,
-      bounds,
-      segments,
-    },
-  };
-}
 
 // ===== 记录页：运动记录 / 每日记录 / 每周记录 =====
 

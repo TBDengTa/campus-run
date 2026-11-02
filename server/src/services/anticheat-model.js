@@ -35,6 +35,10 @@
  */
 const RunRecord = require('../models/run-record');
 const User = require('../models/user');
+// GPS 轨迹的「正确」几何工具：normalizePoints（按 timestamp 排序 + 字段名兼容）
+// 与 haversineMeters（无双重开方）。峰值速度复用它，保证与详情接口逐位一致。
+// 不循环依赖：gps-metrics 不 require 本文件。
+const { normalizePoints, haversineMeters } = require('./gps-metrics');
 
 // ===== 模型参数（可在管理端调整；这些值本身也是学习结果的一部分）=====
 // 森林规模：树太少方差大，太多浪费 CPU。60 棵对 1~2 万条样本是经验甜点。
@@ -136,6 +140,8 @@ function gpsFeatures({ record, history }) {
   let gapAvg = 0;
   let gapMax = 0;
   let jitter = 0;
+  // 峰值速度（展示用；不进模型向量）
+  let peakSpeed = 0;
   if (pts.length >= 2) {
     const gaps = [];
     const steps = [];
@@ -149,10 +155,31 @@ function gpsFeatures({ record, history }) {
     const meanStep = steps.reduce((a, b) => a + b, 0) / steps.length;
     const variance = steps.reduce((a, b) => a + (b - meanStep) ** 2, 0) / steps.length;
     jitter = meanStep > 0 ? Math.sqrt(variance) / meanStep : 0;
+    // 峰值速度（用户 2026-11-02 训练台要看峰值）：与 services/gps-metrics.js 完全同一算法 ——
+    //   直接复用它的 normalizePoints + haversineMeters，保证两处算出的 peakSpeed 逐位相等
+    //   （否则「详情接口显示 6.29、训练台显示 0」这种自相矛盾又会冒出来）。
+    // ⚠️ 不能用本文件里那个 haversine：它有双重开方 bug（asin(√√x) 而非 asin(√x)），
+    //   实测把 48m 的相邻点算成 24726m（约 500~770 倍），于是 >500m 过滤会把所有点对挡掉、峰值恒 0。
+    //   那个 bug 同时污染了喂给模型的 jitter（见下方 steps），但改它会改变判定分数、需要重训，
+    //   属于「会改变线上封禁行为」的决策，刻意不在本轮顺手改（详见提交说明与回复）。
+    const ordered = normalizePoints(pts);
+    for (let i = 1; i < ordered.length; i += 1) {
+      const dtSec = (ordered[i].t - ordered[i - 1].t) / 1000;
+      if (!(dtSec > 0) || dtSec > 60) continue;
+      const dm = haversineMeters(ordered[i - 1], ordered[i]);
+      if (dm <= 0 || dm > 500) continue;
+      const v = dm / dtSec;
+      if (v > 15) continue;
+      if (v > peakSpeed) peakSpeed = v;
+    }
   }
   return {
     paceSecPerKm: Math.min(paceSecPerKm, 3600),
     speed: Math.min(speed, 20),
+    // ⚠️ peakSpeed 只用于**展示**，刻意不加进 GPS_ORDER（模型输入向量）：
+    //   已训练好的森林按 GPS_ORDER 取维度，加字段进向量会让旧模型分数错位，
+    //   而向量顺序变化是静默的（不会报错，只会判得不准）。
+    peakSpeed: Math.min(peakSpeed, 20),
     distance: Math.min(dist, 100000),
     duration: Math.min(dur, 14400),
     pointCount: Math.min(pts.length, 5000),

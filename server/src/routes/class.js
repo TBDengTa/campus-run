@@ -67,6 +67,8 @@ const studentScope = require('../services/student-scope');
 const accountAdmin = require('../services/user-account-admin');
 const manualBadges = require('../services/user-badges-manual');
 const anticheat = require('../services/anticheat');
+// GPS 派生指标：与用户端 / 管理端共用同一份实现（三条读路径都要挂）
+const gpsMetrics = require('../services/gps-metrics');
 // 宿舍（住宿记录）的读写唯一实现：班主任给本班学生安排住宿，与管理端共用，
 // 并负责把楼名清单一起下发（教师不需要 building.view）
 const studentDorm = require('../services/student-dorm');
@@ -1166,7 +1168,7 @@ router.get(
     const masked = !homeroom.includes(target.className);
     const rawName = target.realName || target.nickname || target.account || '';
     ok(res, {
-      ...record,
+      ...gpsMetrics.withGpsMetrics(record),
       ownerName: masked && target.privacy && target.privacy.hideName ? maskName(rawName) : rawName,
     });
   })

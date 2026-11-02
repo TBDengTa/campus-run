@@ -411,6 +411,11 @@ router.get(
         labeledBy: r.labeledBy || '',
         labeledAt: r.labeledAt || null,
         handleNote: r.handleNote || '',
+        // GPS 记录的速度/配速/轨迹质量（用户 2026-11-02「依旧没有 GPS 详情新增速度指标」）：
+        // features 是判定时的输入快照（paceSecPerKm/speed/distance/duration/pointCount/
+        // gapAvg/gapMax/jitter/sparse），训练台研判必须看到这些原始数字 ——
+        // 光有「AI 分 0.92」没法判断该不该封。werun 的 features 一并下发，前端按 source 取用。
+        features: r.features || null,
       })),
     });
   })
@@ -488,7 +493,17 @@ router.get(
     // 保证返回的 effective 永远是「按当前库里配置算出来的」，管理员不需要猜要不要等 30 秒。
     let effective = acModel.currentThreshold();
     const wantMode = ac.aiStrictness || 'balanced';
-    if (effective && effective.mode && effective.mode !== wantMode) {
+    // ⚠️ 不能只比 mode（上一版就是这么写的，用户 2026-11-02「缓存问题没有修复」）：
+    //   custom 档下管理员改的是**两个阈值数字**，mode 始终是 'custom' 不变，
+    //   于是「档位一致」→ 自检不触发 → 页面继续显示旧阈值，看起来就像缓存没清。
+    //   现在把 custom 的两个数字也纳入比对。
+    const wantSusp = ac.aiSuspiciousThreshold == null ? null : Number(ac.aiSuspiciousThreshold);
+    const wantBan = ac.aiAutoBanThreshold == null ? null : Number(ac.aiAutoBanThreshold);
+    const base = (effective && effective.base) || {};
+    const cfgDrifted =
+      wantMode === 'custom' &&
+      (Number(base.suspicious) !== wantSusp || Number(base.autoBan) !== wantBan);
+    if ((effective && effective.mode && effective.mode !== wantMode) || cfgDrifted) {
       acModel.clearThresholdCache();
       await acModel.warmThreshold().catch(() => {});
       effective = acModel.currentThreshold();

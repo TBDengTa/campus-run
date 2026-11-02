@@ -189,8 +189,17 @@ function setCookieHeader(res) {
     // 于是「后端已修、app.js 已换」时浏览器还在跑旧文件 —— 用户看到的报错与代码不同步。
     // 带版本参数后代码一部署 URL 就变，必然重新拉取。
     const chomeText = await chome.text();
-    const jsRef = (chomeText.match(/app\.js[^"']*/) || [''])[0];
-    const cssRef = (chomeText.match(/app\.css[^"']*/) || [''])[0];
+    // ⚠️ 必须匹配**真实的资源属性**（src="..." / href="..."），不能用宽松正则 /app\.js[^"']*/：
+    //   页面注释里也会出现 "app.js" 这个词（解释为什么不能动 .tab[data-v]），
+    //   宽松正则会先抓到注释文本 → 断言误判失败，且第二条「带 ?v= 的 URL 要 200」
+    //   会拿注释文本去拼 URL，得到一个假 404（2026-11-02 实际踩过）。
+    const pickRef = (file) => {
+      const re = new RegExp(`(?:src|href)\\s*=\\s*"([^"]*${file}[^"]*)"`);
+      const m = chomeText.match(re);
+      return m ? m[1] : '';
+    };
+    const jsRef = pickRef('app\\.js');
+    const cssRef = pickRef('app\\.css');
     assert(/app\.js\?v=\w/.test(jsRef), `页面里的 app.js 带版本参数（实际「${jsRef}」）`, jsRef);
     assert(/app\.css\?v=\w/.test(cssRef), `页面里的 app.css 带版本参数（实际「${cssRef}」）`, cssRef);
     // 页面的 strip 必须仍与静态文件可比：去掉 ?v= 后要能 200

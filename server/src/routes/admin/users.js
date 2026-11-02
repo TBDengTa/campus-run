@@ -27,6 +27,8 @@ const WxSession = require('../../models/wx-session');
 const LoginDevice = require('../../models/login-device');
 const deviceSvc = require('../../services/login-device');
 const Appeal = require('../../models/appeal');
+// GPS 派生指标（平均/峰值速度、配速、分段、包围盒）：三条读路径共用一份实现
+const gpsMetrics = require('../../services/gps-metrics');
 const Organization = require('../../models/organization');
 // 账号级管理动作的唯一实现（重置密码 / 删除账号 / 限制 / 解除限制）：
 // 班级域（班主任管本班学生）与这里共用同一份实现，避免两套逻辑分裂（见该 service 文件头）。
@@ -1969,8 +1971,11 @@ router.get(
     if (!user) throw new ApiError(404, 404, '用户不存在');
     const record = await RunRecord.findOne({ _id: req.params.runId, openid: user.openid }).lean();
     if (!record) throw new ApiError(404, 404, '记录不存在');
+    // GPS 派生指标（用户 2026-11-02「依旧没有 GPS 详情新增速度指标」）：
+    // ⚠️ 三条读路径（用户端 / 管理端 / 班级域）必须都挂。上一版只挂了用户端，
+    //   管理员打开同一条 GPS 记录就没有速度指标。算法共用 services/gps-metrics.js。
     ok(res, {
-      ...record,
+      ...gpsMetrics.withGpsMetrics(record),
       ownerName: user.realName || user.nickname || user.account || '',
     });
   })

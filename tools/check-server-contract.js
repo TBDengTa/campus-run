@@ -901,6 +901,11 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   const consoleCss = require('fs').readFileSync(path.join(SERVER, '..', 'public/console/app.css'), 'utf8');
   const consoleRoute = require('fs').readFileSync(path.join(SERVER, 'routes/console.js'), 'utf8');
   const runRoute = require('fs').readFileSync(path.join(SERVER, 'routes/run.js'), 'utf8');
+  const gpsSvc = require('fs').readFileSync(path.join(SERVER, 'services/gps-metrics.js'), 'utf8');
+  const adminUsersRoute = require('fs').readFileSync(path.join(SERVER, 'routes/admin/users.js'), 'utf8');
+  const classRoute = require('fs').readFileSync(path.join(SERVER, 'routes/class.js'), 'utf8');
+  const consoleAppJs = require('fs').readFileSync(path.join(SERVER, '..', 'public/console/app.js'), 'utf8');
+  const appSrc = require('fs').readFileSync(path.join(SERVER, 'app.js'), 'utf8');
   const modelSrc2 = require('fs').readFileSync(path.join(SERVER, 'services/anticheat-model.js'), 'utf8');
   const runDetailJs = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'pages', 'run', 'detail.js'), 'utf8');
   const runDetailWxml = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'pages', 'run', 'detail.wxml'), 'utf8');
@@ -919,14 +924,38 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('不一致时清缓存并预热', /clearThresholdCache\(\)[\s\S]{0,200}warmThreshold/.test(consoleRoute));
 
   // ③ GPS 详情返回平均/峰值速度与路线包围盒
-  ok('GPS 详情有 withGpsMetrics', /function withGpsMetrics/.test(runRoute));
-  ok('返回 avgSpeed / peakSpeed', /avgSpeed:/.test(runRoute) && /peakSpeed:/.test(runRoute));
-  ok('返回包围盒（画路线图）', /let bounds = null/.test(runRoute) && /minLat: Math\.min/.test(runRoute));
-  ok('返回千米分段', /const segments = \[\]/.test(runRoute) && /segments,/.test(runRoute));
+  ok('GPS 指标共用服务存在', /function withGpsMetrics/.test(gpsSvc));
+  ok('返回 avgSpeed / peakSpeed', /avgSpeed:/.test(gpsSvc) && /peakSpeed:/.test(gpsSvc));
+  ok('返回包围盒（画路线图）', /let bounds = null/.test(gpsSvc) && /minLat: Math\.min/.test(gpsSvc));
+  ok('返回千米分段', /const segments = \[\]/.test(gpsSvc) && /segments,/.test(gpsSvc));
   // ⚠️ 字段名必须是 latitude/longitude/timestamp（曾误写 lat/lng/ts → 指标全空但接口仍 200）
-  ok('轨迹字段名与 schema 一致', /p\.latitude/.test(runRoute) && /p\.timestamp/.test(runRoute));
-  ok('峰值速度有异常过滤（防 GPS 漂移）', /v > 15/.test(runRoute) && /dt > 60/.test(runRoute));
+  ok('轨迹字段名与 schema 一致', /p\.latitude/.test(gpsSvc) && /p\.timestamp/.test(gpsSvc));
+  ok('峰值速度有异常过滤（防 GPS 漂移）', /v > 15/.test(gpsSvc) && /dt > 60/.test(gpsSvc));
   ok('小程序详情页展示速度指标', /gpsMetrics/.test(runDetailJs) && /平均速度/.test(runDetailWxml) && /峰值速度/.test(runDetailWxml));
+  // ⚠️ 三条读路径都要挂（用户 2026-11-02「依旧没有 GPS 详情新增速度指标」）：
+  //   上一版只挂了用户端 /api/run/detail，管理员与班主任打开同一条记录就没有指标。
+  ok('管理端详情挂 GPS 指标', /gpsMetrics\.withGpsMetrics/.test(adminUsersRoute));
+  ok('班级域详情挂 GPS 指标', /gpsMetrics\.withGpsMetrics/.test(classRoute));
+  ok('用户端详情挂 GPS 指标', /gpsMetrics\.withGpsMetrics/.test(runRoute));
+  // 单一实现：run.js 里不得再有第二份 withGpsMetrics / haversine 定义
+  ok('GPS 指标无第二份实现', !/function withGpsMetrics|function haversineMeters/.test(runRoute + adminUsersRoute + classRoute));
+  // 控制台训练台也要展示 GPS 速度（features 下发 + 前端渲染）
+  ok('控制台列表下发 features', /features: r\.features \|\| null/.test(consoleRoute));
+  ok('控制台训练台展示平均速度', /平均速度/.test(consoleAppJs));
+  ok('控制台训练台展示峰值/配速', /峰值速度|配速/.test(consoleAppJs));
+  // 资源版本必须取自身 mtime（取 buildTag 时改 app.js 不刷新，缓存设计形同虚设）
+  ok('资源版本取自身 mtime 而非 buildTag', /assetVersion\('app\.js'\)/.test(appSrc) && /statSync\(path\.join\(__dirname, '\.\.\/public\/console', file\)\)\.mtime/.test(appSrc));
+  // 模型配置缓存自检要覆盖 custom 档（只比 mode 时改阈值数字不刷新）
+  ok('model-status 自检覆盖 custom 阈值数字', /cfgDrifted/.test(consoleRoute) && /wantMode === 'custom'/.test(consoleRoute));
+  // 峰值速度：两处实现必须逐位一致（复用同一几何工具），且不得进模型向量
+  ok('gps-metrics 的 haversine 是单次开方（正确）', /Math\.asin\(Math\.min\(1, Math\.sqrt\(h\)\)\)/.test(gpsSvc) && !/sqrt\(Math\.sqrt/.test(gpsSvc));
+  ok('anticheat-model 峰值复用 gps-metrics 工具', /require\('\.\/gps-metrics'\)/.test(modelSrc2) && /normalizePoints\(pts\)/.test(modelSrc2) && /haversineMeters\(ordered/.test(modelSrc2));
+  ok('peakSpeed 不进 GPS_ORDER（旧模型向量安全）', !/GPS_ORDER[^\n]*peakSpeed/.test(modelSrc2.split('function toVector')[0].match(/const GPS_ORDER = \[[^\]]*\]/)[0]));
+  ok('控制台展示峰值速度', /kv\('峰值速度'/.test(consoleAppJs));
+  // 已知遗留：anticheat-model 内部 haversine 有双重开方 bug，污染 jitter（模型输入）。
+  // 修它会改变线上封禁分数，需重训，刻意未在本轮顺手改 —— 这里钉住「峰值展示已绕开它」，
+  // 并保留 bug 现状可被检测（万一有人误以为已修）。
+  ok('（记录）anticheat-model 内部 haversine 仍是双重开方（jitter 待单独决策修复）', /Math\.sqrt\(Math\.min\(1,Math\.sqrt\(x\)\)\)|Math\.sqrt\(Math\.min\(1, Math\.sqrt\(x\)\)\)/.test(modelSrc2.replace(/\s+/g,'').length?modelSrc2:modelSrc2));
 
   // ④ 升级进度不再恒为 0（总进度用平均、短板单独给）
   ok('升级进度用平均（不再 min 恒为 0）', /out\.progress = Math\.round\(\(ratios\.reduce/.test(modelSrc2));
