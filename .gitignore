@@ -36,9 +36,11 @@ deploy/
 # 设计源文件（原始大图，不入包也不入库；压缩后的小图放 miniprogram/assets/）
 .design-src/
 
-# 一次性调试脚本（_tmp-* / _probe*）：跑完即删，绝不入库。
+# 一次性调试脚本（_tmp-* / _probe* / 其它 _ 前缀临时文件）：跑完即删，绝不入库。
+# 用通配 tools/_* 而不是逐个列：临时文件可能是 _ac.txt / _uri.txt 这类非 .js 后缀，
+# 逐个列必然漏（本轮就把 tools/_ac.txt 误提交了）。
 # tools/ 下只应该有 check-*（可重复运行的静态检查）、verify-*（端到端验证）与生成器。
-tools/_tmp-*.js
+tools/_*
 tools/_probe*.js
 
 
