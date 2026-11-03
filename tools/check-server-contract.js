@@ -914,7 +914,8 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('控制台有侧边栏', /class="sidebar"/.test(consoleHtml) && /<aside/.test(consoleHtml));
   ok('控制台有独立内容区', /<main class="main"/.test(consoleHtml));
   ok('CSS 有 B 端侧边栏样式', /\.sidebar\s*\{/.test(consoleCss) && /\.tab\.on/.test(consoleCss));
-  ok('窄屏有响应式（侧边栏转横向）', /@media \(max-width: 820px\)/.test(consoleCss));
+  // 2026-11-03 UI 重构为简约 B 端：断点从 820px 改为 1080px（侧边栏转横向）+ 860px（表格降级）
+  ok('窄屏有响应式（侧边栏转横向）', /@media \(max-width: 1080px\)/.test(consoleCss) && /\.console-shell \{ flex-direction: column; \}/.test(consoleCss));
   // ⚠️ 只改视觉不改 JS 契约：视图 id 与 .tab[data-v] 必须还在
   ok('视图 id 未被破坏', /id="vDash"/.test(consoleHtml) && /id="vTrain"/.test(consoleHtml) && /id="vCfg"/.test(consoleHtml));
   ok('tab 仍带 data-v（JS 靠它切视图）', /data-v="dash"/.test(consoleHtml) && /data-v="train"/.test(consoleHtml));
@@ -975,10 +976,14 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
     ok('改判 cheat/minor 会回到待研判', /label === 'cheat' \|\| label === 'minor'[\s\S]{0,160}status = 'open'/.test(disposalSrc));
     // 绝不能顺手解封：banned 记录改标注不得改 status
     ok('改标注不会解除封禁', !/status === 'banned'[\s\S]{0,80}status = 'dismissed'/.test(disposalSrc) && /labelAnomaly[\s\S]{0,1400}/.test(disposalSrc));
-    // 界面必须说明去向（否则用户以为没生效）
-    ok('控制台标注后说明去向', /移出待研判/.test(cApp) && /仍在待研判/.test(cApp));
-    // 状态标签要区分「待研判（没人看过）」与「待处置（已标注但未封禁）」
-    ok('已标注记录不再显示「待研判」', /r\.label \? '待处置' : '待研判'/.test(cApp));
+    // 界面必须说明去向（否则用户以为没生效）。2026-11-03 文案改为「待处置（封禁或归档）」
+    ok('控制台标注后说明去向', /移出待研判/.test(cApp) && /待处置（封禁或归档）/.test(cApp));
+    // 状态标签要区分「待研判（没人看过）」与「已判定·待处置（标了作弊/轻微但未处置）」
+    // 2026-11-03 UI 重构：三元挪进 statusPill()，语义不变
+    ok(
+      '已标注记录不再显示「待研判」',
+      /r\.label === 'cheat' \|\| r\.label === 'minor'[\s\S]{0,120}已判定 · 待处置/.test(cApp)
+    );
     // 两端共用一份实现（禁止各写一套）
     const adminRoute = require('fs').readFileSync(path.join(SERVER, 'routes/admin/step-anomalies.js'), 'utf8');
     const consoleRoute2 = require('fs').readFileSync(path.join(SERVER, 'routes/console.js'), 'utf8');

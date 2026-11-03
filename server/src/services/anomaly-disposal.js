@@ -161,6 +161,47 @@ async function dismissAnomaly(anomalyId, { note = '', operator = '' } = {}) {
 }
 
 /**
+ * 归档（记录违规，不封禁）—— 处置线的第三个动作（用户 2026-11-03
+ * 「标记为轻微违规并没有处置，处置和标记是两码事，UI 理解不了」）。
+ *
+ * 语义：这条线索**已确认是违规**（label 保留；未标注的默认 minor 并进训练集），
+ * 但情节不到封禁的程度 → 移出待研判队列。与 dismissAnomaly 的区别：
+ *   dismiss = 研判为**正常**（label 强制 normal，是误报负样本）；
+ *   archive = 研判为**违规但不封**（label 保留 cheat/minor，仍进训练集）。
+ * 轻微违规在 step-label.js 的注释里写的是「处置上给警告而非封禁」——
+ * 警告机制未实现前，「记录 + 归档」就是它的处置去向。
+ *
+ * @param {string} anomalyId
+ * @param {{note?:string, operator?:string}} [opts]
+ */
+async function archiveAnomaly(anomalyId, { note = '', operator = '' } = {}) {
+  const rec = await StepAnomaly.findById(anomalyId);
+  if (!rec) throw new ApiError(404, 404, '异常记录不存在');
+  if (rec.status !== 'open') throw new ApiError(400, 400, '该记录已处理');
+  const noteText = String(note || '').slice(0, 200);
+
+  // 未标注就归档：默认判定为轻微违规（归档前提是「确认违规」，没理由默认成正常/作弊）
+  if (!rec.label) {
+    rec.label = 'minor';
+    rec.labeledBy = operator || 'admin';
+    rec.labeledAt = new Date();
+    try {
+      await recordFeedback(rec, 'minor', noteText, operator);
+    } catch (e) {
+      /* 反馈失败不影响处置 */
+    }
+  }
+
+  rec.status = 'dismissed';
+  rec.handledBy = operator || 'admin';
+  rec.handledAt = new Date();
+  rec.handleNote = noteText || '记录违规，不封禁归档';
+  await rec.save();
+
+  return { archived: true, label: rec.label, status: rec.status };
+}
+
+/**
  * 标注 → 落 step_labels + 即时校准 + 升级进度缓存失效（三处动作绑在一起，
  * 避免调用方漏掉 invalidateUpgradeCache 导致界面数字不动）。
  */
@@ -185,4 +226,4 @@ async function recordFeedback(rec, label, note, operator) {
   acModel.invalidateUpgradeCache();
 }
 
-module.exports = { labelAnomaly, banAnomaly, dismissAnomaly };
+module.exports = { labelAnomaly, banAnomaly, dismissAnomaly, archiveAnomaly };

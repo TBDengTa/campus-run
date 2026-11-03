@@ -30,8 +30,11 @@ const WRITE_ACTIONS =
   /^(add|create|save|submit|remove|del|delete|edit|update|rename|apply|publish|revoke|grant|award|review|approve|reject|ban|unban|reset|import|upload|transfer|kick|leave|join|generate|gen|unbind|bind|batch|set|clear|toggle[A-Z]\w*|open[A-Z]\w*(Create|Add|Edit|Upload|Import|Ban|Grant|Publish|Group|Level)|open(Create|Add|Edit|Upload|Import|Ban|Grant|Publish))/i;
 
 // 纯界面状态动作：展开/收起/清筛选/切 tab/预览/复制 —— 只读用户同样需要。
+// ⚠️ `toggleContent`（申诉列表「展开全文 / 收起」）也是纯 UI：只 setData 翻 folded 布尔，
+// 不发任何请求（见 appeals.js::toggleContent）。只读账号（appeal.view）必须能展开读全文，
+// 否则等于只给了他半截内容。落进 `toggle[A-Z]\w*` 通配会被误报成写入口。
 const UI_ONLY_ACTIONS =
-  /^(toggleFilters|clearFilters|toggleDeptExpand|toggleModuleDept|clearKeyword|resetFilters|clearChecked|toggleBulk|clearClassFilter|toggleBadgeGroup|toggleBatchMode|toggleCheckAll|toggleRow|toggleExpand|toggleGroup|togglePick|toggleSelect|toggleSheet|toggleTab|toggleCard|toggleUnfold|toggleUnassigned|toggleFilters|switchTab|switchSlot|onCat|onItemTap|onResetFilters|onFormVisible|onIconVisible|onMode|preview|copyLink|goStats|changeYear|chooseIcon|closeForm|closeSheet|closeResult|closePickers|closeTransferSheet|closeDeptAdd|closeModuleEdit|closeAdd|clearResult|back|close[A-Z]\w*|resetModule)$/;
+  /^(toggleContent|toggleFilters|clearFilters|toggleDeptExpand|toggleModuleDept|clearKeyword|resetFilters|clearChecked|toggleBulk|clearClassFilter|toggleBadgeGroup|toggleBatchMode|toggleCheckAll|toggleRow|toggleExpand|toggleGroup|togglePick|toggleSelect|toggleSheet|toggleTab|toggleCard|toggleUnfold|toggleUnassigned|toggleFilters|switchTab|switchSlot|onCat|onItemTap|onResetFilters|onFormVisible|onIconVisible|onMode|preview|copyLink|goStats|changeYear|chooseIcon|closeForm|closeSheet|closeResult|closePickers|closeTransferSheet|closeDeptAdd|closeModuleEdit|closeAdd|clearResult|back|close[A-Z]\w*|resetModule)$/;
 
 // 整页都需要写权限才能进入（不存在只读用户）
 const WRITE_ONLY_PAGES = new Set([

@@ -174,6 +174,30 @@
   排查会被彻底带偏（2026-10-30 真实踩过：修好了但线上看到的还是旧行为）。
   `buildTag` = `server/src/index.js` 的 mtime，一部署就变 → URL 必变 → 必然重新拉取。
   回归断言：页面里 `app.js`/`app.css` 都带版本参数，且带参数的 URL 仍 200（query 不影响静态解析）。
+  ⚠️ **自动处置总开关必须覆盖全部自动封禁路径**（用户 2026-11-03「自动处置关闭了依旧没有效果
+  依然会主动封禁」）：`goal_config.anticheat.enabled` 早前只在两条规则路径（checkStepJump /
+  checkPace）检查，两条 **AI 路径**（steps.js 微信同步 / GPS）不读开关、score 达线照封 ——
+  开关是假的。现在统一闸门在 `services/steps.js::autoDisposeEnabled()`，AI 两处 restrict 前
+  必须过它；关闭时线索照常落库（open 等人工研判），只是不自动限制学生。**自动封禁执行后必须
+  回写线索**（`steps.js::markAutoBanned`：status='banned' + autoBanned=true）—— 此前 autoBanned
+  全库无写入点，「已封禁」筛选与「系统自动封禁」标签形同虚设。dashboard 下发 `autoDispose`，
+  状态台顶栏显示开关状态。回归：`tools/check-anticheat-disposal.js`（静态）+
+  `tools/verify-console.js` 第 8b 节（打桩模型恒 autoBan，真连库验开关两态）。
+  ⚠️ **GPS 线索必须带轨迹快照**：`step_anomalies.route`（判定时降采样 ≤400 点 `{lat,lng,t}`，
+  走 `gps-metrics.js::downsamplePoints`）+ `runRecordId`（run_records 落库后回填）。自动封禁的
+  GPS 跑**不落 run_records**（拦截时直接 return），快照是它唯一的轨迹。控制台轨迹详情接口
+  `GET /console/api/anomalies/:id/gps`（挂 anticheat.view）的数据源优先级：runRecordId →
+  route 快照 → 旧记录按 openid+日期就近匹配。**快照优先于日期匹配**：快照与线索精确绑定，
+  同日多条跑时日期匹配可能选错别人的轨迹。指标一律走 `withGpsMetrics`（与小程序三条读路径同源），
+  轨迹图是前端内联 SVG（createElementNS，CSP 兼容）。
+- **判定 ≠ 处置，控制台 UI 分两组表达**（用户 2026-11-03「标记为轻微违规并没有处置，
+  处置和标记是两码事，UI 理解不了」）：训练台动作区分「① 判定·喂 AI 训练（不动学生）」与
+  「② 处置·处理这条线索（对学生生效）」。标注 cheat/minor 后记录**留在队列**（状态徽标
+  「已判定 · 待处置」），直到封禁或归档 —— 这不是 bug，是「研判员标注 → 管理员批准」
+  复核流程的刻意设计，不要改成标注即出队。**归档（archive）是处置线第三个动作**
+  （`anomaly-disposal.js::archiveAnomaly`，与封禁/排除同在唯一实现里，console 与 admin
+  两路由只取参）：= 记录违规但不封禁、移出队列；未标注默认 minor，已标 cheat/minor 的
+  保留原判定（归档是处置线，不能替管理员改认知线）。轻微违规的处置去向就是归档。
 - **只读账号不显示写入口**（用户 2026-10-22「只有查看权限时应该不显示操作功能按钮，而不是点击后被后端拒绝掉」）：
   ① 每个管理端页面在 `onShow`/`load` 里调 `utils/admin-perm.js::applyManage(this, '<模块>.manage')`
      得到 `data.canManage`（`*` 或该项），写入口一律 `wx:if="{{canManage}}"`，输入框 `disabled="{{!canManage}}"`；

@@ -10,28 +10,33 @@
 
   <view class="tt-section">
     <text>申诉记录</text>
-    <text class="tt-section-extra">{{list.length}} 条</text>
+    <text class="tt-section-extra">{{list.length}} 条 · 点姓名查看该用户详情</text>
   </view>
 
-  <!-- ===== 列表 ===== -->
+  <!-- ===== 列表（紧凑排版，用户 2026-11-03）===== -->
   <view class="tt-card appeal-card">
-    <view class="tt-row appeal-item" wx:for="{{list}}" wx:key="_id">
-      <view class="appeal-head">
-        <text class="tt-row-title">{{item.userText || item.realName || item.openidShort + '…'}}</text>
+    <view class="appeal-item" wx:for="{{list}}" wx:key="_id">
+      <!-- 头部行整行可点 → 用户详情（uid 为空 = 账号已注销，点了只提示不跳转） -->
+      <view class="appeal-head" bind:tap="openUser" data-uid="{{item.uid}}">
+        <text class="appeal-name">{{item.userText || item.realName || item.openidShort + '…'}}</text>
+        <text class="appeal-open" wx:if="{{item.uid}}">详情 ›</text>
         <t-tag theme="{{item.statusInfo.theme}}" variant="light" size="small">{{item.statusInfo.text}}</t-tag>
         <text class="appeal-time">{{item.timeText}}</text>
       </view>
 
-      <view class="appeal-meta">
-        申诉类型：{{item.typeText}} · 到期 {{item.untilText}}<text wx:if="{{item.className}}"> · {{item.className}}</text>
+      <view class="appeal-meta-line">
+        <text>{{item.typeText}}</text>
+        <text wx:if="{{item.className}}">{{item.className}}</text>
+        <text>到期 {{item.untilText}}</text>
       </view>
-      <view class="appeal-meta" wx:if="{{item.banReason}}">限制原因：{{item.banReason}}</view>
-      <view class="appeal-meta">当前状态：{{item.activeText}}</view>
+      <view class="appeal-meta-line" wx:if="{{item.banReason}}">原因：{{item.banReason}}</view>
+      <view class="appeal-meta-line">当前：{{item.activeText}}</view>
 
-      <view class="appeal-content">{{item.content}}</view>
+      <view class="appeal-content {{item.folded ? 'folded' : ''}}">{{item.content}}</view>
+      <view class="appeal-fold" wx:if="{{item.contentLong}}" catch:tap="toggleContent" data-id="{{item._id}}">{{item.folded ? '展开全文 ▾' : '收起 ▴'}}</view>
 
       <view class="appeal-reply" wx:if="{{item.reply}}">
-        <text class="appeal-reply-label">管理员回复</text>
+        <text class="appeal-reply-label">回复</text>
         <text class="appeal-reply-text">{{item.reply}}</text>
       </view>
 

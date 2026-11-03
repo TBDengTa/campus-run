@@ -52,6 +52,13 @@ Page({
             userText: u ? `${u.realName || '未命名'}${u.studentId ? ' · ' + u.studentId : ''}` : a.openidShort,
             className: (u && u.className) || '',
             activeText: u && u.restrictions && u.restrictions.length ? u.restrictions.map((r) => r.text).join('、') : '无生效限制',
+            // 点击跳用户详情（用户 2026-11-03「我应该点击能查看该用户详细页面，方便我做出判断」）：
+            // user-detail 只认 User._id（与用户管理列表 users.js::onRowTap 同一模式）；
+            // 申诉人已注销/删号时接口回 user:null，uid 留空不可跳。
+            uid: u && u._id ? u._id : '',
+            // 正文超长默认收起（3 行），紧凑排版
+            contentLong: (a.content || '').length > 48,
+            folded: true,
           };
         }),
       });
@@ -60,6 +67,23 @@ Page({
     } finally {
       this.setData({ loading: false });
     }
+  },
+
+  // 点头部行 → 用户详情页：看该生的历史记录/封禁流水，再决定通过还是驳回
+  openUser(e) {
+    const uid = e.currentTarget.dataset.uid;
+    if (!uid) {
+      wx.showToast({ title: '该申诉人账号已不存在', icon: 'none' });
+      return;
+    }
+    wx.navigateTo({ url: `/packageAdmin/user-detail/user-detail?id=${uid}` });
+  },
+
+  toggleContent(e) {
+    const id = e.currentTarget.dataset.id;
+    this.setData({
+      list: this.data.list.map((x) => (x._id === id ? { ...x, folded: !x.folded } : x)),
+    });
   },
 
   review(e) {

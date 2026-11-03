@@ -1,11 +1,13 @@
 const RunRecord = require('../models/run-record');
 const RewardVideoRecord = require('../models/reward-video-record');
 const GoalConfig = require('../models/goal-config');
+const StepAnomaly = require('../models/step-anomaly');
 const wechat = require('./wechat');
 const anticheat = require('./anticheat');
 const badgesSvc = require('./badges');
 const rewardVideoSvc = require('./reward-video');
 const { todayKey } = require('../utils/dates');
+const { normalizePoints, downsamplePoints } = require('./gps-metrics');
 
 function withPace(doc) {
   doc.pace = wechat.formatPace(doc.durationSeconds, doc.distance);
@@ -26,6 +28,48 @@ function teacherBlock(user) {
 
 // 同步窗口：1 小时内的多次微信同步合并为同一条记录；超过 1 小时则新建当日的下一条记录
 const SYNC_WINDOW_MS = 60 * 60 * 1000;
+
+/**
+ * 自动处置总开关（用户 2026-11-03「自动处置关闭了依旧会主动封禁」）。
+ *
+ * ⚠️ 本函数是**所有 AI 自动封禁路径**的统一闸门（syncWerunDay / saveGpsRun）。
+ *   规则通道（checkStepJump / checkPace）在 anticheat.js 内部各自检查同一个开关。
+ *   历史缺陷：开关只在规则通道生效，AI 通道（score ≥ 自动封禁线）照封不误 ——
+ *   管理员关掉开关后系统仍在封号，等于开关是假的。
+ *   关闭时：线索照常落库（status=open 等人工研判），只是不自动限制学生。
+ */
+async function autoDisposeEnabled() {
+  const cfg = await GoalConfig.getSingleton();
+  return !(cfg.anticheat && cfg.anticheat.enabled === false);
+}
+
+/**
+ * 自动封禁执行后回写线索记录（status='banned' + autoBanned=true）。
+ *
+ * 此前从未实现：autoBanned 字段全库没有任何写入点，自动封掉的记录永远停留 open ——
+ * 「已封禁」筛选与「系统自动封禁」标签形同虚设，管理员复核台里看不出系统封了谁。
+ * 回写失败不影响限制本身已生效。
+ */
+async function markAutoBanned(anomalyId, reason) {
+  if (!anomalyId) return;
+  try {
+    await StepAnomaly.updateOne(
+      { _id: anomalyId },
+      {
+        $set: {
+          status: 'banned',
+          autoBanned: true,
+          handledBy: 'system',
+          handledAt: new Date(),
+          handleNote: String(reason || '').slice(0, 200),
+        },
+      }
+    );
+  } catch (e) {
+    /* 回写失败不影响限制生效 */
+  }
+}
+
 
 /**
  * 统计「今天有多少次同步步数与本次完全相同」。
@@ -116,27 +160,28 @@ async function recordStepAnomaly(user, { dateKey, cumulativeSteps, deltaSteps, e
         }
       );
     }
-  } else {
-    await StepAnomaly.create({
-      userId: user._id,
-      openid: user.openid || '',
-      realName: user.realName || user.nickname || user.account || '',
-      className: user.className || '',
-      studentId: user.studentId || '',
-      date: dateKey,
-      cumulativeSteps: Number(cumulativeSteps) || 0,
-      deltaSteps: Number(deltaSteps) || 0,
-      score: merged.score,
-      reasons: merged.reasons,
-      status: 'open',
-      modelScore: modelResult ? Number(modelResult.score) : null,
-      modelLevel: modelResult ? modelResult.level : '',
-      // 特征快照：管理员处置后这条记录会连同特征进入 step_labels 训练集，
-      // 所以特征必须在**判定当下**存下来（原始数据将来可能被清理）
-      features: modelResult && modelResult.features ? modelResult.features : null,
-    });
+    // anomalyId：自动封禁执行后要靠它回写 status='banned'/autoBanned（见 markAutoBanned）
+    return { ...merged, anomalyId: String(existing._id) };
   }
-  return merged;
+  const created = await StepAnomaly.create({
+    userId: user._id,
+    openid: user.openid || '',
+    realName: user.realName || user.nickname || user.account || '',
+    className: user.className || '',
+    studentId: user.studentId || '',
+    date: dateKey,
+    cumulativeSteps: Number(cumulativeSteps) || 0,
+    deltaSteps: Number(deltaSteps) || 0,
+    score: merged.score,
+    reasons: merged.reasons,
+    status: 'open',
+    modelScore: modelResult ? Number(modelResult.score) : null,
+    modelLevel: modelResult ? modelResult.level : '',
+    // 特征快照：管理员处置后这条记录会连同特征进入 step_labels 训练集，
+    // 所以特征必须在**判定当下**存下来（原始数据将来可能被清理）
+    features: modelResult && modelResult.features ? modelResult.features : null,
+  });
+  return { ...merged, anomalyId: String(created._id) };
 }
 
 /**
@@ -267,7 +312,10 @@ async function syncWerunDay(user, dateKey, cumulativeSteps, { checkJump = true }
         elapsedMs: lastAt ? now - lastAt : 0,
         sameValueCount: await countSameValueSyncs(user, dateKey, cumulativeSteps || 0),
       });
-      if (anomaly && anomaly.autoBan) {
+      // 自动处置总开关（见 autoDisposeEnabled 注释）：关闭时线索已落库（open），
+      // 交给人工研判，本次同步按正常流程写入，不自动限制。
+      if (anomaly && anomaly.autoBan && (await autoDisposeEnabled())) {
+        const reason = `步数异常（${(anomaly.reasons || []).join('、') || '可疑'}）`;
         const info = await anticheat.restrict({
           user,
           scope: 'sync',
@@ -278,8 +326,9 @@ async function syncWerunDay(user, dateKey, cumulativeSteps, { checkJump = true }
           // 与 checkStepJump 的「单次暴增超阈值」规则不是一回事 —— 两者必须在流水里分开。
           source: 'ai',
           escalate: true,
-          reason: `步数异常（${(anomaly.reasons || []).join('、') || '可疑'}）`,
+          reason,
         });
+        await markAutoBanned(anomaly.anomalyId, reason);
         return { restricted: { violation: true, ...info, message: '步数异常' } };
       }
     } catch (e) {
@@ -320,6 +369,7 @@ async function saveGpsRun(user, { date, distance, durationSeconds, calories, ste
   //   微信同步看步数/整数化/同步节奏；GPS 看配速/轨迹点/平滑度/距离时长组合。
   // 绝不给 GPS 跑「步数特征」—— 那会让配速异常的人因为步数正常而漏判。
   let anomaly = null;
+  let anomalyId = null; // 自动封禁回写 / runRecordId 回填要用的线索 id
   try {
     const acModel = require('./anticheat-model');
     const modelResult = await acModel.evaluate('gps', { distance, durationSeconds, routePoints });
@@ -327,8 +377,10 @@ async function saveGpsRun(user, { date, distance, durationSeconds, calories, ste
       const score = Math.max(0, Math.min(100, Math.round((modelResult.score - 0.5) * 250)));
       anomaly = { ...modelResult, score };
       if (modelResult.level === 'suspicious' || modelResult.level === 'autoBan') {
-        const StepAnomaly = require('../models/step-anomaly');
-        await StepAnomaly.create({
+        // 轨迹快照（≤400 点）：自动封禁的 GPS 跑不会落 run_records（拦截时直接 return），
+        // 不在这里存一份的话，最严重的记录反而永远画不出路线图（用户 2026-11-03）。
+        const routeSnapshot = downsamplePoints(normalizePoints(Array.isArray(routePoints) ? routePoints : []));
+        const created = await StepAnomaly.create({
           userId: user._id,
           openid: user.openid || '',
           realName: user.realName || user.nickname || user.account || '',
@@ -346,7 +398,9 @@ async function saveGpsRun(user, { date, distance, durationSeconds, calories, ste
           modelScore: Number(modelResult.score),
           modelLevel: modelResult.level,
           features: modelResult.features || null,
+          route: routeSnapshot,
         });
+        anomalyId = String(created._id);
       }
     }
   } catch (e) {
@@ -357,8 +411,10 @@ async function saveGpsRun(user, { date, distance, durationSeconds, calories, ste
   const result = await anticheat.checkPace(user, distance, durationSeconds);
   if (result.violation) return { restricted: result, anomaly };
 
-  if (anomaly && anomaly.level === 'autoBan') {
+  // 自动处置总开关（同微信同步那处）：关闭时线索留在待研判队列，不自动限制。
+  if (anomaly && anomaly.level === 'autoBan' && (await autoDisposeEnabled())) {
     // GPS 自动封禁只限 scope=gps（不影响微信同步），与 checkPace 一致
+    const reason = `GPS 轨迹异常（${(anomaly.reasons || []).join('、') || '可疑'}）`;
     const info = await anticheat.restrict({
       user,
       scope: 'gps',
@@ -367,8 +423,9 @@ async function saveGpsRun(user, { date, distance, durationSeconds, calories, ste
       // 判定依据 = AI（同微信同步那处的理由：与 checkPace 的规则拦截分开记）
       source: 'ai',
       escalate: true,
-      reason: `GPS 轨迹异常（${(anomaly.reasons || []).join('、') || '可疑'}）`,
+      reason,
     });
+    await markAutoBanned(anomalyId, reason);
     return { restricted: { violation: true, ...info, message: 'GPS 轨迹异常' }, anomaly };
   }
 
@@ -403,6 +460,10 @@ async function saveGpsRun(user, { date, distance, durationSeconds, calories, ste
     routePoints: Array.isArray(routePoints) ? routePoints.slice(0, 5000) : [],
     location: location || '',
   });
+  // 回填关联（失败不影响记录本身）：控制台详情接口优先按它取全量轨迹算指标
+  if (anomalyId) {
+    StepAnomaly.updateOne({ _id: anomalyId }, { $set: { runRecordId: doc._id } }).catch(() => {});
+  }
   return { record: withPace(doc), anomaly };
 }
 

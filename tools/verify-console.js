@@ -19,11 +19,13 @@ const User = require(path.join(serverDir, 'src', 'models', 'user'));
 const StepAnomaly = require(path.join(serverDir, 'src', 'models', 'step-anomaly'));
 const StepLabel = require(path.join(serverDir, 'src', 'models', 'step-label'));
 const BanRecord = require(path.join(serverDir, 'src', 'models', 'ban-record'));
+const RunRecord = require(path.join(serverDir, 'src', 'models', 'run-record'));
 const PermissionGroup = require(path.join(serverDir, 'src', 'models', 'permission-group'));
 const pwd = require(path.join(serverDir, 'src', 'services', 'password'));
 const session = require(path.join(serverDir, 'src', 'services', 'console-session'));
 const disposal = require(path.join(serverDir, 'src', 'services', 'anomaly-disposal'));
 const anticheatSvc = require(path.join(serverDir, 'src', 'services', 'anticheat'));
+const stepsSvc = require(path.join(serverDir, 'src', 'services', 'steps'));
 
 let failed = 0;
 function assert(cond, label, extra) {
@@ -498,6 +500,165 @@ function setCookieHeader(res) {
       { was: [cur.aiSuspiciousThreshold, cur.aiAutoBanThreshold], now: [afterRound.aiSuspiciousThreshold, afterRound.aiAutoBanThreshold] }
     );
 
+    // ==================== 8b) 归档 / GPS 轨迹详情 / 自动处置总开关 ====================
+    // 用户 2026-11-03 三连报：①「标记为轻微违规并没有处置」②「路线图/峰值速度等没有显示」
+    // ③「自动处置关闭了依旧会主动封禁」（根因：enabled 只挡规则路径，AI 路径不读开关）。
+    console.log('\n[8b] 归档处置 + GPS 轨迹详情 + 自动处置总开关');
+
+    // ---- 归档（记录违规 · 不封禁 · 出队）----
+    const recF = await mkAnomaly(null, 'werun');
+    const arch = await req('POST', `/console/api/anomalies/${recF._id}/archive`, { cookie: analystCookie, body: {} });
+    assert(arch.status === 200 && arch.data.data.archived === true, '研判员归档 → 200（label 权限即可，与 dismiss 同线）', arch.data);
+    assert(
+      arch.data.data.status === 'dismissed' && arch.data.data.label === 'minor',
+      '归档：移出待研判 + 未标注默认 minor',
+      arch.data.data
+    );
+    const labelF = await StepLabel.findOne({ anomalyId: recF._id }).lean();
+    created.labels.push(labelF && labelF._id);
+    assert(labelF && labelF.label === 'minor', '归档产生的标注落 step_labels（进训练集）', labelF && labelF.label);
+    const archAgain = await req('POST', `/console/api/anomalies/${recF._id}/archive`, { cookie: analystCookie, body: {} });
+    assert(archAgain.status === 400, '重复归档 → 400（已处理）', archAgain.status);
+
+    // 已标作弊的记录归档：判定保留（归档是处置线，不能替管理员改认知线）
+    const recG = await mkAnomaly(null, 'werun');
+    await req('POST', `/console/api/anomalies/${recG._id}/label`, { cookie: analystCookie, body: { label: 'cheat' } });
+    const archG = await req('POST', `/console/api/anomalies/${recG._id}/archive`, { cookie: analystCookie, body: {} });
+    assert(archG.status === 200 && archG.data.data.label === 'cheat', '已标作弊的记录归档：判定保留 cheat', archG.data.data);
+
+    // ---- GPS 轨迹详情接口（数据源优先级）----
+    const dayKey = new Date().toISOString().slice(0, 10);
+    const t0 = Date.now() - 20 * 60 * 1000;
+    const mkPts = (n) =>
+      Array.from({ length: n }, (_, i) => ({
+        latitude: 33.58 + i * 0.0002,
+        longitude: 118.36 + i * 0.0002,
+        timestamp: t0 + i * 6000,
+      }));
+    created.runs = [];
+    const runDoc = await RunRecord.create({
+      openid: student.openid,
+      source: 'gps',
+      date: dayKey,
+      steps: 500,
+      distance: 3200,
+      calories: 30,
+      durationSeconds: 1200,
+      startTime: new Date(t0),
+      endTime: new Date(t0 + 1200000),
+      routePoints: mkPts(50),
+    });
+    created.runs.push(runDoc._id);
+    const gpsBase = {
+      userId: student._id,
+      openid: student.openid,
+      realName: student.realName,
+      className: student.className,
+      studentId: student.studentId,
+      date: dayKey,
+      source: 'gps',
+      reasons: ['配速异常'],
+      status: 'open',
+      features: { speed: 2.67, peakSpeed: 3.1, paceSecPerKm: 375, distance: 3200, duration: 1200, pointCount: 50 },
+    };
+    // ① runRecordId 命中原始记录（全量轨迹 + 权威指标）
+    const gpsRec1 = await StepAnomaly.create({ ...gpsBase, score: 80, modelScore: 0.82, runRecordId: runDoc._id });
+    created.anomalies.push(gpsRec1._id);
+    const gps1 = await req('GET', `/console/api/anomalies/${gpsRec1._id}/gps`, { cookie: analystCookie });
+    assert(gps1.status === 200 && gps1.data.data.dataSource === 'run_record', 'GPS 详情：runRecordId 命中原始记录', gps1.data.data.dataSource);
+    assert((gps1.data.data.points || []).length === 50, '轨迹点下发（50 点不触发抽稀）', (gps1.data.data.points || []).length);
+    const m1 = gps1.data.data.metrics || {};
+    assert(m1.avgSpeed > 0 && m1.peakSpeed > 0, '指标已算出（平均/峰值速度，走 withGpsMetrics）', m1);
+    assert(gps1.data.data.bounds && gps1.data.data.bounds.minLat > 0, 'bounds 下发（画路线图定视窗用）', gps1.data.data.bounds);
+
+    // ② 快照兜底（自动封禁的 GPS 跑不落 run_records，只剩判定时的降采样快照）
+    const gpsRec2 = await StepAnomaly.create({
+      ...gpsBase,
+      score: 92,
+      modelScore: 0.92,
+      reasons: ['配速低于人类极限'],
+      route: mkPts(60).map((p) => ({ lat: p.latitude, lng: p.longitude, t: p.timestamp })),
+    });
+    created.anomalies.push(gpsRec2._id);
+    const gps2 = await req('GET', `/console/api/anomalies/${gpsRec2._id}/gps`, { cookie: analystCookie });
+    assert(gps2.status === 200 && gps2.data.data.dataSource === 'snapshot', 'GPS 详情：无关联时用轨迹快照兜底', gps2.data.data.dataSource);
+    assert((gps2.data.data.points || []).length === 60, '快照轨迹点下发', (gps2.data.data.points || []).length);
+
+    // ③ 旧记录（无快照无关联，当天也匹配不到）→ none；werun 线索 → 400
+    const gpsRec3 = await StepAnomaly.create({ ...gpsBase, date: '2024-01-01', score: 70, modelScore: 0.7 });
+    created.anomalies.push(gpsRec3._id);
+    const gps3 = await req('GET', `/console/api/anomalies/${gpsRec3._id}/gps`, { cookie: analystCookie });
+    assert(gps3.status === 200 && gps3.data.data.dataSource === 'none', 'GPS 详情：旧记录无轨迹 → none（显式空态，不是报错）', gps3.data.data.dataSource);
+    const werunGps = await req('GET', `/console/api/anomalies/${recF._id}/gps`, { cookie: analystCookie });
+    assert(werunGps.status === 400, '微信同步线索请求轨迹 → 400', werunGps.status);
+
+    // ---- 自动处置总开关：关了就真的不封（本次修的核心 bug）----
+    // ⚠️ 用**独立的临时学生**：前面的学生身上已挂着第 6 节的 sync 限制与多条
+    //    同日 werun 线索（minor 标注的会保持 open），按 openid+date 查会撞数据。
+    const student2 = await User.create({
+      openid: `${TMP_TAG}_stu2`,
+      account: `${TMP_TAG}_S2`,
+      realName: `${TMP_TAG}_S2`,
+      role: 'student',
+      className: `${TMP_TAG}_班`,
+      studentId: `2${String(TS).slice(2, 8)}`,
+      passwordHash: pwd.hashPassword('12345678'),
+      initialHashes: [pwd.hashPassword('12345678')],
+    });
+    created.users.push(student2._id);
+    // 打桩 AI 模型恒返回 autoBan 级：这里验的是**开关闸门**而不是模型本身，
+    // 不打桩的话判定结果取决于库里样本量，测试会飘。steps.js 内部是惰性 require，
+    // 同一进程拿到的是同一个模块实例，改得回去（finally 里恢复）。
+    const acModel = require(path.join(serverDir, 'src', 'services', 'anticheat-model'));
+    const origEvaluate = acModel.evaluate;
+    acModel.evaluate = async () => ({
+      score: 0.95,
+      level: 'autoBan',
+      reasons: ['物理约束：配速低于人类极限'],
+      features: { steps: 88888, ruleHits: 2, ruleMax: 0.9 },
+    });
+    const cfgSwitch = await GoalConfig.getSingleton();
+    const enabledBackup = (cfgSwitch.anticheat || {}).enabled !== false;
+    try {
+      // 关：线索照落、绝不限制、记录正常写入
+      cfgSwitch.anticheat.enabled = false;
+      await cfgSwitch.save();
+      const rOff = await stepsSvc.syncWerunDay(await User.findById(student2._id), dayKey, 88888, { checkJump: true });
+      assert(!rOff.restricted, '开关关闭：AI 判 autoBan 也不限制（历史缺陷：照封不误）', rOff.restricted);
+      assert(!!rOff.record, '开关关闭：同步正常写入（不因 AI 判定阻塞）', !!rOff.record);
+      const stuOff = await User.findById(student2._id).lean();
+      assert(!((stuOff.restrictions || {}).sync || {}).until, '开关关闭：restrictions.sync 未写入', (stuOff.restrictions || {}).sync);
+      const anomalyOff = await StepAnomaly.findOne({ openid: student2.openid, date: dayKey, source: 'werun' }).lean();
+      assert(
+        anomalyOff && anomalyOff.status === 'open' && anomalyOff.autoBanned === false,
+        '开关关闭：线索留在待研判（open，未标已封禁）',
+        anomalyOff && { s: anomalyOff.status, a: anomalyOff.autoBanned }
+      );
+
+      // 开：限制生效 + 线索回写 banned/autoBanned（autoBanned 此前全库无写入点）
+      cfgSwitch.anticheat.enabled = true;
+      await cfgSwitch.save();
+      const rOn = await stepsSvc.syncWerunDay(await User.findById(student2._id), dayKey, 96666, { checkJump: true });
+      assert(rOn.restricted && rOn.restricted.violation === true, '开关开启：AI 判 autoBan → 限制生效', rOn.restricted);
+      const anomalyOn = await StepAnomaly.findOne({ openid: student2.openid, date: dayKey, source: 'werun' }).lean();
+      assert(
+        anomalyOn && anomalyOn.status === 'banned' && anomalyOn.autoBanned === true,
+        '自动封禁回写线索：status=banned + autoBanned=true',
+        anomalyOn && { s: anomalyOn.status, a: anomalyOn.autoBanned }
+      );
+      const banAI = await BanRecord.findOne({ openid: student2.openid, action: 'ban', source: 'ai' }).lean();
+      assert(!!banAI, '流水按 source=ai 落库（人封/机封/AI封分类不混）', banAI && banAI.source);
+      await anticheatSvc.manualUnban(await User.findById(student2._id), 'verify', 'sync');
+    } finally {
+      acModel.evaluate = origEvaluate;
+      const cfgRestore = await GoalConfig.getSingleton();
+      cfgRestore.anticheat.enabled = enabledBackup;
+      await cfgRestore.save();
+    }
+    // dashboard 暴露开关状态（管理员在状态台一眼可见，不用进配置页）
+    const dashSw = await req('GET', '/console/api/dashboard', { cookie: analystCookie });
+    assert(dashSw.data.data.autoDispose === enabledBackup, 'dashboard.autoDispose 与配置一致（状态台可见开关状态）', dashSw.data.data.autoDispose);
+
     // ==================== 9) 限流：不能锁死学生的小程序登录 ====================
     console.log('\n[9] 控制台限流与学生隔离');
     session._reset();
@@ -574,6 +735,7 @@ function setCookieHeader(res) {
     await StepAnomaly.deleteMany({ openid: tagRe });
     await StepLabel.deleteMany({ openid: tagRe });
     await BanRecord.deleteMany({ openid: tagRe });
+    await RunRecord.deleteMany({ openid: tagRe });
     await User.deleteMany({ openid: tagRe });
     // 再按 _id 清一遍（防止有 openid 字段没写全的记录漏网）
     if (created.users.length) await User.deleteMany({ _id: { $in: created.users } });
@@ -581,6 +743,7 @@ function setCookieHeader(res) {
       await StepAnomaly.deleteMany({ _id: { $in: created.anomalies } });
       await StepLabel.deleteMany({ anomalyId: { $in: created.anomalies } });
     }
+    if (created.runs && created.runs.length) await RunRecord.deleteMany({ _id: { $in: created.runs } });
     session._reset();
 
     const left = {

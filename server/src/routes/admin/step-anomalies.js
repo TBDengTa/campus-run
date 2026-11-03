@@ -259,4 +259,20 @@ router.post(
   })
 );
 
+// 归档（记录违规，不封禁）= 处置线第三个动作，label 保留、移出队列。
+// 实现同在 services/anomaly-disposal.js（与 Web 控制台共用，禁止另写一份）。
+router.post(
+  '/:id/archive',
+  LABEL,
+  wrap(async (req, res) => {
+    ok(
+      res,
+      await disposal.archiveAnomaly(req.params.id, {
+        note: (req.body || {}).note,
+        operator: (req.user && req.user.openid) || 'admin',
+      })
+    );
+  })
+);
+
 module.exports = router;

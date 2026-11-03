@@ -1,29 +1,48 @@
-/* 管理端 · 申诉审核（白橙设计系统） */
+/* 管理端 · 申诉审核（紧凑排版，用户 2026-11-03「需要紧凑排版」） */
 .appeal-page {
-  padding-bottom: calc(32rpx + env(safe-area-inset-bottom));
+  padding-bottom: calc(24rpx + env(safe-area-inset-bottom));
 }
 
 .appeal-tabs {
   margin: 0 var(--tt-gap) var(--tt-gap);
 }
 
-/* 列表卡片：内边距收紧 */
 .appeal-card {
-  padding: 8rpx 24rpx;
+  padding: 4rpx 24rpx;
 }
 
-/* 多行列表项：沿用 .tt-row 的分割线与末行处理，仅改为纵向排布 */
+/* 每条申诉：不再借用 .tt-row 的大行距，压缩为紧凑块 + 分割线 */
 .appeal-item {
   flex-direction: column;
   align-items: stretch;
+  padding: 16rpx 0;
+  border-bottom: 2rpx solid var(--tt-line);
+}
+.appeal-item:last-child {
+  border-bottom: none;
 }
 
+/* 头部行：整行可点 → 用户详情 */
 .appeal-head {
   display: flex;
   align-items: center;
   gap: 12rpx;
+  min-height: 44rpx;
 }
-
+.appeal-name {
+  font-size: 28rpx;
+  font-weight: 500;
+  color: var(--tt-text-1);
+}
+.appeal-open {
+  flex-shrink: 0;
+  font-size: 22rpx;
+  color: var(--tt-brand);
+  padding: 2rpx 10rpx;
+  border: 2rpx solid var(--tt-brand-soft-2);
+  border-radius: 999rpx;
+  background: var(--tt-brand-soft);
+}
 .appeal-time {
   margin-left: auto;
   flex-shrink: 0;
@@ -31,28 +50,56 @@
   color: var(--tt-text-3);
 }
 
-.appeal-meta {
-  font-size: 24rpx;
-  color: var(--td-error-color-6);
-  line-height: 38rpx;
+/* 元信息：单行横排、竖线分隔，比逐行 label 省一半高度 */
+.appeal-meta-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4rpx 0;
+  margin-top: 4rpx;
+  font-size: 23rpx;
+  line-height: 34rpx;
+  color: var(--tt-text-2);
+}
+.appeal-meta-line text {
+  flex-shrink: 0;
+}
+.appeal-meta-line text + text::before {
+  content: '·';
+  margin: 0 10rpx;
+  color: var(--tt-text-3);
 }
 
+/* 申诉正文：默认 3 行截断，点「展开全文」看全部 */
 .appeal-content {
-  font-size: 27rpx;
-  line-height: 44rpx;
+  margin-top: 8rpx;
+  font-size: 26rpx;
+  line-height: 38rpx;
   color: var(--tt-text-1);
   white-space: pre-wrap;
   word-break: break-all;
+}
+.appeal-content.folded {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+.appeal-fold {
+  margin-top: 4rpx;
+  font-size: 22rpx;
+  color: var(--tt-brand);
 }
 
 .appeal-reply {
   display: flex;
   gap: 12rpx;
-  padding: 16rpx 20rpx;
+  margin-top: 8rpx;
+  padding: 10rpx 16rpx;
   border-radius: var(--tt-radius-sm);
   background: var(--tt-brand-soft);
-  font-size: 24rpx;
-  line-height: 38rpx;
+  font-size: 23rpx;
+  line-height: 34rpx;
 }
 
 .appeal-reply-label {
@@ -71,6 +118,7 @@
   display: flex;
   align-items: center;
   gap: 16rpx;
+  margin-top: 10rpx;
 }
 
 .appeal-loading {

@@ -140,4 +140,19 @@ function withGpsMetrics(record) {
   };
 }
 
-module.exports = { withGpsMetrics, haversineMeters, normalizePoints };
+/**
+ * 轨迹抽稀（均匀步长）：控制在 ≤max 点，供 step_anomalies.route 快照与
+ * 控制台详情接口下发用（5000 点全量下发会撑爆响应，快照也没必要存全量）。
+ * 首末点永远保留（起终点是研判的重要锚点）。
+ */
+function downsamplePoints(pts, max = 400) {
+  if (!Array.isArray(pts) || pts.length <= max) return pts || [];
+  const out = [];
+  const stride = (pts.length - 1) / (max - 1);
+  for (let i = 0; i < max; i += 1) {
+    out.push(pts[Math.round(i * stride)]);
+  }
+  return out;
+}
+
+module.exports = { withGpsMetrics, haversineMeters, normalizePoints, downsamplePoints };

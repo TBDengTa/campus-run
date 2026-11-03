@@ -233,6 +233,13 @@ function renderDash(d) {
   if (d.labelText) LABEL_TEXT = d.labelText;
   if (d.labelKinds && d.labelKinds.length) LABEL_KINDS = d.labelKinds;
 
+  // 自动处置开关状态（用户 2026-11-03「关了依旧会主动封禁」）：
+  // 必须在状态台最显眼处可见，而不是藏在模型配置页里。
+  var at = $('autoTag');
+  clear(at);
+  at.appendChild(el('span', 'pill ' + (d.autoDispose ? 'ok' : 'bad'), '自动处置 ' + (d.autoDispose ? '开启' : '已关闭')));
+  at.appendChild(el('span', '', '数据每 30 秒自动刷新'));
+
   var q = d.queue || {};
   var svc = $('svcGrid');
   clear(svc);
@@ -414,7 +421,8 @@ function loadList() {
       if (d.labelText) LABEL_TEXT = d.labelText;
       if (d.labelKinds && d.labelKinds.length) LABEL_KINDS = d.labelKinds;
       listLimit = d.limit || listLimit;
-      renderList(d.list || []);
+      lastList = d.list || [];
+      renderList(lastList);
       $('listCount').textContent = '共 ' + fmt(d.total) + ' 条';
       var pages = Math.max(1, Math.ceil((d.total || 0) / (d.limit || listLimit)));
       $('pageTag').textContent = '第 ' + (d.page || 1) + ' / ' + pages + ' 页';
@@ -429,15 +437,31 @@ function loadList() {
     });
 }
 
+// 最近一次列表数据（展开/收起只用缓存重画，不再发请求）
+var lastList = [];
+// 当前展开详情的记录 id（一次只展开一条；点同一行收起）
+var expandedId = '';
+
 function renderList(list) {
   var box = $('listBox');
   clear(box);
   if (!list.length) { box.appendChild(el('div', 'note', '这个筛选条件下没有记录')); return; }
-  for (var i = 0; i < list.length; i++) box.appendChild(renderItem(list[i]));
+  var table = el('div', 'tbl');
+  // 表头是纯静态文案（不含服务端数据）
+  var head = el('div', 'tbl-head');
+  head.appendChild(el('span', 'c-who', '学生'));
+  head.appendChild(el('span', 'c-src', '来源'));
+  head.appendChild(el('span', 'c-score', '分数（疑 / AI）'));
+  head.appendChild(el('span', 'c-label', '标注'));
+  head.appendChild(el('span', 'c-status', '状态'));
+  head.appendChild(el('span', 'c-op', ''));
+  table.appendChild(head);
+  for (var i = 0; i < list.length; i++) table.appendChild(renderItem(list[i]));
+  box.appendChild(table);
 }
 
 function kv(k, v) {
-  var n = el('div', 'ri-kv');
+  var n = el('div', 'kv');
   n.appendChild(el('span', '', k));
   n.appendChild(el('b', '', v));
   return n;
@@ -458,101 +482,271 @@ function kmh(mps) {
   return (v * 3.6).toFixed(1) + ' km/h';
 }
 function num2(v) { var n = Number(v); return isFinite(n) ? n.toFixed(2) : '—'; }
+// 秒 → 18'22" / 1:02:03（不再裸发 "1234s"，用户 2026-11-03「时长等详细信息没有显示」）
+function durText(sec) {
+  var v = Math.round(Number(sec) || 0);
+  if (v <= 0) return '—';
+  var h = Math.floor(v / 3600);
+  var m = Math.floor((v % 3600) / 60);
+  var s = v % 60;
+  if (h > 0) return h + ':' + pad2(m) + ':' + pad2(s);
+  return m + "'" + pad2(s) + '"';
+}
 
+/** 行尾状态徽标：把「标注了但还没处置」显式表达出来（用户 2026-11-03） */
+function statusPill(r) {
+  if (r.status === 'banned') return { cls: 'pill bad', text: r.autoBanned ? '已封禁 · 系统' : '已封禁' };
+  if (r.status === 'dismissed') return { cls: 'pill mute', text: '已排除' };
+  if (r.label === 'cheat' || r.label === 'minor') return { cls: 'pill warn', text: '已判定 · 待处置' };
+  return { cls: 'pill warn', text: '待研判' };
+}
+
+// 紧凑表格行（用户 2026-11-03「简约 B 端」）：一行一条线索，点击展开详情面板。
 function renderItem(r) {
-  var box = el('div', 'row-item');
+  var wrap = el('div', 'tbl-wrap');
+  var open = expandedId === r.id;
 
-  // 头部拆两行（用户 2026-11-02「页面太脏太乱」）：
-  //   第一行 = 身份（姓名 + 班级 · 学号 · 日期），第二行 = 状态标签。
-  //   原来全挤在一行，基线不齐，扫读时找不到锚点。
-  var head = el('div', 'ri-head');
-  head.appendChild(el('span', 'ri-name', r.realName));
-  head.appendChild(el('span', 'ri-meta', (r.className || '') + (r.studentId ? ' · ' + r.studentId : '') + ' · ' + r.date));
-  box.appendChild(head);
+  var row = el('div', 'tbl-row' + (open ? ' open' : ''));
+  var who = el('span', 'c-who');
+  who.appendChild(el('b', '', r.realName));
+  who.appendChild(el('small', '', [r.className, r.studentId, r.date].filter(Boolean).join(' · ')));
+  row.appendChild(who);
+  row.appendChild(el('span', 'c-src', r.sourceText));
 
-  var tags = el('div', 'ri-tags');
-  tags.appendChild(el('span', 'pill mute', r.sourceText));
-  if (r.autoBanned) tags.appendChild(el('span', 'pill warn', '系统自动封禁'));
-  tags.appendChild(el(
-    'span',
-    'pill ' + (r.status === 'banned' ? 'bad' : r.status === 'dismissed' ? 'mute' : r.label ? 'ok' : 'warn'),
-    r.status === 'banned' ? '已封禁' : r.status === 'dismissed' ? '已排除' : r.label ? '待处置' : '待研判'
-  ));
-  var labCls = !r.label ? 'mute' : r.label === 'normal' ? 'ok' : r.label === 'device' ? 'mute' : 'bad';
-  tags.appendChild(el('span', 'pill ' + labCls, '标注：' + (r.labelText || '未标注')));
-  box.appendChild(tags);
+  var score = el('span', 'c-score');
+  score.appendChild(el('b', 'num', fmt(r.score)));
+  score.appendChild(el('small', 'num', r.modelScore == null ? 'AI —' : 'AI ' + Number(r.modelScore).toFixed(2)));
+  row.appendChild(score);
 
-  var body = el('div', 'ri-body');
+  var labCell = el('span', 'c-label');
+  var labCls = !r.label ? 'pill mute' : r.label === 'normal' ? 'pill ok' : r.label === 'device' ? 'pill mute' : 'pill bad';
+  labCell.appendChild(el('span', labCls, r.labelText || '未标注'));
+  row.appendChild(labCell);
+
+  var st = statusPill(r);
+  var stCell = el('span', 'c-status');
+  stCell.appendChild(el('span', st.cls, st.text));
+  if (r.autoBanned && r.status === 'banned') stCell.appendChild(el('span', 'pill bad', 'AI'));
+  row.appendChild(stCell);
+
+  var op = el('span', 'c-op');
+  op.appendChild(el('span', 'c-arr', open ? '▾' : '▸'));
+  row.appendChild(op);
+
+  row.addEventListener('click', function () {
+    expandedId = expandedId === r.id ? '' : r.id;
+    renderList(lastList); // 只用缓存重画，不发请求
+  });
+  wrap.appendChild(row);
+
+  if (open) wrap.appendChild(buildDetail(r));
+  return wrap;
+}
+
+/** 展开后的详情面板：指标 + GPS 路线图 + 理由 + 分组的判定/处置动作 */
+function buildDetail(r) {
+  var det = el('div', 'det');
+  var main = el('div', 'det-main');
+  var metrics = el('div', 'kv-grid');
+
   if (r.source !== 'gps') {
-    body.appendChild(kv('当日步数', fmt(r.cumulativeSteps)));
-    body.appendChild(kv('本次新增', fmt(r.deltaSteps)));
-  }
-  body.appendChild(kv('可疑分', fmt(r.score) + ' / 100'));
-  body.appendChild(kv('AI 分', r.modelScore == null ? '—' : Number(r.modelScore).toFixed(3)));
-  if (r.labeledBy) body.appendChild(kv('标注人', r.labeledBy + '（' + ago(r.labeledAt) + '）'));
-  // GPS 实跑：展示判定用的速度/配速/轨迹质量（用户 2026-11-02「依旧没有 GPS 详情新增速度指标」）
-  // features 是判定时的输入快照，研判光看「AI 分 0.92」不够，必须看到原始数字。
-  if (r.source === 'gps' && r.features) {
-    var f = r.features;
-    body.appendChild(kv('平均速度', kmh(f.speed)));
-    // 峰值速度（用户 2026-11-02 明确点名要看）：features 快照里的 peakSpeed
-    body.appendChild(kv('峰值速度', f.peakSpeed ? kmh(f.peakSpeed) : '—'));
-    body.appendChild(kv('配速', paceText(f.paceSecPerKm) + '/km'));
-    body.appendChild(kv('距离', fmt(Math.round(f.distance || 0)) + 'm'));
-    body.appendChild(kv('时长', fmt(Math.round(f.duration || 0)) + 's'));
-    body.appendChild(kv('轨迹点', fmt(f.pointCount || 0)));
-    box.appendChild(body);
-    // 轨迹质量三项：脚本/瞬移的特征就藏在这里
-    var q = el('div', 'ri-body ri-quality');
-    q.appendChild(kv('点间隔均值', num2((f.gapAvg || 0) / 1000) + 's'));
-    q.appendChild(kv('最大间隔', num2((f.gapMax || 0) / 1000) + 's'));
-    q.appendChild(kv('平滑度', num2(f.jitter)));
-    box.appendChild(q);
+    metrics.appendChild(kv('当日步数', fmt(r.cumulativeSteps)));
+    metrics.appendChild(kv('本次新增', fmt(r.deltaSteps)));
+    metrics.appendChild(kv('可疑分', fmt(r.score) + ' / 100'));
+    metrics.appendChild(kv('AI 分', r.modelScore == null ? '—' : Number(r.modelScore).toFixed(3)));
+    if (r.labeledBy) metrics.appendChild(kv('标注人', r.labeledBy + '（' + ago(r.labeledAt) + '）'));
+    main.appendChild(metrics);
   } else {
-    box.appendChild(body);
+    // GPS：先按判定快照（features）立刻出数，再懒加载轨迹接口补路线图与权威指标。
+    var routeBox = el('div', 'route-box');
+    routeBox.appendChild(el('div', 'route-loading', '轨迹加载中…'));
+    var refresh = function (d) {
+      clear(metrics);
+      var m = (d && d.metrics) || null;
+      var f = (d && d.features) || r.features || {};
+      metrics.appendChild(kv('峰值速度', kmh(m && m.peakSpeed != null ? m.peakSpeed : f.peakSpeed)));
+      metrics.appendChild(kv('平均速度', kmh(m && m.avgSpeed != null ? m.avgSpeed : f.speed)));
+      metrics.appendChild(kv('配速', paceText(m && m.avgPaceSecPerKm != null ? m.avgPaceSecPerKm : f.paceSecPerKm) + '/km'));
+      metrics.appendChild(kv('距离', fmt(Math.round((d && d.distance) || f.distance || 0)) + ' m'));
+      metrics.appendChild(kv('时长', durText((d && d.durationSeconds) || f.duration)));
+      metrics.appendChild(kv('轨迹点', fmt((m && m.pointCount) || f.pointCount || 0)));
+      metrics.appendChild(kv('可疑分', fmt(r.score) + ' / 100'));
+      metrics.appendChild(kv('AI 分', r.modelScore == null ? '—' : Number(r.modelScore).toFixed(3)));
+      if (r.labeledBy) metrics.appendChild(kv('标注人', r.labeledBy + '（' + ago(r.labeledAt) + '）'));
+    };
+    refresh(null);
+    main.appendChild(metrics);
+    main.appendChild(routeBox);
+    loadRoute(r, routeBox, refresh);
+  }
+  det.appendChild(main);
+
+  // GPS 轨迹质量（判定快照）：脚本/瞬移的特征藏在这里
+  if (r.source === 'gps' && r.features) {
+    var q = el('div', 'kv-grid det-quality');
+    q.appendChild(kv('点间隔均值', num2((r.features.gapAvg || 0) / 1000) + 's'));
+    q.appendChild(kv('最大间隔', num2((r.features.gapMax || 0) / 1000) + 's'));
+    q.appendChild(kv('平滑度', num2(r.features.jitter)));
+    det.appendChild(q);
   }
 
   var rs = el('div', 'reasons');
   var reasons = r.reasons || [];
   if (!reasons.length) rs.appendChild(el('span', '', '无附加理由'));
   for (var i = 0; i < reasons.length; i++) rs.appendChild(el('span', '', reasons[i]));
-  box.appendChild(rs);
-  if (r.handleNote) box.appendChild(el('div', 'note', '处置备注：' + r.handleNote));
+  det.appendChild(rs);
+  if (r.handleNote) det.appendChild(el('div', 'note', '处置备注：' + r.handleNote));
 
-  var acts = el('div', 'acts');
-  if (caps.label && r.status === 'open') {
-    for (var k = 0; k < LABEL_KINDS.length; k++) {
-      (function (id, kind, current) {
-        var b = el('button', 'btn sm' + (current === kind ? ' pri' : ''), LABEL_TEXT[kind]);
-        b.addEventListener('click', function () { labelIt(id, kind, b); });
-        acts.appendChild(b);
-      })(r.id, LABEL_KINDS[k], r.label);
+  // ===== 动作区：判定 / 处置 两组分开 =====
+  // （用户 2026-11-03「标记为轻微违规并没有处置，处置和标记是两码事，UI 理解不了」：
+  //   正交设计保持不变，但界面上必须把「谁动训练集、谁动学生」说清楚。）
+  var acts = el('div', 'det-acts');
+
+  var g1 = el('div', 'act-group');
+  g1.appendChild(el('div', 'act-t', '① 判定 · 喂 AI 训练（不动学生账号）'));
+  if (r.status === 'open') {
+    if (caps.label) {
+      var b1 = el('div', 'act-btns');
+      for (var k = 0; k < LABEL_KINDS.length; k++) {
+        (function (id, kind, current) {
+          var btn = el('button', 'btn sm' + (current === kind ? ' pri' : ''), LABEL_TEXT[kind]);
+          btn.addEventListener('click', function () { labelIt(id, kind, btn); });
+          b1.appendChild(btn);
+        })(r.id, LABEL_KINDS[k], r.label);
+      }
+      g1.appendChild(b1);
+      g1.appendChild(el('div', 'act-note', '标「正常 / 设备网络」= 无需处置，移出队列；标「作弊 / 轻微违规」= 留在队列等处置。'));
+    } else {
+      g1.appendChild(el('div', 'act-note', '需要 anticheat.label 权限才能标注。'));
     }
+    acts.appendChild(g1);
   }
-  if (caps.ban && r.status === 'open') {
-    var bb = el('button', 'btn sm danger', '封禁');
-    bb.addEventListener('click', function () { openBan(r); });
-    acts.appendChild(bb);
+
+  if (r.status === 'open' && (caps.ban || caps.label)) {
+    var g2 = el('div', 'act-group');
+    g2.appendChild(el('div', 'act-t', '② 处置 · 处理这条线索（对学生生效）'));
+    var b2 = el('div', 'act-btns');
+    if (caps.ban) {
+      var bb = el('button', 'btn sm danger', '封禁…');
+      bb.addEventListener('click', function () { openBan(r); });
+      b2.appendChild(bb);
+    }
+    if (caps.label) {
+      var ab = el('button', 'btn sm', '归档 · 不封禁');
+      ab.addEventListener('click', function () { archiveIt(r.id, ab); });
+      b2.appendChild(ab);
+    }
+    g2.appendChild(b2);
+    g2.appendChild(el('div', 'act-note', '封禁 = 限制学生账号（天数可调）；归档 = 记录违规但不限制，移出队列。'));
+    acts.appendChild(g2);
   }
-  if (!caps.label && !caps.ban) acts.appendChild(el('span', 'card-sub', '你只有查看权限（anticheat.view），看不到标注与封禁按钮'));
-  box.appendChild(acts);
-  return box;
+
+  if (!acts.childNodes.length) {
+    acts.appendChild(el('div', 'act-note', r.status === 'open'
+      ? '你只有查看权限（anticheat.view），不能标注或处置。'
+      : '该记录已处理完毕（解封走学生申诉或管理端用户页）。'));
+  }
+  det.appendChild(acts);
+  return det;
+}
+
+/** GPS 轨迹懒加载：详情展开时才取（列表接口不带轨迹，数据量太大） */
+function loadRoute(r, routeBox, refreshMetrics) {
+  api('/anomalies/' + encodeURIComponent(r.id) + '/gps')
+    .then(function (d) {
+      drawRoute(routeBox, d);
+      refreshMetrics(d);
+    })
+    .catch(function (e) {
+      clear(routeBox);
+      routeBox.appendChild(el('div', 'route-none', '轨迹数据加载失败（' + (e.message || '网络异常') + '）'));
+    });
+}
+
+var SVG_NS = 'http://www.w3.org/2000/svg';
+var ROUTE_SRC_TEXT = {
+  run_record: '原始跑步记录',
+  legacy_match: '当天就近匹配的跑步记录',
+  snapshot: '判定时的轨迹快照',
+};
+
+/** 画轨迹（内联 SVG，createElementNS 生成 —— CSP 下安全，无外部资源） */
+function drawRoute(box, d) {
+  clear(box);
+  var pts = (d && d.points) || [];
+  var bounds = d && d.bounds;
+  if (!pts.length || pts.length < 2 || !bounds) {
+    box.appendChild(el('div', 'route-none', '无轨迹数据（旧记录未存轨迹快照，且匹配不到当天的跑步记录）'));
+    return;
+  }
+  var spanLat = bounds.maxLat - bounds.minLat;
+  var spanLng = bounds.maxLng - bounds.minLng;
+  var padLat = Math.max(spanLat * 0.1, 0.0004);
+  var padLng = Math.max(spanLng * 0.1, 0.0004);
+  // 纬度向北增大而 SVG 的 y 向下：用 (max+min−lat) 翻转，不改坐标本身
+  var y0 = bounds.maxLat + bounds.minLat;
+
+  var svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('class', 'route-svg');
+  svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+  svg.setAttribute('viewBox',
+    (bounds.minLng - padLng) + ' ' + (y0 - bounds.maxLat - padLat) + ' ' +
+    (spanLng + padLng * 2) + ' ' + (spanLat + padLat * 2));
+
+  var line = document.createElementNS(SVG_NS, 'polyline');
+  var coords = [];
+  for (var i = 0; i < pts.length; i++) coords.push(pts[i].lng + ',' + (y0 - pts[i].lat));
+  line.setAttribute('points', coords.join(' '));
+  line.setAttribute('class', 'route-line');
+  svg.appendChild(line);
+
+  // 起终点圆点：半径随包围盒等比缩放（viewBox 单位是「度」）
+  var r0 = (spanLng + padLng * 2) * 0.014;
+  var mkDot = function (p, cls) {
+    var c = document.createElementNS(SVG_NS, 'circle');
+    c.setAttribute('cx', p.lng);
+    c.setAttribute('cy', y0 - p.lat);
+    c.setAttribute('r', r0);
+    c.setAttribute('class', cls);
+    svg.appendChild(c);
+  };
+  mkDot(pts[0], 'route-start');
+  mkDot(pts[pts.length - 1], 'route-end');
+
+  box.appendChild(svg);
+  if (ROUTE_SRC_TEXT[d.dataSource]) {
+    box.appendChild(el('div', 'route-cap', '路线图数据源：' + ROUTE_SRC_TEXT[d.dataSource] + ' · 绿点起点 · 橙点终点'));
+  }
 }
 
 function labelIt(id, kind, btn) {
   btn.disabled = true;
   api('/anomalies/' + encodeURIComponent(id) + '/label', { method: 'POST', body: { label: kind } })
     .then(function (r) {
-      // 必须说明「移出还是留下」（用户 2026-11-02「标注后依然显示待研判」）：
-      // 旧实现只说「已标注为正常」，但卡片上「待研判」标签没变 → 用户以为没生效。
-      toast('已标注「' + (r.labelText || LABEL_TEXT[kind]) + '」→ '
-        + (r.status === 'dismissed' ? '移出待研判' : r.status === 'banned' ? '已封禁' : '仍在待研判（需处置）')
-        + (r.trainable ? '' : ' · 不进训练集'));
+      // 必须说明「移出还是留下」（用户 2026-11-02「标注后依然显示待研判」）
+      var dest = r.status === 'dismissed' ? '移出待研判'
+        : r.status === 'banned' ? '已封禁'
+        : '待处置（封禁或归档）';
+      toast('已判定「' + (r.labelText || LABEL_TEXT[kind]) + '」→ ' + dest + (r.trainable ? '' : ' · 不进训练集'));
       loadList();
     })
     .catch(function (e) {
       btn.disabled = false;
       toast(e.message || '标注失败', true);
+    });
+}
+
+/** 归档 = 记录违规、不封禁、移出队列（轻微违规的处置去向，用户 2026-11-03） */
+function archiveIt(id, btn) {
+  btn.disabled = true;
+  api('/anomalies/' + encodeURIComponent(id) + '/archive', { method: 'POST', body: {} })
+    .then(function () {
+      toast('已归档（记录违规 · 不封禁）→ 移出待研判');
+      loadList();
+    })
+    .catch(function (e) {
+      btn.disabled = false;
+      toast(e.message || '归档失败', true);
     });
 }
 

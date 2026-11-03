@@ -39,6 +39,18 @@ const stepAnomalySchema = new mongoose.Schema(
     // **必须在这里存一份**：原始 run_records 可能被清理，而训练集不能因此残缺。
     features: { type: mongoose.Schema.Types.Mixed, default: null },
 
+    // GPS 轨迹快照（用户 2026-11-03「WEB 页面路线图/峰值/平均速度等没有显示」）：
+    // {lat, lng, t(ms)}，判定时降采样到 ≤400 点。**必须在这里存一份**，因为
+    // 自动封禁的 GPS 跑不落 run_records（saveGpsRun 拦截时直接 return），
+    // 只存标量 features 的话，最严重的那批记录反而永远画不出路线图。
+    route: {
+      type: [{ lat: Number, lng: Number, t: Number }],
+      default: null,
+    },
+    // 关联的原始跑步记录（正常落库的 GPS 跑）：详情接口优先读它拿全量轨迹。
+    // sparse：werun 线索与被拦截未落库的 GPS 线索都没有这个字段。
+    runRecordId: { type: mongoose.Schema.Types.ObjectId, ref: 'RunRecord', default: null, index: { sparse: true } },
+
     // open 待研判 / banned 已封禁 / dismissed 已排除（管理员认为正常）
     status: { type: String, enum: ['open', 'banned', 'dismissed'], default: 'open', index: true },
     autoBanned: { type: Boolean, default: false }, // 是否由系统自动封禁（区别于手动）
