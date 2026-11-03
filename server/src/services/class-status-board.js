@@ -60,7 +60,9 @@ const pct = (num, den) => (den > 0 ? round1((num / den) * 100) : null);
  * @param {boolean} [opts.force] 忽略缓存
  */
 async function classStatusBoard({ today, days, force } = {}) {
-  const day = today || dates.todayKey();
+  // today 覆盖「今天」（2026-11-03 前端日期选择接入）：非法/缺省一律回退服务器今天，
+  // 不能让拼错的参数悄悄统计出一个空日期（与 quick 非法值=全量同一防呆口径）。
+  const day = dates.isValidDateKey(today) ? today : dates.todayKey();
   const span = Math.min(Math.max(Number(days) || DEFAULT_DAYS, 1), MAX_DAYS);
   const from = dates.addDays(day, -(span - 1));
   const { startKey: weekStart } = dates.weekRange(day);
@@ -204,7 +206,12 @@ async function classStatusBoard({ today, days, force } = {}) {
   //
   // 出勤率不能简单平均，必须按应到人数加权 —— 否则「应到 40 实到 38」与「应到 5 实到 1」
   // 得到同一个比率，小班的一条记录能拖垮全校平均线（与 routes/class.js::buildDayModule 同口径）。
-  // 应到字段：早操/晚自习 → metrics.shouldCount，查宿 → metrics.shouldStay。
+  //
+  // ⚠️ 应到/实到数字存在 **details** 里（写入点 routes/union.js：fillDerived 把
+  //   shouldCount/actualCount/shouldStay 等派生数字填进 details，metrics 只装
+  //   ratios/values 两层 —— 用户 2026-11-03 报「考勤一直是 —」的根因就是这里从
+  //   metrics 层取 shouldCount：应到恒 0 → ratePercent 恒 null。比率 metrics.ratios.rate
+  //   与迟到 details.lateCount 两处路径本来就是对的。
   const attAgg = await CheckRecord.aggregate([
     {
       $match: {
@@ -220,11 +227,11 @@ async function classStatusBoard({ today, days, force } = {}) {
         should: {
           $cond: [
             { $eq: ['$moduleKey', 'night_dorm'] },
-            { $ifNull: ['$metrics.shouldStay', 0] },
-            { $ifNull: ['$metrics.shouldCount', 0] },
+            { $ifNull: ['$details.shouldStay', 0] },
+            { $ifNull: ['$details.shouldCount', 0] },
           ],
         },
-        actual: { $ifNull: ['$metrics.actualCount', 0] },
+        actual: { $ifNull: ['$details.actualCount', 0] },
         late: { $ifNull: ['$details.lateCount', 0] },
         // 记录里已算好的比率优先（与页面展示同源），缺失才用 actual/should
         storedRate: '$metrics.ratios.rate',

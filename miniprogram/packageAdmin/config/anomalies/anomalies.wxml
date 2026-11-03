@@ -71,39 +71,22 @@
         <text class="sa-status sa-status-{{item.statusInfo.theme}}">{{item.statusInfo.text}}</text>
       </view>
 
-      <view class="sa-item-body">
-        <view class="sa-row">
-          <text class="sa-label">来源</text>
-          <!-- 来源分流（用户 2026-10-27「微信同步、GPS 分开来」）：两种行为特征完全不同，判定模型也是两套 -->
-          <text class="sa-value sa-source sa-source-{{item.source}}">{{item.sourceText}}</text>
-        </view>
-        <view class="sa-row">
-          <text class="sa-label">日期</text>
-          <text class="sa-value">{{item.date}}</text>
-        </view>
-        <view class="sa-row" wx:if="{{item.timeText}}">
-          <text class="sa-label">同步时间</text>
-          <!-- 同步/判定时间（用户 2026-11-03）：anomaly 的 createdAt，与历史增速表时间轴一致 -->
-          <text class="sa-value num-font">{{item.timeText}}</text>
-        </view>
-        <view class="sa-row" wx:if="{{item.source === 'werun'}}">
-          <text class="sa-label">当日步数</text>
-          <text class="sa-value num-font">{{item.stepsText}}</text>
-        </view>
-        <view class="sa-row">
-          <text class="sa-label">可疑分</text>
-          <text class="sa-value num-font sa-score">{{item.scoreText}}</text>
-        </view>
-        <view class="sa-row" wx:if="{{item.modelScoreText}}">
-          <text class="sa-label">模型分</text>
-          <!-- 模型分（0~1，0.5 = 正常基准）：留档便于复核「是规则判的还是学习模型判的」 -->
-          <text class="sa-value num-font sa-model">{{item.modelScoreText}}</text>
-        </view>
-        <view class="sa-row" wx:if="{{item.labelText && item.labelText !== '未标注'}}">
-          <text class="sa-label">判定</text>
-          <text class="sa-value">{{item.labelText}}{{item.labeledBy ? ' · ' + item.labeledBy : ''}}</text>
+      <!-- 紧凑指标网格（2026-11-03 对齐 Web 控制台详情）：两列 cell，全部字段 JS 预计算 -->
+      <view class="sa-grid">
+        <view class="sa-cell" wx:for="{{item.metrics}}" wx:for-item="mt" wx:key="k">
+          <text class="sa-cell-k">{{mt.k}}</text>
+          <text class="sa-cell-v num-font">{{mt.v}}</text>
         </view>
       </view>
+
+      <!-- GPS 轨迹（2026-11-03 对齐 Web 控制台路线图）：点开半屏地图弹层，懒加载 -->
+      <view
+        class="sa-track-btn"
+        wx:if="{{item.source === 'gps'}}"
+        data-id="{{item.id}}"
+        data-name="{{item.realName}}"
+        bind:tap="toggleTrack"
+      >查看轨迹 ›</view>
 
       <!-- 当日同步历史（增速研判，用户 2026-11-03）：只对微信同步线索有意义；点开懒加载 -->
       <view class="sa-hist" wx:if="{{item.source === 'werun'}}">
@@ -136,6 +119,9 @@
         <t-icon name="error-circle" size="24rpx" color="var(--td-warning-color-6)" />
         <text>{{item.reasonText}}</text>
       </view>
+
+      <!-- 处置备注（2026-11-03 对齐 Web：封禁/归档时管理员写的说明要能看到） -->
+      <view class="sa-note-line" wx:if="{{item.handleNote}}">处置备注：{{item.handleNote}}</view>
 
       <!-- ===== 动作区：判定 / 处置 两组（用户 2026-11-03 与 Web 控制台对齐） =====
            ① 判定 = 喂 AI 训练，不动学生账号；② 处置 = 封禁或归档，对学生生效。
@@ -221,6 +207,37 @@
     <view class="tt-sheet-foot">
       <t-button theme="default" block bind:tap="closeBan">取消</t-button>
       <t-button theme="danger" block loading="{{banSaving}}" disabled="{{!caps.ban}}" bind:tap="submitBan">确定封禁</t-button>
+    </view>
+  </view>
+</t-popup>
+
+<!-- ===== 轨迹弹层（GPS 线索，2026-11-03 对齐 Web 控制台路线图）=====
+     全页共用一个 map 实例；数据来自 admin /:id/gps（与服务端 anomaly-gps-detail 同源）。
+     polyline/marker 写法与 pages/run/detail 同款。 -->
+<t-popup visible="{{trackVisible}}" placement="bottom" bind:visible-change="closeTrack">
+  <view class="tt-sheet">
+    <view class="tt-sheet-grab"></view>
+    <view class="tt-sheet-head">
+      <view class="tt-sheet-icon"><t-icon name="location" size="36rpx" color="var(--tt-brand)" /></view>
+      <view class="tt-sheet-title">
+        运动轨迹
+        <view class="tt-sheet-sub">{{trackName}}{{trackSourceText ? ' · ' + trackSourceText : ''}}</view>
+      </view>
+      <view class="tt-sheet-close" bind:tap="closeTrack"><t-icon name="close" size="32rpx" color="var(--tt-text-2)" /></view>
+    </view>
+    <view class="tt-sheet-body">
+      <map
+        wx:if="{{trackPolyline.length}}"
+        class="sa-map"
+        latitude="{{trackLat}}"
+        longitude="{{trackLng}}"
+        polyline="{{trackPolyline}}"
+        markers="{{trackMarkers}}"
+        include-points="{{trackInclude}}"
+        enable-zoom
+        enable-scroll
+      ></map>
+      <view wx:else class="sa-map-empty">{{trackEmptyText}}</view>
     </view>
   </view>
 </t-popup>

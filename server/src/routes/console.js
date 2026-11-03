@@ -39,8 +39,6 @@ const session = require('../services/console-session');
 const StepAnomaly = require('../models/step-anomaly');
 const StepLabel = require('../models/step-label');
 const BanRecord = require('../models/ban-record');
-const RunRecord = require('../models/run-record');
-const gpsMetrics = require('../services/gps-metrics');
 const disposal = require('../services/anomaly-disposal');
 const acConfig = require('../services/anticheat-config');
 
@@ -479,84 +477,14 @@ router.post(
 );
 
 // GPS 轨迹详情（用户 2026-11-03「路线图、峰值速度、平均速度、时长等详细信息没有显示」）。
-// 列表接口只给 features 标量快照 —— 轨迹数据量大，必须按需单条取。
-// 数据源优先级：runRecordId（全量轨迹 + 权威指标）→ 旧记录兜底按 openid+日期就近
-// 匹配 run_records → route 快照（自动封禁的 GPS 跑不落 run_records，只剩判定时
-// 存的降采样轨迹）。指标一律走 withGpsMetrics，与小程序三条读路径同一份口径。
+// 数据拼装唯一实现在 services/anomaly-gps-detail.js（小程序管理端共用同一份），
+// 这里只鉴权与取参 —— 两边各写一份必然漂移。
 router.get(
   '/anomalies/:id/gps',
   requireConsole('anticheat.view'),
   wrap(async (req, res) => {
-    const rec = await StepAnomaly.findById(req.params.id).lean();
-    if (!rec) throw new ApiError(404, 404, '异常记录不存在');
-    if (rec.source !== 'gps') throw new ApiError(400, 400, '该记录不是 GPS 实跑线索');
-
-    const f = rec.features || {};
-    const fromRun = (doc, dataSource) => {
-      const withMetrics = gpsMetrics.withGpsMetrics(doc);
-      return {
-        dataSource,
-        points: gpsMetrics.downsamplePoints(gpsMetrics.normalizePoints(doc.routePoints || [])),
-        bounds: withMetrics.metrics.bounds,
-        metrics: withMetrics.metrics,
-        distance: doc.distance || 0,
-        durationSeconds: doc.durationSeconds || 0,
-        startTime: doc.startTime || null,
-        endTime: doc.endTime || null,
-      };
-    };
-
-    let payload = null;
-    // ① runRecordId：正常落库的跑，全量轨迹 + 权威指标
-    if (rec.runRecordId) {
-      const byId = await RunRecord.findById(rec.runRecordId).lean();
-      if (byId) payload = fromRun(byId, 'run_record');
-    }
-    // ② 轨迹快照：与这条线索**精确绑定**（判定时存档）——自动封禁的 GPS 跑
-    //    不落 run_records，这是它唯一的轨迹；优先于下面的日期匹配。
-    if (!payload && Array.isArray(rec.route) && rec.route.length >= 2) {
-      // 拼 pseudo-record 走同一份 withGpsMetrics，指标口径与 run_records 一致
-      const pseudo = gpsMetrics.withGpsMetrics({
-        source: 'gps',
-        distance: Number(f.distance) || 0,
-        durationSeconds: Math.round(Number(f.duration) || 0),
-        routePoints: rec.route,
-      });
-      payload = {
-        dataSource: 'snapshot',
-        points: rec.route,
-        bounds: pseudo.metrics.bounds,
-        metrics: pseudo.metrics,
-        distance: pseudo.distance || 0,
-        durationSeconds: pseudo.durationSeconds || 0,
-        startTime: null,
-        endTime: null,
-      };
-    }
-    // ③ 旧记录兜底（无快照、无关联）：按 openid+日期就近匹配 ——
-    //    异常的判定时刻就在跑步提交的当口，同日多条 GPS 取 createdAt 最接近的那条。
-    if (!payload && rec.openid) {
-      const rows = await RunRecord.find({ openid: rec.openid, date: rec.date, source: 'gps' }).lean();
-      if (rows.length) {
-        const at = new Date(rec.createdAt).getTime();
-        let best = rows[0];
-        let bestDiff = Math.abs(new Date(best.createdAt).getTime() - at);
-        for (const r of rows) {
-          const diff = Math.abs(new Date(r.createdAt).getTime() - at);
-          if (diff < bestDiff) {
-            best = r;
-            bestDiff = diff;
-          }
-        }
-        payload = fromRun(best, 'legacy_match');
-      }
-    }
-
-    ok(res, {
-      ...(payload || { dataSource: 'none', points: [], bounds: null, metrics: null, distance: Number(f.distance) || 0, durationSeconds: Math.round(Number(f.duration) || 0), startTime: null, endTime: null }),
-      // features 一并带回：旧记录列表里没有快照时，展开面板至少能显示判定用的标量
-      features: rec.features || null,
-    });
+    const { anomalyGpsDetail } = require('../services/anomaly-gps-detail');
+    ok(res, await anomalyGpsDetail(req.params.id));
   })
 );
 

@@ -35,8 +35,9 @@ const WRITE_ACTIONS =
 // 否则等于只给了他半截内容。落进 `toggle[A-Z]\w*` 通配会被误报成写入口。
 // `toggleHist`（异常记录页「当日同步历史」，2026-11-03）同理：只发 GET /sync-history
 // 懒加载 + setData 翻折态，不写任何东西 —— 只读账号同样要能看历史增速。
+// `toggleTrack`（同页「查看轨迹」）同理：GET /:id/gps + 打开地图弹层，纯读。
 const UI_ONLY_ACTIONS =
-  /^(toggleContent|toggleHist|toggleFilters|clearFilters|toggleDeptExpand|toggleModuleDept|clearKeyword|resetFilters|clearChecked|toggleBulk|clearClassFilter|toggleBadgeGroup|toggleBatchMode|toggleCheckAll|toggleRow|toggleExpand|toggleGroup|togglePick|toggleSelect|toggleSheet|toggleTab|toggleCard|toggleUnfold|toggleUnassigned|toggleFilters|switchTab|switchSlot|onCat|onItemTap|onResetFilters|onFormVisible|onIconVisible|onMode|preview|copyLink|goStats|changeYear|chooseIcon|closeForm|closeSheet|closeResult|closePickers|closeTransferSheet|closeDeptAdd|closeModuleEdit|closeAdd|clearResult|back|close[A-Z]\w*|resetModule)$/;
+  /^(toggleContent|toggleHist|toggleTrack|toggleFilters|clearFilters|toggleDeptExpand|toggleModuleDept|clearKeyword|resetFilters|clearChecked|toggleBulk|clearClassFilter|toggleBadgeGroup|toggleBatchMode|toggleCheckAll|toggleRow|toggleExpand|toggleGroup|togglePick|toggleSelect|toggleSheet|toggleTab|toggleCard|toggleUnfold|toggleUnassigned|toggleFilters|switchTab|switchSlot|onCat|onItemTap|onResetFilters|onFormVisible|onIconVisible|onMode|preview|copyLink|goStats|changeYear|chooseIcon|closeForm|closeSheet|closeResult|closePickers|closeTransferSheet|closeDeptAdd|closeModuleEdit|closeAdd|clearResult|back|close[A-Z]\w*|resetModule)$/;
 
 // 整页都需要写权限才能进入（不存在只读用户）
 const WRITE_ONLY_PAGES = new Set([

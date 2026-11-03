@@ -81,13 +81,19 @@ ok('step_anomalies 有 runRecordId 关联字段', /runRecordId:\s*\{\s*type:\s*m
 ok('saveGpsRun 创建线索时写轨迹快照（downsamplePoints）', /route:\s*routeSnapshot/.test(stepsSrc) && /downsamplePoints\(normalizePoints\(/.test(stepsSrc));
 ok('RunRecord 落库后回填 runRecordId', /\$set:\s*\{\s*runRecordId:\s*doc\._id\s*\}/.test(stepsSrc));
 
+// 2026-11-03 第二轮：轨迹详情抽成 services/anomaly-gps-detail.js 唯一实现
+// （小程序管理端也要画路线图，两端路由只准鉴权取参，各写一份必然漂移）。
+const gpsSvc = read('services/anomaly-gps-detail.js');
+ok('anomaly-gps-detail service 存在（唯一实现）', /async function anomalyGpsDetail/.test(gpsSvc));
+ok('轨迹详情指标走 withGpsMetrics（与小程序读路径同一份口径）', /gpsMetrics\.withGpsMetrics/.test(gpsSvc));
+ok('数据源优先级含 runRecordId 与快照兜底', /runRecordId/.test(gpsSvc) && /dataSource:\s*'snapshot'/.test(gpsSvc));
+ok('非 GPS 线索请求轨迹 → 400', /source !== 'gps'[\s\S]{0,120}400/.test(gpsSvc));
 const gpsStart = consoleSrc.indexOf("'/anomalies/:id/gps'");
 const gpsEnd = consoleSrc.indexOf("'/anomalies/:id/archive'");
 const gpsRoute = gpsStart >= 0 && gpsEnd > gpsStart ? consoleSrc.slice(gpsStart, gpsEnd) : '';
-ok('控制台挂载 GET /anomalies/:id/gps 且鉴权 anticheat.view', gpsRoute.length > 0 && /requireConsole\('anticheat\.view'\)/.test(gpsRoute));
-ok('轨迹详情指标走 withGpsMetrics（与小程序读路径同一份口径）', /gpsMetrics\.withGpsMetrics/.test(gpsRoute));
-ok('数据源优先级含 runRecordId 与快照兜底', /runRecordId/.test(gpsRoute) && /dataSource:\s*'snapshot'/.test(gpsRoute));
-ok('非 GPS 线索请求轨迹 → 400', /source !== 'gps'[\s\S]{0,120}400/.test(gpsRoute));
+ok('控制台挂载 GET /anomalies/:id/gps（anticheat.view）且只调 service', gpsRoute.length > 0 && /requireConsole\('anticheat\.view'\)/.test(gpsRoute) && /anomalyGpsDetail/.test(gpsRoute) && !/withGpsMetrics/.test(gpsRoute));
+ok('管理端挂载 GET /:id/gps（小程序画轨迹）且只调 service', /'\/:id\/gps'[\s\S]{0,300}anomalyGpsDetail/.test(adminAnomalySrc) && !/withGpsMetrics/.test(adminAnomalySrc));
+ok('admin 列表下发 features（2026-11-03 小程序对齐 Web 详情的速度/配速等指标）', /features: r\.features \|\| null/.test(adminAnomalySrc));
 
 // ===== ⑤ 状态台可见开关状态 =====
 console.log('\n[5] 状态台暴露自动处置开关状态');

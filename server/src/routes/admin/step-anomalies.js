@@ -158,6 +158,9 @@ router.get(
         labeledAt: r.labeledAt || null,
         handledAt: r.handledAt || null,
         handleNote: r.handleNote || '',
+        // 判定时的特征快照（2026-11-03 小程序对齐 Web 详情）：GPS 的速度/配速/距离/
+        // 时长/轨迹质量、werun 的增速等都藏在这里，与 console 列表同款下发。
+        features: r.features || null,
         createdAt: r.createdAt,
       })),
     });
@@ -297,6 +300,17 @@ router.get(
   wrap(async (req, res) => {
     const { syncRateHistory } = require('../../services/sync-rate-history');
     ok(res, await syncRateHistory(req.params.id));
+  })
+);
+
+// GPS 轨迹详情（2026-11-03 小程序画路线图）：与 Web 控制台共用
+// services/anomaly-gps-detail.js 的唯一实现（数据源优先级见该文件头）。
+router.get(
+  '/:id/gps',
+  VIEW,
+  wrap(async (req, res) => {
+    const { anomalyGpsDetail } = require('../../services/anomaly-gps-detail');
+    ok(res, await anomalyGpsDetail(req.params.id));
   })
 );
 

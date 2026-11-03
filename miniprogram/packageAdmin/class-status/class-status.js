@@ -33,8 +33,11 @@
 // 所以前端只传参数（school/department/quick/level/metric/columns）并渲染返回结果。
 const auth = require('../../utils/request');
 const adminPerm = require('../../utils/admin-perm');
+const fmt = require('../../utils/format');
 
-// 快捷筛选（value 与服务端 QUICK_FILTERS 的键一一对应，非法值服务端会忽略）
+// 快捷筛选（value 与服务端 QUICK_FILTERS 的键一一对应，非法值服务端会忽略）。
+// 文案随所选日期联动（2026-11-03 日期选择）：选了非今天的日期后
+// 「今日/本周」会变成说谎 —— 一律改说「当日/当周」，见 chipsFor()。
 const CHIPS = [
   { key: '', label: '全部班级' },
   { key: 'notDaily', label: '今日未达标' },
@@ -88,6 +91,13 @@ Page({
     level: '',
     metric: 'daily',
     days: 7,
+    // 日期选择（2026-11-03）：空串 = 今天。选日期后日列/周列/考勤窗口一次联动：
+    //   日达标 = 所选当天；周达标 = 所选日所在 ISO 周（周一至该日）；
+    //   考勤 = 所选日往前 N 天（考勤按天回看，永远没有「周」语义）。
+    selectedDate: '',
+    todayKeyText: '',
+    dateLabel: '今天',
+    attRangeText: '',
     // 显示内容（列表列）：默认日+周，考勤有数据时才自动加上
     columns: { daily: true, weekly: true, attendance: false },
     // 复制内容：默认只复制日达标（用户「如只需要日达标这种的」）
@@ -138,6 +148,8 @@ Page({
 
   onLoad() {
     if (!getApp().requireLogin()) return;
+    // 日期选择器的上界（北京时区，不让选未来日期）与默认值
+    this.setData({ todayKeyText: fmt.todayKey() });
   },
 
   onShow() {
@@ -168,6 +180,8 @@ Page({
   buildQuery() {
     const d = this.data;
     const q = { days: d.days };
+    // 选了非今天的日期才传（保持「今天」走服务端默认口径，缓存也最友好）
+    if (d.selectedDate) q.today = d.selectedDate;
     if (d.school) q.school = d.school;
     if (d.department) q.department = d.department;
     if (d.quick) q.quick = d.quick;
@@ -202,6 +216,9 @@ Page({
         from: d.from || '',
         weekStart: d.weekStart || '',
         days: d.days || this.data.days,
+        // 联动展示：快捷 chip 文案随日期换词；考勤行标出实际统计区间
+        chips: this.chipsFor(),
+        attRangeText: d.from ? `${d.from} ~ ${d.today || ''}（早操/早八/晚自习/查宿）` : '',
         totals: d.totals || null,
         filtered: d.filtered || null,
         activeFilters: d.activeFilters || [],
@@ -246,18 +263,42 @@ Page({
     }
   },
 
+  // 快捷 chip 文案随所选日期联动（选了非今天的日期再说「今日」就是在说谎）
+  chipsFor() {
+    const custom = !!this.data.selectedDate;
+    return CHIPS.map((c) => {
+      if (c.key === 'notDaily') return { ...c, label: custom ? '当日未达标' : '今日未达标' };
+      if (c.key === 'zeroToday') return { ...c, label: custom ? '当日零达标' : '今日零达标' };
+      if (c.key === 'notWeek') return { ...c, label: custom ? '当周未达标' : '本周未达标' };
+      return c;
+    });
+  },
+
+  // 日期选择（2026-11-03）：一次联动日列 / 周列 / 考勤窗口（口径见 data.selectedDate 注释）
+  onDate(e) {
+    const value = String(e.detail.value || '');
+    const isToday = !value || value === this.data.todayKeyText;
+    const selectedDate = isToday ? '' : value;
+    if (selectedDate === this.data.selectedDate) return;
+    this.setData(
+      { selectedDate, dateLabel: isToday ? '今天' : value.slice(5), chips: [] },
+      () => this.load()
+    );
+  },
+
   // 指标条：显示哪几列由 columns 决定（用户要能控制看什么）
   // columns 作为参数传入而不是读 this.data：setData 之前算的时候 this.data 还是旧值，
   // 在 onToggleColumn 里直接算会用上一次的列（勾上考勤、指标条却还少一格）。
   buildMetrics(scope, columns) {
     if (!scope) return [];
     const cols = columns || this.data.columns;
+    const custom = !!this.data.selectedDate;
     const out = [
       { k: '班级', v: String(scope.classCount || 0), lv: '' },
       { k: '学生', v: String(scope.studentCount || 0), lv: '' },
     ];
-    if (cols.daily) out.push({ k: '今日达标', v: rateText(scope.dailyRate), lv: rateLevel(scope.dailyRate) });
-    if (cols.weekly) out.push({ k: '本周达标', v: rateText(scope.weeklyRate), lv: rateLevel(scope.weeklyRate) });
+    if (cols.daily) out.push({ k: custom ? '当日达标' : '今日达标', v: rateText(scope.dailyRate), lv: rateLevel(scope.dailyRate) });
+    if (cols.weekly) out.push({ k: custom ? '当周达标' : '本周达标', v: rateText(scope.weeklyRate), lv: rateLevel(scope.weeklyRate) });
     return out;
   },
 
@@ -276,7 +317,7 @@ Page({
   // 整句在 JS 拼：模板里写「本周起点 {{weekStart}}」会在字段为空时留下断句
   buildFooter(d) {
     const parts = ['达标 = 步数 ≥ 生效目标（个人计划优先）'];
-    if (d.weekStart) parts.push(`本周起点 ${d.weekStart}`);
+    if (d.weekStart) parts.push(this.data.selectedDate ? `周起点 ${d.weekStart}` : `本周起点 ${d.weekStart}`);
     if (this.data.hasAttendance) parts.push(`考勤按应到人数加权（${d.from} 起），早八只记迟到`);
     return `${parts.join('；')}。`;
   },
@@ -400,7 +441,11 @@ Page({
 
   resetFilters() {
     this.setData(
-      { quick: '', level: '', metric: 'daily', school: '', schoolIndex: 0, department: '', deptIndex: 0, keyword: '' },
+      {
+        quick: '', level: '', metric: 'daily', school: '', schoolIndex: 0, department: '', deptIndex: 0, keyword: '',
+        // 日期也算筛选条件：清除筛选一并回到「今天」
+        selectedDate: '', dateLabel: '今天',
+      },
       () => this.load()
     );
   },

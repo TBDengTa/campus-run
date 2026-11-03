@@ -216,6 +216,17 @@
   BAN 中间件同口径；鉴权仍在各写路由）—— check-write-guard 认可 `caps.*` 守卫并校验其
   来源；不要在小程序里按本地权限缓存自算一份。只读账号（user.view）仍可展开
   「当日同步历史」（toggleHist 是纯读 UI，在检查器 UI_ONLY 白名单里）。
+- **小程序反作弊详情与 Web 完全对齐**（用户 2026-11-03「标注数据中没有跟 WEB 一样显示
+  详细信息」）：admin 列表下发 `features` 快照，前端 `decorate()` 预计算 `metrics[]`
+  两列网格渲染（GPS：峰值/平均速度、配速、距离、时长、轨迹点、点间隔/平滑度；
+  werun：当日/新增、同步时间；通用：可疑分/模型分/判定/处置备注 handleNote）。
+  **GPS 轨迹图的数据拼装唯一实现在 `services/anomaly-gps-detail.js`**（数据源优先级
+  runRecordId → route 快照 → openid+日期就近匹配；指标走 withGpsMetrics）——
+  console 的 `/anomalies/:id/gps` 与 admin 的 `/:id/gps` 都只鉴权取参，禁止任何一边
+  另写一份。小程序端「查看轨迹」开全页共用一个 `<map>` 实例的半屏弹层
+  （polyline/起终点 marker 写法同 `pages/run/detail`）。指标格式化统一走
+  `utils/format.js`（kmh/paceText/num2，与 Web 控制台同口径）；时间展示用
+  `formatDateTime`（北京时区），**绝不从 ISO 串切片**。
 - **只读账号不显示写入口**（用户 2026-10-22「只有查看权限时应该不显示操作功能按钮，而不是点击后被后端拒绝掉」）：
   ① 每个管理端页面在 `onShow`/`load` 里调 `utils/admin-perm.js::applyManage(this, '<模块>.manage')`
      得到 `data.canManage`（`*` 或该项），写入口一律 `wx:if="{{canManage}}"`，输入框 `disabled="{{!canManage}}"`；
@@ -384,8 +395,22 @@
      差的正是 10 个没有个人计划的学生）。要写 `$toDouble:{ $arrayElemAt:['$goal.daily.steps',0] }`（先取后转）。
   性能：聚合全部**下推 Mongo**（网络只传最终 43 行）+ 60 秒缓存。
   第一版在 Node 侧聚合（`User.find` 2274 个 openid 再 `$in` 查两张表）实测 **17 秒**，不可接受。
-  回归：`tools/verify-class-status.js`（用**独立算法**交叉核对人数，专抓「数字看着正常但算错」）
-  + `tools/check-nav-groups.js`（入口按 `class.view` 判定，且对无该权限的账号必须不可见）。
+  回归：`tools/verify-class-status.js`（用**独立算法**交叉核对人数，专抓「数字看着正常但算错」；
+  第 10 节会**造临时考勤数据**咬合应到加权断言——曾因全库无考勤记录，字段读错的 bug
+  一直测不出来）+ `tools/check-nav-groups.js`（入口按 `class.view` 判定，且对无该权限的账号必须不可见）。
+- **考勤字段路径（2026-11-03 修复「考勤一直是 —」，改聚合前必读）**：
+  应到/实到数字存在 check_records 的 **`details`**（shouldCount/actualCount/shouldStay/
+  lateCount，写入端 `routes/union.js::fillDerived`）；`metrics` 只装 `ratios`/`values` 两层
+  （`metrics.ratios.rate` 是记录级比率）。看板聚合曾读成 metrics 层的 shouldCount →
+  应到恒 0 → ratePercent 恒 null → 考勤列恒「—」。`tools/check-server-contract.js` 钉死
+  「不再出现 metrics 层的 shouldCount/actualCount/shouldStay」。
+- **日期选择多级联动（用户 2026-11-03「增加日期选择，考勤应该没有周的选择」）**：
+  前端 `selectedDate`（空=今天，picker 上界=今天）一次联动三处：日达标列=所选当天、
+  周达标列=所选日所在 ISO 周（周一至该日）、**考勤窗口=所选日往前 N 天**（N 由
+  「考勤统计」chips 控制——考勤按天回看，**永远没有「周」语义**，不随指标日/周切换）。
+  选了非今天的日期：快捷 chip 文案 今日→当日 / 本周→当周（`chipsFor()`），指标条同理；
+  非今天才传 `today` 参数（缓存友好），服务端 `isValidDateKey` 校验非法值回退今天。
+  回归：`verify-class-status.js` 第 11 节（today 覆盖/周起点重算/考勤区间锚定/非法回退）。
 
 ## 跑分（积分体系）
 - 配置在单例 `goal_config.points`（系统配置 → 跑分设置）：完成日目标得分、完成周目标得分、

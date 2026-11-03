@@ -128,33 +128,42 @@
   background: var(--tt-bg-page);
 }
 
-.sa-item-body {
+/* 紧凑指标网格（2026-11-03 对齐 Web 详情）：两列 cell（仿 user-detail 的 ud-grid 先例），
+   取代原来一行一条 label:value 的稀疏排布 */
+.sa-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 8rpx 40rpx;
-  margin-top: 18rpx;
+  margin-top: 14rpx;
+  border-top: 1rpx solid var(--tt-line);
+  border-left: 1rpx solid var(--tt-line);
+  border-radius: 10rpx;
+  overflow: hidden;
 }
 
-.sa-row {
-  display: flex;
-  align-items: baseline;
-  gap: 10rpx;
-  min-width: 180rpx;
+.sa-cell {
+  width: 50%;
+  box-sizing: border-box;
+  padding: 10rpx 16rpx;
+  border-right: 1rpx solid var(--tt-line);
+  border-bottom: 1rpx solid var(--tt-line);
+  background: var(--tt-card);
 }
 
-.sa-label {
-  font-size: 22rpx;
+.sa-cell-k {
+  display: block;
+  font-size: 21rpx;
+  line-height: 30rpx;
   color: var(--tt-text-3);
 }
 
-.sa-value {
+.sa-cell-v {
+  display: block;
+  margin-top: 2rpx;
   font-size: 26rpx;
+  line-height: 36rpx;
+  font-weight: 500;
   color: var(--tt-text-1);
-}
-
-.sa-score {
-  color: var(--td-error-color-6);
-  font-weight: 600;
+  word-break: break-all;
 }
 
 .sa-reasons {
@@ -313,29 +322,43 @@
 }
 
 
-/* ===== 来源分流（用户 2026-10-27「微信同步、GPS 分开来」）=====
-   两种跑步类型的判定模型完全不同，列表里用颜色区分，避免管理员混淆 */
-.sa-source {
+/* 处置备注（封禁/归档时管理员写的说明，2026-11-03 对齐 Web） */
+.sa-note-line {
+  margin-top: 10rpx;
+  font-size: 22rpx;
+  line-height: 34rpx;
+  color: var(--tt-text-3);
+}
+
+/* 查看轨迹（GPS 线索，2026-11-03 对齐 Web 控制台路线图） */
+.sa-track-btn {
   display: inline-block;
-  padding: 2rpx 12rpx;
-  border-radius: 8rpx;
+  margin-top: 12rpx;
+  padding: 6rpx 18rpx;
+  border-radius: 999rpx;
+  background: var(--tt-brand-soft);
+  color: var(--tt-brand);
   font-size: 22rpx;
 }
 
-.sa-source-werun {
-  color: var(--tt-brand);
-  background: var(--tt-brand-weak, #fff3e8);
+/* 轨迹弹层里的地图（全页共用一个 map 实例） */
+.sa-map {
+  width: 100%;
+  height: 560rpx;
+  border-radius: 12rpx;
 }
 
-.sa-source-gps {
-  color: #1a73e8;
-  background: #e8f0fe;
-}
-
-/* 模型分：与「可疑分」（0~100 规则分）区分开，用另一套配色 */
-.sa-model {
-  color: var(--td-error-color-6);
-  font-weight: 600;
+.sa-map-empty {
+  height: 300rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 30rpx;
+  border: 1rpx dashed var(--tt-line);
+  border-radius: 12rpx;
+  font-size: 23rpx;
+  color: var(--tt-text-3);
+  text-align: center;
 }
 
 /* 学习引擎状态条 */

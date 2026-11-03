@@ -24,8 +24,16 @@
     <text class="cs-reset" wx:if="{{hasFilter}}" bind:tap="resetFilters">清除筛选</text>
   </view>
 
-  <!-- ===== 筛选第 1 行：院校 / 系部 / 搜索 ===== -->
+  <!-- ===== 筛选第 1 行：日期 / 院校 / 系部 / 搜索 ===== -->
+  <!-- 日期一次联动三处：日列=当天、周列=所在周（周一至该日）、考勤=该日往前 N 天。
+       考勤按天回看，没有「周」语义，所以它只跟日期走、不跟指标日/周切换走。 -->
   <view class="cs-bar">
+    <picker class="cs-pick cs-pick-date {{selectedDate ? 'is-custom' : ''}}" mode="date" value="{{selectedDate || todayKeyText}}" end="{{todayKeyText}}" bindchange="onDate">
+      <view class="cs-field">
+        <text class="cs-field-t">{{dateLabel}}</text>
+        <t-icon name="calendar" size="20rpx" color="var(--tt-text-3)" />
+      </view>
+    </picker>
     <picker class="cs-pick" range="{{schoolLabels}}" value="{{schoolIndex}}" bindchange="onSchool">
       <view class="cs-field">
         <text class="cs-field-t">{{schoolLabels[schoolIndex]}}</text>
@@ -108,7 +116,7 @@
     </picker>
   </view>
 
-  <!-- 「考勤统计 N 天」只在真有考勤数据时出现（当前全库无考勤记录 → 整块隐藏） -->
+  <!-- 「考勤统计 N 天」只在真有考勤数据时出现；区间随所选日期联动（没有「周」语义） -->
   <view class="cs-bar cs-bar-days" wx:if="{{hasAttendance}}">
     <text class="cs-bar-k">考勤统计</text>
     <view
@@ -118,7 +126,7 @@
       data-days="{{item}}"
       bind:tap="onDays"
     >{{item}}天</view>
-    <text class="cs-bar-s">早操/早八/晚自习/查宿</text>
+    <text class="cs-bar-s">{{attRangeText}}</text>
   </view>
 
   <!-- ===== 列表 ===== -->

@@ -127,6 +127,32 @@ function sourceOf(source) {
   return SOURCE_MAP[source] || { sourceText: '运动记录', sourceIcon: 'chart-bar' };
 }
 
+// ===== 反作弊研判指标换算（2026-11-03 小程序对齐 Web 控制台详情）=====
+// 与 server/public/console/app.js 的同名函数保持同一口径；≤0 或非法一律显「—」，
+// 否则「0 km/h」会被读成「站着不动」而不是「没有数据」。
+
+// m/s → "xx.x km/h"
+function kmh(mps) {
+  const v = Number(mps);
+  if (!v || v <= 0 || !Number.isFinite(v)) return '—';
+  return `${(v * 3.6).toFixed(1)} km/h`;
+}
+
+// 秒/公里 → 12'03"（配速）
+function paceText(secPerKm) {
+  const v = Number(secPerKm);
+  if (!v || v <= 0 || !Number.isFinite(v)) return '—';
+  const m = Math.floor(v / 60);
+  const s = Math.round(v % 60);
+  return `${m}'${String(s).padStart(2, '0')}"`;
+}
+
+// 数值 → 固定两位小数（轨迹平滑度 / 点间隔这类小数指标）
+function num2(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n.toFixed(2) : '—';
+}
+
 module.exports = {
   TZ,
   toDate,
@@ -141,4 +167,7 @@ module.exports = {
   parseDateKey,
   sourceOf,
   SOURCE_MAP,
+  kmh,
+  paceText,
+  num2,
 };

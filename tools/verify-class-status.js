@@ -9,7 +9,8 @@
 //   而单学生调试脚本恰好是对的，肉眼完全看不出）。
 //
 // 用法：node tools/verify-class-status.js
-// 需要能连上 .env 里的数据库；只读，不写任何数据。
+// 需要能连上 .env 里的数据库。主体只读；第 [10] 节会写入**带时间戳前缀的临时班与
+// 临时考勤记录**（抓「聚合读错字段」这类静默错必须真有数据），跑完即删并核对残留为 0。
 const path = require('path');
 const serverDir = path.join(__dirname, '..', 'server');
 const config = require(path.join(serverDir, 'src', 'config'));
@@ -404,6 +405,91 @@ function assert(cond, label, extra) {
     '缓存命中的总量与冷查询一致',
     { cold: r.totals, warm: r2.totals }
   );
+
+  // ---- [10] 考勤字段路径（2026-11-03 修复「考勤一直是 —」的回归锚）----
+  //
+  // 根因：聚合曾读 $metrics.shouldCount/actualCount/shouldStay，但写入端
+  // (routes/union.js::fillDerived) 把这些数字放 **details**，metrics 只有 ratios/values
+  // → 应到恒 0 → ratePercent 恒 null → 考勤列恒「—」。
+  // 此前全库没有考勤模块记录，[6] 的加权断言从未真正生效过 —— 这里**主动造数**
+  // 让它每次运行都咬合（造的是带时间戳前缀的临时班与临时记录，跑完即删，
+  // 并在删除后 force 刷新一次缓存，不给线上留 60 秒的脏缓存）。
+  console.log('\n[10] 考勤聚合读 details（造数 + 应到加权交叉核对）');
+  {
+    const TS = String(Date.now());
+    const CLS = `verify考勤_${TS}班`;
+    // 手工期望值（与聚合完全独立的算术）：
+    //   早操   should 40 / actual 36 → 0.9；晚自习 should 38 / actual 30 → ≈0.7895
+    //   查宿   shouldStay 40 / actual 38 → 0.95；早八只记迟到 3 人（rate 恒 null）
+    //   综合率 = Σrate×should ÷ Σshould = (0.9×40 + 0.7895×38 + 0.95×40) ÷ 118 ≈ 88.6%
+    const seed = [
+      { moduleKey: 'morning_exercise', details: { shouldCount: 40, actualCount: 36, absentCount: 4 }, rate: 36 / 40 },
+      { moduleKey: 'study_evening', details: { shouldCount: 38, actualCount: 30, absentCount: 8 }, rate: 30 / 38 },
+      { moduleKey: 'night_dorm', details: { shouldStay: 40, actualCount: 38, notReturnedCount: 2 }, rate: 38 / 40 },
+      { moduleKey: 'morning_class', details: { lateCount: 3 }, rate: null },
+    ];
+    await ClassProfile.create({ className: CLS, status: 'normal' });
+    await CheckRecord.insertMany(
+      seed.map((s) => ({
+        moduleKey: s.moduleKey,
+        date: day,
+        period: '',
+        targetType: 'class',
+        targetId: CLS,
+        targetName: CLS,
+        className: CLS,
+        details: s.details,
+        // 与真实写入同构：metrics 只装 ratios/values，数字都在 details —— 钉住字段路径
+        metrics: s.rate == null ? { values: { lateCount: s.details.lateCount } } : { ratios: { rate: s.rate } },
+        status: 'submitted',
+      }))
+    );
+    try {
+      const rb = await board.classStatusBoard({ force: true });
+      const row = rb.rows.find((x) => x.className === CLS);
+      assert(!!row, '临时班出现在看板行里', rb.rows.length);
+      if (row) {
+        const att = row.attendance || {};
+        assert(att.hasData === true, '考勤 hasData=true（此前恒 — 的直接判据）', att.hasData);
+        assert(att.ratePercent !== null && att.ratePercent > 0, '综合考勤率有值', att.ratePercent);
+        // 独立算术交叉核对（应到加权，早八不计率）
+        const exp = ((36 / 40) * 40 + (30 / 38) * 38 + (38 / 40) * 40) / (40 + 38 + 40);
+        assert(
+          Math.abs(att.ratePercent - exp * 100) < 0.2,
+          `综合考勤率 = 应到加权（期望 ≈${(exp * 100).toFixed(1)}%）`,
+          att.ratePercent
+        );
+        const me = (att.modules || {}).morning_exercise || {};
+        const nc = (att.modules || {}).night_dorm || {};
+        const mc = (att.modules || {}).morning_class || {};
+        assert(me.should === 40 && me.actual === 36, '早操应到/实到读的是 details', { s: me.should, a: me.actual });
+        assert(nc.should === 40 && nc.actual === 38, '查宿读 details.shouldStay（不是 shouldCount）', { s: nc.should, a: nc.actual });
+        assert(mc.rate === null && mc.ratePercent === null && (mc.lateCount || mc.late) === 3, '早八只记迟到、不给比率', mc);
+      }
+    } finally {
+      // 清理 + 强制刷新缓存：不留 60 秒的脏行给线上页面
+      await CheckRecord.deleteMany({ className: CLS });
+      await ClassProfile.deleteOne({ className: CLS });
+      await board.classStatusBoard({ force: true }).catch(() => {});
+      const left = await CheckRecord.countDocuments({ className: CLS });
+      assert(left === 0, '临时考勤记录清理干净', left);
+    }
+  }
+
+  // ---- [11] today 参数（2026-11-03 前端日期选择接入的口径锚）----
+  console.log('\n[11] 日期选择（today 参数）');
+  {
+    const pastDay = dates.addDays(day, -20); // 必然落在本周之前，周起点应早于本周
+    const rp = await board.classStatusBoard({ today: pastDay, force: true });
+    assert(rp.today === pastDay, 'today 覆盖生效（日列 = 所选日期）', rp.today);
+    assert(rp.weekStart === dates.weekRange(pastDay).startKey, '周起点随所选日期重算', rp.weekStart);
+    assert(rp.from === dates.addDays(pastDay, -6), '考勤区间锚定所选日期（默认 7 天）', rp.from);
+    // 非法日期 = 当未指定（不能让拼错的参数统计出空日期）
+    const rBad = await board.classStatusBoard({ today: 'not-a-date', force: true });
+    assert(rBad.today === day, '非法 today 回退服务器今天', rBad.today);
+    // 收尾：刷新回「今天」的缓存，避免把历史日期的结果留给下一次页面加载
+    await board.classStatusBoard({ force: true });
+  }
 
   await mongoose.disconnect();
   console.log(failed ? `\n${failed} 项失败` : '\n全部通过');

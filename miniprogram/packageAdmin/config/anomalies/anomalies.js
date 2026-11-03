@@ -3,6 +3,8 @@ const auth = require('../../../utils/request');
 // （caps.label = 可标注/归档，caps.ban = 可封禁），缺省 false 按只读渲染（fail-closed）；
 // 鉴权仍在服务端各写路由，这里只控显隐 —— 与 check-write-guard 的 caps.* 守卫约定一致。
 const adminPerm = require('../../../utils/admin-perm');
+// 指标格式化统一走 format.js（仓库约定），kmh/paceText/num2 与 Web 控制台同口径
+const fmt = require('../../../utils/format');
 
 // 状态标签：open 待研判 / judged 已判定·待处置（标了作弊/轻微但未处置）/ banned / dismissed。
 // 文案与 Web 控制台 statusPill 同一份语义，不要两头漂移。
@@ -66,6 +68,16 @@ Page({
     banNote: '',
     banSaving: false,
     dayOptions: [1, 3, 7, 15, 30],
+    // 轨迹弹层（GPS 线索「查看轨迹」）：全页共用一个 map 实例，点开哪条载哪条
+    trackVisible: false,
+    trackName: '',
+    trackSourceText: '',
+    trackPolyline: [],
+    trackMarkers: [],
+    trackInclude: [],
+    trackLat: 0,
+    trackLng: 0,
+    trackEmptyText: '',
   },
 
   onShow() {
@@ -168,31 +180,7 @@ Page({
       const text = res.labelText || {};
       const labelBtns = kinds.map((k) => ({ kind: k, text: text[k] || k }));
 
-      const list = (res.list || []).map((r) => ({
-        ...r,
-        statusInfo: statusOf(r),
-        // 命中原因直接拼成一行，管理员不用点开就知道为什么可疑
-        reasonText: (r.reasons || []).join(' · ') || '—',
-        scoreText: String(r.score || 0),
-        stepsText: Number(r.cumulativeSteps || 0).toLocaleString('zh-CN'),
-        deltaText: Number(r.deltaSteps || 0).toLocaleString('zh-CN'),
-        // 同步/判定时间（用户 2026-11-03「增加记录时的同步时间」）：
-        // anomaly 的 createdAt 就是本次同步被判定的时刻
-        timeText: r.createdAt ? String(r.createdAt).slice(5, 16).replace('T', ' ') : '',
-        // 模型分（0~1）：0.5 是「与人群一样正常」的基准线。
-        // 显示到两位小数，管理员能看出「这条主要是学习模型判的还是硬规则判的」。
-        modelScoreText:
-          r.modelScore == null || !Number.isFinite(Number(r.modelScore))
-            ? ''
-            : Number(r.modelScore).toFixed(2),
-        // 来源分流：微信同步与 GPS 是两套模型，列表必须能区分
-        sourceText: r.sourceText || (r.source === 'gps' ? 'GPS 实跑' : '微信同步'),
-        source: r.source || 'werun',
-        // 当日同步历史（增速研判）：默认收起，点开懒加载
-        histOpen: false,
-        histRows: null,
-        histSummaryText: '',
-      }));
+      const list = (res.list || []).map((r) => this.decorate(r));
       this.setData({
         list,
         labelBtns,
@@ -204,6 +192,51 @@ Page({
       this.setData({ loading: false });
       wx.showToast({ title: e.message || '加载失败', icon: 'none' });
     }
+  },
+
+  // 指标数组（两列网格渲染，模板零拼接）：与 Web 控制台 buildDetail 同一口径。
+  // GPS 的速度/配速/距离/时长来自 features 快照（判定时的输入，研判必须看到原始数字）；
+  // 时间走 format.js 的北京时区格式化 —— 绝不从 ISO 串里抠（UTC 会差 8 小时）。
+  decorate(r) {
+    const f = r.features || {};
+    const isGps = r.source === 'gps';
+    const timeFull = fmt.formatDateTime(r.createdAt);
+    const metrics = [{ k: '来源', v: r.sourceText || (isGps ? 'GPS 实跑' : '微信同步') }];
+    if (r.date) metrics.push({ k: '日期', v: r.date });
+    if (isGps) {
+      metrics.push({ k: '峰值速度', v: fmt.kmh(f.peakSpeed) });
+      metrics.push({ k: '平均速度', v: fmt.kmh(f.speed) });
+      metrics.push({ k: '配速', v: `${fmt.paceText(f.paceSecPerKm)}/km` });
+      metrics.push({ k: '距离', v: fmt.formatDistance(Number(f.distance) || 0) });
+      metrics.push({ k: '时长', v: fmt.formatDuration(Number(f.duration) || 0) });
+      metrics.push({ k: '轨迹点', v: String(f.pointCount || 0) });
+      metrics.push({ k: '点间隔均值', v: `${fmt.num2((f.gapAvg || 0) / 1000)}s` });
+      metrics.push({ k: '最大间隔', v: `${fmt.num2((f.gapMax || 0) / 1000)}s` });
+      metrics.push({ k: '平滑度', v: fmt.num2(f.jitter) });
+      if (timeFull) metrics.push({ k: '上传时间', v: timeFull.slice(5) });
+    } else {
+      metrics.push({ k: '当日步数', v: fmt.formatNumber(r.cumulativeSteps) });
+      metrics.push({ k: '本次新增', v: fmt.formatNumber(r.deltaSteps) });
+      if (timeFull) metrics.push({ k: '同步时间', v: timeFull.slice(5) });
+    }
+    metrics.push({ k: '可疑分', v: String(r.score || 0) });
+    if (r.modelScore != null && Number.isFinite(Number(r.modelScore))) {
+      metrics.push({ k: '模型分', v: Number(r.modelScore).toFixed(2) });
+    }
+    if (r.label && r.labelText && r.labelText !== '未标注') {
+      metrics.push({ k: '判定', v: r.labeledBy ? `${r.labelText} · ${r.labeledBy}` : r.labelText });
+    }
+    return {
+      ...r,
+      statusInfo: statusOf(r),
+      reasonText: (r.reasons || []).join(' · ') || '—',
+      sourceText: r.sourceText || (isGps ? 'GPS 实跑' : '微信同步'),
+      source: r.source || 'werun',
+      metrics,
+      histOpen: false,
+      histRows: null,
+      histSummaryText: '',
+    };
   },
 
   // ===== ① 判定（四分类，喂 AI 训练） =====
@@ -280,6 +313,72 @@ Page({
     } catch (err) {
       wx.showToast({ title: err.message || '历史加载失败', icon: 'none' });
     }
+  },
+
+  // ===== GPS 轨迹弹层（2026-11-03 对齐 Web 控制台）：全页共用一个 map 实例 =====
+  // 数据来自 admin /:id/gps —— 服务端唯一实现在 services/anomaly-gps-detail.js，
+  // 与 Web 同一份（数据源优先级：runRecordId → 轨迹快照 → 当天就近匹配）。
+  async toggleTrack(e) {
+    const { id, name } = e.currentTarget.dataset;
+    const item = (this.data.list || []).find((x) => x.id === id);
+    if (!item) return;
+    this.setData({
+      trackVisible: true,
+      trackName: `${name || item.realName} · ${item.date}`,
+      trackSourceText: '',
+      trackPolyline: [],
+      trackMarkers: [],
+      trackInclude: [],
+      trackEmptyText: '轨迹加载中…',
+    });
+    try {
+      const r = await auth.get(`/api/admin/step-anomalies/${id}/gps`);
+      const srcMap = {
+        run_record: '原始跑步记录',
+        snapshot: '判定时轨迹快照',
+        legacy_match: '当天就近匹配的跑步记录',
+      };
+      const pts = (r.points || []).map((p) => ({ latitude: p.lat, longitude: p.lng }));
+      if (pts.length < 2) {
+        this.setData({
+          trackEmptyText: '无轨迹数据（旧记录未存轨迹快照，且匹配不到当天的跑步记录）',
+          trackSourceText: '',
+        });
+        return;
+      }
+      // polyline/marker 写法与 pages/run/detail 同款（起点用空 icon 藏默认大头针）
+      this.setData({
+        trackSourceText: srcMap[r.dataSource] ? `数据源：${srcMap[r.dataSource]}` : '',
+        trackLat: pts[0].latitude,
+        trackLng: pts[0].longitude,
+        trackPolyline: [{ points: pts, color: '#ff6b00', width: 6, arrowLine: true }],
+        trackMarkers: [
+          {
+            id: 1,
+            latitude: pts[0].latitude,
+            longitude: pts[0].longitude,
+            iconPath: '',
+            width: 0,
+            height: 0,
+            callout: { content: '起点', display: 'ALWAYS', borderRadius: 8, padding: 4 },
+          },
+          {
+            id: 2,
+            latitude: pts[pts.length - 1].latitude,
+            longitude: pts[pts.length - 1].longitude,
+            callout: { content: '终点', display: 'ALWAYS', borderRadius: 8, padding: 4 },
+          },
+        ],
+        trackInclude: pts,
+        trackEmptyText: '',
+      });
+    } catch (err) {
+      this.setData({ trackEmptyText: err.message || '轨迹加载失败', trackSourceText: '' });
+    }
+  },
+
+  closeTrack() {
+    this.setData({ trackVisible: false });
   },
 
   // ===== 手动封禁 =====

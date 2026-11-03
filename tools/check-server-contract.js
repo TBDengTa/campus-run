@@ -2185,5 +2185,31 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   }
 }
 
+// ===== 班级状态考勤字段路径 + 日期选择（2026-11-03 修复「考勤一直是 —」）=====
+{
+  const boardSrc = require('fs').readFileSync(path.join(SERVER, 'services/class-status-board.js'), 'utf8');
+  // 应到/实到数字存在 details（写入端 fillDerived 口径）；读成 $metrics.* 会恒 0 → 考勤列恒「—」
+  ok('考勤聚合读 details.shouldCount/shouldStay/actualCount', /\$details\.shouldStay[\s\S]{0,200}\$details\.shouldCount[\s\S]{0,120}\$details\.actualCount/.test(boardSrc));
+  ok('考勤聚合不再读 metrics.shouldCount/actualCount（防字段路径回归）', !/\$metrics\.(shouldCount|actualCount|shouldStay)/.test(boardSrc));
+  ok('比率仍读 metrics.ratios.rate（这条路径本来就是对的）', /storedRate:\s*'\$metrics\.ratios\.rate'/.test(boardSrc));
+  ok('today 参数非法回退服务器今天（isValidDateKey 防呆）', /dates\.isValidDateKey\(today\)\s*\?\s*today\s*:\s*dates\.todayKey\(\)/.test(boardSrc));
+
+  const csJs = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'class-status', 'class-status.js'), 'utf8');
+  const csWxml = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'class-status', 'class-status.wxml'), 'utf8');
+  ok('前端有日期选择器（mode=date 且不许选未来）', /mode="date"[^>]*end="\{\{todayKeyText\}\}"/.test(csWxml));
+  ok('选了非今天才传 today（缓存友好）', /if \(d\.selectedDate\) q\.today = d\.selectedDate;/.test(csJs));
+  ok('快捷 chip 文案随日期联动（今日→当日）', /chipsFor/.test(csJs) && /'当日未达标'/.test(csJs));
+  ok('考勤区间随所选日期展示（没有周语义）', /attRangeText/.test(csJs) && /attRangeText/.test(csWxml));
+
+  // 小程序反作弊页：指标网格 + 轨迹（2026-11-03 对齐 Web 控制台）
+  const anoJs2 = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'config', 'anomalies', 'anomalies.js'), 'utf8');
+  const anoWxml2 = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'config', 'anomalies', 'anomalies.wxml'), 'utf8');
+  ok('反作弊页指标预计算（metrics 数组，模板零拼接）', /decorate\(r\)[\s\S]{0,600}metrics\.push/.test(anoJs2) && /sa-grid/.test(anoWxml2));
+  ok('GPS 详情指标对齐 Web（峰值/平均速度、配速、质量三项）', /峰值速度/.test(anoJs2) && /平均速度/.test(anoJs2) && /点间隔均值/.test(anoJs2) && /平滑度/.test(anoJs2));
+  ok('格式化走 format.js（kmh/paceText/num2，不页面自写）', /require\('\.\.\/\.\.\/\.\.\/utils\/format'\)/.test(anoJs2) && /fmt\.kmh\(/.test(anoJs2) && /fmt\.paceText\(/.test(anoJs2));
+  ok('「查看轨迹」走原生 map 弹层（与服务端 anomaly-gps-detail 同源）', /toggleTrack/.test(anoJs2) && /\/gps`/.test(anoJs2) && /<map/.test(anoWxml2));
+  ok('时间展示不再从 ISO 串切片（北京时区 formatDateTime）', /fmt\.formatDateTime\(/.test(anoJs2) && !/String\(r\.createdAt\)\.slice/.test(anoJs2));
+}
+
 console.log(`\n契约自检：${checked} 项，失败 ${failed}`);
 process.exit(failed ? 1 : 0);

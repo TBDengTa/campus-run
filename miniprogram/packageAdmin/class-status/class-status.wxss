@@ -99,6 +99,24 @@
   flex: 1;
   min-width: 0;
 }
+/* 日期选择（2026-11-03）：固定窄宽不参与均分（四个控件挤一行会都读不全），
+   选了非今天的日期时文字染品牌色 —— 它是筛选条件之一，要能被一眼看出 */
+.cs-pick-date {
+  flex: none;
+  width: 168rpx;
+}
+.cs-pick-date .cs-field {
+  justify-content: center;
+  gap: 4rpx;
+}
+.cs-pick-date .cs-field-t {
+  max-width: 120rpx;
+  text-align: center;
+}
+.cs-pick-date.is-custom .cs-field-t {
+  color: var(--tt-brand);
+  font-weight: 500;
+}
 .cs-pick-copy {
   flex: none;
   width: 200rpx;
