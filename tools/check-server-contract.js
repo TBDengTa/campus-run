@@ -1405,10 +1405,17 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('同步时做可疑研判', /recordStepAnomaly\(user/.test(stepsSrc2));
   ok('研判失败不阻塞同步', /研判失败绝不能阻塞正常同步/.test(stepsSrc2));
 
-  // 前端页面
+  // 前端页面（2026-11-03 适配判定/处置两组：与 Web 控制台同一语义）
   const anoJs = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'config', 'anomalies', 'anomalies.js'), 'utf8');
-  ok('前端列表页存在且受 user.manage 守卫', /applyManage\(this, 'user\.manage'\)/.test(anoJs));
-  ok('前端可手动封禁与标记正常', /submitBan/.test(anoJs) && /dismiss/.test(anoJs));
+  const anoWxml = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'config', 'anomalies', 'anomalies.wxml'), 'utf8');
+  // canManage 仍由 user.manage 兜底计算（封禁弹层过渡期引用），按钮显隐由服务端 caps 驱动
+  ok('前端列表页存在且受 user.manage 兜底守卫', /applyManage\(this, 'user\.manage'\)/.test(anoJs));
+  ok('前端可手动封禁（submitBan）', /submitBan/.test(anoJs));
+  ok('判定按钮挂在 caps.label 下（服务端能力表，fail-closed）', /caps\.label/.test(anoJs) && /caps\.ban/.test(anoJs) && /res\.caps \|\| \{ label: false, ban: false \}/.test(anoJs));
+  ok('判定四分类 + 归档动作存在', /\/label`, \{ label: kind \}/.test(anoJs) && /\/archive`/.test(anoJs));
+  ok('wxml 动作区分两组（判定/处置）', /① 判定/.test(anoWxml) && /② 处置/.test(anoWxml) && /归档 · 不封禁/.test(anoWxml));
+  ok('「已判定·待处置」状态与 Web 同文案', /已判定 · 待处置/.test(anoJs));
+  ok('同步历史懒加载（增速研判）', /sync-history/.test(anoJs) && /sa-hist/.test(anoWxml));
 }
 
 // ===== 微信运动自动同步 + 步数不得误封（用户 2026-10-26）=====

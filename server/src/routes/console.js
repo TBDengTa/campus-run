@@ -405,6 +405,9 @@ router.get(
         className: r.className || '',
         studentId: r.studentId || '',
         date: r.date || '',
+        // 同步/判定时间（用户 2026-11-03「增加记录时的同步时间」）：anomaly 的 createdAt
+        // 就是本次同步被判定的时刻，与同步历史表的时间轴对得上
+        createdAt: r.createdAt || null,
         source: r.source || 'werun',
         sourceText: r.source === 'gps' ? 'GPS 实跑' : '微信同步',
         cumulativeSteps: r.cumulativeSteps || 0,
@@ -554,6 +557,17 @@ router.get(
       // features 一并带回：旧记录列表里没有快照时，展开面板至少能显示判定用的标量
       features: rec.features || null,
     });
+  })
+);
+
+// 微信同步「历史增速」（用户 2026-11-03「同步增速这种我还要看历史增速的判断」）：
+// 重算口径与判定同源（唯一实现在 services/sync-rate-history.js，小程序管理端共用）。
+router.get(
+  '/anomalies/:id/sync-history',
+  requireConsole('anticheat.view'),
+  wrap(async (req, res) => {
+    const { syncRateHistory } = require('../services/sync-rate-history');
+    ok(res, await syncRateHistory(req.params.id));
   })
 );
 

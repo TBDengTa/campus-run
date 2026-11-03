@@ -165,6 +165,7 @@ function scoreSync({ cumulativeSteps, deltaSteps, elapsedMs, previousSteps, same
 module.exports = {
   AUTO_BAN_SCORE,
   SUSPICIOUS_SCORE,
+  MIN_WINDOW_SEC,
   checkRoundNumber,
   checkPatternNumber,
   checkStepRate,

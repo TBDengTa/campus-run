@@ -172,9 +172,85 @@
 .sa-actions {
   display: flex;
   gap: 16rpx;
+  margin-top: 16rpx;
+  flex-wrap: wrap;
+}
+
+/* 动作区分组标题与说明（用户 2026-11-03 与 Web 控制台对齐：判定/处置两码事） */
+.sa-act-t {
   margin-top: 20rpx;
-  padding-top: 20rpx;
+  padding-top: 16rpx;
   border-top: 1rpx solid var(--tt-line);
+  font-size: 24rpx;
+  font-weight: 600;
+  color: var(--tt-text-2);
+}
+.sa-act-t:first-of-type {
+  margin-top: 16rpx;
+}
+
+.sa-act-note {
+  margin-top: 8rpx;
+  font-size: 22rpx;
+  line-height: 1.5;
+  color: var(--tt-text-3);
+}
+
+/* 当日同步历史（增速研判）：紧凑四列表格 */
+.sa-hist {
+  margin-top: 14rpx;
+}
+
+.sa-hist-toggle {
+  display: inline-block;
+  padding: 6rpx 18rpx;
+  border-radius: 999rpx;
+  background: var(--tt-brand-soft);
+  color: var(--tt-brand);
+  font-size: 22rpx;
+}
+
+.sa-hist-empty {
+  margin-top: 10rpx;
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+.sa-hist-row {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr 1fr 1.4fr;
+  gap: 8rpx;
+  padding: 8rpx 0;
+  border-bottom: 1rpx solid var(--tt-line);
+  font-size: 22rpx;
+  color: var(--tt-text-2);
+}
+.sa-hist-row text {
+  text-align: right;
+}
+.sa-hist-row text:first-child {
+  text-align: left;
+}
+.sa-hist-head {
+  color: var(--tt-text-3);
+  font-size: 21rpx;
+}
+.sa-hist-row.is-short {
+  color: var(--tt-text-3);
+  opacity: 0.75;
+}
+.sa-hist-row.is-fast {
+  background: rgba(224, 77, 89, 0.08);
+}
+.sa-hist-row.is-fast text:last-child {
+  color: var(--td-error-color-6);
+  font-weight: 600;
+}
+
+.sa-hist-cap {
+  margin-top: 8rpx;
+  font-size: 21rpx;
+  color: var(--tt-text-3);
 }
 
 .sa-empty {

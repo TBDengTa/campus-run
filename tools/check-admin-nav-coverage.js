@@ -30,6 +30,9 @@ const SECOND_LEVEL = new Set([
   // 步数异常记录：二级入口 —— 从「反作弊」页点「步数异常记录」进入（用户 2026-10-27）。
   // 本脚本只认 nav-groups 的一级 url，页面内跳转的字面量不算，故列白名单。
   'packageAdmin/config/anomalies/anomalies',
+  // 学生会复审台：从「检查记录」详情与首页班超块进入（2026-11-02 新增时漏了登记在这里，
+  // 检查器因此一直误报不可达）。跳转在 banchao-block / union 页的代码里，非 nav-groups 字面量。
+  'packageUnion/review/review',
   // 学生会成员页：管理中枢入口在 nav-groups（unionMembers），
   // 学生会工作台的「成员管理」也指向它（用户 2026-10-28 把两个重复页面合并为一个）。
   // 但工作台那条是页面内 navigateTo 的字面量，本脚本只认 nav-groups，故这里不需要再列。

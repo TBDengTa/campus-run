@@ -389,6 +389,33 @@ tbody tr:last-child td { border-bottom: none; }
 .route-cap { margin-top: 4px; color: var(--text-3); font-size: 11px; text-align: center; }
 
 .det-quality { margin-top: 8px; flex: none; }
+
+/* 当日同步历史（增速研判）：紧凑小表格 */
+.sync-hist { margin-top: 10px; }
+.sync-hist-body {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  padding: 4px 10px;
+  font-size: 12px;
+}
+.sh-row {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1fr 1.3fr;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--line);
+}
+.sh-row:last-child { border-bottom: none; }
+.sh-row.r, .sh-row > span.r { text-align: right; }
+.sh-head { color: var(--text-3); font-size: 11px; }
+.sh-head + .sh-row { border-top: 1px solid var(--line); }
+.sh-fast { background: var(--bad-soft); }
+.sh-fast > span:last-child { color: var(--bad); font-weight: 600; }
+.sh-short { color: var(--text-3); }
+.sh-short > span:last-child { font-style: normal; }
+.sync-hist .route-cap { text-align: left; margin-top: 4px; }
+
 .reasons { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
 .reasons span {
   padding: 2px 8px;

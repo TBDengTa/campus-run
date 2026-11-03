@@ -11,6 +11,9 @@
  *   POST /:id/label {label}             四分类标注（进训练集）→ anticheat.label
  *   POST /:id/ban  {days,note}          手动封禁            → anticheat.ban（兼容 user.manage）
  *   POST /:id/dismiss                   标记正常（=label normal，旧入口保留）→ anticheat.label
+ *   POST /:id/archive                   归档（记录违规不封禁）→ anticheat.label
+ *   GET  /:id/sync-history              当日同步历史（增速）→ anticheat.view（兼容 user.view）
+ *   GET  / 响应里的 caps                 操作能力表（前端画按钮用，fail-closed）
  *
  * 三条权限口径（为什么这样配）：
  * ① 读兼容 user.view：异常记录在旧版就是「用户管理」的附属页，现网教师管理组
@@ -100,11 +103,22 @@ router.get(
       if (bySourceLabel[src][key] != null) bySourceLabel[src][key] += row.n;
     }
 
+    // ===== 操作能力表（用户 2026-11-03 小程序适配判定/处置分组） =====
+    // 前端只读这份画按钮（缺省按只读渲染，fail-closed）；鉴权仍在各写路由。
+    // 口径与本文件 LABEL / BAN 中间件一致：ban 兼容 user.manage（同一权力，不算放松）。
+    const effPerms =
+      (req.user && typeof req.user.getEffectivePermissions === 'function'
+        ? await req.user.getEffectivePermissions()
+        : req.user && req.user.permissions) || [];
+    const hasP = (p) => Array.isArray(effPerms) && (effPerms.includes('*') || effPerms.includes(p));
+    const caps = { label: hasP('anticheat.label'), ban: hasP('anticheat.ban') || hasP('user.manage') };
+
     ok(res, {
       page,
       limit,
       total,
       hasMore: skip + rows.length < total,
+      caps,
       // 各状态计数：管理端顶部显示「待处理 N 条」，一眼知道有没有活
       counts: {
         open: nOpen,
@@ -272,6 +286,17 @@ router.post(
         operator: (req.user && req.user.openid) || 'admin',
       })
     );
+  })
+);
+
+// 微信同步「历史增速」（用户 2026-11-03）：与 Web 控制台共用
+// services/sync-rate-history.js 的唯一实现，这里只鉴权与取参。
+router.get(
+  '/:id/sync-history',
+  VIEW,
+  wrap(async (req, res) => {
+    const { syncRateHistory } = require('../../services/sync-rate-history');
+    ok(res, await syncRateHistory(req.params.id));
   })
 );
 

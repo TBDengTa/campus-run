@@ -198,6 +198,24 @@
   （`anomaly-disposal.js::archiveAnomaly`，与封禁/排除同在唯一实现里，console 与 admin
   两路由只取参）：= 记录违规但不封禁、移出队列；未标注默认 minor，已标 cheat/minor 的
   保留原判定（归档是处置线，不能替管理员改认知线）。轻微违规的处置去向就是归档。
+- **训练台默认展开 + 同步时间/历史增速**（用户 2026-11-03「不用非得折叠，默认展开方便快捷操作」
+  「增加记录时的同步时间」「同步增速这种我要看历史增速的判断」）：控制台详情面板
+  **默认全部展开**（`collapsed` 记录被手动收起的行，点击行切换），默认页大小 15；
+  列表接口下发 `createdAt`（= 同步被判定时刻）。微信同步线索的「当日同步历史」唯一实现在
+  `services/sync-rate-history.js`（Web `/console/api/anomalies/:id/sync-history` 与小程序
+  `/api/admin/step-anomalies/:id/sync-history` 两路由只鉴权取参）：从 run_records 按
+  openid+date 逐条重算 间隔/增速，**与判定口径同源**（判定的 elapsedMs 就是「本次
+  createdAt − 上一条 createdAt」）—— 不要另写一套历史计算或在两端各算一份；
+  间隔 < 180s（MIN_WINDOW_SEC）标「窗口短」不给增速数字，与 check-sync-rate 钉死的
+  判定窗口一致；跨天首条用前一天末条做参照（addDays -1）。1 小时内的多次同步本就合并为
+  一条记录（createdAt 是窗口起点），历史表与判定看到的窗口相同，不要试图还原中间时刻。
+- **小程序异常记录页与 Web 同一动作分组**（用户 2026-11-03「小程序并没有适配」）：
+  `packageAdmin/config/anomalies` 同样分「① 判定 / ② 处置（封禁/归档）」两组，状态徽标
+  「已判定 · 待处置」同文案。按钮显隐读**服务端列表接口下发的 caps**
+  （`caps: res.caps || { label:false, ban:false }`，fail-closed；ban 兼容 user.manage 与
+  BAN 中间件同口径；鉴权仍在各写路由）—— check-write-guard 认可 `caps.*` 守卫并校验其
+  来源；不要在小程序里按本地权限缓存自算一份。只读账号（user.view）仍可展开
+  「当日同步历史」（toggleHist 是纯读 UI，在检查器 UI_ONLY 白名单里）。
 - **只读账号不显示写入口**（用户 2026-10-22「只有查看权限时应该不显示操作功能按钮，而不是点击后被后端拒绝掉」）：
   ① 每个管理端页面在 `onShow`/`load` 里调 `utils/admin-perm.js::applyManage(this, '<模块>.manage')`
      得到 `data.canManage`（`*` 或该项），写入口一律 `wx:if="{{canManage}}"`，输入框 `disabled="{{!canManage}}"`；

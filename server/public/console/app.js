@@ -85,7 +85,6 @@ var caps = { view: false, label: false, ban: false, manage: false };
 var LABEL_TEXT = { cheat: '作弊', minor: '轻微违规', device: '设备/网络问题', normal: '正常' };
 var LABEL_KINDS = ['cheat', 'minor', 'device', 'normal'];
 var query = { status: 'open', source: 'all', label: '', keyword: '', page: 1 };
-var listLimit = 30;
 var pollTimer = null;
 var banTargetId = '';
 
@@ -439,8 +438,11 @@ function loadList() {
 
 // 最近一次列表数据（展开/收起只用缓存重画，不再发请求）
 var lastList = [];
-// 当前展开详情的记录 id（一次只展开一条；点同一行收起）
-var expandedId = '';
+// 默认**全部展开**（用户 2026-11-03「不用非得折叠，默认展开方便快捷操作」）：
+// collapsed 记录的是「被手动收起」的 id，点击行切换收起/展开。
+var collapsed = {};
+// 全展开后单页详情面板很长，默认页大小从 30 收到 15（分页仍可翻）
+var listLimit = 15;
 
 function renderList(list) {
   var box = $('listBox');
@@ -501,10 +503,10 @@ function statusPill(r) {
   return { cls: 'pill warn', text: '待研判' };
 }
 
-// 紧凑表格行（用户 2026-11-03「简约 B 端」）：一行一条线索，点击展开详情面板。
+// 紧凑表格行（用户 2026-11-03「简约 B 端」）：一行一条线索，详情默认展开（点击行收起）。
 function renderItem(r) {
   var wrap = el('div', 'tbl-wrap');
-  var open = expandedId === r.id;
+  var open = !collapsed[r.id];
 
   var row = el('div', 'tbl-row' + (open ? ' open' : ''));
   var who = el('span', 'c-who');
@@ -534,7 +536,8 @@ function renderItem(r) {
   row.appendChild(op);
 
   row.addEventListener('click', function () {
-    expandedId = expandedId === r.id ? '' : r.id;
+    if (collapsed[r.id]) delete collapsed[r.id];
+    else collapsed[r.id] = true;
     renderList(lastList); // 只用缓存重画，不发请求
   });
   wrap.appendChild(row);
@@ -552,6 +555,7 @@ function buildDetail(r) {
   if (r.source !== 'gps') {
     metrics.appendChild(kv('当日步数', fmt(r.cumulativeSteps)));
     metrics.appendChild(kv('本次新增', fmt(r.deltaSteps)));
+    metrics.appendChild(kv('同步时间', timeText(r.createdAt)));
     metrics.appendChild(kv('可疑分', fmt(r.score) + ' / 100'));
     metrics.appendChild(kv('AI 分', r.modelScore == null ? '—' : Number(r.modelScore).toFixed(3)));
     if (r.labeledBy) metrics.appendChild(kv('标注人', r.labeledBy + '（' + ago(r.labeledAt) + '）'));
@@ -570,6 +574,7 @@ function buildDetail(r) {
       metrics.appendChild(kv('距离', fmt(Math.round((d && d.distance) || f.distance || 0)) + ' m'));
       metrics.appendChild(kv('时长', durText((d && d.durationSeconds) || f.duration)));
       metrics.appendChild(kv('轨迹点', fmt((m && m.pointCount) || f.pointCount || 0)));
+      metrics.appendChild(kv('上传时间', timeText(r.createdAt)));
       metrics.appendChild(kv('可疑分', fmt(r.score) + ' / 100'));
       metrics.appendChild(kv('AI 分', r.modelScore == null ? '—' : Number(r.modelScore).toFixed(3)));
       if (r.labeledBy) metrics.appendChild(kv('标注人', r.labeledBy + '（' + ago(r.labeledAt) + '）'));
@@ -580,6 +585,9 @@ function buildDetail(r) {
     loadRoute(r, routeBox, refresh);
   }
   det.appendChild(main);
+
+  // 微信同步：当日逐次同步 + 增速历史（用户 2026-11-03「同步增速这种我要看历史增速的判断」）
+  if (r.source !== 'gps') det.appendChild(buildSyncHistory(r));
 
   // GPS 轨迹质量（判定快照）：脚本/瞬移的特征藏在这里
   if (r.source === 'gps' && r.features) {
@@ -717,6 +725,57 @@ function drawRoute(box, d) {
   if (ROUTE_SRC_TEXT[d.dataSource]) {
     box.appendChild(el('div', 'route-cap', '路线图数据源：' + ROUTE_SRC_TEXT[d.dataSource] + ' · 绿点起点 · 橙点终点'));
   }
+}
+
+/** 当日同步历史（增速研判）：详情渲染时懒加载，与判定同源重算 */
+function buildSyncHistory(r) {
+  var box = el('div', 'sync-hist');
+  box.appendChild(el('div', 'act-t', '当日同步历史（增速研判）'));
+  var body = el('div', 'sync-hist-body', '同步历史加载中…');
+  box.appendChild(body);
+  api('/anomalies/' + encodeURIComponent(r.id) + '/sync-history')
+    .then(function (d) { renderSyncHistory(body, d); })
+    .catch(function (e) {
+      body.textContent = '同步历史加载失败（' + (e.message || '网络异常') + '）';
+    });
+  return box;
+}
+
+function renderSyncHistory(body, d) {
+  clear(body);
+  var rows = d && d.rows ? d.rows : [];
+  if (!rows.length) {
+    body.textContent = '当天没有留存的同步记录（零增量的同步不落库）';
+    return;
+  }
+  var head = el('div', 'sh-row sh-head');
+  head.appendChild(el('span', '', '时间'));
+  head.appendChild(el('span', 'r', '新增'));
+  head.appendChild(el('span', 'r', '距上次'));
+  head.appendChild(el('span', 'r', '增速'));
+  body.appendChild(head);
+
+  for (var i = 0; i < rows.length; i++) {
+    var h = rows[i];
+    var fast = h.perSec != null && Number(h.perSec) >= 15;
+    var row = el('div', 'sh-row' + (h.short ? ' sh-short' : fast ? ' sh-fast' : ''));
+    var t = new Date(h.at);
+    if (isNaN(t.getTime())) {
+      row.appendChild(el('span', 'num', '—'));
+    } else {
+      row.appendChild(el('span', 'num', pad2(t.getHours()) + ':' + pad2(t.getMinutes()) + ':' + pad2(t.getSeconds())));
+    }
+    row.appendChild(el('span', 'r num', fmt(h.steps)));
+    row.appendChild(el('span', 'r num', h.intervalSec == null ? '—' : durText(h.intervalSec)));
+    // 窗口过短不给增速数字（判定也不看它）；首条没有前日参照时为 null
+    row.appendChild(el('span', 'r num', h.short ? '窗口短' : h.perSec == null ? '—' : Number(h.perSec).toFixed(1) + ' 步/秒'));
+    body.appendChild(row);
+  }
+
+  var s = (d && d.summary) || {};
+  body.appendChild(el('div', 'route-cap',
+    '当日 ' + fmt(s.syncs) + ' 次同步 · 高增速(≥15步/秒) ' + fmt(s.fastSyncs) +
+    ' 次 · 口径：与判定同源；1 小时内多次同步合并为一条，间隔<3分钟不判增速'));
 }
 
 function labelIt(id, kind, btn) {

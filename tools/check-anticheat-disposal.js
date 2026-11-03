@@ -94,5 +94,20 @@ console.log('\n[5] 状态台暴露自动处置开关状态');
 
 ok('dashboard 返回 autoDispose 字段', /autoDispose:\s*!!\(goalCfg\.anticheat && goalCfg\.anticheat\.enabled !== false\)/.test(consoleSrc));
 
+// ===== ⑥ 同步历史（增速研判）单一实现 + 同步时间 =====
+console.log('\n[6] 同步历史增速（2026-11-03 用户「同步增速要看历史判断」+「增加记录时的同步时间」）');
+
+const histSrc = read('services/sync-rate-history.js');
+ok('sync-rate-history service 存在（唯一实现）', /async function syncRateHistory/.test(histSrc));
+ok('间隔 < MIN_WINDOW_SEC 不给增速（与判定同一窗口口径）', /MIN_WINDOW_SEC/.test(histSrc) && /short = true/.test(histSrc));
+ok('跨天参照取前一天最后一条（addDays -1）', /addDays\(rec\.date, -1\)/.test(histSrc));
+const histRefs = (consoleSrc.match(/sync-rate-history/g) || []).length + (adminAnomalySrc.match(/sync-rate-history/g) || []).length;
+ok(`两端路由都挂 sync-history 且只取参（引用 ${histRefs} 处）`, histRefs >= 2 && !/function syncRateHistory/.test(consoleSrc + adminAnomalySrc));
+ok('console 列表下发 createdAt（同步时间）', /createdAt: r\.createdAt \|\| null/.test(consoleSrc));
+ok('console 前端默认展开（collapsed 反转）+ 同步时间展示', (() => {
+  const appJs = require('fs').readFileSync(path.join(SERVER, '..', 'public', 'console', 'app.js'), 'utf8');
+  return /var collapsed = \{\}/.test(appJs) && /!collapsed\[r\.id\]/.test(appJs) && /同步时间/.test(appJs) && /buildSyncHistory/.test(appJs);
+})());
+
 console.log(`\n${failed ? `✗ ${failed} 项未通过` : '✓ 全部通过'}`);
 process.exit(failed ? 1 : 0);

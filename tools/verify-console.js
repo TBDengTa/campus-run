@@ -659,6 +659,93 @@ function setCookieHeader(res) {
     const dashSw = await req('GET', '/console/api/dashboard', { cookie: analystCookie });
     assert(dashSw.data.data.autoDispose === enabledBackup, 'dashboard.autoDispose 与配置一致（状态台可见开关状态）', dashSw.data.data.autoDispose);
 
+    // ==================== 8c) 同步历史增速 + 管理端能力表 ====================
+    // 用户 2026-11-03「增加记录时的同步时间；同步增速这种我要看历史增速的判断」。
+    // 历史从 run_records 重算（与判定同源：elapsedMs = 本次 createdAt − 上一条 createdAt）。
+    console.log('\n[8c] 同步历史增速 + 管理端 caps');
+
+    const { addDays } = require(path.join(serverDir, 'src', 'utils', 'dates'));
+    const prevKey = addDays(dayKey, -1);
+    const p2 = (x) => String(x).padStart(2, '0');
+    const at = (h, m, s) => new Date(`${dayKey}T${p2(h)}:${p2(m)}:${p2(s)}`);
+    // 前一天 23:50 末条（跨天参照）+ 当天 4 条：
+    //   08:00（间隔 8h10m，正常增速）→ 08:05（300s，5000 步 = 16.67 步/秒 → 高增速）
+    //   → 08:06（60s，窗口过短不判）→ 09:00（3240s，正常）
+    created.runs.push(
+      ...(await RunRecord.insertMany([
+        { openid: student.openid, source: 'werun', date: prevKey, steps: 1000, createdAt: new Date(`${prevKey}T23:50:00`) },
+        { openid: student.openid, source: 'werun', date: dayKey, steps: 2000, createdAt: at(8, 0, 0) },
+        { openid: student.openid, source: 'werun', date: dayKey, steps: 5000, createdAt: at(8, 5, 0) },
+        { openid: student.openid, source: 'werun', date: dayKey, steps: 300, createdAt: at(8, 6, 0) },
+        { openid: student.openid, source: 'werun', date: dayKey, steps: 6000, createdAt: at(9, 0, 0) },
+      ])).map((d) => d._id)
+    );
+    const histAno = await StepAnomaly.create({
+      userId: student._id,
+      openid: student.openid,
+      realName: student.realName,
+      className: student.className,
+      studentId: student.studentId,
+      date: dayKey,
+      source: 'werun',
+      cumulativeSteps: 13300,
+      deltaSteps: 5000,
+      score: 45,
+      reasons: ['涨幅速度 16.7 步/秒'],
+      status: 'open',
+      modelScore: 0.66,
+      features: { steps: 13300, delta: 5000, perSec: 16.67, elapsedSec: 300 },
+    });
+    created.anomalies.push(histAno._id);
+
+    const hist = await req('GET', `/console/api/anomalies/${histAno._id}/sync-history`, { cookie: analystCookie });
+    assert(hist.status === 200, 'sync-history 可读', { s: hist.status, msg: hist.data && hist.data.message });
+    const hRows = ((hist.data.data || {}).rows) || [];
+    assert(hRows.length === 4, '历史含当日 4 次同步（不含前一天参照条）', hRows.length);
+    if (hRows.length === 4) {
+      assert(hRows[0].intervalSec === 29400, '首条间隔用前一天末条（08:00 − 23:50 = 29400s）', hRows[0].intervalSec);
+      assert(hRows[1].intervalSec === 300 && Math.abs(hRows[1].perSec - 16.67) < 0.02, '高增速行：5000 步 / 300s = 16.67 步/秒', hRows[1]);
+      assert(hRows[2].short === true && hRows[2].perSec == null, '间隔 60s < 3 分钟 → 窗口短、不给增速（与判定同口径）', hRows[2]);
+      assert(hRows[3].intervalSec === 3240 && hRows[3].perSec < 15, '正常行增速 < 15', hRows[3]);
+    }
+    assert((hist.data.data || {}).summary ? hist.data.data.summary.syncs === 4 && hist.data.data.summary.fastSyncs === 1 : false, '摘要：4 次同步 · 高增速 1 次', hist.data.data && hist.data.data.summary);
+
+    // console 列表下发 createdAt（同步时间）
+    const listCk = await req('GET', `/console/api/anomalies?status=all&keyword=${encodeURIComponent(student.realName)}&limit=20`, { cookie: analystCookie });
+    const histRow = ((listCk.data.data || {}).list || []).find((x) => x.id === String(histAno._id));
+    assert(histRow && histRow.createdAt, 'console 列表下发 createdAt（同步时间）', histRow && histRow.createdAt);
+
+    // GPS 线索没有「同步历史」概念 → 400
+    const histGps = await req('GET', `/console/api/anomalies/${gpsRec1._id}/sync-history`, { cookie: analystCookie });
+    assert(histGps.status === 400, 'GPS 线索请求 sync-history → 400', histGps.status);
+
+    // ---- 管理端（小程序）：caps 能力表 + 同一份 sync-history ----
+    const jwtLib = require(path.join(serverDir, 'node_modules', 'jsonwebtoken'));
+    const mkJwt = (u) => jwtLib.sign({ uid: String(u._id), openid: u.openid }, config.jwtSecret, { expiresIn: '1h' });
+    const authReq = (url, token) =>
+      fetch(`${BASE}${url}`, { headers: { authorization: `Bearer ${token}` } }).then(async (r) => ({
+        status: r.status,
+        data: await r.json().catch(() => ({})),
+      }));
+    const listAnalyst = await authReq('/api/admin/step-anomalies?status=all&limit=1', mkJwt(analystUser));
+    assert(
+      listAnalyst.status === 200 && listAnalyst.data.data.caps && listAnalyst.data.data.caps.label === true && listAnalyst.data.data.caps.ban === false,
+      '管理端 caps：研判员可标注、不可封禁（fail-closed 能力表）',
+      listAnalyst.data.data && listAnalyst.data.data.caps
+    );
+    const listAdminC = await authReq('/api/admin/step-anomalies?status=all&limit=1', mkJwt(adminUser));
+    assert(
+      listAdminC.status === 200 && listAdminC.data.data.caps && listAdminC.data.data.caps.ban === true,
+      '管理端 caps：反作弊管理员可封禁',
+      listAdminC.data.data && listAdminC.data.data.caps
+    );
+    const histAdmin = await authReq(`/api/admin/step-anomalies/${histAno._id}/sync-history`, mkJwt(analystUser));
+    assert(
+      histAdmin.status === 200 && (histAdmin.data.data.rows || []).length === 4,
+      '管理端 sync-history 与控制台同一实现（同数据同口径）',
+      histAdmin.status
+    );
+
     // ==================== 9) 限流：不能锁死学生的小程序登录 ====================
     console.log('\n[9] 控制台限流与学生隔离');
     session._reset();

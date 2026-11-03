@@ -33,8 +33,10 @@ const WRITE_ACTIONS =
 // ⚠️ `toggleContent`（申诉列表「展开全文 / 收起」）也是纯 UI：只 setData 翻 folded 布尔，
 // 不发任何请求（见 appeals.js::toggleContent）。只读账号（appeal.view）必须能展开读全文，
 // 否则等于只给了他半截内容。落进 `toggle[A-Z]\w*` 通配会被误报成写入口。
+// `toggleHist`（异常记录页「当日同步历史」，2026-11-03）同理：只发 GET /sync-history
+// 懒加载 + setData 翻折态，不写任何东西 —— 只读账号同样要能看历史增速。
 const UI_ONLY_ACTIONS =
-  /^(toggleContent|toggleFilters|clearFilters|toggleDeptExpand|toggleModuleDept|clearKeyword|resetFilters|clearChecked|toggleBulk|clearClassFilter|toggleBadgeGroup|toggleBatchMode|toggleCheckAll|toggleRow|toggleExpand|toggleGroup|togglePick|toggleSelect|toggleSheet|toggleTab|toggleCard|toggleUnfold|toggleUnassigned|toggleFilters|switchTab|switchSlot|onCat|onItemTap|onResetFilters|onFormVisible|onIconVisible|onMode|preview|copyLink|goStats|changeYear|chooseIcon|closeForm|closeSheet|closeResult|closePickers|closeTransferSheet|closeDeptAdd|closeModuleEdit|closeAdd|clearResult|back|close[A-Z]\w*|resetModule)$/;
+  /^(toggleContent|toggleHist|toggleFilters|clearFilters|toggleDeptExpand|toggleModuleDept|clearKeyword|resetFilters|clearChecked|toggleBulk|clearClassFilter|toggleBadgeGroup|toggleBatchMode|toggleCheckAll|toggleRow|toggleExpand|toggleGroup|togglePick|toggleSelect|toggleSheet|toggleTab|toggleCard|toggleUnfold|toggleUnassigned|toggleFilters|switchTab|switchSlot|onCat|onItemTap|onResetFilters|onFormVisible|onIconVisible|onMode|preview|copyLink|goStats|changeYear|chooseIcon|closeForm|closeSheet|closeResult|closePickers|closeTransferSheet|closeDeptAdd|closeModuleEdit|closeAdd|clearResult|back|close[A-Z]\w*|resetModule)$/;
 
 // 整页都需要写权限才能进入（不存在只读用户）
 const WRITE_ONLY_PAGES = new Set([
@@ -129,7 +131,10 @@ walk(ADMIN);
 //   ① 管理端视角：load() 按权限项换算成同一套字段；
 //   ② 班级域视角：服务端 capabilities 直接落 data；
 //   ③ 两路合并：caps: mergeCaps(overview.capabilities, manage.capabilities)
-//      （2026-10-23 起 user-detail 用这种 —— 班主任两份都通，班委只有 overview）。
+//      （2026-10-23 起 user-detail 用这种 —— 班主任两份都通，班委只有 overview）；
+//   ④ 列表接口整份下发（2026-11-03 起 config/anomalies 用这种 —— 服务端按请求者
+//      有效权限算好 caps: {label, ban} 随列表返回，前端 `caps: res.caps || {...}` 只读，
+//      鉴权仍在各写路由，fail-closed）。
 for (const rel of scanned) {
   const wxmlPath = path.join(ADMIN, rel);
   const jsPath = wxmlPath.replace(/\.wxml$/, '.js');
@@ -140,7 +145,8 @@ for (const rel of scanned) {
   const fromServer =
     /caps:\s*\(?\s*manage\s*&&\s*manage\.capabilities/.test(jsSrc) ||
     /caps:\s*\(?\s*overview\s*&&\s*overview\.capabilities/.test(jsSrc) ||
-    /caps:\s*mergeCaps\(/.test(jsSrc);
+    /caps:\s*mergeCaps\(/.test(jsSrc) ||
+    /caps:\s*res\.caps\s*\|\|/.test(jsSrc);
   if (!defined || !fromServer) {
     bad.push({ file: rel, line: 0, action: 'caps 未在 JS 中定义（模板用了 caps.*）', tag: 'js' });
   }

@@ -81,6 +81,11 @@
           <text class="sa-label">日期</text>
           <text class="sa-value">{{item.date}}</text>
         </view>
+        <view class="sa-row" wx:if="{{item.timeText}}">
+          <text class="sa-label">同步时间</text>
+          <!-- 同步/判定时间（用户 2026-11-03）：anomaly 的 createdAt，与历史增速表时间轴一致 -->
+          <text class="sa-value num-font">{{item.timeText}}</text>
+        </view>
         <view class="sa-row" wx:if="{{item.source === 'werun'}}">
           <text class="sa-label">当日步数</text>
           <text class="sa-value num-font">{{item.stepsText}}</text>
@@ -94,6 +99,37 @@
           <!-- 模型分（0~1，0.5 = 正常基准）：留档便于复核「是规则判的还是学习模型判的」 -->
           <text class="sa-value num-font sa-model">{{item.modelScoreText}}</text>
         </view>
+        <view class="sa-row" wx:if="{{item.labelText && item.labelText !== '未标注'}}">
+          <text class="sa-label">判定</text>
+          <text class="sa-value">{{item.labelText}}{{item.labeledBy ? ' · ' + item.labeledBy : ''}}</text>
+        </view>
+      </view>
+
+      <!-- 当日同步历史（增速研判，用户 2026-11-03）：只对微信同步线索有意义；点开懒加载 -->
+      <view class="sa-hist" wx:if="{{item.source === 'werun'}}">
+        <view class="sa-hist-toggle" data-id="{{item.id}}" bind:tap="toggleHist">
+          当日同步历史（增速研判）{{item.histOpen ? '▴' : '▾'}}
+        </view>
+        <view wx:if="{{item.histOpen}}">
+          <view wx:if="{{!item.histRows}}" class="sa-hist-empty">加载中…</view>
+          <block wx:else>
+            <view class="sa-hist-row sa-hist-head">
+              <text>时间</text><text>新增</text><text>距上次</text><text>增速</text>
+            </view>
+            <view
+              class="sa-hist-row {{h.short ? 'is-short' : ''}} {{h.fast ? 'is-fast' : ''}}"
+              wx:for="{{item.histRows}}"
+              wx:for-item="h"
+              wx:key="timeText"
+            >
+              <text class="num-font">{{h.timeText}}</text>
+              <text class="num-font">{{h.stepsText}}</text>
+              <text class="num-font">{{h.intervalText}}</text>
+              <text class="num-font">{{h.rateText}}</text>
+            </view>
+            <view class="sa-hist-cap">{{item.histSummaryText}} · 与判定同口径；间隔&lt;3分钟不判增速</view>
+          </block>
+        </view>
       </view>
 
       <view class="sa-reasons">
@@ -101,11 +137,48 @@
         <text>{{item.reasonText}}</text>
       </view>
 
-      <!-- 写操作只给 user.manage：只读账号看不到封禁 / 标记按钮 -->
-      <view class="sa-actions" wx:if="{{canManage && item.status === 'open'}}">
-        <t-button size="small" theme="danger" variant="outline" data-id="{{item.id}}" data-name="{{item.realName}}" bind:tap="openBan">封禁</t-button>
-        <t-button size="small" theme="default" variant="outline" data-id="{{item.id}}" bind:tap="dismiss">标记正常</t-button>
-      </view>
+      <!-- ===== 动作区：判定 / 处置 两组（用户 2026-11-03 与 Web 控制台对齐） =====
+           ① 判定 = 喂 AI 训练，不动学生账号；② 处置 = 封禁或归档，对学生生效。
+           标「作弊/轻微违规」后记录留在队列（已判定·待处置），直到封禁或归档。 -->
+      <block wx:if="{{item.status === 'open' && (caps.label || caps.ban)}}">
+        <view class="sa-act-t">① 判定 · 喂 AI 训练（不动学生账号）</view>
+        <view class="sa-actions" wx:if="{{caps.label}}">
+          <t-button
+            wx:for="{{labelBtns}}"
+            wx:for-item="lb"
+            wx:key="kind"
+            size="small"
+            theme="{{item.label === lb.kind ? 'primary' : 'default'}}"
+            variant="outline"
+            data-id="{{item.id}}"
+            data-kind="{{lb.kind}}"
+            bind:tap="label"
+          >{{lb.text}}</t-button>
+        </view>
+        <view class="sa-act-note" wx:else>需要 anticheat.label 权限才能标注。</view>
+
+        <view class="sa-act-t">② 处置 · 处理这条线索</view>
+        <view class="sa-actions">
+          <t-button
+            wx:if="{{caps.ban}}"
+            size="small"
+            theme="danger"
+            variant="outline"
+            data-id="{{item.id}}"
+            data-name="{{item.realName}}"
+            bind:tap="openBan"
+          >封禁</t-button>
+          <t-button
+            wx:if="{{caps.label}}"
+            size="small"
+            theme="default"
+            variant="outline"
+            data-id="{{item.id}}"
+            bind:tap="archive"
+          >归档 · 不封禁</t-button>
+        </view>
+        <view class="sa-act-note">封禁 = 限制学生（天数可调）；归档 = 记录违规但不限制，移出队列。</view>
+      </block>
     </view>
   </view>
 
@@ -147,7 +220,7 @@
     </view>
     <view class="tt-sheet-foot">
       <t-button theme="default" block bind:tap="closeBan">取消</t-button>
-      <t-button theme="danger" block loading="{{banSaving}}" disabled="{{!canManage}}" bind:tap="submitBan">确定封禁</t-button>
+      <t-button theme="danger" block loading="{{banSaving}}" disabled="{{!caps.ban}}" bind:tap="submitBan">确定封禁</t-button>
     </view>
   </view>
 </t-popup>
