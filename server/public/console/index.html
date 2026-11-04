@@ -116,6 +116,24 @@
           <div class="seg" id="segStatus"></div>
           <div class="seg" id="segSource"></div>
           <select id="selLabel"></select>
+          <select id="selSort">
+            <option value="">排序：可疑分优先</option>
+            <option value="size">排序：步数/距离大优先</option>
+          </select>
+          <select id="selSteps">
+            <option value="">步数：不限</option>
+            <option value="1000">步数≥1000</option>
+            <option value="3000">步数≥3000</option>
+            <option value="5000">步数≥5000</option>
+            <option value="10000">步数≥10000</option>
+          </select>
+          <select id="selDist">
+            <option value="">距离：不限</option>
+            <option value="3000">距离≥3km</option>
+            <option value="5000">距离≥5km</option>
+            <option value="10000">距离≥10km</option>
+            <option value="21000">距离≥21km</option>
+          </select>
           <input type="text" id="inKeyword" placeholder="姓名 / 学号 / 班级">
           <button class="btn sm" id="btnSearch">查询</button>
           <div class="spacer"></div>

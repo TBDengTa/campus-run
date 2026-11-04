@@ -235,7 +235,8 @@ Page({
     // ===== 校园跑 tab =====
     overview: null,
     classRank: null, // 本班在全校班级榜的名次（{ rank, total, avgSteps, members, top }）
-    topStudents: [], // 班内榜单前三（本周步数，/api/class/ranking）
+    topStudents: [], // 班内榜单前三（本周步数；本周不足 3 人有效时回退今日步数，见 loadRanking）
+    topModeText: '', // 回退今日榜时显示的说明句（整句 JS 预计算，模板不拼三元）
     nudgeCount: 0, // 今日未达标人数（校园跑 tab 的督促入口副文案）：取自 overview，不另发请求
     pointsText: '—', // 本班本周跑分（未启用跑分时显示 —）
     runExcluded: false, // 已读到的配置里 hasMorningRun === false（本班不参加校园跑）
@@ -497,28 +498,38 @@ Page({
     });
   },
 
-  // 班内榜单前三（本周步数）：只做展示，失败不影响页面主流程
+  // 班内榜单前三：本周步数；本周有效（步数>0）人数不足 3 人且今日有效人数更多时，
+  // 回退显示「本日前三」（用户 2026-11-04「如果本周不够的话，直接显示本日前三」——
+  // 周初全班本周步数都是 0，旧实现 filter(weekSteps>0) 后剩 0 人，只剩一行空态）。
+  // 接口每行已同时下发 weekSteps/todaySteps（/api/class/ranking），纯前端切换，失败不影响页面主流程
   async loadRanking() {
     const className = this.data.className;
     if (!className) return;
     const medals = ['is-1', 'is-2', 'is-3'];
     try {
       const res = await auth.get('/api/class/ranking', { className });
-      const top = (res.students || [])
-        .filter((s) => Number(s.weekSteps) > 0)
-        .slice(0, 3)
-        .map((s, i) => ({
-          userId: s.userId,
-          name: s.name,
-          isClassOfficer: s.isClassOfficer,
-          achievedToday: s.achievedToday,
-          weekStepsText: fmt.formatNumber(s.weekSteps),
-          todayStepsText: fmt.formatNumber(s.todaySteps),
-          medal: medals[i] || '',
-        }));
-      this.setData({ topStudents: top });
+      const students = res.students || [];
+      const week = students.filter((s) => Number(s.weekSteps) > 0);
+      const day = students
+        .filter((s) => Number(s.todaySteps) > 0)
+        .sort((a, b) => Number(b.todaySteps) - Number(a.todaySteps));
+      const useDay = week.length < 3 && day.length > week.length;
+      const pool = useDay ? day : week;
+      const top = pool.slice(0, 3).map((s, i) => ({
+        userId: s.userId,
+        name: s.name,
+        isClassOfficer: s.isClassOfficer,
+        achievedToday: s.achievedToday,
+        weekStepsText: fmt.formatNumber(s.weekSteps),
+        todayStepsText: fmt.formatNumber(s.todaySteps),
+        medal: medals[i] || '',
+      }));
+      this.setData({
+        topStudents: top,
+        topModeText: useDay ? '本周数据还少，先按今日步数排名' : '',
+      });
     } catch (e) {
-      this.setData({ topStudents: [] });
+      this.setData({ topStudents: [], topModeText: '' });
     }
   },
 

@@ -220,7 +220,8 @@
 | `school` | 院校（**与 `department` 成对使用**：实测多校区都有「计财系」，只按系部筛会跨校区混出） |
 | `department` | 系部。未传 `school` 时按同名全筛，`activeFilters` 会标注「各校区同名」如实提示 |
 | `quick` | 快捷筛选：`notDaily` / `zeroToday` / `notWeek` / `attMissing`。**非法值忽略**（等于不筛）；与 `level` 互斥，同时传入时 `quick` 优先 |
-| `level` | 达标档位：`notFull` 未达标 / `belowHalf` 低于一半 / `zero` 零达标。与 `metric` 组合（如「日达标零达标」）。**没有这个档位时「今日未达标」会筛出全部班级**（今日全校达标率个位数，没有班到 100%），等于没筛 |
+| `grades` | **年级多选**（2026-11-03）：逗号分隔的 `YYYY`（如 `grades=2023,2024`），只认 4 位年份，其余丢弃；年级口径 = `class_profiles.grade` 优先、按班名「23级XX」解析兜底 |
+| `level` | 达标档位：`notFull` 未达标 / `below95` 低于95%（2026-11-03 替代「低于一半」）/ `zero` 零达标。与 `metric` 组合（如「日达标零达标」）。**没有这个档位时「今日未达标」会筛出全部班级**（今日全校达标率个位数，没有班到 100%），等于没筛 |
 | `metric` | 档位针对的指标：`daily`（默认）/ `weekly` |
 | `keyword` | 班名 / 系部 / 院校 模糊（服务端已转义正则元字符） |
 | `copy` | **复制口径**：`all` 全部指标（默认）/ `daily` 只要日达标 / `weekly` 只要周达标。收窄后 `copyText` 的标题与正文都不再出现另一指标 |
@@ -231,8 +232,8 @@
 |---|---|
 | `today` / `from` / `weekStart` / `days` | 统计日、考勤回看区间、本周起点（ISO 周一）、区间天数 |
 | `totals` | **全校口径**（不随筛选变）：`classCount / studentCount / achievedToday / achievedWeek / dailyRate / weeklyRate / skippedClasses` |
-| `rows[]` | 逐班：`className / schoolName / departmentName / studentCount`、`run{achievedToday,dailyRate,achievedWeek,weeklyRate,enabled}`、`attendance{modules,ratePercent,hasData}`、`flags`。**有筛选时只含筛出的行** |
-| `schools[]` / `departments[]` | 院校 / 系部候选（取自实际有数据的班，不查组织架构） |
+| `rows[]` | 逐班：`className / schoolName / departmentName / grade / studentCount`、`run{achievedToday,dailyRate,achievedWeek,weeklyRate,enabled}`、`attendance{modules,ratePercent,hasData}`、`flags`。**有筛选时只含筛出的行**；行序 = 年级升序 → 班级名（2026-11-03，空年级排末尾） |
+| `schools[]` / `departments[]` / `grades[]` | 院校 / 系部 / 年级候选（取自实际有数据的班，不查组织架构；年级已含班名解析兜底） |
 | `filtered` | **筛选后小计**（与 `rows` 同集合）；未筛选时等于 `totals` |
 | `activeFilters[]` | 生效的筛选标签（如 `['北校区','计财系','日达标零达标']`）；空数组 = 未筛选 |
 | `copyScope` | 回显生效的复制口径 |

@@ -1165,6 +1165,7 @@ router.put(
 // 筛选参数（用户 2026-10-30「支持筛选，复制时复制的是筛选后的相应内容」）：
 //   quick=notDaily|notWeek|zeroToday|attMissing  快捷筛选（白名单，非法值忽略）
 //   department=系部名  keyword=班名/系部关键词   view=前端视图名（原样回显）
+//   grades=2023,2024  年级多选（逗号分隔，2026-11-03；只认 4 位年份，防注入防脏值）
 // 筛选放服务端而不是前端：可复制文案必须服务端单点生成（否则「列表 87%、文案 88%」），
 // 若筛选在前端、文案在服务端，两者用的就是不同的行集合 —— 正是要避免的那类不一致。
 // 回落：白名单外的取值一律当「未指定」，前端拼错参数时退回全量而不是筛成空。
@@ -1174,12 +1175,17 @@ router.get(
     const board = require('../../services/class-status-board');
     const str = (v) => String(v ?? '').trim();
     const full = await board.classStatusBoard({ today: str(req.query.today) || undefined, days: req.query.days });
+    // 年级多选：逗号分隔 → 去空去重，只留 4 位数字年份（'20xx'）；解析不出任何合法值 = 未指定
+    const grades = [...new Set(String(req.query.grades || '').split(',').map((g) => g.trim()))].filter((g) =>
+      /^(19|20)\d{2}$/.test(g)
+    );
     ok(
       res,
       board.applyBoardFilter(full, {
         // 院校 + 系部成对（同名系部跨校区，只能靠 school 消歧）
         school: str(req.query.school),
         department: str(req.query.department),
+        grades: grades.length ? grades : undefined,
         quick: str(req.query.quick),
         // 档位筛选：level × metric（日/周）
         level: str(req.query.level),

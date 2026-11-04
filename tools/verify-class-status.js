@@ -375,24 +375,67 @@ function assert(cond, label, extra) {
     '档位「日达标零达标」每行确实是 0%',
     fZero2.rows.slice(0, 2).map((x) => x.run.dailyRate)
   );
-  const fHalf = board.applyBoardFilter(r, { level: 'belowHalf', metric: 'daily' });
+  const fHalf = board.applyBoardFilter(r, { level: 'below95', metric: 'daily' });
   assert(
-    fHalf.rows.every((x) => x.run.dailyRate !== null && x.run.dailyRate < 50),
-    '档位「日达标低于一半」每行 <50%',
+    fHalf.rows.every((x) => x.run.dailyRate !== null && x.run.dailyRate < 95),
+    '档位「日达标低于95%」每行 <95%（2026-11-03 换掉低于一半）',
     fHalf.rows.slice(0, 2).map((x) => x.run.dailyRate)
   );
-  assert(fZero2.rows.length <= fHalf.rows.length, '零达标是低于一半的子集（档位真的分层）', {
+  assert(fZero2.rows.length <= fHalf.rows.length, '零达标是低于95%的子集（档位真的分层）', {
     zero: fZero2.rows.length,
-    half: fHalf.rows.length,
+    below95: fHalf.rows.length,
   });
   assert(fHalf.activeFilters[0].includes('日达标'), '档位标签写明指标（日）', fHalf.activeFilters);
-  const fWeekHalf = board.applyBoardFilter(r, { level: 'belowHalf', metric: 'weekly' });
+  assert(fHalf.activeFilters[0].includes('95'), '档位标签带 95%（不残留「低于一半」文案）', fHalf.activeFilters);
+  const fWeekHalf = board.applyBoardFilter(r, { level: 'below95', metric: 'weekly' });
   assert(fWeekHalf.activeFilters[0].includes('周达标'), '切换指标后标签变「周达标」', fWeekHalf.activeFilters);
   assert(
-    fWeekHalf.rows.every((x) => x.run.weeklyRate !== null && x.run.weeklyRate < 50),
+    fWeekHalf.rows.every((x) => x.run.weeklyRate !== null && x.run.weeklyRate < 95),
     '周达标档位筛的是周列而不是日列',
     fWeekHalf.rows.slice(0, 2).map((x) => x.run.weeklyRate)
   );
+
+  // ---- [8c] 排序：年级升序 + 班级名（2026-11-03 用户指定，替换「未达标优先」桶排序）----
+  console.log('\n[8c] 行排序（年级 → 班级名）');
+  {
+    const ordered = r.rows.every((row, i) => {
+      if (i === 0) return true;
+      const prev = r.rows[i - 1];
+      const ga = prev.grade || '9999';
+      const gb = row.grade || '9999';
+      if (ga !== gb) return ga < gb;
+      return String(prev.className).localeCompare(String(row.className), 'zh-CN') <= 0;
+    });
+    assert(ordered, 'rows 按 年级升序 → 班级名 有序', r.rows.slice(0, 4).map((x) => `${x.grade || '—'} ${x.className}`));
+    assert(Array.isArray(r.grades) && [...r.grades].every((g, i) => i === 0 || r.grades[i - 1] <= g), '响应含升序年级候选 grades', r.grades);
+  }
+
+  // ---- [8d] 年级多选筛选（2026-11-03）：行集合与文案标签同源 ----
+  console.log('\n[8d] 年级多选筛选');
+  if (r.grades && r.grades.length >= 1) {
+    const g1 = r.grades[0];
+    const fG1 = board.applyBoardFilter(r, { grades: [g1] });
+    assert(fG1.rows.length > 0 && fG1.rows.every((x) => x.grade === g1), `单选 ${g1} 级：每行都是该年级`, fG1.rows.length);
+    assert(fG1.activeFilters.includes(`${g1}级`), '标签写「YYYY级」', fG1.activeFilters);
+    if (r.grades.length >= 2) {
+      const [ga, gb] = r.grades.slice(0, 2);
+      const fG2 = board.applyBoardFilter(r, { grades: [gb, ga] }); // 故意乱序传
+      assert(
+        fG2.rows.every((x) => x.grade === ga || x.grade === gb) && fG2.rows.length >= fG1.rows.length,
+        '多选为并集（两个年级 ≥ 单年级）',
+        { a: fG1.rows.length, ab: fG2.rows.length }
+      );
+      assert(fG2.activeFilters.includes(`${ga}+${gb}级`), '多选标签按升序拼「A+B级」', fG2.activeFilters);
+      assert(
+        /【班级状态[^\n]*年级?/.test(fG2.copyText) || fG2.copyText.includes(`${ga}+${gb}级`),
+        '筛选标签进可复制文案标题',
+        fG2.copyText.slice(0, 80)
+      );
+    }
+  } else {
+    assert(false, '全库解析不出任何年级（grade 兜底失效？）', r.grades);
+  }
+
   // 档位与快捷 chip 互斥（前端选了 chip 会清档位）；服务端同时收到时快捷优先，不得筛成空
   const fMix = board.applyBoardFilter(r, { quick: 'zeroToday', level: 'zero', metric: 'daily' });
   assert(fMix.rows.length > 0, 'chip 与档位同时传入时不筛成空', fMix.rows.length);

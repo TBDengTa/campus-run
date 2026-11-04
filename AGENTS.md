@@ -209,6 +209,23 @@
   间隔 < 180s（MIN_WINDOW_SEC）标「窗口短」不给增速数字，与 check-sync-rate 钉死的
   判定窗口一致；跨天首条用前一天末条做参照（addDays -1）。1 小时内的多次同步本就合并为
   一条记录（createdAt 是窗口起点），历史表与判定看到的窗口相同，不要试图还原中间时刻。
+  ⚠️ **跨日补同步行必须带日期标注**（用户 2026-11-04「最后一个记录是16:43:36 这时间还能倒退了」）：
+  run_records 按 `date`（步数所属日）归组，学生次日打开小程序触发微信 7 天回补，会给历史日
+  补建 `createdAt` 在次日的记录（19:40:06 + 距上次 21:03:30 = 次日 16:43:36，数据本身没错，
+  最近 500 条 werun 记录里 225 条是这类补同步）——历史表于是出现「时间倒退」的行。
+  修复在展示层：`sync-rate-history.js` 每行下发 `dayText`（`toDateKey(at) ≠ rec.date` 时给
+  MM-DD，否则空串）+ `summary.crossDayText`（整句文案服务端拼），两端前端渲染成
+  「MM-DD hh:mm:ss」并追加说明。**不要**改按 date 归组的查询，也**不要**在前端自己算跨日。
+- **训练台列表按数据量排序/筛选**（用户 2026-11-04「列表可以筛选违规步数，可以先优先步数或距离大的
+  优先处理」）：`GET /console/api/anomalies` 新增 `sort=size`（数据量降序：werun→当日步数
+  `cumulativeSteps`、gps→`features.distance`，同一 sort key 让两种来源按各自量级混排）、
+  `minSteps`（werun 当日步数下限）、`minDistance`（gps 距离下限，米）。三条口径约束：
+  ① 步数口径用**当日步数**（当天累计作弊总量）不是本次新增；② 筛选按来源分支——全来源时只
+  约束设了阈值的来源（筛「步数≥3000」不能把 GPS 记录从列表筛没），关键词 `$or` 与数据量
+  `$or` 共存时必须合并进 `$and`（直接覆盖 $or 是静默丢筛选的 bug）；③ 跨字段条件排序
+  find+sort 表达不了，只有 sort=size 走 aggregate（$addFields _size → $sort），默认排序
+  `{score:-1, createdAt:-1}` 不动。列表新增「步数/距离」列——排序依据必须看得见。
+  小程序管理端列表刻意不跟进（用户指定的是 WEB 控制台）。
 - **小程序异常记录页与 Web 同一动作分组**（用户 2026-11-03「小程序并没有适配」）：
   `packageAdmin/config/anomalies` 同样分「① 判定 / ② 处置（封禁/归档）」两组，状态徽标
   「已判定 · 待处置」同文案。按钮显隐读**服务端列表接口下发的 caps**
@@ -339,6 +356,15 @@
 - `/api/auth/me` 必须暴露 `homeroomClasses` 与 `isClassOfficer`：自定义 tabBar 依赖它决定教师中间导航项
   （有管理权限 → 管理中枢；无权限但是班主任 → 班级管理；否则 → 公告）。
 - 班级统计口径与首页数据概况一致；班级排名只统计 `role != 'teacher'` 的学生。
+- **本班前三：本周不足回退本日**（用户 2026-11-04「本班信息中的本周前三为什么没有显示，
+  如果本周不够的话直接显示本日前三」）：`/api/class/ranking` 每行同时下发 `weekSteps/todaySteps`，
+  前三在**两处前端**各自落地（`packageAdmin/class` 班级页 `loadRanking` 与首页 `class-board`
+  组件 `buildCard`），规则必须一致：本周有效（weekSteps>0）人数 < 3 且今日有效人数更多时，
+  改按 `todaySteps` 降序显示「本日前三」（本地重排 + rank 用 index+1，class-board 角标文案
+  `topTip` 动态变「今日步数」）；否则显示本周（有几个显示几个——旧实现的
+  `filter(weekSteps>0).slice(0,3)` 周初全班 0 步时筛出空列表只剩空态文案，首页卡片则会摆
+  3 个 0 步的名字）。两处都空才显示空态，文案覆盖双口径（「今日与本周都还没有人产生运动记录」）。
+  回退说明句整句 JS 预计算（「本周数据还少，先按今日步数排名」），模板不写三元拼接。
 - **班级状态总览**（用户 2026-10-29「增加班级状态页面显示所有班级的考勤、校园跑达标(日、周)，
   并且可以复制到文本如未达标班级等」）：页面 `/packageAdmin/class-status/class-status`，
   接口 `GET /api/admin/class/status-board`（前缀已挂 `class.view`，**不新开权限项** ——
@@ -372,7 +398,8 @@
     ① **院校 + 系部两级筛选**，且必须成对：实测北校区与洋河校区**都有「计财系」**，
        只给系部下拉会把两校混着筛出来（看着能筛、结果是错的）。给了 `school` 才校内消歧；
        只给 `department` 时按同名全筛并在标签写明「各校区同名」，让结果自己说明口径。
-    ② **档位筛选 `level × metric`**：`notFull/belowHalf/zero`，指标 `daily/weekly`。
+    ② **档位筛选 `level × metric`**：`notFull/below95/zero`（2026-11-03 用户指定「低于95%」
+       替代「低于一半」），指标 `daily/weekly`。
        没有它就是「今日未达标筛出全部 43 个班」——今日全校达标率个位数，
        没有任何班到 100%，那个 chip 等于没筛（用户截图里就是这个）。
        档位与快捷 chip **互斥**（前端选一个清另一个），服务端同时收到时 quick 优先。
@@ -411,6 +438,19 @@
   选了非今天的日期：快捷 chip 文案 今日→当日 / 本周→当周（`chipsFor()`），指标条同理；
   非今天才传 `today` 参数（缓存友好），服务端 `isValidDateKey` 校验非法值回退今天。
   回归：`verify-class-status.js` 第 11 节（today 覆盖/周起点重算/考勤区间锚定/非法回退）。
+- **第三轮（用户 2026-11-03「多选年级筛选 / 生成图片转发 / 低于95% / 按年级与名称排序」）**：
+  ① **年级多选**走服务端 `filterBoard` 的 `grades` 参数（与复制文案同源，标签按选中升序拼
+  「2023+2024级」自动进 copyText 标题）；行的年级口径 = `class_profiles.grade` 优先、
+  `roster.gradeFromClassName(className)` 兜底（存量 grade 大量为空）；路由只认 4 位年份、
+  其余丢弃（防注入），响应下发升序 `grades` 候选，前端画多选 chips。
+  ② **行排序 = 年级升序 → 班级名**（空年级排末尾，替换旧的「未达标优先」桶排序——
+  要看缺口用档位筛选，列表本身要稳定顺序便于对照与生成图片）。
+  ③ **生成图片转发**（canvas 2d，全仓首例）：画「当前筛选后的展示行表格」（所见即所转），
+  标题带服务端 `activeFilters` 标签与班数，数值颜色与列表同一套 level 口径；行数上限 45、
+  超出注明；`wx.showShareImageMenu` 优先（直接发聊天），低版本回退 `saveImageToPhotosAlbum`。
+  画布 CSS 用「移出屏幕」而非 `display:none`（部分机型拿不到节点）。
+  回归：`verify-class-status.js` 8c/8d 节（排序有序性、年级单选/多选并集与标签进文案）+
+  `check-server-contract.js`（below95 替换 belowHalf、grades 接线、canvas 接线）。
 
 ## 跑分（积分体系）
 - 配置在单例 `goal_config.points`（系统配置 → 跑分设置）：完成日目标得分、完成周目标得分、

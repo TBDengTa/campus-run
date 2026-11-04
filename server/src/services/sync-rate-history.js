@@ -19,7 +19,7 @@
  */
 const StepAnomaly = require('../models/step-anomaly');
 const RunRecord = require('../models/run-record');
-const { addDays } = require('../utils/dates');
+const { addDays, toDateKey } = require('../utils/dates');
 const { MIN_WINDOW_SEC } = require('./step-anomaly');
 const { ApiError } = require('../utils/response');
 
@@ -32,7 +32,8 @@ const FAST_PER_SEC = 15;
  * 重建某条微信同步异常的「当日逐次同步 + 增速」。
  *
  * @param {string} anomalyId step_anomalies 的 _id
- * @returns {Promise<{date:string, rows:Array<{at:Date, steps:number, intervalSec:number|null, perSec:number|null, short:boolean}>, summary:{syncs:number, fastSyncs:number}}>}
+ * @returns {Promise<{date:string, rows:Array<{at:Date, dayText:string, steps:number, intervalSec:number|null, perSec:number|null, short:boolean}>, summary:{syncs:number, fastSyncs:number, crossDayCount:number, crossDayText:string}}>}
+ *   rows[].dayText：该行 createdAt 不在 rec.date 当天时给「MM-DD」（跨日补同步），否则空串；
  */
 async function syncRateHistory(anomalyId) {
   const rec = await StepAnomaly.findById(anomalyId).lean();
@@ -71,14 +72,28 @@ async function syncRateHistory(anomalyId) {
         if (perSec >= FAST_PER_SEC) fastSyncs += 1;
       }
     }
-    out.push({ at, steps, intervalSec, perSec, short });
+    // 跨天标注（用户 2026-11-04「为什么最后一个记录是16:43:36 这时间还能倒退了」）：
+    // run_records 按 date（步数所属日）归组，学生次日打开小程序会触发微信 7 天回补，
+    // 给历史日补建 createdAt 在次日的记录 —— 表里就出现「时间倒退」的行。数据本身没错，
+    // 错的是只渲染时分秒丢掉了日期。行上带 dayText（跨天时给 MM-DD），前端拼成「MM-DD hh:mm:ss」。
+    const dayKey = toDateKey(at);
+    const dayText = dayKey === rec.date ? '' : dayKey.slice(5);
+    out.push({ at, dayText, steps, intervalSec, perSec, short });
     prev = at;
   }
 
+  // 展示上限裁剪后再计数，保证 summary 与表格行一致
+  const shown = out.slice(-MAX_ROWS);
+  const crossDayCount = shown.filter((r) => r.dayText).length;
+  // 文案在服务端单点拼（与 banRecord SOURCE_TEXT 同一模式），两端前端只搬运不自己组句
+  const crossDayText = crossDayCount
+    ? `含 ${crossDayCount} 条跨日补同步（微信 7 天回补：记录归属当日，实际同步发生在当日之后）`
+    : '';
+
   return {
     date: rec.date,
-    rows: out.slice(-MAX_ROWS),
-    summary: { syncs: out.length, fastSyncs },
+    rows: shown,
+    summary: { syncs: shown.length, fastSyncs, crossDayCount, crossDayText },
   };
 }
 

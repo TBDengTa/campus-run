@@ -31,6 +31,12 @@ const ClassProfile = require('../models/class-profile');
 const CheckRecord = require('../models/check-record');
 const GoalConfig = require('../models/goal-config');
 const dates = require('../utils/dates');
+const roster = require('./roster');
+
+// 行的年级口径（用户 2026-11-03 多选年级筛选）：ClassProfile.grade 大量为空
+// （只有导入/手填才有值），按班级名「23级大数据技术」解析兜底 ——
+// 与 routes/admin/class-profile.js::gradeOf 同一口径，别在这里再写一份解析。
+const gradeOf = (p) => roster.normalizeGrade(p.grade) || roster.gradeFromClassName(p.className);
 
 // 考勤模块（与 routes/class.js::ATTENDANCE_MODULES 同源）
 const MODULES = [
@@ -319,7 +325,7 @@ async function classStatusBoard({ today, days, force } = {}) {
       className: p.className,
       schoolName: p.schoolName || '',
       departmentName: p.departmentName || '',
-      grade: p.grade || '',
+      grade: gradeOf(p),
       studentCount: run.studentCount || 0,
       run: {
         enabled: p.hasMorningRun !== false,
@@ -343,16 +349,14 @@ async function classStatusBoard({ today, days, force } = {}) {
     };
   });
 
-  // ---- 6) 排序：未达标优先（让老师一眼看到要催的班）----
-  const bucket = (r) => (r.run.dailyRate === null ? 1 : r.run.dailyRate < 100 ? 0 : 2);
+  // ---- 6) 排序：年级升序 → 班级名（用户 2026-11-03「排序根据年级与名称进行排序」）----
+  // 替换旧的「未达标优先」桶排序：要看缺口用档位筛选（今日未达标/零达标）即可，
+  // 列表本身按 年级→班级 的稳定顺序，方便对照纸质名单逐班核对、也方便生成转发图片。
+  // 解析不出年级的班排在末尾（按班名），不能因为一个脏班名把整表顺序打乱。
   rows.sort((a, b) => {
-    const oa = bucket(a);
-    const ob = bucket(b);
-    if (oa !== ob) return oa - ob;
-    // 同为未达标：达标率低的排前面（缺口大的先催）
-    const ra = a.run.dailyRate === null ? 101 : a.run.dailyRate;
-    const rb = b.run.dailyRate === null ? 101 : b.run.dailyRate;
-    if (ra !== rb) return ra - rb;
+    const ga = a.grade || '9999';
+    const gb = b.grade || '9999';
+    if (ga !== gb) return ga < gb ? -1 : 1;
     return String(a.className).localeCompare(String(b.className), 'zh-CN');
   });
 
@@ -416,6 +420,9 @@ function buildResult({ day, from, weekStart, span, rows, skipped }) {
     schools: [...new Set(rows.map((r) => r.schoolName).filter(Boolean))].sort((a, b) =>
       String(a).localeCompare(String(b), 'zh-CN')
     ),
+    // 年级候选（用户 2026-11-03 多选年级筛选）：升序，前端画多选 chips；
+    // 值来自 rows.grade（grade 字段 + 班名解析兜底），不查组织架构 —— 同 schools 的理由。
+    grades: [...new Set(rows.map((r) => r.grade).filter(Boolean))].sort(),
     notAchieved: {
       daily: notAchievedDaily.map(brief),
       weekly: notAchievedWeekly.map(brief),
@@ -439,14 +446,15 @@ function buildResult({ day, from, weekStart, span, rows, skipped }) {
  * @param {object} p
  * @param {string} [p.school]     院校（与 department 成对，消歧同名系部）
  * @param {string} [p.department] 系部
+ * @param {string[]} [p.grades]   年级（多选，'2023' 形式的年份字符串）
  * @param {string} [p.quick]      快捷筛选键（QUICK_FILTERS）
  * @param {string} [p.level]      达标档位（LEVELS，与 metric 组合）
  * @param {string} [p.metric]     档位针对的指标 daily|weekly
  * @param {string} [p.keyword]    班名/系部/院校 关键词
  * @param {string} [p.copy]       复制口径 all|daily|weekly（文案强调哪个指标）
  */
-function applyBoardFilter(board, { school, department, quick, level, metric, keyword, copy } = {}) {
-  const { rows, filtered, tags } = filterBoard(board, { school, department, quick, level, metric, keyword });
+function applyBoardFilter(board, { school, department, grades, quick, level, metric, keyword, copy } = {}) {
+  const { rows, filtered, tags } = filterBoard(board, { school, department, grades, quick, level, metric, keyword });
   const copyScope = ['daily', 'weekly'].includes(copy) ? copy : 'all';
   if (!tags.length) {
     return {
@@ -546,7 +554,9 @@ const QUICK_FILTERS = {
  */
 const LEVELS = {
   notFull: { label: '未达标', test: (rate) => rate !== null && rate !== undefined && rate < 100 },
-  belowHalf: { label: '低于一半', test: (rate) => rate !== null && rate !== undefined && rate < 50 },
+  // 「低于95%」（用户 2026-11-03 换掉「低于一半」）：催办口径从「差得离谱」收紧到
+  // 「没到 95%」，覆盖「大部分跑了但还差几个」的常见催办场景；零达标仍是它的子集。
+  below95: { label: '低于95%', test: (rate) => rate !== null && rate !== undefined && rate < 95 },
   zero: { label: '零达标', test: (rate) => rate === 0 },
 };
 
@@ -564,7 +574,7 @@ const METRICS = {
  * 所以：给了 school 就校内筛系部；只给 department 时按同名全筛，
  * 并在标签上写明「各校区同名」，让结果自己说明口径。
  */
-function filterBoard(board, { school, department, quick, level, metric, keyword } = {}) {
+function filterBoard(board, { school, department, grades, quick, level, metric, keyword } = {}) {
   const q = String(keyword || '').trim();
   const tags = [];
   let rows = board.rows;
@@ -578,6 +588,13 @@ function filterBoard(board, { school, department, quick, level, metric, keyword 
       (r) => (r.departmentName || '') === String(department) && (!school || (r.schoolName || '') === String(school))
     );
     tags.push(school ? String(department) : `${department}（各校区同名）`);
+  }
+  // 多选年级（用户 2026-11-03）：与院校/系部同在服务端筛 —— 文案标题用的 tags
+  // 与行集合必须同源，前端自筛必然漂移。多个年级按选中的拼「2023+2024级」。
+  if (Array.isArray(grades) && grades.length) {
+    const set = new Set(grades.map(String));
+    rows = rows.filter((r) => set.has(r.grade));
+    tags.push(`${grades.slice().sort().join('+')}级`);
   }
   const def = QUICK_FILTERS[quick];
   if (def) {

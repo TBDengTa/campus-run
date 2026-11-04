@@ -293,8 +293,13 @@ Page({
       const rows = (r.rows || []).map((h) => {
         const t = h.at ? new Date(h.at) : null;
         const valid = t && !isNaN(t.getTime());
+        // 跨日补同步行带日期前缀（服务端 dayText，与 Web 控制台同一处理）：只显示时分秒
+        // 会把次日回补的记录伪装成「当日更晚时分」，看起来像时间倒流（用户 2026-11-04）
+        const timeStr = valid
+          ? pad2(t.getHours()) + ':' + pad2(t.getMinutes()) + ':' + pad2(t.getSeconds())
+          : '—';
         return {
-          timeText: valid ? pad2(t.getHours()) + ':' + pad2(t.getMinutes()) + ':' + pad2(t.getSeconds()) : '—',
+          timeText: valid && h.dayText ? `${h.dayText} ${timeStr}` : timeStr,
           stepsText: Number(h.steps || 0).toLocaleString('zh-CN'),
           intervalText: h.intervalSec == null ? '—' : durText(h.intervalSec),
           // 窗口过短不给增速数字（判定也不看它，微信步数有分钟级聚合延迟）
@@ -304,11 +309,13 @@ Page({
         };
       });
       const s = r.summary || {};
+      // 跨日补同步说明整句由服务端下发（crossDayText），前端只搬运
+      let histSummaryText = `当日 ${s.syncs || 0} 次同步 · 高增速(≥15步/秒) ${s.fastSyncs || 0} 次`;
+      if (s.crossDayText) histSummaryText += ` · ${s.crossDayText}`;
       this.setData({
         [`list[${(this.data.list || []).indexOf(item)}].histOpen`]: true,
         [`list[${(this.data.list || []).indexOf(item)}].histRows`]: rows,
-        [`list[${(this.data.list || []).indexOf(item)}].histSummaryText`]:
-          `当日 ${s.syncs || 0} 次同步 · 高增速(≥15步/秒) ${s.fastSyncs || 0} 次`,
+        [`list[${(this.data.list || []).indexOf(item)}].histSummaryText`]: histSummaryText,
       });
     } catch (err) {
       wx.showToast({ title: err.message || '历史加载失败', icon: 'none' });

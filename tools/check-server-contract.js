@@ -2201,6 +2201,19 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('快捷 chip 文案随日期联动（今日→当日）', /chipsFor/.test(csJs) && /'当日未达标'/.test(csJs));
   ok('考勤区间随所选日期展示（没有周语义）', /attRangeText/.test(csJs) && /attRangeText/.test(csWxml));
 
+  // ===== 班级状态第二轮增强（2026-11-03：年级多选 / below95 / 排序 / 生成图片）=====
+  ok('档位有 below95 且不再有 belowHalf', /below95:\s*\{ label: '低于95%'/.test(boardSrc) && !/belowHalf/.test(boardSrc));
+  ok('filterBoard 接收 grades 多选', /function filterBoard\(board, \{ school, department, grades,/.test(boardSrc) && /set\.has\(r\.grade\)/.test(boardSrc));
+  ok('rows.grade 有班名解析兜底（gradeFromClassName）', /roster\.normalizeGrade\(p\.grade\) \|\| roster\.gradeFromClassName\(p\.className\)/.test(boardSrc));
+  ok('排序按年级升序+班级名（空年级排末尾）', /rows\.sort\(\(a, b\) => \{[\s\S]{0,200}a\.grade \|\| '9999'[\s\S]{0,200}localeCompare/.test(boardSrc));
+  const csRoute = require('fs').readFileSync(path.join(SERVER, 'routes/admin/class-profile.js'), 'utf8');
+  ok('路由解析 grades（只认 4 位年份，防注入）', /\(19\|20\)\\d\{2\}/.test(csRoute) && /grades\.length \? grades : undefined/.test(csRoute));
+  ok('响应含年级候选 grades', /grades: \[\.\.\.new Set\(rows\.map\(\(r\) => r\.grade\)/.test(boardSrc));
+  ok('前端档位 chips 用 below95', /below95/.test(csJs) && !/belowHalf/.test(csJs));
+  ok('前端年级多选（onGrade/clearGrades，候选来自服务端）', /onGrade\(/.test(csJs) && /clearGrades/.test(csJs) && /d\.grades \|\| \[\]/.test(csJs) && /bind:tap="onGrade"/.test(csWxml));
+  ok('生成图片转发（canvas 2d + showShareImageMenu 回退存相册）', /id="csShareCanvas"/.test(csWxml) && /onShareImage\(\)/.test(csJs) && /showShareImageMenu/.test(csJs) && /saveImageToPhotosAlbum/.test(csJs));
+  ok('图片画当前展示行（所见即所转）', /drawShareImage/.test(csJs) && /const rows = this\.data\.shown \|\| \[\];/.test(csJs) && /rows\.slice\(0, MAX_ROWS\)/.test(csJs));
+
   // 小程序反作弊页：指标网格 + 轨迹（2026-11-03 对齐 Web 控制台）
   const anoJs2 = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'config', 'anomalies', 'anomalies.js'), 'utf8');
   const anoWxml2 = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'config', 'anomalies', 'anomalies.wxml'), 'utf8');

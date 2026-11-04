@@ -295,7 +295,8 @@
           <view class="cls-rankbar-no is-none" wx:if="{{!overview.rankNo}}">未上榜</view>
         </view>
 
-        <!-- 班内前三：奖牌色名次徽标（点进学生运动明细） -->
+        <!-- 班内前三：奖牌色名次徽标（点进学生运动明细）；本周不足 3 人有效时回退今日榜 -->
+        <view class="cls-top-mode" wx:if="{{topModeText}}">{{topModeText}}</view>
         <view
           class="cls-top"
           wx:for="{{topStudents}}"
@@ -317,7 +318,7 @@
           </view>
           <t-icon name="chevron-right" size="30rpx" color="var(--tt-text-3)" />
         </view>
-        <view class="tt-empty" wx:if="{{!topStudents.length && !loading}}">本周还没有人产生运动记录</view>
+        <view class="tt-empty" wx:if="{{!topStudents.length && !loading}}">今日与本周都还没有人产生运动记录</view>
 
         <view class="cls-tip" wx:if="{{!canNudge}}">
           <t-icon name="info-circle" size="26rpx" color="var(--tt-brand)" />

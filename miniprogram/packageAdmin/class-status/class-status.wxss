@@ -257,6 +257,29 @@
 .cs-bar-days {
   gap: 8rpx;
 }
+
+/* 年级多选行（2026-11-03）：chips 复用 cs-chip，行结构与考勤天数行一致 */
+.cs-bar-grades {
+  gap: 8rpx;
+}
+
+/* 复制/生成图片按钮组（2026-11-03 加「图片」） */
+.cs-copy-group {
+  flex: none;
+  display: flex;
+  gap: 10rpx;
+}
+
+/* 转发图片的隐藏画布：移出屏幕而非 display:none（部分机型拿不到节点），
+   显示尺寸任意非零即可，真实分辨率由 JS 设 node.width/height */
+.cs-share-canvas {
+  position: fixed;
+  left: -2000px;
+  top: 0;
+  width: 375px;
+  height: 600px;
+}
+
 .cs-day {
   flex: none;
   padding: 6rpx 14rpx;

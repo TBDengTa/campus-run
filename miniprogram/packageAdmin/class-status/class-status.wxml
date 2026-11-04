@@ -53,7 +53,23 @@
     </view>
   </view>
 
-  <!-- ===== 筛选第 2 行：快捷 chip + 复制 ===== -->
+  <!-- ===== 筛选第 1.5 行：年级多选（2026-11-03）=====
+       候选与筛选都在服务端（与复制文案同源）；chips 多选 toggle，选中即重查。 -->
+  <view class="cs-bar cs-bar-grades" wx:if="{{gradeChips.length}}">
+    <text class="cs-bar-k">年级</text>
+    <scroll-view class="cs-chips" scroll-x enable-flex>
+      <view
+        class="cs-chip {{item.on ? 'on' : ''}}"
+        wx:for="{{gradeChips}}"
+        wx:key="key"
+        data-key="{{item.key}}"
+        bind:tap="onGrade"
+      >{{item.label}}</view>
+    </scroll-view>
+    <text class="cs-reset" wx:if="{{selectedGrades.length}}" bind:tap="clearGrades">清年级</text>
+  </view>
+
+  <!-- ===== 筛选第 2 行：快捷 chip + 复制/图片 ===== -->
   <view class="cs-bar cs-bar-chips">
     <scroll-view class="cs-chips" scroll-x enable-flex>
       <view
@@ -64,9 +80,15 @@
         bind:tap="onChip"
       >{{item.label}}</view>
     </scroll-view>
-    <view class="cs-copy" bind:tap="copyText">
-      <t-icon name="file-copy" size="22rpx" color="#ffffff" />
-      <text>{{copyLabel}}</text>
+    <view class="cs-copy-group">
+      <view class="cs-copy" bind:tap="onShareImage">
+        <t-icon name="image" size="22rpx" color="#ffffff" />
+        <text>图片</text>
+      </view>
+      <view class="cs-copy" bind:tap="copyText">
+        <t-icon name="file-copy" size="22rpx" color="#ffffff" />
+        <text>{{copyLabel}}</text>
+      </view>
     </view>
   </view>
 
@@ -167,4 +189,9 @@
   </view>
 
   <view class="tt-footer" wx:if="{{shown.length && !errorText}}">{{footerText}}</view>
+
+  <!-- 生成转发图片用的隐藏画布（2026-11-03）：尺寸由 JS 按内容行数设置，
+       CSS 只需保证存在且不占版面 —— 移出屏幕而不是 display:none（部分机型
+       display:none 的 canvas 2d 拿不到节点） -->
+  <canvas type="2d" id="csShareCanvas" class="cs-share-canvas"></canvas>
 </view>

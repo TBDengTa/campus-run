@@ -84,7 +84,7 @@ function api(path, opts) {
 var caps = { view: false, label: false, ban: false, manage: false };
 var LABEL_TEXT = { cheat: '作弊', minor: '轻微违规', device: '设备/网络问题', normal: '正常' };
 var LABEL_KINDS = ['cheat', 'minor', 'device', 'normal'];
-var query = { status: 'open', source: 'all', label: '', keyword: '', page: 1 };
+var query = { status: 'open', source: 'all', label: '', keyword: '', sort: '', minSteps: '', minDistance: '', page: 1 };
 var pollTimer = null;
 var banTargetId = '';
 
@@ -404,6 +404,11 @@ function buildSegments() {
     sel.addEventListener('change', function () { query.label = sel.value; query.page = 1; loadList(); });
   }
   sel.value = query.label;
+  // 排序 / 步数 / 距离三个下拉（选项是 index.html 里的静态 option，CSP 下不允许内联事件，
+  // change 监听在 bindEvents 里挂一次）—— 这里只负责把当前 query 回填到控件，轮询重画后不串位
+  $('selSort').value = query.sort;
+  $('selSteps').value = query.minSteps;
+  $('selDist').value = query.minDistance;
 }
 
 function loadList() {
@@ -412,6 +417,9 @@ function loadList() {
     '?status=' + encodeURIComponent(query.status) +
     '&source=' + encodeURIComponent(query.source) +
     '&label=' + encodeURIComponent(query.label) +
+    '&sort=' + encodeURIComponent(query.sort || 'score') +
+    '&minSteps=' + encodeURIComponent(query.minSteps || '') +
+    '&minDistance=' + encodeURIComponent(query.minDistance || '') +
     '&keyword=' + encodeURIComponent(query.keyword) +
     '&page=' + encodeURIComponent(query.page) +
     '&limit=' + encodeURIComponent(listLimit);
@@ -453,6 +461,7 @@ function renderList(list) {
   var head = el('div', 'tbl-head');
   head.appendChild(el('span', 'c-who', '学生'));
   head.appendChild(el('span', 'c-src', '来源'));
+  head.appendChild(el('span', 'c-size', '步数 / 距离'));
   head.appendChild(el('span', 'c-score', '分数（疑 / AI）'));
   head.appendChild(el('span', 'c-label', '标注'));
   head.appendChild(el('span', 'c-status', '状态'));
@@ -514,6 +523,19 @@ function renderItem(r) {
   who.appendChild(el('small', '', [r.className, r.studentId, r.date].filter(Boolean).join(' · ')));
   row.appendChild(who);
   row.appendChild(el('span', 'c-src', r.sourceText));
+
+  // 数据量列（与 sort=size / 步数·距离筛选同一口径）：微信同步看当日步数，GPS 看距离。
+  // 没有这一列，「步数/距离大优先」的排序依据就看不见了。
+  var size = el('span', 'c-size');
+  if (r.source === 'gps') {
+    var distM = Number(r.features && r.features.distance) || 0;
+    size.appendChild(el('b', 'num', distM > 0 ? (distM / 1000).toFixed(1) : '—'));
+    if (distM > 0) size.appendChild(el('small', '', ' km'));
+  } else {
+    size.appendChild(el('b', 'num', fmt(r.cumulativeSteps)));
+    size.appendChild(el('small', '', ' 步'));
+  }
+  row.appendChild(size);
 
   var score = el('span', 'c-score');
   score.appendChild(el('b', 'num', fmt(r.score)));
@@ -763,7 +785,10 @@ function renderSyncHistory(body, d) {
     if (isNaN(t.getTime())) {
       row.appendChild(el('span', 'num', '—'));
     } else {
-      row.appendChild(el('span', 'num', pad2(t.getHours()) + ':' + pad2(t.getMinutes()) + ':' + pad2(t.getSeconds())));
+      // 跨日补同步的行带日期前缀（服务端 dayText）——只显示时分秒会把次日的记录
+      // 伪装成「当日更晚时分」，看起来像时间倒流（用户 2026-11-04）
+      var timeStr = pad2(t.getHours()) + ':' + pad2(t.getMinutes()) + ':' + pad2(t.getSeconds());
+      row.appendChild(el('span', 'num', h.dayText ? h.dayText + ' ' + timeStr : timeStr));
     }
     row.appendChild(el('span', 'r num', fmt(h.steps)));
     row.appendChild(el('span', 'r num', h.intervalSec == null ? '—' : durText(h.intervalSec)));
@@ -773,9 +798,12 @@ function renderSyncHistory(body, d) {
   }
 
   var s = (d && d.summary) || {};
-  body.appendChild(el('div', 'route-cap',
+  var cap =
     '当日 ' + fmt(s.syncs) + ' 次同步 · 高增速(≥15步/秒) ' + fmt(s.fastSyncs) +
-    ' 次 · 口径：与判定同源；1 小时内多次同步合并为一条，间隔<3分钟不判增速'));
+    ' 次 · 口径：与判定同源；1 小时内多次同步合并为一条，间隔<3分钟不判增速';
+  // 跨日补同步说明（文案服务端拼好下发，前端只搬运）
+  if (s.crossDayText) cap += ' · ' + s.crossDayText;
+  body.appendChild(el('div', 'route-cap', cap));
 }
 
 function labelIt(id, kind, btn) {
@@ -946,6 +974,11 @@ function bindEvents() {
     if (query.page > 1) { query.page -= 1; loadList(); }
   });
   $('btnNext').addEventListener('click', function () { query.page += 1; loadList(); });
+
+  // 排序 / 数据量筛选（选项在 index.html 静态写好，这里只挂事件）
+  $('selSort').addEventListener('change', function () { query.sort = this.value; query.page = 1; loadList(); });
+  $('selSteps').addEventListener('change', function () { query.minSteps = this.value; query.page = 1; loadList(); });
+  $('selDist').addEventListener('change', function () { query.minDistance = this.value; query.page = 1; loadList(); });
 
   $('banCancel').addEventListener('click', closeBan);
   $('banOk').addEventListener('click', submitBan);

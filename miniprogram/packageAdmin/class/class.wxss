@@ -355,6 +355,14 @@
   background: var(--tt-brand-soft-2);
 }
 
+/* 本周前三回退今日榜的口径说明句（数据量少时才出现，整句 JS 预计算） */
+.cls-top-mode {
+  margin-top: 10rpx;
+  font-size: 21rpx;
+  line-height: 30rpx;
+  color: var(--tt-text-3);
+}
+
 /* 浅色提示条：仅查看视角的「可做什么」/「不参加校园跑」 */
 .cls-tip {
   display: flex;

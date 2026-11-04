@@ -166,9 +166,20 @@ Component({
         auth.get('/api/class/ranking', { className }),
       ]);
       const classRank = ov.classRank || null;
-      const top = ((rank && rank.students) || []).slice(0, 3).map((s) => ({
+      // 前三名口径：本周步数；本周有效（步数>0）人数不足 3 人且今日有效人数更多时回退「今日步数」
+      // （周初全班本周 0 步，旧实现会把 3 个 0 步的名字摆上台面；用户 2026-11-04「本周不够就显本日前三」）。
+      // 服务端 students 已按 weekSteps 降序，今日榜需本地按 todaySteps 重排并重排名次。
+      const students = (rank && rank.students) || [];
+      const week = students.filter((s) => Number(s.weekSteps) > 0);
+      const day = students
+        .filter((s) => Number(s.todaySteps) > 0)
+        .sort((a, b) => Number(b.todaySteps) - Number(a.todaySteps));
+      const useDay = week.length < 3 && day.length > week.length;
+      const pool = useDay ? day : week;
+      const top = pool.slice(0, 3).map((s, i) => ({
         ...s,
-        stepsText: fmt.formatNumber(s.weekSteps),
+        rank: useDay ? i + 1 : s.rank,
+        stepsText: fmt.formatNumber(useDay ? s.todaySteps : s.weekSteps),
       }));
       return {
         className,
@@ -181,6 +192,7 @@ Component({
         },
         classRank,
         rankText: !classRank ? '' : classRank.rank ? `第 ${classRank.rank} / ${classRank.total} 名` : '本周暂无记录',
+        topTip: useDay ? '今日步数' : '本周步数',
         top,
       };
     },
@@ -196,6 +208,7 @@ Component({
         classRank: card.classRank,
         rankText: card.rankText,
         canNudge: card.canNudge,
+        topTip: card.topTip,
       };
     },
 

@@ -327,6 +327,9 @@ tbody tr:last-child td { border-bottom: none; }
 .c-who b { font-weight: 600; font-size: 13px; }
 .c-who small { color: var(--text-3); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .c-src { flex: 0 0 64px; color: var(--text-2); font-size: 12px; }
+.c-size { flex: 0 0 92px; display: flex; align-items: baseline; gap: 3px; }
+.c-size b { font-size: 13px; font-weight: 600; }
+.c-size small { color: var(--text-3); font-size: 11px; }
 .c-score { flex: 0 0 100px; display: flex; align-items: baseline; gap: 6px; }
 .c-score b { font-size: 15px; font-weight: 600; }
 .c-score small { color: var(--text-3); font-size: 11px; }
@@ -526,6 +529,6 @@ tbody tr:last-child td { border-bottom: none; }
 @media (max-width: 860px) {
   .grid.g4, .grid.g3 { grid-template-columns: repeat(2, 1fr); }
   .tbl-head { display: none; }
-  .c-src, .c-label { display: none; }
+  .c-src, .c-label, .c-size { display: none; }
   .c-who { flex: 1.6; }
 }

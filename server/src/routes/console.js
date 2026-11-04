@@ -359,21 +359,24 @@ router.get(
   requireConsole('anticheat.view'),
   wrap(async (req, res) => {
     const status = String(req.query.status || 'open');
+    const source = String(req.query.source || 'all');
     const filter = {};
     if (status !== 'all') filter.status = status;
     if (req.query.date) filter.date = String(req.query.date);
-    if (req.query.source && req.query.source !== 'all') filter.source = String(req.query.source);
+    if (source && source !== 'all') filter.source = source;
 
     const labelQ = String(req.query.label || '');
     if (labelQ === 'unlabeled') filter.label = null;
     else if (StepLabel.LABEL_KINDS.includes(labelQ)) filter.label = labelQ;
 
+    // 关键词的 $or 先暂存：下面「数据量筛选」也可能要占 $or，两者共存时合并进 $and，防互相覆盖
+    let kwOr = null;
     if (req.query.keyword) {
       const kw = String(req.query.keyword).trim();
       const isNoise = /^(undefined|null|NaN)$/i.test(kw);
       if (kw && !isNoise) {
         const safe = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        filter.$or = [
+        kwOr = [
           { realName: new RegExp(safe, 'i') },
           { studentId: new RegExp(safe, 'i') },
           { className: new RegExp(safe, 'i') },
@@ -381,13 +384,63 @@ router.get(
       }
     }
 
+    // 数据量筛选（用户 2026-11-04「列表可以筛选违规步数，优先步数或距离大的优先处理」）：
+    // 微信同步的口径是当日步数 cumulativeSteps（当天累计作弊总量），GPS 对应口径是距离
+    // （判定快照存在 features.distance，米）。按来源分支约束：全来源时只约束设了阈值的来源，
+    // 未设阈值的来源不加条件 —— 筛「步数≥3000」不能把列表里的 GPS 记录一并筛没。
+    const minSteps = Math.max(0, Number(req.query.minSteps) || 0);
+    const minDistance = Math.max(0, Number(req.query.minDistance) || 0);
+    let sizeOr = null;
+    if (source === 'werun' && minSteps > 0) {
+      filter.cumulativeSteps = { $gte: minSteps };
+    } else if (source === 'gps' && minDistance > 0) {
+      filter['features.distance'] = { $gte: minDistance };
+    } else if (source === 'all' && (minSteps > 0 || minDistance > 0)) {
+      sizeOr = [];
+      sizeOr.push(
+        minSteps > 0
+          ? { source: 'werun', cumulativeSteps: { $gte: minSteps } }
+          : { source: 'werun' }
+      );
+      sizeOr.push(
+        minDistance > 0
+          ? { source: 'gps', 'features.distance': { $gte: minDistance } }
+          : { source: 'gps' }
+      );
+    }
+    if (kwOr && sizeOr) filter.$and = [{ $or: kwOr }, { $or: sizeOr }];
+    else if (kwOr) filter.$or = kwOr;
+    else if (sizeOr) filter.$or = sizeOr;
+
     const limit = Math.min(Number(req.query.limit) || 30, 200);
     const page = Math.max(Number(req.query.page) || 1, 1);
     const skip = (page - 1) * limit;
 
+    // 排序：默认可疑分优先（原有口径不动）；sort=size 时按「数据量」降序 ——
+    // 微信同步看当日步数、GPS 看距离，同一个 sort key 让两种来源按各自量级混排，大值在前优先处理。
+    // 跨字段条件排序 find+sort 表达不了，只能走聚合（结果只取一页，量级可控）。
+    const sortQ = String(req.query.sort || 'score');
     const [total, rows] = await Promise.all([
       StepAnomaly.countDocuments(filter),
-      StepAnomaly.find(filter).sort({ score: -1, createdAt: -1 }).skip(skip).limit(limit).lean(),
+      sortQ === 'size'
+        ? StepAnomaly.aggregate([
+            { $match: filter },
+            {
+              $addFields: {
+                _size: {
+                  $cond: [
+                    { $eq: ['$source', 'gps'] },
+                    { $ifNull: ['$features.distance', 0] },
+                    { $ifNull: ['$cumulativeSteps', 0] },
+                  ],
+                },
+              },
+            },
+            { $sort: { _size: -1, createdAt: -1 } },
+            { $skip: skip },
+            { $limit: limit },
+          ])
+        : StepAnomaly.find(filter).sort({ score: -1, createdAt: -1 }).skip(skip).limit(limit).lean(),
     ]);
 
     ok(res, {

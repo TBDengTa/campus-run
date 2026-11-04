@@ -46,11 +46,13 @@ const CHIPS = [
   { key: 'attMissing', label: '考勤待补' },
 ];
 
-// 档位筛选（解决「今日未达标筛出全部 43 个班」= 等于没筛）
+// 档位筛选（解决「今日未达标筛出全部 43 个班」= 等于没筛）。
+// 2026-11-03：「低于一半」换成「低于95%」（用户指定；催办口径收紧到「没到95%」，
+// 覆盖大部分跑了但还差几个的常见场景，零达标仍是它的子集）。
 const LEVEL_CHIPS = [
   { key: '', label: '不限' },
   { key: 'notFull', label: '未达标' },
-  { key: 'belowHalf', label: '低于一半' },
+  { key: 'below95', label: '低于95%' },
   { key: 'zero', label: '零达标' },
 ];
 
@@ -129,6 +131,11 @@ Page({
     department: '',
     allDepartments: [], // 未选院校时的全量系部候选
 
+    // 年级多选（2026-11-03）：候选来自服务端 grades（grade 字段 + 班名解析兜底），
+    // 筛选本身在服务端做（与文案同源），这里只维护选中态
+    gradeChips: [],
+    selectedGrades: [],
+
     keyword: '',
 
     // 考勤是否真有数据（决定「考勤统计 N 天」那一行和考勤列出不出现在页面上）
@@ -182,6 +189,7 @@ Page({
     const q = { days: d.days };
     // 选了非今天的日期才传（保持「今天」走服务端默认口径，缓存也最友好）
     if (d.selectedDate) q.today = d.selectedDate;
+    if (d.selectedGrades.length) q.grades = d.selectedGrades.join(',');
     if (d.school) q.school = d.school;
     if (d.department) q.department = d.department;
     if (d.quick) q.quick = d.quick;
@@ -205,6 +213,11 @@ Page({
       this._raw = rows;
       const hasFilter = Array.isArray(d.activeFilters) && d.activeFilters.length > 0;
       const scope = hasFilter ? d.filtered : d.totals;
+      // 年级候选变化时把不再存在的选中项清掉（如切日期/院校后某年级不再出现）
+      const grades = d.grades || [];
+      const selectedGrades = grades.length
+        ? (this.data.selectedGrades || []).filter((g) => grades.includes(g))
+        : this.data.selectedGrades || [];
       // 考勤有没有真数据：决定考勤列与「考勤统计 N 天」那一行出不出现在页面上
       const hasAttendance = rows.some((x) => x.attendance && x.attendance.hasData);
       const columns = { ...this.data.columns };
@@ -219,6 +232,12 @@ Page({
         // 联动展示：快捷 chip 文案随日期换词；考勤行标出实际统计区间
         chips: this.chipsFor(),
         attRangeText: d.from ? `${d.from} ~ ${d.today || ''}（早操/早八/晚自习/查宿）` : '',
+        gradeChips: (grades.length ? grades : []).map((g) => ({
+          key: g,
+          label: `${g}级`,
+          on: selectedGrades.includes(g),
+        })),
+        selectedGrades,
         totals: d.totals || null,
         filtered: d.filtered || null,
         activeFilters: d.activeFilters || [],
@@ -426,6 +445,29 @@ Page({
     this.setData({ deptIndex: idx, department: idx === 0 ? '' : label }, () => this.load());
   },
 
+  // 年级多选（2026-11-03）：tap 切换选中，选中集非空即随请求发给服务端
+  onGrade(e) {
+    const key = String((e.currentTarget.dataset || {}).key || '');
+    if (!key) return;
+    const cur = this.data.selectedGrades || [];
+    const selectedGrades = cur.includes(key) ? cur.filter((g) => g !== key) : cur.concat(key);
+    this.setData(
+      {
+        selectedGrades,
+        gradeChips: this.data.gradeChips.map((c) => ({ ...c, on: selectedGrades.includes(c.key) })),
+      },
+      () => this.load()
+    );
+  },
+
+  clearGrades() {
+    if (!(this.data.selectedGrades || []).length) return;
+    this.setData(
+      { selectedGrades: [], gradeChips: this.data.gradeChips.map((c) => ({ ...c, on: false })) },
+      () => this.load()
+    );
+  },
+
   // 输入防抖 400ms：每次按键都发请求会打断服务端 60s 缓存的收益，也没必要
   onKeyword(e) {
     const keyword = String(e.detail.value || '');
@@ -443,8 +485,9 @@ Page({
     this.setData(
       {
         quick: '', level: '', metric: 'daily', school: '', schoolIndex: 0, department: '', deptIndex: 0, keyword: '',
-        // 日期也算筛选条件：清除筛选一并回到「今天」
+        // 日期与年级也算筛选条件：清除筛选一并回到「今天 / 全部年级」
         selectedDate: '', dateLabel: '今天',
+        selectedGrades: [], gradeChips: this.data.gradeChips.map((c) => ({ ...c, on: false })),
       },
       () => this.load()
     );
@@ -470,6 +513,170 @@ Page({
       },
       fail: () => wx.showToast({ title: '复制失败，请重试', icon: 'none' }),
     });
+  },
+
+  // ===== 生成图片转发（2026-11-03「文本太多被直接发会折叠」）=====
+  // 画的是「当前筛选后的展示行表格」（所见即所转）：标题带服务端下发的筛选标签
+  // 与班数，数值颜色与列表同一套 level 口径 —— 纯文本报告仍走「复制」（copyText
+  // 服务端生成），图片负责不被微信折叠。
+  onShareImage() {
+    const rows = this.data.shown || [];
+    if (!rows.length) {
+      wx.showToast({ title: this.data.errorText || '没有可生成的数据', icon: 'none' });
+      return;
+    }
+    const MAX_ROWS = 45; // 43 个班一屏装得下；超出的截断并注明，画布高度也有上限
+    const shownRows = rows.slice(0, MAX_ROWS);
+    const omitted = rows.length - shownRows.length;
+
+    // 布局（逻辑像素，node 尺寸 ×2 保清晰）
+    const W = 750;
+    const PAD = 28;
+    const titleH = 118;
+    const headH = 56;
+    const rowH = 54;
+    const footH = 120;
+    const H = titleH + headH + shownRows.length * rowH + footH;
+
+    const query = wx.createSelectorQuery().in(this);
+    query.select('#csShareCanvas').fields({ node: true });
+    query.exec((res) => {
+      const canvas = res && res[0] && res[0].node;
+      if (!canvas) {
+        wx.showToast({ title: '画布初始化失败', icon: 'none' });
+        return;
+      }
+      canvas.width = W * 2;
+      canvas.height = H * 2;
+      const ctx = canvas.getContext('2d');
+      ctx.scale(2, 2);
+      this.drawShareImage(ctx, { W, PAD, titleH, headH, rowH, footH, shownRows, omitted });
+      wx.canvasToTempFilePath({
+        canvas,
+        success: (r) => {
+          // 优先拉起「发送给朋友/收藏」的图片分享菜单；低版本基础库回退存相册
+          if (wx.showShareImageMenu) {
+            wx.showShareImageMenu({
+              path: r.tempFilePath,
+              fail: () => this.saveShareImage(r.tempFilePath),
+            });
+          } else {
+            this.saveShareImage(r.tempFilePath);
+          }
+        },
+        fail: () => wx.showToast({ title: '生成图片失败，请重试', icon: 'none' }),
+      });
+    });
+  },
+
+  saveShareImage(path) {
+    wx.saveImageToPhotosAlbum({
+      filePath: path,
+      success: () => wx.showToast({ title: '已保存到相册', icon: 'success' }),
+      fail: () => wx.showToast({ title: '已生成，保存失败请检查相册权限', icon: 'none' }),
+    });
+  },
+
+  // 真正的绘制（拆出来便于阅读；颜色与列表 level 口径一致）
+  drawShareImage(ctx, { W, PAD, titleH, headH, rowH, footH, shownRows, omitted }) {
+    const cols = this.data.columns;
+    const C = {
+      text: '#1f2329', sub: '#8a919f', line: '#e4e7ec', zebra: '#fafbfc',
+      ok: '#16a34a', warn: '#d97706', bad: '#dc2626', brand: '#ff6b00',
+    };
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, W, titleH + headH + shownRows.length * rowH + footH);
+
+    // 标题区：日期 + 筛选口径（服务端标签）+ 班数
+    const scope = this.data.filtered || this.data.totals || {};
+    const filterText = (this.data.activeFilters || []).join(' · ') || '全校';
+    ctx.fillStyle = C.text;
+    ctx.font = 'bold 34px sans-serif';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`班级状态 ${this.data.today || ''}`, PAD, 40);
+    ctx.font = '24px sans-serif';
+    ctx.fillStyle = C.brand;
+    ctx.fillText(`${filterText} · ${scope.classCount || 0} 个班 / ${scope.studentCount || 0} 人`, PAD, 88);
+
+    // 列定义（按「显示内容」）：班级左对齐，其余右对齐定宽
+    const numCols = [];
+    if (cols.daily) numCols.push({ key: 'daily', head: '日达标', w: 108 });
+    if (cols.weekly) numCols.push({ key: 'weekly', head: '周达标', w: 108 });
+    if (cols.attendance) numCols.push({ key: 'att', head: '考勤', w: 96 });
+    const stuW = 78;
+    const xOf = [];
+    let x = W - PAD;
+    for (let i = numCols.length - 1; i >= 0; i -= 1) {
+      x -= numCols[i].w;
+      xOf[i] = x;
+    }
+    const stuX = x - stuW;
+
+    // 表头
+    const headY = titleH;
+    ctx.fillStyle = '#f5f6f8';
+    ctx.fillRect(PAD, headY, W - PAD * 2, headH);
+    ctx.fillStyle = C.sub;
+    ctx.font = '22px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('班级', PAD + 12, headY + headH / 2);
+    ctx.fillText('学生', stuX, headY + headH / 2);
+    numCols.forEach((c, i) => {
+      ctx.fillText(c.head, xOf[i], headY + headH / 2);
+    });
+
+    // 数据行（隔行浅底，数值按 level 着色，与列表同一套判定）
+    const levelColor = (lv) => (lv === 'ok' ? C.ok : lv === 'warn' ? C.warn : lv === 'bad' ? C.bad : C.sub);
+    shownRows.forEach((r, idx) => {
+      const y = headY + headH + idx * rowH;
+      if (idx % 2 === 1) {
+        ctx.fillStyle = C.zebra;
+        ctx.fillRect(PAD, y, W - PAD * 2, rowH);
+      }
+      ctx.textAlign = 'left';
+      ctx.font = '24px sans-serif';
+      ctx.fillStyle = C.text;
+      // 班名过长截断（画布上没有 ellipsis，手动截）
+      const name = r.className && r.className.length > 13 ? `${r.className.slice(0, 12)}…` : r.className || '';
+      ctx.fillText(name, PAD + 12, y + rowH / 2);
+      ctx.fillStyle = r.runDisabled ? C.sub : C.text;
+      ctx.fillText(r.runDisabled ? '—' : String(r.studentCount || 0), stuX, y + rowH / 2);
+      numCols.forEach((c, i) => {
+        let text = '—';
+        let lv = 'none';
+        if (r.runDisabled) {
+          text = '不参跑';
+          lv = 'none';
+        } else if (c.key === 'daily') {
+          text = r.dailyText;
+          lv = r.dailyLevel;
+        } else if (c.key === 'weekly') {
+          text = r.weeklyText;
+          lv = r.weeklyLevel;
+        } else {
+          text = r.attText;
+          lv = r.attLevel;
+        }
+        ctx.fillStyle = levelColor(lv);
+        ctx.fillText(text, xOf[i], y + rowH / 2);
+      });
+    });
+
+    // 底部：口径 + 截断说明 + 落款
+    const footY = headY + headH + shownRows.length * rowH;
+    ctx.textAlign = 'left';
+    ctx.fillStyle = C.sub;
+    ctx.font = '20px sans-serif';
+    ctx.fillText('达标 = 步数 ≥ 生效目标（个人计划优先）· 考勤按应到人数加权', PAD, footY + 26);
+    if (omitted > 0) ctx.fillText(`其余 ${omitted} 个班未列出（共 ${this.data.rows.length} 个）`, PAD, footY + 54);
+    ctx.fillStyle = C.brand;
+    ctx.fillText('唐唐快跑 · 班级状态', PAD, footY + footH - 26);
+    // 顶部分隔线
+    ctx.strokeStyle = C.line;
+    ctx.beginPath();
+    ctx.moveTo(PAD, footY + 8);
+    ctx.lineTo(W - PAD, footY + 8);
+    ctx.stroke();
   },
 
   openClass(e) {

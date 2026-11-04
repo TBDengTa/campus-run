@@ -55,7 +55,7 @@
       <view class="cb-top3">
         <view class="cb-top3-head">
           <text class="cb-top3-title">本班前三名</text>
-          <text class="cb-top3-tip">本周步数</text>
+          <text class="cb-top3-tip">{{currentCard.topTip}}</text>
         </view>
         <view
           class="cb-top3-row"
@@ -70,7 +70,7 @@
           <text class="cb-tag-officer" wx:if="{{item.isClassOfficer}}">班委</text>
           <text class="num-font cb-top3-steps">{{item.stepsText}}</text>
         </view>
-        <view class="tt-empty" wx:if="{{!currentCard.top.length && !loading}}">本周还没有运动记录</view>
+        <view class="tt-empty" wx:if="{{!currentCard.top.length && !loading}}">今日与本周都还没有运动记录</view>
       </view>
 
       <view class="cb-manage" wx:if="{{showManage}}" bind:tap="goManage">
@@ -125,7 +125,7 @@
               <view class="cb-top3">
                 <view class="cb-top3-head">
                   <text class="cb-top3-title">本班前三名</text>
-                  <text class="cb-top3-tip">本周步数</text>
+                  <text class="cb-top3-tip">{{item.topTip}}</text>
                 </view>
                 <view
                   class="cb-top3-row"
@@ -141,7 +141,7 @@
                   <text class="cb-tag-officer" wx:if="{{stu.isClassOfficer}}">班委</text>
                   <text class="num-font cb-top3-steps">{{stu.stepsText}}</text>
                 </view>
-                <view class="tt-empty" wx:if="{{!item.top.length && !loading}}">本周还没有运动记录</view>
+                <view class="tt-empty" wx:if="{{!item.top.length && !loading}}">今日与本周都还没有运动记录</view>
               </view>
 
               <view class="cb-manage" wx:if="{{showManage}}" bind:tap="goManage">
