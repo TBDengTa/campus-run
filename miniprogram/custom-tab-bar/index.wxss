@@ -1,4 +1,4 @@
-/* 自定义 tabBar：白色悬浮胶囊（全部普通导航项，无凸起圆钮） */
+/* 自定义 tabBar：悬浮胶囊（亮色白底 / 暗色深色玻璃，随系统主题切换） */
 .tabbar {
   position: fixed;
   left: 24rpx;
@@ -22,19 +22,39 @@
   align-items: center;
   justify-content: center;
   gap: 6rpx;
+  /* 着色层：t-icon 不传 color 时走 currentColor，图标随这里变化 */
+  color: #9aa0a6;
 }
 
 .tabbar-text {
   font-size: 21rpx;
   line-height: 1;
-  color: #9aa0a6;
+}
+
+.tabbar-item.active {
+  color: #ff6b00;
 }
 
 .tabbar-item.active .tabbar-text {
-  color: #ff6b00;
   font-weight: 600;
 }
 
 .tabbar-item:active {
   opacity: 0.7;
+}
+
+/* 夜间模式：深色玻璃胶囊 + 提亮的品牌橙，与暗色页面融为一体 */
+@media (prefers-color-scheme: dark) {
+  .tabbar {
+    background: rgba(28, 28, 30, 0.96);
+    box-shadow: 0 8rpx 32rpx rgba(0, 0, 0, 0.5), 0 2rpx 8rpx rgba(0, 0, 0, 0.4);
+  }
+
+  .tabbar-item {
+    color: rgba(255, 255, 255, 0.55);
+  }
+
+  .tabbar-item.active {
+    color: #f09248;
+  }
 }

@@ -484,6 +484,18 @@
   box-shadow: 0 -8rpx 24rpx rgba(28, 31, 35, 0.08);
 }
 
+/* 夜间：搜索卡/行卡片描边分层，底部动作条投影改深色 */
+@media (prefers-color-scheme: dark) {
+  .users-search-card,
+  .users-list t-swipe-cell {
+    box-shadow: 0 0 0 1rpx var(--tt-card-border), 0 2rpx 8rpx rgba(0, 0, 0, 0.3);
+  }
+
+  .users-batch-bar {
+    box-shadow: 0 -8rpx 24rpx rgba(0, 0, 0, 0.45);
+  }
+}
+
 .users-batch-count {
   flex-shrink: 0;
   padding: 8rpx 16rpx;

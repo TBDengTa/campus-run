@@ -136,6 +136,7 @@
     /* ===== 唐唐快跑 设计令牌（白橙） ===== */
     --tt-bg-page: #f6f7f9;
     --tt-card: #ffffff;
+    --tt-card-border: transparent;
     --tt-brand: #ff6b00;
     --tt-brand-deep: #e05e00;
     --tt-brand-soft: #fff4ec;
@@ -282,9 +283,12 @@
     --td-table-shadow-color: rgba(0, 0, 0, 0.55);
     --td-scrollbar-color: rgba(255, 255, 255, 0.1);
     --td-scroll-track-color: #333;
-    /* ===== 唐唐快跑 设计令牌（暗色） ===== */
+    /* ===== 唐唐快跑 设计令牌（暗色） =====
+       分层手法：暗色下阴影感知弱，卡片靠 1rpx 描边（--tt-card-border）+ 更深的
+       投影 + 提亮的分割线（--tt-line，rgba 随所在底色自适应）撑出层次 */
     --tt-bg-page: #141414;
     --tt-card: #1f1f1f;
+    --tt-card-border: rgba(255, 255, 255, 0.07);
     --tt-brand: #f09248;
     --tt-brand-deep: #e07b24;
     --tt-brand-soft: rgba(240, 146, 72, 0.14);
@@ -292,8 +296,8 @@
     --tt-text-1: rgba(255, 255, 255, 0.9);
     --tt-text-2: rgba(255, 255, 255, 0.6);
     --tt-text-3: rgba(255, 255, 255, 0.42);
-    --tt-line: #2c2c2c;
-    --tt-card-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.24), 0 12rpx 32rpx rgba(0, 0, 0, 0.28);
+    --tt-line: rgba(255, 255, 255, 0.14);
+    --tt-card-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.32), 0 12rpx 32rpx rgba(0, 0, 0, 0.44);
   }
 }
 page,
@@ -389,7 +393,8 @@ page {
   border-radius: var(--tt-radius);
   padding: var(--tt-pad);
   margin: 0 var(--tt-gap) var(--tt-gap);
-  box-shadow: var(--tt-card-shadow);
+  /* 1rpx 描边环：亮色透明无感，暗色给卡片勾出轮廓（用阴影画环不改盒模型） */
+  box-shadow: 0 0 0 1rpx var(--tt-card-border), var(--tt-card-shadow);
 }
 
 /* 行内靠右按钮容器：t-button 组件宿主节点在 flex 行里不会收缩，
@@ -499,7 +504,8 @@ page {
   border-radius: var(--tt-radius);
   padding: var(--tt-pad);
   margin: 0 var(--tt-gap) var(--tt-gap);
-  box-shadow: var(--tt-card-shadow);
+  /* 同 .card：描边环 + 投影（.tt-card-flat 自带实体描边，会整组覆盖掉） */
+  box-shadow: 0 0 0 1rpx var(--tt-card-border), var(--tt-card-shadow);
 }
 
 .tt-card-flat {

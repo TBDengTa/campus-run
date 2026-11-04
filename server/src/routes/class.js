@@ -145,13 +145,6 @@ async function loadScopedStudent(user, userId, rawClassName) {
 const escapeRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const round = (n) => Math.round(Number(n) || 0);
 
-// 姓名遮蔽（与排行榜一致）：张三 → 张**，单字 → 张*
-function maskName(name) {
-  if (!name) return '匿名同学';
-  if (name.length === 1) return `${name}*`;
-  return `${name.slice(0, 1)}**`;
-}
-
 // ISO 周（周一起始）→ { start, end } 日历键；与 admin/users.js::isoWeekRange 同口径
 function isoWeekRange(isoYear, isoWeek) {
   const jan4 = new Date(Date.UTC(isoYear, 0, 4));
@@ -259,8 +252,8 @@ async function loadClassStats(className) {
       totalSteps: s.totalSteps || 0,
       totalDistance: s.totalDistance || 0,
       totalDays: s.totalDays || 0,
-      // 隐私标记（内部用，响应前按角色决定是否遮蔽姓名 / 是否排除出榜单）
-      hideName: !!(s.privacy && s.privacy.hideName),
+      // 隐私标记（内部用）：exitRanking 供班级榜单排除「不参与排名」；
+      // hideName 已不参与班级域展示（隐私设置只管公开排行榜，见 presentStudent 注释），不再派生
       exitRanking: !!(s.privacy && s.privacy.exitRanking),
     };
   });
@@ -346,12 +339,17 @@ async function globalClassRank(className, weekStart, today) {
   };
 }
 
-// ===== 展示映射（按角色处理隐私：班委遮蔽姓名，班主任看真实姓名）=====
+// ===== 展示映射 =====
+// 隐私设置（privacy.hideName / exitRanking）**只作用于公开排行榜**（routes/ranking.js）。
+// 班级域是管理视图：进得来的只有本班班主任与本班班委，督促名单 / 榜单 / 学生列表都要发到
+// 群里或当面督促（用户 2026-11-04「复制未达标名单……应该不被隐私设置所影响」）——
+// 一律真实姓名，不做 hideName 打码；exitRanking 的「不参与排名」也不影响班级域查看
+//（只是公开榜不收录），否则班主任督促自己班的学生还要被学生的榜单隐私设置拦住。
 
-function presentStudent(s, { masked, roomText, unionText }) {
+function presentStudent(s, { roomText, unionText } = {}) {
   return {
     userId: s.userId,
-    name: masked && s.hideName ? maskName(s.name) : s.name,
+    name: s.name,
     studentId: s.studentId,
     // 宿舍（「1号楼·201」）：只由 GET /students 传入（当页一次 $in 查询后按 openid join）。
     // 榜单等其它出口不传 → 空串，前端 wx:if 判空即不渲染；没住宿的学生同样是空串。
@@ -827,7 +825,6 @@ router.get(
     const scope = resolveScope(req.user, req.query.className);
     const { page, limit, skip } = parsePagination(req.query, { page: 1, limit: 20 });
     const stats = await loadClassStats(scope.className);
-    const masked = !scope.isHomeroom; // 班委是学生：遮蔽开启了「隐藏姓名」的同学
 
     let list = stats.list;
     const keyword = String(req.query.keyword || '').trim();
@@ -867,14 +864,14 @@ router.get(
     const total = sorted.length;
     const pageRows = sorted.slice(skip, skip + limit);
     // 宿舍：只对**当页**学生的 openid 查一次（禁止 N+1），再按 openid join 回来。
-    // 与 masked 判定无关：房间号不是身份信息，班委视角同样展示（班主任也要靠它认人）。
+    // 房间号不是身份信息：班主任与班委都要靠它认人（督促宿舍卫生、核对归属）
     const roomBy = await roomTextByOpenid(pageRows.map((s) => s.openid));
     // 学生会身份：同样只查当页一次（openid / userId 双路 join，见 unionTextByStudents）。
     // 班级视角的用户详情也要能看到「学生会 · 职务」，班主任靠它认人。
     const unionBy = await unionTextByStudents(pageRows);
     const unionOf = (s) => unionBy.get(s.openid) || unionBy.get(String(s.userId)) || '';
     const rows = pageRows.map((s) =>
-      presentStudent(s, { masked, roomText: roomBy.get(s.openid) || '', unionText: unionOf(s) })
+      presentStudent(s, { roomText: roomBy.get(s.openid) || '', unionText: unionOf(s) })
     );
     ok(res, {
       className: stats.className,
@@ -904,14 +901,14 @@ router.get(
     const scope = resolveScope(req.user, req.query.className);
     const stats = await loadClassStats(scope.className);
     const classRank = await globalClassRank(scope.className, stats.weekStart, stats.today);
-    const masked = !scope.isHomeroom;
 
-    // 班委视角排除「不参与排名」的同学（与公开排行榜一致）；班主任仍可看到全部
+    // 班委视角排除「不参与排名」的同学（与公开排行榜一致）；班主任仍可看到全部。
+    // 姓名不做 hideName 打码：隐私设置只管公开排行榜，班级域管理视图一律真实姓名（见 presentStudent 注释）。
     const pool = scope.isHomeroom ? stats.list : stats.list.filter((s) => !s.exitRanking);
     const sorted = [...pool].sort(
       (a, b) => b.weekSteps - a.weekSteps || b.todaySteps - a.todaySteps || a.name.localeCompare(b.name)
     );
-    const students = sorted.slice(0, TOP_LIMIT).map((s, i) => ({ rank: i + 1, ...presentStudent(s, { masked }) }));
+    const students = sorted.slice(0, TOP_LIMIT).map((s, i) => ({ rank: i + 1, ...presentStudent(s) }));
 
     ok(res, {
       className: stats.className,
@@ -1163,13 +1160,11 @@ router.get(
     const target = await loadScopedStudent(req.user, req.params.userId, req.query.className);
     const record = await RunRecord.findOne({ _id: req.params.runId, openid: target.openid || '' }).lean();
     if (!record) throw new ApiError(404, 404, '记录不存在');
-    // 班委是学生：姓名遮蔽口径与列表/榜单一致（班主任看真实姓名）
-    const { homeroom } = accessibleClasses(req.user);
-    const masked = !homeroom.includes(target.className);
+    // 隐私设置只管公开排行榜：班级域（班主任 / 班委）查看学生的运动记录详情一律真实姓名
     const rawName = target.realName || target.nickname || target.account || '';
     ok(res, {
       ...gpsMetrics.withGpsMetrics(record),
-      ownerName: masked && target.privacy && target.privacy.hideName ? maskName(rawName) : rawName,
+      ownerName: rawName,
     });
   })
 );

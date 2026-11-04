@@ -433,6 +433,13 @@
   box-sizing: border-box;
 }
 
+/* 夜间：底部固定操作栏投影改深色 */
+@media (prefers-color-scheme: dark) {
+  .um-batch-bar {
+    box-shadow: 0 -6rpx 24rpx rgba(0, 0, 0, 0.45);
+  }
+}
+
 .um-batch-info {
   display: flex;
   align-items: baseline;

@@ -877,3 +877,44 @@
   background: rgba(0, 0, 0, 0.34);
   pointer-events: none;
 }
+
+/* ============================================================
+   夜间模式：顶部插画夜景化（深蓝夜空 + 月光云 + 暗色草地）
+   插画配色是首页私有场景色，不进全局令牌（docs/ui-design.md）；
+   有 hero 图素材时（.sky-has-image）本块自动失效，无需处理
+   ============================================================ */
+@media (prefers-color-scheme: dark) {
+  .sky {
+    background: linear-gradient(180deg, #1a2745 0%, #2a3d66 46%, #3f5a8a 100%);
+  }
+
+  .sky-cloud {
+    background: rgba(255, 255, 255, 0.16);
+  }
+
+  .cloud-1 {
+    box-shadow: 44rpx 10rpx 0 -10rpx rgba(255, 255, 255, 0.16),
+      82rpx -12rpx 0 -18rpx rgba(255, 255, 255, 0.16);
+  }
+
+  .sky-hill-back {
+    background: linear-gradient(180deg, #335130 0%, #2a4429 100%);
+  }
+
+  .sky-hill {
+    background: linear-gradient(180deg, #25402b 0%, #1b3220 100%);
+  }
+
+  .sky-track {
+    border-color: rgba(255, 255, 255, 0.4);
+  }
+
+  .sky-title {
+    text-shadow: 2rpx 0 0 #22406e, -2rpx 0 0 #22406e, 0 2rpx 0 #22406e, 0 -2rpx 0 #22406e,
+      0 5rpx 0 #1a3258, 0 8rpx 16rpx rgba(8, 16, 38, 0.5);
+  }
+
+  .sky-slogan {
+    color: #9db8df;
+  }
+}

@@ -303,9 +303,9 @@ Page({
     batchMode: false,
     batchIds: {}, // targetId -> true（只含「还没有生效记录」的对象）
     batchCount: 0,
-    batchGradeFieldKey: '', // 评价必填的模块（晚自习）的评价字段 key
-    batchGrade: '', // 批量统一使用的评价
-    batchGradeOptions: [],
+    // 批量统一值（用户 2026-11-04「批量录入可以选择批量的评价」）：模块里所有带选项的
+    // select 字段（晚自习=评价）都在批量配置卡里统一选，提交时整批用同一值
+    batchSelects: [],
     batchSubmitting: false,
     batchLimit: 100, // 单次批量上限：逐条走单条接口，防一次点出几百个请求
   },
@@ -373,10 +373,10 @@ Page({
       // 仅对「有名单类字段」的考勤模块开放（晚自习 / 早操 / 查宿）；早八这类
       // optionalWhenMissing 的模块「无记录 = 无迟到」，批量造全勤记录没有意义，刻意排除。
       const fieldsAll = module.fields || [];
-      // 评价必填的模块（晚自习）批量时要统一选评价：取第一个必填且带选项的 select 字段
-      const gradeField = fieldsAll.find(
-        (f) => f && !f.derived && f.required && f.type === 'select' && (f.options || []).length
-      );
+      // 批量统一值：模块里所有带选项的 select 字段（晚自习=评价）都进批量配置卡，默认第一项
+      const batchSelects = fieldsAll
+        .filter((f) => f && !f.derived && f.type === 'select' && (f.options || []).length)
+        .map((f) => ({ key: f.key, label: f.label || f.key, options: f.options, value: f.options[0] }));
       this.setData({
         module,
         modules: list,
@@ -390,9 +390,7 @@ Page({
         // 名单类字段的人数上限由 /modules 下发（与 /mine 不同，它带表单模板与服务端校验同源常量）
         personsLimit: tpl.studentFieldLimit || 200,
         canBatch: fieldsAll.some((f) => f && f.type === 'students') && !module.optionalWhenMissing,
-        batchGradeFieldKey: gradeField ? gradeField.key : '',
-        batchGradeOptions: gradeField ? gradeField.options : [],
-        batchGrade: gradeField && gradeField.options.length ? gradeField.options[0] : '',
+        batchSelects,
       });
       await this.loadTargets();
     } catch (e) {
@@ -1005,22 +1003,28 @@ Page({
     this.setData({ batchIds: {}, batchCount: 0 });
   },
 
-  onBatchGrade(e) {
+  onBatchSelect(e) {
+    const key = e.currentTarget.dataset.key;
     const idx = Number(e.detail.value) || 0;
-    this.setData({ batchGrade: this.data.batchGradeOptions[idx] || '' });
+    const batchSelects = (this.data.batchSelects || []).map((s) =>
+      s.key === key ? { ...s, value: s.options[idx] || s.value } : s
+    );
+    this.setData({ batchSelects });
   },
 
-  // 批量 details：名单字段全部留空（= 无缺勤 / 无未归），评价用统一值，
+  // 批量 details：名单字段全部留空（= 无缺勤 / 无未归），select 字段用批量统一值，
   // 其余可填字段给中性空值 —— 与抽屉表单「什么都不填直接提交」的产物同形。
   buildBatchDetails() {
     const module = this.data.module || {};
-    const grade = this.data.batchGrade;
+    const selectMap = new Map((this.data.batchSelects || []).map((s) => [s.key, s]));
     const details = {};
     for (const f of module.fields || []) {
       if (!f || f.derived || isPhotoField(f)) continue;
       if (f.type === 'students') details[f.key] = [];
-      else if (f.type === 'select') details[f.key] = f.required && grade ? [grade] : [];
-      else if (f.type === 'int' || f.type === 'number') details[f.key] = null;
+      else if (f.type === 'select') {
+        const cfg = selectMap.get(f.key);
+        details[f.key] = cfg && cfg.value ? [cfg.value] : [];
+      } else if (f.type === 'int' || f.type === 'number') details[f.key] = null;
       else if (f.type === 'items') continue; // 计分项模块不在批量范围（canBatch 已挡），兜底不造值
       else details[f.key] = '';
     }
@@ -1037,11 +1041,14 @@ Page({
     const module = this.data.module || {};
     const dateKey = (this.data.dates[this.data.dateIndex] || {}).key;
     const period = this.data.periods[this.data.periodIndex] || '';
-    const gradeLine = this.data.batchGradeFieldKey ? `，评价统一记「${this.data.batchGrade}」` : '';
+    const selectLine = (this.data.batchSelects || [])
+      .filter((s) => s.value)
+      .map((s) => `${s.label}「${s.value}」`)
+      .join('、');
     const confirmed = await new Promise((resolve) =>
       wx.showModal({
         title: '批量录入无缺勤',
-        content: `将为 ${list.length} 个受检对象录入「无缺勤」记录${gradeLine}，日期 ${dateKey}。确认提交？`,
+        content: `将为 ${list.length} 个受检对象录入「无缺勤」记录${selectLine ? `，统一 ${selectLine}` : ''}，日期 ${dateKey}。确认提交？`,
         success: (r) => resolve(r.confirm),
         fail: () => resolve(false),
       })

@@ -49,6 +49,13 @@
   background: rgba(255, 255, 255, 0.7);
 }
 
+/* 夜间：hero 软底变暗后，白瓦片改半透明（brand-deep 橙字在暗底依然清晰） */
+@media (prefers-color-scheme: dark) {
+  .cd-hero-stat {
+    background: rgba(255, 255, 255, 0.1);
+  }
+}
+
 .cd-hero-v {
   font-size: 30rpx;
   font-weight: 700;

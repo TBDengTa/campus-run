@@ -1392,6 +1392,13 @@
   box-shadow: 0 2rpx 8rpx rgba(28, 31, 35, 0.05);
 }
 
+/* 夜间：行卡片描边分层 + 投影加深（app.wxss .card 同手法的局部版） */
+@media (prefers-color-scheme: dark) {
+  .cls-row {
+    box-shadow: 0 0 0 1rpx var(--tt-card-border), 0 2rpx 8rpx rgba(0, 0, 0, 0.3);
+  }
+}
+
 .cls-row:active {
   background: var(--tt-brand-soft);
 }

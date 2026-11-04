@@ -198,6 +198,9 @@ Component({
     },
 
     // 由「一张卡的数据 + 序号」拼出组件头部要展示的字段（滑到哪班就取哪班的数字）
+    // ⚠️ 必须逐字段核对 wxml 里 currentCard.* 的绑定：漏一个字段就是「界面永远空态」
+    //   的静默 bug —— 本班前三名（currentCard.top）曾被丢在这里，
+    //   首页卡片从头到尾没显示过前三（用户 2026-11-04「依旧没有显示」）。
     viewOf(cards, index) {
       const card = cards[index] || cards[0];
       if (!card) return {};
@@ -209,6 +212,7 @@ Component({
         rankText: card.rankText,
         canNudge: card.canNudge,
         topTip: card.topTip,
+        top: card.top,
       };
     },
 

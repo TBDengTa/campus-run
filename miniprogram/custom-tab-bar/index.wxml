@@ -9,7 +9,6 @@
     <t-icon
       name="{{selected === index ? item.activeIcon : item.icon}}"
       size="46rpx"
-      color="{{selected === index ? '#ff6b00' : '#9aa0a6'}}"
     />
     <text class="tabbar-text">{{item.text}}</text>
   </view>

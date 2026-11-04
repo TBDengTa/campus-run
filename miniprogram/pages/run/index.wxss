@@ -3,7 +3,7 @@
   width: 100%;
   height: 100vh;
   overflow: hidden;
-  background: #e9edf2;
+  background: var(--tt-bg-page);
 }
 
 .map {
@@ -277,4 +277,18 @@
 .blocked-btn {
   margin-top: 48rpx;
   padding: 0 80rpx;
+}
+
+/* ===== 夜间模式：悬浮于地图之上的 chrome 改深色玻璃 =====
+   微信 <map> 瓦片不随系统主题变化（恒亮），底部面板/教师卡片已走
+   --tt-* 令牌自动适配；这里只需处理硬编码白玻璃的顶部状态条与浅色投影 */
+@media (prefers-color-scheme: dark) {
+  .state-chip {
+    background: rgba(28, 28, 30, 0.94);
+    box-shadow: 0 6rpx 20rpx rgba(0, 0, 0, 0.45);
+  }
+
+  .sheet {
+    box-shadow: 0 12rpx 40rpx rgba(0, 0, 0, 0.55);
+  }
 }

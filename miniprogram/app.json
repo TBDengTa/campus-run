@@ -82,10 +82,10 @@
   ],
   "tabBar": {
     "custom": true,
-    "color": "#9aa0a6",
-    "selectedColor": "#ff6b00",
-    "backgroundColor": "#ffffff",
-    "borderStyle": "white",
+    "color": "@tabColor",
+    "selectedColor": "@tabSelectedColor",
+    "backgroundColor": "@tabBgColor",
+    "borderStyle": "@tabBorderStyle",
     "list": [
       {
         "pagePath": "pages/hub/hub",

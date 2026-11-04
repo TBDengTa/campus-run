@@ -1276,7 +1276,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #fff;
+  /* 主题色瓦片：亮色奶白/暗色半透明橙（原 #fff 在暗色下是刺眼白块） */
+  background: var(--tt-brand-soft);
 }
 
 .ud-pwd-opt-main {

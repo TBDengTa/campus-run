@@ -863,33 +863,85 @@
   word-break: break-all;
 }
 
-/* ===== 批量录入「无缺勤」（用户 2026-11-04）===== */
-/* 区头右侧的批量入口：胶囊按钮，与「今年优先」标签同一行 */
-.en-batch-toggle {
-  margin-left: auto;
-  padding: 4rpx 18rpx;
-  border-radius: 999rpx;
-  background: var(--tt-brand-soft);
-  color: var(--tt-brand-deep);
-  font-size: 22rpx;
+/* ===== 批量录入「无缺勤」（用户 2026-11-04「位置不太好 / 要能选批量的评价」）===== */
+/* 入口在顶部常驻筛选行，与日期 / 时段同级；进入批量模式变成「退出批量」并变色 */
+.en-filter-batch {
+  flex: 0 0 auto;
 }
 
-.en-batch-tools {
+.en-filter-batch-v.active {
+  background: var(--tt-brand-soft);
+  color: var(--tt-brand-deep);
+  font-weight: 600;
+}
+
+/* 批量配置卡：统一评价等在这里选（不藏在底部操作条里），选对象前就能定好口径 */
+.en-batch-cfg {
+  padding: 20rpx 24rpx;
+}
+
+.en-batch-cfg-head {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.en-batch-cfg-title {
+  font-size: 25rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.en-batch-cfg-count {
+  margin-left: auto;
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+.en-batch-cfg-selects {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin-top: 16rpx;
+}
+
+.en-batch-cfg-select {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  padding: 10rpx 20rpx;
+  border-radius: var(--tt-radius-sm);
+  border: 1rpx solid var(--tt-line);
+  background: var(--tt-card);
+  font-size: 23rpx;
+}
+
+.en-batch-cfg-label {
+  color: var(--tt-text-3);
+}
+
+.en-batch-cfg-value {
+  color: var(--tt-brand-deep);
+  font-weight: 600;
+}
+
+.en-batch-cfg-tip {
+  margin-top: 14rpx;
+  font-size: 21rpx;
+  line-height: 30rpx;
+  color: var(--tt-text-3);
+}
+
+.en-batch-cfg-actions {
   display: flex;
   align-items: center;
   gap: 28rpx;
-  padding: 10rpx 4rpx 14rpx;
+  margin-top: 16rpx;
 }
 
 .en-batch-link {
   color: var(--tt-brand);
   font-size: 24rpx;
-}
-
-.en-batch-count {
-  margin-left: auto;
-  color: var(--tt-text-3);
-  font-size: 22rpx;
 }
 
 /* 批量模式的行：前置圆形勾选框；已有生效记录的对象整行压暗（点了会提示，但视觉先说明） */
@@ -915,33 +967,20 @@
   opacity: 0.45;
 }
 
-/* 固定底部操作条：评价选择 + 一键录入（多选时始终可见，不随列表滚走） */
+/* 固定底部提交条：统一值已在配置卡选好，这里只负责一键录入（多选时始终可见，不随列表滚走） */
 .en-batch-bar {
   position: fixed;
   left: 24rpx;
   right: 24rpx;
   bottom: calc(24rpx + env(safe-area-inset-bottom));
   z-index: 60;
-  display: flex;
-  align-items: center;
-  gap: 16rpx;
   padding: 16rpx 20rpx;
   border-radius: var(--tt-radius-md, 20rpx);
   background: var(--tt-card);
   box-shadow: 0 10rpx 36rpx rgba(0, 0, 0, 0.14);
 }
 
-.en-batch-grade {
-  flex-shrink: 0;
-  padding: 12rpx 22rpx;
-  border-radius: 999rpx;
-  background: var(--tt-brand-soft);
-  color: var(--tt-brand-deep);
-  font-size: 24rpx;
-}
-
 .en-batch-submit {
-  flex: 1;
   text-align: center;
   padding: 15rpx 0;
   border-radius: 999rpx;

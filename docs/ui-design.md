@@ -13,10 +13,11 @@
 | 主色浅底（更强） | `--tt-brand-soft-2` | `#ffe6d2` | 半透明橙 |
 | 页面底色 | `--tt-bg-page` | `#f6f7f9` | `#141414` |
 | 卡片底 | `--tt-card` | `#ffffff` | `#1f1f1f` |
+| 卡片描边 | `--tt-card-border` | `transparent`（无感） | `rgba(255,255,255,.07)` |
 | 主文字 | `--tt-text-1` | `rgba(0,0,0,.9)` | `rgba(255,255,255,.9)` |
 | 次文字 | `--tt-text-2` | `rgba(0,0,0,.6)` | `rgba(255,255,255,.6)` |
 | 辅助文字 | `--tt-text-3` | `rgba(0,0,0,.42)` | `rgba(255,255,255,.42)` |
-| 分割线 | `--tt-line` | `#f0f1f3` | `#2c2c2c` |
+| 分割线 | `--tt-line` | `#f0f1f3` | `rgba(255,255,255,.14)` |
 | 卡片阴影 | `--tt-card-shadow` | 柔和大范围投影 | 加深投影 |
 
 TDesign 变量同样被改造成橙色系（`--td-brand-color-*`、`--td-bg-color-*`、`--td-shadow-*`），
@@ -30,6 +31,22 @@ TDesign 变量同样被改造成橙色系（`--td-brand-color-*`、`--td-bg-colo
 background: linear-gradient(135deg, #ff9a3d 0%, #ff6b00 62%, #f25a00 100%);
 box-shadow: 0 12rpx 32rpx rgba(255, 107, 0, 0.24);
 ```
+
+### 1.1 夜间模式（跟随系统，`app.json darkmode: true`）
+
+- 主题分两层：`theme.json`（导航栏/窗口/tabBar 兜底色，`@key` 引用）+ `app.wxss` 的
+  `@media (prefers-color-scheme: dark)` 双套令牌。**页面主体一律引用令牌**，切主题自动适配。
+- **暗色分层手法**（改暗色样式前必读）：暗色下投影几乎不可见，卡片层次靠三件套——
+  ① `.card` / `.tt-card` 自带 `0 0 0 1rpx var(--tt-card-border)` 描边环（用阴影画环，不改盒模型）；
+  ② 暗色 `--tt-card-shadow` 明显加深；③ 分割线 `--tt-line` 用 `rgba(255,255,255,.14)` 随所在底色自适应。
+  页面私有卡片在暗色下的覆盖写法与 `.cls-row`（`packageAdmin/class`）一致：描边环 + 加深投影。
+- **页面级暗色微调**：只在页面 wxss 里加局部 `@media (prefers-color-scheme: dark)` 块，
+  覆盖对象限于「令牌表达不了的页面私有配色」——典型是首页插画夜景（`pages/home/home.wxss`
+  深蓝夜空/月光云/暗色草地）。通用面层色（卡片、chip、阴影）不进页面块，优先走令牌或换用现有令牌。
+- **叠在品牌橙渐变上的白字/白 chip/白徽标保持不动**（两主题下都成立）；二维码白底必须保留。
+- 硬编码雷区：页面背景色（曾踩 `pages/run/index` 的 `#e9edf2`）、悬浮玻璃底色、
+  `rgba(28,31,35,…)` 浅色投影——都要么走令牌、要么在页面暗色块里给出深色对应值。
+  回归：`tools/check-dark-mode.js`。
 
 ## 2. 形状与间距
 
@@ -90,9 +107,12 @@ box-shadow: 0 12rpx 32rpx rgba(255, 107, 0, 0.24);
 
 `app.json` 的 `tabBar.custom = true`，实际渲染由组件 `custom-tab-bar/index` 负责：
 
-- **形态**：白色悬浮胶囊（`left/right: 24rpx`、`height: 112rpx`、`border-radius: 999rpx`、柔和大投影），
-  **全部为普通导航项，不做中间凸起圆钮**。
-- **图标**：用 `t-icon` 矢量图标（选中用 `*-filled` 填充态 + `#ff6b00`，未选中用线性态 + `#9aa0a6`），
+- **形态**：悬浮胶囊（`left/right: 24rpx`、`height: 112rpx`、`border-radius: 999rpx`、柔和大投影），
+  **全部为普通导航项，不做中间凸起圆钮**；亮色白底 / 暗色深色玻璃
+  （`rgba(28,28,30,.96)`，wxss 内 `@media` 切换）。
+- **图标**：用 `t-icon` 矢量图标（选中用 `*-filled` 填充态，未选中用线性态），
+  **不传 `color` 属性**——着色在 `.tabbar-item` 层（`color` 可穿透组件边界继承，
+  图标 glyph 走 currentColor），亮色 `#9aa0a6`/`#ff6b00`、暗色 `rgba(255,255,255,.55)`/`#f09248`；
   不用位图，便于随主题换色；`assets/tabbar/*.png` 仅作为关闭 custom 时的原生兜底。
 - **角色差异**：学生 = 首页 / 跑步 / 记录 / 排行 / 我的；
   教师（有管理权限）= 首页 / **管理** / 我的，其中「管理」指向 **管理中枢** `pages/hub/hub`（分类列出全部管理入口，
