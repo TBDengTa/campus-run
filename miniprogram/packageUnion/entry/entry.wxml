@@ -1,4 +1,4 @@
-<view class="page tt-page en-page {{bodyLocked ? 'en-body-locked' : ''}}">
+<view class="page tt-page en-page {{bodyLocked ? 'en-body-locked' : ''}} {{batchMode && batchCount > 0 ? 'en-has-batch-bar' : ''}}">
   <!-- ===== 无录入权限 ===== -->
   <view class="tt-card en-empty" wx:if="{{!loading && !canEnter}}">
     <t-icon name="info-circle" size="40rpx" color="var(--tt-text-3)" />
@@ -161,22 +161,34 @@
       <text>{{scopeHint}}</text>
     </view>
 
-    <!-- ===== 受检对象列表（卡片化；点整行 → 开抽屉填表）===== -->
+    <!-- ===== 受检对象列表（卡片化；点整行 → 开抽屉填表；批量模式点行 = 勾选）===== -->
     <view class="tt-section">
       <text>受检对象</text>
       <text class="en-priority" wx:if="{{!schoolFilter && !departmentFilter && !gradeFilter && !typeFilter && !buildingFilter && hasCurrentYear}}">今年优先</text>
+      <view class="en-batch-toggle" wx:if="{{canBatch}}" catch:tap="toggleBatchMode">
+        {{batchMode ? '退出批量' : '批量录入'}}
+      </view>
       <text class="tt-section-extra">{{filtered.length}} / {{targets.length}} 个</text>
+    </view>
+    <!-- 批量模式工具行：只选「还没有生效记录」的对象，可全选当前筛选结果 -->
+    <view class="en-batch-tools" wx:if="{{batchMode}}">
+      <view class="en-batch-link" bind:tap="selectBatchFiltered">全选未录（当前筛选）</view>
+      <view class="en-batch-link" bind:tap="clearBatch">清空</view>
+      <text class="en-batch-count num-font">已选 {{batchCount}} / {{batchLimit}}</text>
     </view>
     <view class="tt-card en-targets">
       <view
         id="en-target-{{ti}}"
-        class="en-target {{item.targetId === locatingId ? 'en-target-focus' : ''}}"
+        class="en-target {{item.targetId === locatingId ? 'en-target-focus' : ''}} {{batchMode && !item.batchable ? 'en-target-dim' : ''}}"
         wx:for="{{filtered}}"
         wx:for-index="ti"
         wx:key="targetId"
         data-id="{{item.targetId}}"
         bind:tap="pickTarget"
       >
+        <view class="en-target-check {{batchIds[item.targetId] ? 'on' : ''}}" wx:if="{{batchMode}}">
+          <t-icon wx:if="{{batchIds[item.targetId]}}" name="check" size="26rpx" color="#ffffff" />
+        </view>
         <view class="en-target-main">
           <view class="en-target-head">
             <!-- displayName：教室类模块（晚自习）显示教室「1号教学楼·201」，
@@ -187,10 +199,20 @@
           <text class="en-target-sub">{{item.info}}</text>
           <text class="en-target-sum" wx:if="{{item.summary}}">{{item.summary}}</text>
         </view>
-        <t-icon name="chevron-right" size="26rpx" color="var(--tt-text-3)" />
+        <t-icon wx:if="{{!batchMode}}" name="chevron-right" size="26rpx" color="var(--tt-text-3)" />
       </view>
       <view class="en-empty-s" wx:if="{{!filtered.length}}">
         没有符合条件的受检对象<text wx:if="{{keyword || gradeFilter}}">，试试清空搜索或切换年级</text>
+      </view>
+    </view>
+
+    <!-- 批量录入操作条（固定底部）：评价必填的模块（晚自习）先选评价，再一键录入全部已选对象 -->
+    <view class="en-batch-bar" wx:if="{{batchMode && batchCount > 0}}">
+      <picker wx:if="{{batchGradeOptions.length}}" mode="selector" range="{{batchGradeOptions}}" bindchange="onBatchGrade">
+        <view class="en-batch-grade">评价：{{batchGrade}}</view>
+      </picker>
+      <view class="en-batch-submit {{batchSubmitting ? 'disabled' : ''}}" bind:tap="submitBatch">
+        录入无缺勤（{{batchCount}}）
       </view>
     </view>
 
@@ -360,6 +382,8 @@
                   wx:if="{{current && (current.className || pickerQuery.roomId || pickerQuery.scope)}}"
                   api="/api/union/entry/students"
                   extra-query="{{pickerQuery}}"
+                  scope-label="{{scopeLabel}}"
+                  show-class="{{pickerShowClass}}"
                   limit="{{personsLimit}}"
                   selected="{{form[f.key]}}"
                   with-reason="{{f.key !== 'lateList'}}"

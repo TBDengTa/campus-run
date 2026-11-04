@@ -862,3 +862,100 @@
   color: var(--td-error-color-7, #d54941);
   word-break: break-all;
 }
+
+/* ===== 批量录入「无缺勤」（用户 2026-11-04）===== */
+/* 区头右侧的批量入口：胶囊按钮，与「今年优先」标签同一行 */
+.en-batch-toggle {
+  margin-left: auto;
+  padding: 4rpx 18rpx;
+  border-radius: 999rpx;
+  background: var(--tt-brand-soft);
+  color: var(--tt-brand-deep);
+  font-size: 22rpx;
+}
+
+.en-batch-tools {
+  display: flex;
+  align-items: center;
+  gap: 28rpx;
+  padding: 10rpx 4rpx 14rpx;
+}
+
+.en-batch-link {
+  color: var(--tt-brand);
+  font-size: 24rpx;
+}
+
+.en-batch-count {
+  margin-left: auto;
+  color: var(--tt-text-3);
+  font-size: 22rpx;
+}
+
+/* 批量模式的行：前置圆形勾选框；已有生效记录的对象整行压暗（点了会提示，但视觉先说明） */
+.en-target-check {
+  flex-shrink: 0;
+  width: 40rpx;
+  height: 40rpx;
+  border-radius: 50%;
+  border: 2rpx solid var(--tt-line);
+  background: var(--tt-card);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+.en-target-check.on {
+  border-color: var(--tt-brand);
+  background: var(--tt-brand);
+}
+
+.en-target-dim {
+  opacity: 0.45;
+}
+
+/* 固定底部操作条：评价选择 + 一键录入（多选时始终可见，不随列表滚走） */
+.en-batch-bar {
+  position: fixed;
+  left: 24rpx;
+  right: 24rpx;
+  bottom: calc(24rpx + env(safe-area-inset-bottom));
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 16rpx 20rpx;
+  border-radius: var(--tt-radius-md, 20rpx);
+  background: var(--tt-card);
+  box-shadow: 0 10rpx 36rpx rgba(0, 0, 0, 0.14);
+}
+
+.en-batch-grade {
+  flex-shrink: 0;
+  padding: 12rpx 22rpx;
+  border-radius: 999rpx;
+  background: var(--tt-brand-soft);
+  color: var(--tt-brand-deep);
+  font-size: 24rpx;
+}
+
+.en-batch-submit {
+  flex: 1;
+  text-align: center;
+  padding: 15rpx 0;
+  border-radius: 999rpx;
+  background: var(--tt-brand);
+  color: #ffffff;
+  font-size: 26rpx;
+  font-weight: 600;
+}
+
+.en-batch-submit.disabled {
+  opacity: 0.55;
+}
+
+/* 操作条固定在底部时给页面留出呼吸空间，最后一行不被遮住 */
+.en-has-batch-bar {
+  padding-bottom: 160rpx;
+}

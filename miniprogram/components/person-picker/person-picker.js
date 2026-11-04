@@ -63,6 +63,11 @@ Component({
     withReason: { type: Boolean, value: false },
     reasonOptions: { type: Array, value: ['事假', '病假', '公假', '无故'] },
     autoLoad: { type: Boolean, value: false }, // 打开即列全部（班级人数有限时好用）
+    // 名单范围标题（用户 2026-11-04「缺勤名单中没有显示本班级或本宿舍的名称」）：
+    // 录入台按受检对象下发（教室·班级 / 楼栋房间 / 全校），让检查人一眼确认在给谁录名单
+    scopeLabel: { type: String, value: '' },
+    // 结果行里显示学生班级：查宿（混宿房间会带出别班学生）不标班级就没法核对
+    showClass: { type: Boolean, value: false },
   },
 
   data: {
@@ -108,7 +113,9 @@ Component({
       const page = reset ? 1 : this.data.page + 1;
       const seq = (this._seq || 0) + 1;
       this._seq = seq;
-      this.setData(reset ? { loading: true } : { loadingMore: true });
+      // 重置搜索先清掉旧列表（用户 2026-11-04「出现了全部的名单」）：切换受检对象后一旦请求
+      // 失败，残留的上一对象名单会被误当成当前对象的名单来勾选 —— 数据完整性优先于列表平滑
+      this.setData(reset ? { loading: true, list: [], page: 1 } : { loadingMore: true });
       try {
         const query = {
           keyword: this.data.keyword,

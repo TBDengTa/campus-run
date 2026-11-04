@@ -232,12 +232,19 @@ async function resolveClassInfo(className) {
   };
 }
 
-// 解析受检对象 ??归属班级（宿??/ 卫生区经映射反查??*不接受客户端手填班级**??
+// 解析受检对象 → 归属班级（宿舍 / 卫生区经映射反查，不接受客户端手填班级）
 async function resolveTarget(moduleDef, { targetType, targetId }) {
-  const type = String(targetType || '').trim();
+  let type = String(targetType || '').trim();
   const id = String(targetId || '').trim();
   if (!id) throw new ApiError(400, 400, '缺少受检对象');
-  if (!(moduleDef.targetTypes || []).includes(type)) {
+  // 旧记录兼容（用户 2026-11-04「晚自习考勤出现了不支持这种受检类型」）：晚自习 v5 起由
+  // 'class' 改成 'classroom'，但 targetId 两种类型下都是**班级名**（band-chao entryTargets
+  // 一直以 className 作 targetId）——库里 targetType='class' 的存量晚自习记录在修改 / 复核
+  // 时按旧类型解析，会撞上「晚自习考勤 不支持这种受检对象」。模块已不认 'class' 但认
+  // 'classroom' 时按 classroom 解析，读写口径与 v5 后的新记录完全一致。
+  const tts = moduleDef.targetTypes || [];
+  if (type === 'class' && !tts.includes('class') && tts.includes('classroom')) type = 'classroom';
+  if (!tts.includes(type)) {
     throw new ApiError(400, 400, `${moduleDef.name} 不支持这种受检对象`);
   }
 
@@ -1075,7 +1082,12 @@ router.get(
     const className = String(req.query.className || '').trim();
     if (!className) throw new ApiError(400, 400, '缺少 className');
 
-    const target = await resolveTarget(moduleDef, { targetType: 'class', targetId: className });
+    // 受检对象类型按模块定义解析（用户 2026-11-04「晚自习考勤出现了不支持这种受检类型」）：
+    // 这里曾硬编码 'class'，而晚自习 v5 起 targetTypes=['classroom']（targetId 同样是班级名，
+    // 见 band-chao entryTargets）→ 晚自习一点开缺勤名单就 400「不支持这种受检对象」。
+    // 认 class 的模块（早操 / 早八）仍走 class；只认 classroom 的（晚自习 / 卫生）走 classroom。
+    const classLikeType = (moduleDef.targetTypes || []).includes('class') ? 'class' : 'classroom';
+    const target = await resolveTarget(moduleDef, { targetType: classLikeType, targetId: className });
     const perm = unionSvc.canEnterModule(identity, moduleDef, target.departmentId);
     if (!perm.ok) throw new ApiError(403, 403002, perm.reason);
 

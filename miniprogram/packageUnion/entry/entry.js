@@ -292,7 +292,22 @@ Page({
     //   早期漏传导致缺勤 / 未归名单搜索一直是坏的（接口报错，界面只弹 toast）。
     pickerQuery: {},
     pickerHint: '',
+    // 名单范围标题（person-picker 顶部展示，用户 2026-11-04「缺勤名单中没有显示本班级或
+    // 本宿舍的名称」）：晚自习=教室·班级、查宿=楼栋房间、早八=全校；由 pickTarget 按对象计算
+    scopeLabel: '',
+    // 查宿名单行内显示学生班级（混宿房间会带出别班学生，不标班级没法核对）
+    pickerShowClass: false,
     personsLimit: 200,
+    // ===== 批量录入「无缺勤」（用户 2026-11-04）=====
+    canBatch: false, // 模块有名单类字段且非「只记异常人」（早八）时才提供批量
+    batchMode: false,
+    batchIds: {}, // targetId -> true（只含「还没有生效记录」的对象）
+    batchCount: 0,
+    batchGradeFieldKey: '', // 评价必填的模块（晚自习）的评价字段 key
+    batchGrade: '', // 批量统一使用的评价
+    batchGradeOptions: [],
+    batchSubmitting: false,
+    batchLimit: 100, // 单次批量上限：逐条走单条接口，防一次点出几百个请求
   },
 
   onLoad(options) {
@@ -354,6 +369,14 @@ Page({
       }
       const module = { ...(list.find((m) => m.key === moduleKey) || {}), ...full };
       const periods = module.periods || [];
+      // ===== 批量录入「无缺勤」的可用性（用户 2026-11-04）=====
+      // 仅对「有名单类字段」的考勤模块开放（晚自习 / 早操 / 查宿）；早八这类
+      // optionalWhenMissing 的模块「无记录 = 无迟到」，批量造全勤记录没有意义，刻意排除。
+      const fieldsAll = module.fields || [];
+      // 评价必填的模块（晚自习）批量时要统一选评价：取第一个必填且带选项的 select 字段
+      const gradeField = fieldsAll.find(
+        (f) => f && !f.derived && f.required && f.type === 'select' && (f.options || []).length
+      );
       this.setData({
         module,
         modules: list,
@@ -366,6 +389,10 @@ Page({
         scopeHint: mine.level === 'branch' ? '当前身份只能筛选本院校（校区）下的系部与班级' : '',
         // 名单类字段的人数上限由 /modules 下发（与 /mine 不同，它带表单模板与服务端校验同源常量）
         personsLimit: tpl.studentFieldLimit || 200,
+        canBatch: fieldsAll.some((f) => f && f.type === 'students') && !module.optionalWhenMissing,
+        batchGradeFieldKey: gradeField ? gradeField.key : '',
+        batchGradeOptions: gradeField ? gradeField.options : [],
+        batchGrade: gradeField && gradeField.options.length ? gradeField.options[0] : '',
       });
       await this.loadTargets();
     } catch (e) {
@@ -428,6 +455,9 @@ Page({
         // 行内状态文案：早八未录显示「无迟到」（中性灰），不显示服务端默认的「未录」
         // —— 否则列表上一片「未录」，像是纪检部漏录（实际没人迟到是常态）。
         statusText: !t.status && optionalModule ? noRecordText : t.statusText,
+        // 批量录入只允许「还没有生效记录」的对象：未录 / 已取消 / 被退回（都可重录）。
+        // 与 stats 的 rawMissing 同一口径；已提交 / 已复核的对象批量会撞 409，直接不让选。
+        batchable: !t.status || t.status === 'cancelled' || t.status === 'rejected',
         // 行内副信息：「23级大数据技术 · 32 人」——列表侧不再需要进表单就知道对象规模。
         // 教室类模块：副信息里补上班级（教室是主标题，班级退到副信息）
         info: showClassroom
@@ -459,6 +489,11 @@ Page({
       onlineDormTip: '',
       pickerQuery: {},
       pickerHint: '',
+      // 换日期 / 时段 / 模块后旧名单范围与批量勾选都失效，一并清掉
+      scopeLabel: '',
+      pickerShowClass: false,
+      batchIds: {},
+      batchCount: 0,
     });
     this.applyFilter();
     // 日期选项限制在补录窗口内（超出窗口服务端也会拒，这里提前收敛）
@@ -775,11 +810,15 @@ Page({
     wx.redirectTo({ url: `/packageUnion/entry/entry?moduleKey=${key}` });
   },
 
-  // 选对象 → 打开表单（默认值按字段 default 预填）
+  // 选对象 → 打开表单（默认值按字段 default 预填）；批量模式下点行 = 勾选对象
   pickTarget(e) {
     const targetId = e.currentTarget.dataset.id;
     const target = this.data.targets.find((t) => t.targetId === targetId) || null;
     if (!target) return;
+    if (this.data.batchMode) {
+      this.toggleBatchTarget(target);
+      return;
+    }
     if (target.recordId && target.status === 'cancelled') {
       wx.showModal({
         title: '该对象已取消检查',
@@ -803,6 +842,17 @@ Page({
     } else if (target.className) {
       pickerQuery.className = target.className;
     }
+    // 名单范围标题（用户 2026-11-04「缺勤名单中没有显示本班级或本宿舍的名称」）：
+    // 让检查人一眼确认在给谁录名单 —— 晚自习=教室·班级（教室优先是本模块的产品口径），
+    // 查宿=楼栋房间（混宿名单要核对房间），早八=全校（跨班搜索本来就是全校范围）。
+    // 整句在 JS 拼，模板不写三元拼接。
+    const scopeLabel =
+      scope === 'dorm'
+        ? target.targetName || target.className || ''
+        : scope === 'school'
+          ? '全校名单 · 输入姓名 / 学号搜索'
+          : [target.classroom, target.className].filter(Boolean).join(' · ');
+    const pickerShowClass = scope === 'dorm';
     const form = this.buildInitialForm(target);
     const moduleKey = this.data.moduleKey || (this.data.module && this.data.module.key) || '';
     // ⚠️ fields 必须在这里**同步**设好：模板是 `wx:for="{{fields}}"` 渲染表单字段的，
@@ -823,6 +873,8 @@ Page({
         fields: initialFields,
         pickerQuery,
         pickerHint: PICKER_HINTS[this.pickerScope()] || '',
+        scopeLabel,
+        pickerShowClass,
       },
       () => {
         this.afterFormChange(form);
@@ -897,6 +949,140 @@ Page({
     if (key === 'night_dorm') return 'dorm';
     if (key === 'morning_class') return 'school';
     return 'class';
+  },
+
+  // ===== 批量录入「无缺勤」（用户 2026-11-04「增加批量录入批量录入记录类型无缺勤这种的」）=====
+  // 只支持「大家都到齐」这种最省事的场景：名单字段全部留空、评价用统一值、不带照片。
+  // 提交**逐条复用现有 POST /api/union/records**（单条接口）—— 批量绝不另写一套校验 / 写入，
+  // 与 services/union-review.js::reviewOne 的教训同源：批量自写判定就能绕过单条的护栏。
+
+  toggleBatchMode() {
+    this.setData({ batchMode: !this.data.batchMode, batchIds: {}, batchCount: 0 });
+  },
+
+  // 只有「还没有生效记录」的对象能批量录：未录 / 已取消 / 被退回（与 decorate.batchable 同口径）
+  batchEligible(t) {
+    return !!t && (!t.status || t.status === 'cancelled' || t.status === 'rejected');
+  },
+
+  toggleBatchTarget(target) {
+    if (!this.batchEligible(target)) {
+      wx.showToast({ title: '该对象已有生效记录，不能批量录入', icon: 'none' });
+      return;
+    }
+    const ids = { ...this.data.batchIds };
+    if (ids[target.targetId]) {
+      delete ids[target.targetId];
+    } else {
+      if (this.data.batchCount >= this.data.batchLimit) {
+        wx.showToast({ title: `一次最多批量录入 ${this.data.batchLimit} 条`, icon: 'none' });
+        return;
+      }
+      ids[target.targetId] = true;
+    }
+    this.setData({ batchIds: ids, batchCount: Object.keys(ids).length });
+  },
+
+  // 全选「当前筛选结果」里的可录对象（带筛选的批量：只录某系部 / 某教学楼）
+  selectBatchFiltered() {
+    const ids = {};
+    let n = 0;
+    let capped = false;
+    for (const t of this.data.filtered || []) {
+      if (!this.batchEligible(t)) continue;
+      if (n >= this.data.batchLimit) {
+        capped = true;
+        break;
+      }
+      ids[t.targetId] = true;
+      n += 1;
+    }
+    this.setData({ batchIds: ids, batchCount: n });
+    if (capped) wx.showToast({ title: `已达单次上限 ${this.data.batchLimit} 条`, icon: 'none' });
+  },
+
+  clearBatch() {
+    this.setData({ batchIds: {}, batchCount: 0 });
+  },
+
+  onBatchGrade(e) {
+    const idx = Number(e.detail.value) || 0;
+    this.setData({ batchGrade: this.data.batchGradeOptions[idx] || '' });
+  },
+
+  // 批量 details：名单字段全部留空（= 无缺勤 / 无未归），评价用统一值，
+  // 其余可填字段给中性空值 —— 与抽屉表单「什么都不填直接提交」的产物同形。
+  buildBatchDetails() {
+    const module = this.data.module || {};
+    const grade = this.data.batchGrade;
+    const details = {};
+    for (const f of module.fields || []) {
+      if (!f || f.derived || isPhotoField(f)) continue;
+      if (f.type === 'students') details[f.key] = [];
+      else if (f.type === 'select') details[f.key] = f.required && grade ? [grade] : [];
+      else if (f.type === 'int' || f.type === 'number') details[f.key] = null;
+      else if (f.type === 'items') continue; // 计分项模块不在批量范围（canBatch 已挡），兜底不造值
+      else details[f.key] = '';
+    }
+    return details;
+  },
+
+  async submitBatch() {
+    if (this.data.batchSubmitting) return;
+    const ids = Object.keys(this.data.batchIds).filter((k) => this.data.batchIds[k]);
+    const list = ids
+      .map((id) => (this.data.targets || []).find((t) => t.targetId === id))
+      .filter((t) => t && this.batchEligible(t));
+    if (!list.length) return;
+    const module = this.data.module || {};
+    const dateKey = (this.data.dates[this.data.dateIndex] || {}).key;
+    const period = this.data.periods[this.data.periodIndex] || '';
+    const gradeLine = this.data.batchGradeFieldKey ? `，评价统一记「${this.data.batchGrade}」` : '';
+    const confirmed = await new Promise((resolve) =>
+      wx.showModal({
+        title: '批量录入无缺勤',
+        content: `将为 ${list.length} 个受检对象录入「无缺勤」记录${gradeLine}，日期 ${dateKey}。确认提交？`,
+        success: (r) => resolve(r.confirm),
+        fail: () => resolve(false),
+      })
+    );
+    if (!confirmed) return;
+
+    this.setData({ batchSubmitting: true });
+    const details = this.buildBatchDetails();
+    let okCount = 0;
+    let dupCount = 0;
+    const failLines = [];
+    for (let i = 0; i < list.length; i++) {
+      const t = list[i];
+      wx.showLoading({ title: `录入中 ${i + 1}/${list.length}`, mask: true });
+      try {
+        await auth.post('/api/union/records', {
+          moduleKey: module.key,
+          targetType: t.targetType,
+          targetId: t.targetId,
+          date: dateKey,
+          period,
+          details,
+          photos: [],
+        });
+        okCount += 1;
+      } catch (err) {
+        if (err && err.code === 409001) dupCount += 1;
+        else failLines.push(`${t.displayName || t.targetName}：${(err && err.message) || '提交失败'}`);
+      }
+    }
+    wx.hideLoading();
+    this.setData({ batchSubmitting: false, batchIds: {}, batchCount: 0 });
+    await this.loadTargets();
+    const lines = [`成功 ${okCount} 条`];
+    if (dupCount) lines.push(`跳过（当天已录）${dupCount} 条`);
+    if (failLines.length) lines.push(`失败 ${failLines.length} 条`);
+    wx.showModal({
+      title: '批量录入完成',
+      content: lines.join('，') + (failLines.length ? `\n${failLines.slice(0, 3).join('\n')}` : ''),
+      showCancel: false,
+    });
   },
 
   buildInitialForm(target) {

@@ -17,6 +17,28 @@
   background: var(--tt-card);
 }
 
+/* 名单范围条（用户 2026-11-04「缺勤名单中没有显示本班级或本宿舍的名称」） */
+.pp-scope {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  padding: 12rpx 16rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-brand-soft);
+}
+.pp-scope-label {
+  flex-shrink: 0;
+  font-size: 20rpx;
+  color: var(--tt-brand-deep);
+  opacity: 0.75;
+}
+.pp-scope-text {
+  font-size: 24rpx;
+  font-weight: 600;
+  color: var(--tt-brand-deep);
+  word-break: break-all;
+}
+
 .pp-input {
   flex: 1;
   font-size: 24rpx;
@@ -210,6 +232,12 @@
   font-size: 19rpx;
   color: var(--tt-brand-deep);
   background: var(--tt-brand-soft-2);
+}
+
+/* 学生班级标签（查宿混宿名单用）：中性灰，与「已是学生会」的品牌色标签区分开 */
+.pp-tag-class {
+  color: var(--tt-text-3);
+  background: var(--tt-line, rgba(0, 0, 0, 0.04));
 }
 
 .pp-sub {
