@@ -6,6 +6,8 @@ const GoalPlan = require('./goal-plan');
 const BodyData = require('./body-data');
 const UserGoal = require('./user-goal');
 const RewardVideoRecord = require('./reward-video-record');
+const BeidouDay = require('./beidou-day');
+const BeidouDraw = require('./beidou-draw');
 const BanRecord = require('./ban-record');
 const Appeal = require('./appeal');
 const WaterRecord = require('./water-record');
@@ -34,6 +36,8 @@ module.exports = {
   BodyData,
   UserGoal,
   RewardVideoRecord,
+  BeidouDay,
+  BeidouDraw,
   BanRecord,
   Appeal,
   WaterRecord,

@@ -4,6 +4,7 @@ const { requirePermission } = require('../../middlewares/admin');
 const GoalConfig = require('../../models/goal-config');
 const pointsSvc = require('../../services/points');
 const rewardVideoSvc = require('../../services/reward-video');
+const beidouSvc = require('../../services/beidou');
 const acSvc = require('../../services/anticheat-config');
 
 const router = express.Router();
@@ -78,6 +79,9 @@ router.get(
     // 北斗运动四项奖励的**生效值**：距离/卡路里/时长未单独配置（null）时按步数换算派生，
     // derived 标记告诉管理端哪几项正在走派生（页面会在输入框下给出提示，避免误解为已配置）
     out.rewardVideoEffective = rewardVideoSvc.resolvePerWatch(out.rewardVideo);
+    // 北斗 2.0：归一后的奖池（含公示百分比）、8 格扇区表、生效封顶值。
+    // 奖池每次实时读配置、不需要缓存清理，保存后立即生效。
+    out.beidouEffective = await beidouSvc.loadConfig();
     ok(res, out);
   })
 );
@@ -90,12 +94,12 @@ router.put(
   wrap(async (req, res) => {
     const doc = await GoalConfig.getSingleton();
     // 默认目标（daily/weekly）已移交 /api/admin/assessment/defaults
-    const { anticheat, rewardVideo, points, buildings } = req.body || {};
+    const { anticheat, rewardVideo, beidou, points, buildings } = req.body || {};
     // 分字段守卫：只有 building.manage 的账号（如宿管老师）**只能**改楼名，
     // 不能顺手带上 points/anticheat 把计分口径也改掉。
     const perms = req.userPermissions || [];
     const canConfig = perms.includes('*') || perms.includes('config.manage');
-    const wantsOthers = !!(anticheat || rewardVideo || points);
+    const wantsOthers = !!(anticheat || rewardVideo || beidou || points);
     if (wantsOthers && !canConfig) {
       throw new ApiError(403, 403002, '无权限修改计分/反作弊/北斗配置（需要 config.manage）');
     }
@@ -117,6 +121,19 @@ router.put(
       // 广告位 ID（客户端公开标识，可留空 = 用用户端代码里的默认广告位）
       if (rewardVideo.adUnitId !== undefined) {
         doc.rewardVideo.adUnitId = String(rewardVideo.adUnitId || '').trim().slice(0, 64);
+      }
+    }
+    // 北斗运动 2.0（签到 / 转盘 / 看视频 / 分享）：只处理显式回传的键，越界一律夹紧。
+    // 归一化唯一实现在 services/beidou.js::normalizeBeidouInput（管理与工具共用一份，
+    // 两处各写一套钳位就会出现「管理端显示 3000、实际生效 300」）。
+    if (beidou) {
+      const norm = beidouSvc.normalizeBeidouInput(beidou);
+      for (const key of Object.keys(norm)) {
+        if (key === 'enabled') doc.beidou.enabled = norm.enabled;
+        else if (key === 'prizes') doc.beidou.prizes = norm.prizes;
+        else if (doc.beidou[key] !== undefined && typeof norm[key] === 'object') {
+          for (const sub of Object.keys(norm[key])) doc.beidou[key][sub] = norm[key][sub];
+        }
       }
     }
     // 跑分设置（config/points 子页只回传本组，未提供的键不动）
@@ -168,7 +185,54 @@ router.put(
     const out = typeof doc.toObject === 'function' ? doc.toObject() : doc;
     out.pointsLegacy = null; // 保存即完成迁移：不再提示旧字段换算
     out.rewardVideoEffective = rewardVideoSvc.resolvePerWatch(out.rewardVideo);
+    out.beidouEffective = await beidouSvc.loadConfig();
     ok(res, out);
+  })
+);
+
+// ===== 北斗运动 2.0 中奖记录（只读）=====
+//
+// 为什么只读：抽奖流水是概率公示与学生对账的唯一凭据。
+// 允许后台补发/撤销会让「公示概率」与实际发放对不上 —— 那是这类活动最容易被投诉的点，
+// 也是审计时说不清的地方。真要补偿学生，走「人工发徽章」那套独立链路，别动这张表。
+router.get(
+  '/beidou-draws',
+  requirePermission('config.view'),
+  wrap(async (req, res) => {
+    const BeidouDraw = require('../../models/beidou-draw');
+    const { parsePagination } = require('../../utils/response');
+    const { page, limit, skip } = parsePagination(req.query, { page: 1, limit: 20 });
+    const cond = {};
+    if (req.query.date) cond.date = String(req.query.date);
+    if (req.query.prizeKey) cond.prizeKey = String(req.query.prizeKey);
+    if (req.query.type && ['steps', 'none', 'draw'].includes(req.query.type)) cond.type = req.query.type;
+    const [rows, total] = await Promise.all([
+      BeidouDraw.find(cond).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+      BeidouDraw.countDocuments(cond),
+    ]);
+    // 名单只回必要字段（openid 不下发到管理端页面：页面按 userId 展示即可）
+    const userIds = [...new Set(rows.map((r) => r.openid).filter(Boolean))];
+    const User = require('../../models/user');
+    const users = userIds.length
+      ? await User.find({ openid: { $in: userIds } }).select('openid realName studentId className').lean()
+      : [];
+    const nameOf = new Map(users.map((u) => [u.openid, u]));
+    const list = rows.map((r) => {
+      const u = nameOf.get(r.openid) || {};
+      return {
+        _id: r._id,
+        date: r.date,
+        realName: u.realName || '',
+        studentId: u.studentId || '',
+        className: u.className || '',
+        prizeKey: r.prizeKey,
+        type: r.type,
+        amount: r.amount,
+        capped: r.capped,
+        createdAt: r.createdAt,
+      };
+    });
+    ok(res, { list, total, page, limit });
   })
 );
 

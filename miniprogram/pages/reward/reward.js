@@ -1,8 +1,17 @@
 const auth = require('../../utils/request');
 const fmt = require('../../utils/format');
 
-// 默认激励视频广告位 ID（官方广告位；管理端「北斗运动」配置了 adUnitId 时以配置为准）
-// 广告位 ID 属于客户端公开标识，不是密钥；服务端地址/密钥/AppSecret 一律不进仓库。
+/**
+ * ===== 北斗运动 2.0：签到 + 转盘抽步数 + 看视频得次数 + 分享得次数 =====
+ *
+ * 方案与口径见 docs/beidou-lottery-plan.md。三条不能破的约定：
+ *   ① 抽奖结果**只由服务端定**：服务端下发 index，前端只负责把第 index 个扇区转到指针下；
+ *      扇区顺序也来自服务端（sectors），前端**绝不自己排**（否则停位与结果对不上）；
+ *   ② 看视频/分享只加抽奖次数，**不再直发步数**（旧上报接口已降级）；
+ *   ③ 教师账号进不来（三道拦截沿用一版，见下方注释）。
+ */
+
+// 默认激励视频广告位 ID（服务端 beidou.video.adUnitId 留空时用这个）
 const DEFAULT_AD_UNIT_ID = 'adunit-a80731a737d255c9';
 
 // ===== 教师拦截（本页入口只对学生开放）=====
@@ -10,12 +19,15 @@ const DEFAULT_AD_UNIT_ID = 'adunit-a80731a737d255c9';
 //   · 入口：pages/profile 的「累计数据」连点 5 次 → 教师直接 toast，不 navigateTo
 //   · 本页：onLoad（用本地缓存的角色，首帧就拦）+ onShow（接口确认后再拦一次）
 //   · 拦截后 blocked=true → WXML 整块不渲染（不闪内容、无按钮、无广告节点）
-//   · 教师路径下不创建激励视频 / 插屏实例、不调 show()、不发 /api/reward-video/*
 const TEACHER_BLOCK_TITLE = '教师账号不参与运动记录';
 const TEACHER_BLOCK_SUB = '北斗运动仅对学生开放，教师账号不能领取步数奖励。';
 const TEACHER_TOAST = '教师账号不参与运动记录';
 
-// 已知角色（本地缓存优先）：'teacher' / 'student' / ''
+// 转盘动画：圈数与每格度数（8 格 = 45°）
+const SPIN_ROUNDS = 5;
+const SECTOR_COUNT = 8;
+const DEG_PER_SECTOR = 360 / SECTOR_COUNT;
+
 function cachedRole() {
   try {
     const u = auth.getUser();
@@ -25,16 +37,11 @@ function cachedRole() {
   }
 }
 
-// ===== 激励视频实例：模块级全局单例 =====
-// 必须只创建一次、回调只注册一次 —— 每次 onLoad/onShow 重建实例或重复 onClose(() => …)
-// 会让「一次观看」触发多次上报 → 多次入账。此处：
-//   · 同一个 adUnitId 复用同一个实例（只有配置换广告位时才 destroy 重建）
-//   · onLoad / onError / onClose 只在实例创建时注册一次
-//   · onClose 只做一次广播：把 isEnded 交给「当前这一次观看」的等待者（同时只允许一个）
+// ===== 激励视频实例：模块级全局单例（沿用一版实现，回调只注册一次）=====
 let videoAd = null;
 let videoAdUnitId = '';
-let videoAdReady = false; // onLoad 已触发
-let closeWaiter = null; // 当前这次观看的等待者
+let videoAdReady = false;
+let closeWaiter = null;
 
 function ensureVideoAd(adUnitId) {
   const id = adUnitId || DEFAULT_AD_UNIT_ID;
@@ -49,21 +56,19 @@ function ensureVideoAd(adUnitId) {
   videoAd.onLoad(() => {
     videoAdReady = true;
   });
-  // 加载失败：只记日志，绝不上报入账
   videoAd.onError((err) => {
-    console.warn('[reward] 激励视频加载失败（本次不入账）', err);
+    console.warn('[beidou] 激励视频加载失败（本次不计次）', err);
   });
   videoAd.onClose((res) => {
     const waiter = closeWaiter;
     closeWaiter = null;
     if (!waiter) return;
-    // 只有「完整看完」才入账；提前关闭或回调不带 isEnded 一律不入账
+    // 只有「完整看完」才计次；提前关闭或回调不带 isEnded 一律不计
     waiter(!!(res && res.isEnded === true));
   });
   return videoAd;
 }
 
-// 官方参考写法：已加载直接 show，未加载/失败则 load 后重试一次
 function showVideoAd() {
   const first = videoAdReady
     ? videoAd.show()
@@ -71,37 +76,27 @@ function showVideoAd() {
   return first.catch(() => Promise.resolve(videoAd.load()).then(() => videoAd.show()));
 }
 
-// 等待这一次观看的结束结果（true = 完整看完）
 function waitForClose() {
   return new Promise((resolve) => {
     closeWaiter = resolve;
   });
 }
 
-// ===== 插屏广告（北斗运动页）：模块级全局单例 + 回调只注册一次 =====
-// 广告位 ID 属于客户端公开标识（与上方激励视频同理），不是密钥。
+// ===== 插屏广告（沿用一版：进页面首屏加载完展示 1 次，会话最多 3 次）=====
 const INTERSTITIAL_AD_UNIT_ID = 'adunit-773c53ab76db1155';
-// 展示节奏（常量集中在这里，便于以后调）：
-//   · 时机 = 「进入页面、首屏数据加载完成之后」展示 1 次（页面已渲染完，不会跟首屏渲染打架）
-//   · 每次进入最多 1 次：onShow 重入（从别的页返回 / 切前台）不再重复弹
-//   · 本次小程序运行（会话）内最多展示 INTERSTITIAL_SESSION_MAX 次 —— 反复进出页面也不会刷屏
-//     （插屏本身只能被消费一次：show() 后实例失效，下次进入会重建实例，计数器在模块级累计）
-//   · show() 失败（无填充 / 开发者工具无广告 / 频次限制）catch 静默，且不占额度
 const INTERSTITIAL_SESSION_MAX = 3;
-let interstitialAd = null; // 全局单例：只创建一次
-let interstitialShowCount = 0; // 会话内插屏已展示次数（模块级 = 反复进出页面也累计）
-let adPage = null; // 当前页面实例：只用于把插屏事件转发到页面级日志出口
+let interstitialAd = null;
+let interstitialShowCount = 0;
+let adPage = null;
 
-// 页面级日志出口（页面已卸载则跳过日志，绝不影响业务）
 function emitAdEvent(name, payload) {
   try {
     if (adPage && typeof adPage[name] === 'function') adPage[name](payload);
   } catch (e) {
-    /* 记日志失败也不能影响入账 */
+    /* 记日志失败也不能影响业务 */
   }
 }
 
-// 创建插屏单例：只创建一次、onLoad/onError/onClose 只注册一次（教师账号根本走不到这里）
 function ensureInterstitialAd() {
   if (interstitialAd) return interstitialAd;
   if (!wx.createInterstitialAd) return null;
@@ -112,72 +107,152 @@ function ensureInterstitialAd() {
   return interstitialAd;
 }
 
-// 进入页面时展示 1 次插屏（由 onShow 在首屏数据加载完成后调用）：
-//   · 每次进入最多 1 次（pageData._entryInterstitialDone）
-//   · 会话内最多 INTERSTITIAL_SESSION_MAX 次（模块级计数，跨页面重进累计）
-//   · 无填充 / 失败一律 catch 静默，且失败不增加已展示计数（不占额度）
 function showEntryInterstitial(pageData) {
   if (!pageData || pageData._entryInterstitialDone) return;
   if (interstitialShowCount >= INTERSTITIAL_SESSION_MAX) return;
   const ad = ensureInterstitialAd();
   if (!ad) return;
-  // 先占位：同一次进入内 onShow 重入也不会再触发第二次 show()
   pageData._entryInterstitialDone = true;
   ad.show()
     .then(() => {
       interstitialShowCount += 1;
     })
     .catch((err) => {
-      // 失败静默，不占额度：下次进入仍可再试
-      console.warn('[reward] 插屏广告显示失败（已静默，不影响页面）', err);
+      console.warn('[beidou] 插屏广告显示失败（已静默，不影响页面）', err);
     });
 }
 
-// 每次可获得 / 今日已入账 的展示文案（距离走 fmt.formatDistance、时长走 fmt.formatDuration）
-function distanceText(meters) {
-  return fmt.formatDistance(meters || 0);
+// 客户端生成的幂等凭据（弱网重试/连点重复提交时服务端只算一次）
+function makeNonce(prefix) {
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function durationText(seconds) {
-  return fmt.formatDuration(seconds || 0);
+// 扇区视觉：把服务端下发的 prizeKey 展开成 8 个格子的**渲染数据**。
+// ⚠️ 只做渲染，不做任何排序/去重 —— sectors 的顺序就是服务端抽奖时用的顺序。
+//
+// 角度约定（必须与 CSS 和 spinTo() 三者一致，任一处错位就会「停在 A 却发 B」）：
+//   · 扇区 i 覆盖 [i*45°, (i+1)*45°)，第 0 格从正上方（12 点）开始顺时针排；
+//   · CSS 的 conic-gradient 也是从 12 点开始顺时针，所以两者天然对齐；
+//   · spinTo 把「第 index 格的中心」即 (index*45 + 22.5)° 转到指针（0°）位置。
+function buildSectorViews(sectors, prizes) {
+  const byKey = new Map((prizes || []).map((p) => [p.key, p]));
+  return (sectors || []).map((key, i) => {
+    const p = byKey.get(key) || { key, label: key, type: 'none', amount: 0 };
+    return {
+      key: `${key}-${i}`, // wx:key 必须唯一（同一 prizeKey 可能出现在多个扇区）
+      prizeKey: key,
+      label: p.label || key,
+      type: p.type,
+      amount: p.amount || 0,
+      startDeg: i * DEG_PER_SECTOR, // 扇区起始边（画分割线用）
+      centerDeg: i * DEG_PER_SECTOR + DEG_PER_SECTOR / 2, // 扇区中心（放标签、也是停位目标）
+    };
+  });
+}
+
+// 扇区底色（与 .is-steps/.is-draw/.is-none 的浅色系保持一致，但这里需要具体色值画 conic-gradient）
+const SECTOR_FILL = {
+  steps: '#ffe4cc',
+  draw: '#fff0c2',
+  none: '#eff1f5',
+};
+
+// 生成 conic-gradient：每 45° 一段，按 sectors 顺序上色
+function buildWheelBg(sectors, prizes) {
+  const byKey = new Map((prizes || []).map((p) => [p.key, p]));
+  const stops = [];
+  (sectors || []).forEach((key, i) => {
+    const p = byKey.get(key) || { type: 'none' };
+    const color = SECTOR_FILL[p.type] || SECTOR_FILL.none;
+    const from = i * DEG_PER_SECTOR;
+    const to = (i + 1) * DEG_PER_SECTOR;
+    stops.push(`${color} ${from}deg ${to}deg`);
+  });
+  if (!stops.length) return '#eff1f5';
+  return `conic-gradient(from 0deg, ${stops.join(', ')})`;
+}
+
+// 概率公示文案：百分比由服务端算好下发，前端只拼字符串（自己算会与配置漂移）
+function buildOddsText(prizes) {
+  if (!prizes || !prizes.length) return '';
+  return prizes.map((p) => `${p.label} ${p.percent}%`).join(' · ');
+}
+
+// 签到 7 天格子：把「已签/今天/未来」状态画出来
+function buildCheckinCells(checkin) {
+  const ms = (checkin && checkin.milestones) || [];
+  const streak = (checkin && checkin.streak) || 0;
+  const done = !!(checkin && checkin.done);
+  const todayIdx = checkin && checkin.todayIndex;
+  return ms.map((m, i) => {
+    const dayNo = i + 1;
+    // 已签 = 连续天数已经覆盖到这一天。
+    //   · 今天已签：streak 已含今天 → 第 1..streak 天全部打勾
+    //   · 今天未签：streak 是「昨天为止」的连续天数 → 第 1..streak 天打勾，第 streak+1 天是今天
+    const signed = dayNo <= streak;
+    const isToday = !done && todayIdx === i;
+    return {
+      dayNo,
+      signed,
+      isToday,
+      draw: m.draw || 0,
+      steps: m.steps || 0,
+      label: `第${dayNo}天`,
+      rewardText: m.steps > 0 ? `+${m.draw}次 +${m.steps}步` : `+${m.draw}次`,
+    };
+  });
 }
 
 Page({
   data: {
     loading: true,
-    enabled: true,
-    watching: false,
-    // 教师拦截：true = 本页整块不渲染（WXML 只有这一层 wx:if），
-    // 首帧用本地缓存的角色判定，先拦再跳，避免教师看到奖励内容/广告节点
     blocked: false,
-    adUnitId: '',
-    watchCount: 0,
-    stepsEarned: 0, // 保留：reward_video_records 累计步数（历史口径展示用）
+    enabled: true,
+
+    // 转盘
+    sectors: [], // 8 格渲染数据（startDeg / centerDeg / type / label）
+    wheelBg: '', // conic-gradient 背景（按服务端 sectors 顺序上色）
+    rotateDeg: 0, // 转盘旋转角度（只影响观感）
+    spinning: false,
+    lastPrize: null, // 本次中奖结果（服务端下发）
+    recent: [], // 最近 5 条中奖记录
+
+    // 次数
     remaining: 0,
-    limit: 0,
-    // 每次观看可获得：四项（步数 / 距离米 / 卡路里 / 时长秒）
-    perWatch: { steps: 0, distance: 0, calories: 0, durationSeconds: 0 },
-    perWatchDistanceText: '0 m',
-    perWatchDurationText: '00:00',
-    // 今日已入账：四项（真源 = 当日 run_records 的 beidou 记录）
+    unlimited: false,
+    maxPerDay: 0,
+    drawTotal: 0,
+    drawUsed: 0,
+
+    // 任务
+    video: { drawPerWatch: 0, count: 0, remaining: 0, dailyLimit: 0 },
+    share: { drawPerShare: 0, count: 0, remaining: -1, dailyLimit: 0 },
+
+    // 签到
+    checkin: { enabled: false, done: false, streak: 0, cells: [], todayRewardText: '' },
+
+    // 封顶（必须在抽到空奖**之前**就告诉用户）
+    cap: { cap: 0, used: 0, left: 0, capped: false },
+    capText: '',
+
+    // 今日已入账四项
     earned: { steps: 0, distance: 0, calories: 0, durationSeconds: 0 },
     earnedStepsText: '0',
     earnedDistanceText: '0 m',
     earnedCaloriesText: '0',
     earnedDurationText: '00:00',
-    rewarded: null, // 刚看完一次的结果（含四项）
+
+    // 规则
+    oddsText: '',
+    adUnitId: '',
   },
 
   // ===== 教师拦截（三道：入口 onStatsTap / 这里 onLoad / onShow）=====
-  // 判定成功：本页不渲染任何内容、不创建广告实例、不发业务请求，提示后直接退出本页。
-  // 刻意做成「主动拦截」而不是「碰巧打不开」：任何进入方式（隐藏入口 / 分享链接 /
-  // navigateTo / 开发者工具直接填路径）都会被弹回。
   blockTeacher() {
-    if (this._guardRedirecting) return; // 只处理一次（onLoad + onShow 都可能命中）
+    if (this._guardRedirecting) return;
     this._guardRedirecting = true;
     this.setData({ blocked: true, loading: false });
     wx.showToast({ title: TEACHER_TOAST, icon: 'none' });
-    // 只做说明弹窗 + 退出：教师连本页内容都没渲染（blocked=true），也没有任何广告实例
     wx.showModal({
       title: TEACHER_BLOCK_TITLE,
       content: TEACHER_BLOCK_SUB,
@@ -187,7 +262,6 @@ Page({
     });
   },
 
-  // 退出本页：优先返回上一页；页面栈里没有上一页（如开发者工具直接打开该路径）则回首页
   leavePage() {
     const fallback = () => {
       if (wx.reLaunch) wx.reLaunch({ url: '/pages/home/home' });
@@ -206,21 +280,15 @@ Page({
   },
 
   onLoad() {
-    // 未登录 / 已退出 / 游客：统一跳登录页，不执行任何业务逻辑
     if (!getApp().requireLogin()) return;
-    // 角色已知是教师 → 首帧就拦（不请求接口、不创建任何广告实例、不渲染奖励内容）
-    if (cachedRole() === 'teacher') {
-      this.blockTeacher();
-    }
+    if (cachedRole() === 'teacher') this.blockTeacher();
   },
 
   onShow() {
-    // 未登录 / 已退出 / 游客：统一跳登录页，不执行任何业务逻辑
     if (!getApp().requireLogin()) return;
-    if (this._guardRedirecting) return; // 已在拦截退出中：不再加载、不再重复提示
-    adPage = this; // 插屏事件（模块级单例注册）转发到本页 adLoad/adError/adClose 日志出口
+    if (this._guardRedirecting) return;
+    adPage = this;
     this._unloaded = false;
-    // 教师：连业务接口都不发（教师连"页面能打开"的观感都不该有）
     if (cachedRole() === 'teacher') {
       this.blockTeacher();
       return;
@@ -229,95 +297,328 @@ Page({
   },
 
   onUnload() {
-    // 全局单例不销毁（下次进入复用，避免重建实例 / 重复注册回调）；
-    // 只作废「本次观看」的等待者：离开页面后即便广告关闭也不再上报
+    // 全局单例不销毁（下次进入复用）；只作废「本次观看」的等待者
     closeWaiter = null;
-    if (adPage === this) adPage = null; // 页面已卸载：插屏事件不再往本页转发日志
+    if (adPage === this) adPage = null;
     this._unloaded = true;
   },
 
-  // ===== 广告事件（仅日志，无任何副作用）：插屏回调在模块级单例上只注册一次，事件转发到这里 =====
+  // ===== 广告事件（仅日志）=====
   adLoad() {
-    console.log('[reward] 插屏广告加载成功');
+    console.log('[beidou] 插屏广告加载成功');
   },
 
   adError(err) {
-    console.error('[reward] 插屏广告加载失败', err);
+    console.error('[beidou] 插屏广告加载失败', err);
   },
 
   adClose() {
-    console.log('[reward] 插屏广告已关闭');
+    console.log('[beidou] 插屏广告已关闭');
   },
 
-  // 兜底：老服务端只回 stepsPerWatch/stepsEarned 时也能完整展示四项
-  pickResult(data) {
-    const per = data.perWatch || {
-      steps: data.stepsPerWatch || 0,
-      distance: data.distancePerWatch || 0,
-      calories: data.caloriesPerWatch || 0,
-      durationSeconds: data.durationPerWatch || 0,
+  // ===== 分享（点分享即计次：微信没有分享成功回调，见方案 §2 R2）=====
+  onShareAppMessage() {
+    // 卡片路径不带任何标识（没有归因需求），避免把内部标识传播出去
+    return {
+      title: '一起来攒步数 · 唐唐快跑',
+      path: '/pages/splash/splash',
     };
-    const earned = data.earned || {
-      steps: data.stepsEarned || 0,
-      distance: 0,
-      calories: 0,
-      durationSeconds: 0,
-    };
-    return { per, earned };
   },
 
+  /**
+   * 「邀请同学一起跑」按钮（button open-type="share" 的 bind:tap）。
+   *
+   * 微信的 onShareAppMessage 在**分享面板弹出时**触发，用户点取消也会触发，
+   * 所以「分享成功」在技术上不可观测。这里把它当作「点击即计次」，
+   * 由服务端的最小间隔 + 可配上限兜底（见 services/beidou.js::reportShare）。
+   *
+   * ⚠️ 这里**不 await**：分享面板由 open-type="share" 同步弹出，上报是并发进行的，
+   *    上报失败不能影响分享本身（反之亦然）。
+   */
+  onShareTap() {
+    if (this._sharing) return;
+    this._sharing = true;
+    const report = auth.post('/api/beidou/share/report', { shareId: makeNonce('sh') });
+    report
+      .then((res) => {
+        if (res && res.success) {
+          this.applyCounters(res);
+          wx.showToast({ title: `+${res.gained || 1} 次抽奖机会`, icon: 'none' });
+        } else if (res && res.message) {
+          wx.showToast({ title: res.message, icon: 'none' });
+        }
+      })
+      .catch((e) => {
+        if (e.code === 403004) this.showRestriction(e);
+        else wx.showToast({ title: e.message, icon: 'none' });
+      })
+      .then(() => {
+        this._sharing = false;
+      });
+  },
+
+  // ===== 数据加载 =====
   async load() {
     try {
-      const me =
-        (await getApp().ensureLogin()) || (getApp().globalData && getApp().globalData.userInfo) || {};
-      // 第二道闸门：接口 / 缓存拿到的最新角色是教师 → 立刻拦（此时还没发任何业务请求）
+      const me = (await getApp().ensureLogin()) || (getApp().globalData && getApp().globalData.userInfo) || {};
       if ((me.role || '') === 'teacher') {
         this.blockTeacher();
         return;
       }
-      const data = await auth.get('/api/reward-video/today');
-      const { per, earned } = this.pickResult(data);
-      // 广告位来自服务端配置（缺省用默认广告位）；提前创建单例让广告先开始加载。
-      // 走到这里的只可能是学生（教师已在上面被拦掉），所以这里创建实例是安全的。
-      // 同时预建插屏单例：进入页面就要展示一次，提前创建可省掉首次 show 的等待。
+      const data = await auth.get('/api/beidou/today');
+      if (data && data.blocked) {
+        this.blockTeacher();
+        return;
+      }
+      // 走到这里的只可能是学生，提前创建广告单例让广告先加载
       ensureVideoAd(data.adUnitId);
       ensureInterstitialAd();
-      this.setData({
-        loading: false,
-        enabled: data.enabled,
-        adUnitId: data.adUnitId || '',
-        watchCount: data.watchCount,
-        stepsEarned: data.stepsEarned,
-        limit: data.limit,
-        remaining: data.remaining != null ? data.remaining : Math.max(0, data.limit - data.watchCount),
-        perWatch: per,
-        perWatchDistanceText: distanceText(per.distance),
-        perWatchDurationText: durationText(per.durationSeconds),
-        earned,
-        earnedStepsText: fmt.formatNumber(earned.steps),
-        earnedDistanceText: distanceText(earned.distance),
-        earnedCaloriesText: fmt.formatNumber(earned.calories),
-        earnedDurationText: durationText(earned.durationSeconds),
-      });
-      // 插屏时机：进入页面（首屏数据加载完成之后）展示 1 次；
-      // 节流（会话上限 / 每次进入仅 1 次 / 失败静默不占额度）见 showEntryInterstitial
+      this.applyState(data);
       showEntryInterstitial(this);
     } catch (e) {
-      if (e.code === 403003) return; // 未绑定：request.js 已跳登录页（如已主动退出）
+      if (e.code === 403003) return; // 未绑定：request.js 已跳登录页
       this.setData({ loading: false });
       wx.showToast({ title: e.message, icon: 'none' });
     }
   },
 
-  async watch() {
-    if (this._busy) return; // 防连点：一次只处理一次观看
-    if (this.data.blocked) return; // 教师拦截中：不创建广告、不请求、不入账
+  // 把服务端 today 状态铺到页面 data
+  applyState(data) {
+    const e = data.earned || {};
+    const checkin = data.checkin || {};
+    const cap = data.cap || {};
+    const cells = buildCheckinCells({ ...checkin, milestones: checkin.milestones });
+    const todayCell = cells.find((c) => c.isToday) || cells[Math.min(checkin.streak || 0, cells.length - 1)];
+    const prizes = (data.draw && data.draw.prizes) || [];
+    const sectorList = (data.draw && data.draw.sectors) || [];    const capText =
+      cap.cap > 0 && cap.capped
+        ? `今日步数奖励已达上限（${cap.cap} 步），明天再来`
+        : cap.cap > 0
+          ? `今日步数奖励还剩 ${cap.left} 步额度`
+          : '';
+    this.setData({
+      loading: false,
+      enabled: data.enabled !== false,
+      sectors: buildSectorViews(sectorList, prizes),
+      wheelBg: buildWheelBg(sectorList, prizes),
+      remaining: (data.draw && data.draw.remaining) || 0,
+      unlimited: !!(data.draw && data.draw.unlimited),
+      maxPerDay: (data.draw && data.draw.maxPerDay) || 0,
+      drawTotal: (data.draw && data.draw.total) || 0,
+      drawUsed: (data.draw && data.draw.used) || 0,
+      video: data.video || { drawPerWatch: 0, count: 0, remaining: 0, dailyLimit: 0 },
+      share: data.share || { drawPerShare: 0, count: 0, remaining: -1, dailyLimit: 0 },
+      checkin: {
+        enabled: checkin.enabled !== false,
+        done: !!checkin.done,
+        streak: checkin.streak || 0,
+        cells,
+        todayRewardText: todayCell ? todayCell.rewardText : '',
+      },
+      cap: { cap: cap.cap || 0, used: cap.used || 0, left: cap.left || 0, capped: !!cap.capped },
+      capText,
+      earned,
+      earnedStepsText: fmt.formatNumber(e.steps || 0),
+      earnedDistanceText: fmt.formatDistance(e.distance || 0),
+      earnedCaloriesText: fmt.formatNumber(e.calories || 0),
+      earnedDurationText: fmt.formatDuration(e.durationSeconds || 0),
+      recent: data.recent || [],
+      oddsText: buildOddsText(prizes),
+      adUnitId: (data.video && data.video.adUnitId) || '',
+    });
+  },
+
+  // 只刷新「次数相关」字段（抽奖/看视频/分享/签到后调用，避免整页重排导致转盘闪一下）
+  applyCounters(res) {
+    if (!res) return;
+    const patch = {};
+    if (res.remaining !== undefined) patch.remaining = res.remaining;
+    if (res.unlimited !== undefined) patch.unlimited = !!res.unlimited;
+    if (res.maxPerDay !== undefined) patch.maxPerDay = res.maxPerDay;
+    if (res.total !== undefined) patch.drawTotal = res.total;
+    if (res.used !== undefined) patch.drawUsed = res.used;
+    if (Object.keys(patch).length) this.setData(patch);
+  },
+
+  showRestriction(e) {
+    const r = e.restriction || {};
+    wx.showModal({
+      title: `${r.text || '该功能'}已被限制`,
+      content: `${r.reason || '数据异常'}\n解封时间：${r.until ? String(r.until).slice(0, 16).replace('T', ' ') : '永久'}`,
+      confirmText: '去申诉',
+      cancelText: '知道了',
+      success: (res) => {
+        if (res.confirm) wx.navigateTo({ url: `/pages/appeal/submit?scope=${r.scope || 'sync'}` });
+      },
+    });
+  },
+
+  // ===== 抽奖 =====
+  async draw() {
+    if (this._busy || this.data.spinning) return;
+    if (this.data.blocked) return;
     if (!this.data.enabled) {
       wx.showToast({ title: '活动暂未开启', icon: 'none' });
       return;
     }
     if (this.data.remaining <= 0) {
-      wx.showToast({ title: '今日次数已用完，明天再来吧', icon: 'none' });
+      wx.showToast({ title: '抽奖次数不够了，去看视频或签到吧', icon: 'none' });
+      return;
+    }
+    this._busy = true;
+    this.setData({ spinning: true, lastPrize: null });
+    try {
+      const result = await auth.post('/api/beidou/draw', { drawId: makeNonce('dr') });
+      if (!result || !result.success) {
+        wx.showToast({ title: (result && result.message) || '抽奖失败', icon: 'none' });
+        this.setData({ spinning: false });
+        // 次数不足/太频繁时拉一次最新状态，保证按钮态与服务端一致
+        this.load();
+        return;
+      }
+      // 服务端下发 index → 前端只负责停到那一格（结果不由前端决定）
+      this.spinTo(result.index, () => {
+        this.applyDrawResult(result);
+      });
+    } catch (e) {
+      this.setData({ spinning: false });
+      if (e.code === 403001) {
+        wx.navigateTo({ url: '/pages/banned/banned' });
+        return;
+      }
+      if (e.code === 403004) {
+        this.showRestriction(e);
+        return;
+      }
+      wx.showToast({ title: e.message, icon: 'none' });
+    } finally {
+      this._busy = false;
+    }
+  },
+
+  /**
+   * 把第 index 格的中心转到指针位置（指针固定 0° = 正上方）。
+   *
+   * 目标角 = 5 整圈 + (360 - centerDeg)
+   *   第 index 格的标签中心在 centerDeg（相对于盘面），盘面要转 -(centerDeg) 才能把它送到 0°，
+   *   等价于转 360 - centerDeg。再叠 5 整圈保证一直朝一个方向转。
+   *
+   * 停位误差超过半格（22.5°）就会「停在 A 却发 B」，所以这个公式只允许与 buildSectorViews
+   * 的 centerDeg 共用同一套常量（DEG_PER_SECTOR）。
+   */
+  spinTo(index, done) {
+    const safeIndex = Math.max(0, Math.min(SECTOR_COUNT - 1, Number(index) || 0));
+    const current = this.data.rotateDeg || 0;
+    // 保证只往一个方向转：先把当前角抬到下一个整圈起点
+    const base = Math.ceil(current / 360) * 360;
+    const centerDeg = safeIndex * DEG_PER_SECTOR + DEG_PER_SECTOR / 2;
+    const target = base + 360 * SPIN_ROUNDS + (360 - centerDeg);
+    this.setData({ rotateDeg: target });
+    // 用 transitionend 而不是 setTimeout：低端机 transition 更慢，定时会错位。
+    // 但仍保留一个兜底定时器：少数机型/系统「减少动画」偏好下 transitionend 不触发。
+    const finish = () => {
+      if (this._spinTimer) {
+        clearTimeout(this._spinTimer);
+        this._spinTimer = null;
+      }
+      this.setData({ spinning: false });
+      if (typeof done === 'function') done();
+    };
+    this._spinDone = finish;
+    if (this._spinTimer) clearTimeout(this._spinTimer);
+    this._spinTimer = setTimeout(finish, 3600);
+  },
+
+  // 转盘 CSS transition 结束
+  onSpinEnd() {
+    if (this._spinDone) this._spinDone();
+  },
+
+  applyDrawResult(result) {
+    const p = result.prize || {};
+    const prizeText =
+      p.type === 'steps'
+        ? `抽到 ${p.label || p.amount + ' 步'}`
+        : p.type === 'draw'
+          ? '再来一次！'
+          : result.capped
+            ? '谢谢参与（今日步数奖励已达上限）'
+            : '谢谢参与';
+    // 图标与颜色在 JS 里算好：WXML 只在 name 属性里放一个变量，
+    // 避免检查器把模板里的字符串当图标名解析（且三元嵌套在模板里也不易读）。
+    const icon = p.type === 'steps' ? 'check-circle' : p.type === 'draw' ? 'refresh' : 'info-circle';
+    const color = p.type === 'none' ? 'var(--tt-text-3)' : 'var(--tt-brand)';
+    this.setData({
+      lastPrize: {
+        key: p.key || '',
+        type: p.type || 'none',
+        amount: p.amount || 0,
+        label: p.label || '',
+        capped: !!result.capped,
+        text: prizeText,
+        icon,
+        color,
+      },
+    });
+    this.applyCounters(result);
+    if (result.earned) {
+      this.setData({
+        earned: result.earned,
+        earnedStepsText: fmt.formatNumber(result.earned.steps || 0),
+        earnedDistanceText: fmt.formatDistance(result.earned.distance || 0),
+        earnedCaloriesText: fmt.formatNumber(result.earned.calories || 0),
+        earnedDurationText: fmt.formatDuration(result.earned.durationSeconds || 0),
+      });
+    }
+    if (result.cap) {
+      const cap = result.cap;
+      this.setData({
+        cap: { cap: cap.cap || 0, used: cap.used || 0, left: cap.left || 0, capped: !!cap.capped },
+        capText:
+          cap.cap > 0 && (cap.capped || result.capped)
+            ? `今日步数奖励已达上限（${cap.cap} 步），明天再来`
+            : cap.cap > 0
+              ? `今日步数奖励还剩 ${cap.left} 步额度`
+              : '',
+      });
+    }
+    if (p.type === 'steps' && !result.capped) {
+      wx.showToast({ title: `+${p.amount} 步`, icon: 'success' });
+    } else if (p.type === 'draw') {
+      wx.showToast({ title: '再来一次！', icon: 'none' });
+    }
+    if (result.newBadges && result.newBadges.length) {
+      // 徽章提示不打断：交给徽章页去看
+      console.log('[beidou] 解锁新徽章', result.newBadges.map((b) => b.name).join('、'));
+    }
+    // 中奖记录刷新（服务端下发，前端不自己攒）
+    this.loadRecent();
+  },
+
+  async loadRecent() {
+    try {
+      const data = await auth.get('/api/beidou/today');
+      if (data && data.recent) this.setData({ recent: data.recent });
+    } catch (e) {
+      /* 中奖记录拉不到不影响主流程 */
+    }
+  },
+
+  // ===== 看视频得次数 =====
+  async watch() {
+    if (this._watching) return;
+    if (this.data.blocked) return;
+    if (!this.data.enabled) {
+      wx.showToast({ title: '活动暂未开启', icon: 'none' });
+      return;
+    }
+    const v = this.data.video || {};
+    if (!v.drawPerWatch) {
+      wx.showToast({ title: '看视频暂不发放次数', icon: 'none' });
+      return;
+    }
+    if (v.dailyLimit > 0 && v.count >= v.dailyLimit) {
+      wx.showToast({ title: '今日看视频次数已用完，明天再来', icon: 'none' });
       return;
     }
     const ad = ensureVideoAd(this.data.adUnitId);
@@ -325,81 +626,82 @@ Page({
       wx.showToast({ title: '广告组件暂不可用', icon: 'none' });
       return;
     }
-    this._busy = true;
-    this.setData({ watching: true });
+    this._watching = true;
     try {
-      // 展示广告 → onClose(res) 判定是否完整观看 → 完整看完才上报
       const waiter = waitForClose();
       try {
         await showVideoAd();
       } catch (err) {
-        closeWaiter = null; // 广告没起来：本次不入账
-        console.warn('[reward] 广告展示失败（本次不入账）', err);
+        closeWaiter = null;
+        console.warn('[beidou] 广告展示失败（本次不计次）', err);
         wx.showToast({ title: '广告暂时无法播放，稍后再试', icon: 'none' });
         return;
       }
       const ended = await waiter;
-      if (!ended) return; // 中途关闭 / 未看完：不入账
+      if (!ended) return; // 中途关闭：不计次
 
-      // 本次观看的幂等凭据：网络重试或重复提交同一个 watchId，服务端只入账一次
-      const watchId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-      const result = await auth.post('/api/reward-video/report', { watchId });
-      if (result.success) {
-        const { per, earned } = this.pickResult({
-          perWatch: result.awarded,
-          earned: result.earned,
-          stepsPerWatch: result.stepsAwarded,
-        });
-        // 服务端返回的 earned 是重新聚合 run_records 得到的权威值（不是本地累加）
-        this.setData({
-          watchCount: result.watchCount,
-          stepsEarned: result.stepsEarned,
-          remaining: result.remaining,
-          perWatch: per,
-          perWatchDistanceText: distanceText(per.distance),
-          perWatchDurationText: durationText(per.durationSeconds),
-          earned,
-          earnedStepsText: fmt.formatNumber(earned.steps),
-          earnedDistanceText: distanceText(earned.distance),
-          earnedCaloriesText: fmt.formatNumber(earned.calories),
-          earnedDurationText: durationText(earned.durationSeconds),
-          rewarded: {
-            ...per,
-            distanceText: distanceText(per.distance),
-            durationText: durationText(per.durationSeconds),
-            badges: result.newBadges || [],
-          },
-        });
-        wx.showToast({ title: `+${per.steps} 步`, icon: 'success' });
-        // 注意：插屏只在「进入页面」时展示一次（见 showEntryInterstitial），
-        // 入账成功这里不再触发插屏 —— 产品要求把插屏时机前移到进页面。
+      const result = await auth.post('/api/beidou/video/report', { watchId: makeNonce('vd') });
+      if (result && result.success) {
+        this.applyCounters(result);
+        this.setData({ 'video.count': (v.count || 0) + 1 });
+        wx.showToast({ title: `+${result.gained || 1} 次抽奖机会`, icon: 'success' });
       } else {
-        wx.showToast({ title: result.message || '上报失败', icon: 'none' });
+        wx.showToast({ title: (result && result.message) || '上报失败', icon: 'none' });
         this.load();
       }
     } catch (e) {
-      if (e.code === 403001) {
-        wx.navigateTo({ url: '/pages/banned/banned' });
-        return;
-      }
-      // 限制微信同步类（激励奖励走同一条步数通道）时同样引导申诉
       if (e.code === 403004) {
-        const r = e.restriction || {};
-        wx.showModal({
-          title: `${r.text || '该功能'}已被限制`,
-          content: `${r.reason || '数据异常'}\n解封时间：${r.until ? String(r.until).slice(0, 16).replace('T', ' ') : '永久'}`,
-          confirmText: '去申诉',
-          cancelText: '知道了',
-          success: (res) => {
-            if (res.confirm) wx.navigateTo({ url: `/pages/appeal/submit?scope=${r.scope || 'sync'}` });
-          },
-        });
+        this.showRestriction(e);
         return;
       }
       wx.showToast({ title: e.message, icon: 'none' });
     } finally {
-      this._busy = false;
-      if (!this._unloaded) this.setData({ watching: false });
+      this._watching = false;
     }
+  },
+
+  // ===== 签到 =====
+  async doCheckin() {
+    if (this._checking) return;
+    if (this.data.blocked) return;
+    if (!this.data.checkin.enabled) {
+      wx.showToast({ title: '签到暂未开放', icon: 'none' });
+      return;
+    }
+    if (this.data.checkin.done) {
+      wx.showToast({ title: '今天已经签到过了', icon: 'none' });
+      return;
+    }
+    this._checking = true;
+    try {
+      const result = await auth.post('/api/beidou/checkin', {});
+      if (result && result.success) {
+        const a = result.award || {};
+        const parts = [];
+        if (a.draw) parts.push(`+${a.draw} 次抽奖`);
+        if (a.steps) parts.push(`+${a.steps} 步`);
+        wx.showToast({
+          title: parts.length ? `签到成功 ${parts.join(' ')}` : '签到成功',
+          icon: 'none',
+        });
+        // 签到会改变 streak / 格子状态，整体重载最省事且不会错
+        this.load();
+      } else {
+        wx.showToast({ title: (result && result.message) || '签到失败', icon: 'none' });
+      }
+    } catch (e) {
+      if (e.code === 403004) {
+        this.showRestriction(e);
+        return;
+      }
+      wx.showToast({ title: e.message, icon: 'none' });
+    } finally {
+      this._checking = false;
+    }
+  },
+
+  // 快捷跳转：次数不足时的「去赚次数」引导（滚到任务区）
+  scrollToTasks() {
+    if (wx.pageScrollTo) wx.pageScrollTo({ selector: '#tasks', duration: 240 });
   },
 });

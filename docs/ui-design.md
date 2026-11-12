@@ -328,8 +328,16 @@ WebP q80 = 41.4KB（更小，但 `image` 组件 iOS 需 14+，目标环境实测
     ① 入口：我的页「累计数据」连点 5 次（`profile.js::onStatsTap`）判定教师 → 只 toast「教师账号不参与运动记录」，**不 navigateTo**；
     ② 页面 `onLoad`：用本地缓存角色（`auth.getUser().role`）判定 → `blocked=true` 且转出，**首帧不闪内容**；
     ③ 页面 `onShow` / `load()` 接口确认角色后再拦一次（开发者工具直填路径 / 分享链接也进不去）。
-    拦截路径下**不创建**激励视频与插屏实例、**不调** `show()`、**不发** `/api/reward-video/*`，提示后 `wx.navigateBack`（无上一页则 `reLaunch` 首页）；
+    拦截路径下**不创建**激励视频与插屏实例、**不调** `show()`、**不发** `/api/beidou/*`，提示后 `wx.navigateBack`（无上一页则 `reLaunch` 首页）；
     WXML 用一层 `wx:if="{{!blocked}}"` 整块不渲染（`pages/reward/reward.wxml`）。
+  - **北斗运动 2.0（签到 + 转盘抽步数 + 做任务赚次数）**：同一页面 `pages/reward` 整体改写，
+    广告单例 / 插屏节流 / 教师三道拦截**全部沿用**（广告位与节流常量没动）。页面结构见 `docs/beidou-lottery-plan.md` §9。
+    三条 UI 硬约束：
+    ① **转盘 8 格，扇区顺序由服务端下发**（`draw.sectors`），前端只用 `conic-gradient` 上色 + 按 `centerDeg`
+       摆标签、按服务端 `index` 停位。**禁止前端自己排顺序**，否则会「停在 A 却发 B」；
+    ② **概率公示由服务端算**（`prizes[].percent`），页面「规则说明」只拼字符串。自己算必然与配置漂移；
+    ③ **封顶提示要在抽到空奖之前就能看到**（`.bd-cap` 常驻条 + 规则区说明），
+       而不是等用户抽到「谢谢参与」才解释 —— 那是「系统骗人」的观感来源。
   - **插屏节流**（常量在 `pages/reward/reward.js` 头部）：`INTERSTITIAL_SESSION_MAX = 3`（本次运行最多 3 次）、
     **每次进入最多 1 次**（`onShow` 重入不重复弹）、`show()` 失败 catch 静默**且不占额度**；
     计数器是模块级（跨页面重进累计），回调 `onLoad/onError/onClose` 只注册一次。

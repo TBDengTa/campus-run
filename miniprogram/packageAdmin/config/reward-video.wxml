@@ -1,110 +1,241 @@
 <view class="page tt-page cfg-page" wx:if="{{config}}">
   <view class="tt-section">
-    <text>北斗运动（激励视频）</text>
-    <text class="tt-section-extra">看完广告四项一起入账</text>
+    <text>北斗运动（抽奖活动）</text>
+    <text class="tt-section-extra">签到 + 转盘抽步数 + 做任务赚次数</text>
   </view>
 
+  <!-- ===== 基础 ===== -->
   <view class="tt-card cfg-card">
     <view class="cfg-fitem cfg-fitem-switch">
       <view class="cfg-flabel-col">
-        <text class="cfg-switch-label">启用</text>
-        <text class="cfg-fdesc">关闭后用户端隐藏北斗运动入口</text>
+        <text class="cfg-switch-label">启用活动</text>
+        <text class="cfg-fdesc">关闭后用户端整页只读、按钮全部置灰</text>
       </view>
-      <t-switch disabled="{{!canManage}}" value="{{config.rewardVideo.enabled}}" bind:change="onReward" data-field="enabled" />
+      <t-switch disabled="{{!canManage}}" value="{{config.beidou.enabled}}" bind:change="onField" data-field="beidou.enabled" />
     </view>
 
     <view class="cfg-fitem">
-      <text class="cfg-flabel">每日观看上限（次）</text>
-      <input class="cfg-input" disabled="{{!canManage}}" type="number" value="{{config.rewardVideo.dailyLimit}}" bindinput="onReward" data-field="dailyLimit" />
+      <view class="rv-flabel">
+        <text class="rv-flabel-title">每日抽奖次数上限</text>
+        <text class="cfg-fdesc">0 = 不限制（签到/邀请/再来一次都计入）</text>
+      </view>
+      <input class="cfg-input" disabled="{{!canManage}}" type="number" value="{{config.beidou.draw.maxPerDay}}" bindinput="onField" data-field="beidou.draw.maxPerDay" />
+    </view>
+
+    <view class="cfg-fitem">
+      <view class="rv-flabel">
+        <text class="rv-flabel-title">每日步数奖励上限</text>
+        <text class="cfg-fdesc">抽奖 + 签到合计；0 = 不封顶（不建议）</text>
+      </view>
+      <input class="cfg-input" disabled="{{!canManage}}" type="number" value="{{config.beidou.draw.dailyStepsCap}}" bindinput="onField" data-field="beidou.draw.dailyStepsCap" />
+    </view>
+
+    <!-- 这条提示很重要：次数不限 + 分享即给 时，这个封顶是唯一成本闸门 -->
+    <view class="rv-fnote">
+      每日步数奖励上限是**唯一**的成本闸门：达到上限后，转盘里的步数奖会自动降级为「谢谢参与」
+      （活动照常进行，用户不会看到报错）。把它调低是控成本最快的办法，不需要发版。
     </view>
   </view>
 
+  <!-- ===== 转盘奖池 ===== -->
   <view class="tt-section">
-    <text>每次观看奖励</text>
-    <text class="tt-section-extra">四项同时写入当日运动记录</text>
+    <text>转盘奖池</text>
+    <text class="tt-section-extra">最多 8 项 · 概率按权重归一</text>
   </view>
-
   <view class="tt-card cfg-card">
-    <view class="cfg-fitem">
-      <view class="rv-flabel">
-        <text class="rv-flabel-title">步数（步）</text>
-        <text class="cfg-fdesc">整数 ≥ 0</text>
-      </view>
-      <input class="cfg-input" disabled="{{!canManage}}" type="number" value="{{config.rewardVideo.stepsPerWatch}}" bindinput="onReward" data-field="stepsPerWatch" />
+    <view class="rv-odds-warn" wx:if="{{oddsInvalid}}">
+      <t-icon name="error-circle" size="30rpx" color="var(--td-warning-color-5)" />
+      <text class="rv-odds-warn-text">{{oddsInvalid}}</text>
     </view>
 
-    <view class="cfg-fitem">
-      <view class="rv-flabel">
-        <text class="rv-flabel-title">距离（米）</text>
-        <text class="cfg-fdesc">留空按步数换算 · 当前生效 {{config.rewardVideoEffective.distance}} 米</text>
+    <view class="rv-prize" wx:for="{{config.beidou.prizes}}" wx:key="key">
+      <view class="rv-prize-head">
+        <text class="rv-prize-idx">{{index + 1}}</text>
+        <input class="rv-prize-label" disabled="{{!canManage}}" value="{{item.label}}" placeholder="奖项名称" bindinput="onPrizeField" data-index="{{index}}" data-key="label" />
+        <text class="rv-prize-pct">{{item.percentText}}</text>
+        <view class="rv-prize-del" wx:if="{{canManage}}" bind:tap="removePrize" data-index="{{index}}">
+          <t-icon name="delete" size="30rpx" color="var(--tt-text-3)" />
+        </view>
       </view>
-      <input class="cfg-input" disabled="{{!canManage}}"
-        type="digit"
-        value="{{config.rewardVideo.distancePerWatch}}"
-        placeholder="按步数换算"
-        bindinput="onReward"
-        data-field="distancePerWatch"
-      />
+      <view class="rv-prize-body">
+        <picker
+          class="rv-prize-picker"
+          disabled="{{!canManage}}"
+          range="{{typeLabels}}"
+          value="{{item.type === 'steps' ? 0 : (item.type === 'none' ? 1 : 2)}}"
+          bindchange="onPrizeField"
+          data-index="{{index}}"
+          data-key="type"
+        >
+          <view class="rv-prize-pick">
+            <text>{{item.type === 'steps' ? '步数' : (item.type === 'none' ? '谢谢参与' : '再来一次')}}</text>
+            <t-icon name="chevron-down" size="26rpx" color="var(--tt-text-3)" />
+          </view>
+        </picker>
+        <view class="rv-prize-num" wx:if="{{item.type !== 'none'}}">
+          <text class="rv-prize-unit">{{item.type === 'steps' ? '步数' : '次数'}}</text>
+          <input class="rv-prize-input" disabled="{{!canManage}}" type="number" value="{{item.amount}}" bindinput="onPrizeField" data-index="{{index}}" data-key="amount" />
+        </view>
+        <view class="rv-prize-num">
+          <text class="rv-prize-unit">权重</text>
+          <input class="rv-prize-input" disabled="{{!canManage}}" type="number" value="{{item.weight}}" bindinput="onPrizeField" data-index="{{index}}" data-key="weight" />
+        </view>
+      </view>
     </view>
 
-    <view class="cfg-fitem">
-      <view class="rv-flabel">
-        <text class="rv-flabel-title">卡路里（千卡）</text>
-        <text class="cfg-fdesc">留空按步数换算 · 当前生效 {{config.rewardVideoEffective.calories}} 千卡</text>
-      </view>
-      <input class="cfg-input" disabled="{{!canManage}}"
-        type="number"
-        value="{{config.rewardVideo.caloriesPerWatch}}"
-        placeholder="按步数换算"
-        bindinput="onReward"
-        data-field="caloriesPerWatch"
-      />
-    </view>
-
-    <view class="cfg-fitem">
-      <view class="rv-flabel">
-        <text class="rv-flabel-title">时长（秒）</text>
-        <text class="cfg-fdesc">留空按步数换算 · 当前生效 {{config.rewardVideoEffective.durationSeconds}} 秒</text>
-      </view>
-      <input class="cfg-input" disabled="{{!canManage}}"
-        type="number"
-        value="{{config.rewardVideo.durationPerWatch}}"
-        placeholder="按步数换算"
-        bindinput="onReward"
-        data-field="durationPerWatch"
-      />
+    <view class="rv-add" wx:if="{{canManage}}" bind:tap="addPrize">
+      <t-icon name="add" size="30rpx" color="var(--tt-brand)" />
+      <text>添加奖项</text>
     </view>
 
     <view class="rv-fnote">
-      距离/卡路里/时长留空时，按项目既有的「步数 → 距离/卡路里/时长」换算（0.7 米/步、0.04 千卡/步、0.5 秒/步）派生；
-      填写后即以填写值为准。用户端展示与实际入账都取这里的生效值。
+      概率 = 该项权重 ÷ 权重合计，用户端「规则说明」里公示的就是这个数字。
+      权重填 0 的项不参与抽奖（不会出现在转盘上）；奖项全部非法时会回退到系统默认奖池，
+      避免出现「保存成功但没人能中奖」。
     </view>
   </view>
 
+  <!-- ===== 看视频 ===== -->
   <view class="tt-section">
-    <text>广告位</text>
-    <text class="tt-section-extra">客户端公开标识，可留空</text>
+    <text>看视频</text>
+    <text class="tt-section-extra">只看视频只加次数，不发步数</text>
   </view>
-
   <view class="tt-card cfg-card">
+    <view class="cfg-fitem">
+      <view class="rv-flabel">
+        <text class="rv-flabel-title">每次完成奖励次数</text>
+        <text class="cfg-fdesc">0 = 关闭该任务</text>
+      </view>
+      <input class="cfg-input" disabled="{{!canManage}}" type="number" value="{{config.beidou.video.drawPerWatch}}" bindinput="onField" data-field="beidou.video.drawPerWatch" />
+    </view>
+    <view class="cfg-fitem">
+      <view class="rv-flabel">
+        <text class="rv-flabel-title">每日可看次数</text>
+        <text class="cfg-fdesc">0 = 不限制</text>
+      </view>
+      <input class="cfg-input" disabled="{{!canManage}}" type="number" value="{{config.beidou.video.dailyLimit}}" bindinput="onField" data-field="beidou.video.dailyLimit" />
+    </view>
     <view class="cfg-fitem">
       <view class="rv-flabel">
         <text class="rv-flabel-title">激励视频广告位 ID</text>
         <text class="cfg-fdesc">留空用客户端内置默认广告位</text>
       </view>
-      <input class="cfg-input" disabled="{{!canManage}}"
-        type="text"
-        value="{{config.rewardVideo.adUnitId}}"
-        placeholder="默认广告位"
-        bindinput="onRewardText"
-        data-field="adUnitId"
-      />
+      <input class="cfg-input" disabled="{{!canManage}}" type="text" value="{{config.beidou.video.adUnitId}}" placeholder="默认广告位" bindinput="onTextField" data-field="beidou.video.adUnitId" />
     </view>
+  </view>
+
+  <!-- ===== 邀请 ===== -->
+  <view class="tt-section">
+    <text>邀请同学</text>
+    <text class="tt-section-extra">点分享即计次（微信无分享成功回调）</text>
+  </view>
+  <view class="tt-card cfg-card">
+    <view class="cfg-fitem">
+      <view class="rv-flabel">
+        <text class="rv-flabel-title">每次邀请奖励次数</text>
+        <text class="cfg-fdesc">0 = 关闭该任务</text>
+      </view>
+      <input class="cfg-input" disabled="{{!canManage}}" type="number" value="{{config.beidou.share.drawPerShare}}" bindinput="onField" data-field="beidou.share.drawPerShare" />
+    </view>
+    <view class="cfg-fitem">
+      <view class="rv-flabel">
+        <text class="rv-flabel-title">每日邀请次数上限</text>
+        <text class="cfg-fdesc">0 = 不限制（建议设 3）</text>
+      </view>
+      <input class="cfg-input" disabled="{{!canManage}}" type="number" value="{{config.beidou.share.dailyLimit}}" bindinput="onField" data-field="beidou.share.dailyLimit" />
+    </view>
+    <view class="cfg-fitem">
+      <view class="rv-flabel">
+        <text class="rv-flabel-title">最小间隔（秒）</text>
+        <text class="cfg-fdesc">纯防连点，不是次数上限</text>
+      </view>
+      <input class="cfg-input" disabled="{{!canManage}}" type="number" value="{{config.beidou.share.minIntervalSec}}" bindinput="onField" data-field="beidou.share.minIntervalSec" />
+    </view>
+    <view class="rv-fnote">
+      微信没有「分享成功」回调：分享面板一弹出就算触发，用户点取消也一样。
+      所以这里只能按「点击分享即计次」，由最小间隔与每日上限控制成本。
+      如果发现榜单头部都是邀请刷出来的，先把每日上限收紧。
+    </view>
+  </view>
+
+  <!-- ===== 签到 ===== -->
+  <view class="tt-section">
+    <text>连续签到阶梯</text>
+    <text class="tt-section-extra">{{config.beidou.checkin.milestones.length}} 天一轮 · 断签重置</text>
+  </view>
+  <view class="tt-card cfg-card">
+    <view class="cfg-fitem cfg-fitem-switch">
+      <view class="cfg-flabel-col">
+        <text class="cfg-switch-label">启用签到</text>
+        <text class="cfg-fdesc">关闭后用户端签到按钮置灰</text>
+      </view>
+      <t-switch disabled="{{!canManage}}" value="{{config.beidou.checkin.enabled}}" bind:change="onField" data-field="beidou.checkin.enabled" />
+    </view>
+    <view class="cfg-fitem cfg-fitem-switch">
+      <view class="cfg-flabel-col">
+        <text class="cfg-switch-label">满一轮后重新开始</text>
+        <text class="cfg-fdesc">关闭则第 8 天起一直按最后一天发</text>
+      </view>
+      <t-switch disabled="{{!canManage}}" value="{{config.beidou.checkin.loopAfter}}" bind:change="onField" data-field="beidou.checkin.loopAfter" />
+    </view>
+
+    <view class="rv-ms" wx:for="{{config.beidou.checkin.milestones}}" wx:key="dayNo">
+      <text class="rv-ms-day">第 {{index + 1}} 天</text>
+      <view class="rv-ms-num">
+        <text class="rv-prize-unit">次数</text>
+        <input class="rv-prize-input" disabled="{{!canManage}}" type="number" value="{{item.draw}}" bindinput="onMilestone" data-index="{{index}}" data-key="draw" />
+      </view>
+      <view class="rv-ms-num">
+        <text class="rv-prize-unit">步数</text>
+        <input class="rv-prize-input" disabled="{{!canManage}}" type="number" value="{{item.steps}}" bindinput="onMilestone" data-index="{{index}}" data-key="steps" />
+      </view>
+    </view>
+    <view class="rv-fnote">
+      步数阶梯与转盘共用「每日步数奖励上限」这一个封顶池，不会另开额度。
+      连续天数按「昨天是否签到」推算，断签立即从第 1 天重来。
+    </view>
+  </view>
+
+  <!-- ===== 中奖记录（只读）===== -->
+  <view class="tt-section">
+    <text>中奖记录</text>
+    <text class="tt-section-extra">只读 · 不允许补发或撤销</text>
+  </view>
+  <view class="tt-card cfg-card">
+    <view class="cfg-fitem cfg-fitem-link" bind:tap="toggleDraws">
+      <view class="cfg-flabel-col">
+        <text class="cfg-switch-label">{{showDraws ? '收起记录' : '展开最近中奖记录'}}</text>
+        <text class="cfg-fdesc">共 {{drawsTotal}} 条 · 用于对账与答疑</text>
+      </view>
+      <t-icon name="{{showDraws ? 'chevron-up' : 'chevron-down'}}" size="32rpx" color="var(--tt-text-3)" />
+    </view>
+
+    <block wx:if="{{showDraws}}">
+      <view class="rv-draw" wx:for="{{draws}}" wx:key="_id">
+        <view class="rv-draw-main">
+          <text class="rv-draw-name">{{item.realName || '未知学生'}}</text>
+          <text class="rv-draw-cls" wx:if="{{item.className}}">{{item.className}}</text>
+        </view>
+        <text class="rv-draw-prize">
+          {{item.type === 'steps' ? ('+' + item.amount + ' 步') : (item.type === 'draw' ? '再来一次' : '谢谢参与')}}
+        </text>
+        <text class="rv-draw-cap" wx:if="{{item.capped}}">封顶</text>
+        <text class="rv-draw-date">{{item.date}}</text>
+      </view>
+      <view class="rv-draw-empty" wx:if="{{!draws.length}}">暂无中奖记录</view>
+      <view class="rv-add" wx:if="{{draws.length < drawsTotal}}" bind:tap="loadMoreDraws">
+        <text>{{drawsLoading ? '加载中…' : '加载更多'}}</text>
+      </view>
+      <view class="rv-fnote">
+        抽奖流水是概率公示与学生对账的唯一凭据，因此这里只读。
+        要给学生补偿请走「人工发徽章」等独立链路，不要改动这张表 —— 改了就说不清发放与公示是否一致。
+      </view>
+    </block>
   </view>
 
   <view class="cfg-save-bar" wx:if="{{canManage}}">
     <t-button theme="primary" block loading="{{saving}}" bind:tap="save">保存配置</t-button>
   </view>
 
-  <view class="tt-footer">配置修改后立即对用户端生效（含每次可获得与入账值）</view>
+  <view class="tt-footer">配置修改后立即对用户端生效（奖池概率实时读取，无需重启）</view>
 </view>

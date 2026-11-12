@@ -73,6 +73,90 @@ const goalConfigSchema = new mongoose.Schema(
       enabled: { type: Boolean, default: true },
     },
     /**
+     * ===== 北斗运动 2.0（签到 + 转盘抽步数 + 看视频/分享得次数）=====
+     * 方案与口径的唯一说明见 docs/beidou-lottery-plan.md，改这里之前先读它。
+     *
+     * 与旧 rewardVideo 段的关系：**旧段原样保留**（存量记录、历史统计、老客户端都还要用），
+     * 本段是新增的独立配置，两者互不覆盖。旧段里「看一次视频直发步数」的能力由
+     * routes/reward-video.js 降级为只回 success:false（D9），不再产生步数。
+     *
+     * 三个必须记住的口径：
+     *   ① 抽奖结果**只由服务端定**，概率按 weight 归一（不是按扇区个数平均分）；
+     *   ② 扇区只是视觉，sectors 由服务端下发，前端不得自己排顺序（否则停位与结果对不上）；
+     *   ③ draw.dailyStepsCap 是**唯一成本闸门**（用户 2026-11-11 定了「次数不限 + 点分享即给」，
+     *      这两条本身没有成本上限，全靠这个封顶兜住排行榜与跑分）。
+     */
+    beidou: {
+      enabled: { type: Boolean, default: true },
+      // 看视频：看完给几次抽奖机会（**不再发步数**）
+      video: {
+        drawPerWatch: { type: Number, default: 1 },
+        dailyLimit: { type: Number, default: 10 }, // 每日可看次数上限
+        adUnitId: { type: String, default: '' }, // 空 = 用客户端内置默认广告位
+      },
+      // 分享：点分享即给次数（微信没有分享成功回调，见方案 §2 R2）
+      share: {
+        drawPerShare: { type: Number, default: 1 },
+        dailyLimit: { type: Number, default: 0 }, // 0 = 不限（遵 D11）
+        minIntervalSec: { type: Number, default: 5 }, // 服务端最小间隔，纯技术防连点
+      },
+      // 签到：连续 7 天阶梯，断签重置
+      checkin: {
+        enabled: { type: Boolean, default: true },
+        // 数组下标 0 = 连续第 1 天；长度即周期长度
+        milestones: {
+          type: [
+            new mongoose.Schema(
+              {
+                draw: { type: Number, default: 1 },
+                steps: { type: Number, default: 0 },
+              },
+              { _id: false }
+            ),
+          ],
+          default: () => [
+            { draw: 1, steps: 0 },
+            { draw: 1, steps: 0 },
+            { draw: 2, steps: 200 },
+            { draw: 1, steps: 0 },
+            { draw: 1, steps: 0 },
+            { draw: 1, steps: 0 },
+            { draw: 3, steps: 500 },
+          ],
+        },
+        // 超过周期后：true = 回到第 1 天重来；false = 一直按周期最后一天发
+        loopAfter: { type: Boolean, default: true },
+      },
+      draw: {
+        maxPerDay: { type: Number, default: 0 }, // 0 = 不限（遵 D11）
+        dailyStepsCap: { type: Number, default: 3000 }, // 每日抽奖/签到累计发步数上限（必需）
+      },
+      // 奖池：type 只有 steps / none / draw 三种（用户 2026-11-11 确认，不发跑分/徽章/实物）
+      prizes: {
+        type: [
+          new mongoose.Schema(
+            {
+              key: { type: String, required: true },
+              label: { type: String, default: '' },
+              type: { type: String, enum: ['steps', 'none', 'draw'], default: 'none' },
+              amount: { type: Number, default: 0 }, // steps = 步数；draw = 次数；none = 0
+              weight: { type: Number, default: 1 },
+            },
+            { _id: false }
+          ),
+        ],
+        default: () => [
+          { key: 'steps_100', label: '100 步', type: 'steps', amount: 100, weight: 30 },
+          { key: 'steps_300', label: '300 步', type: 'steps', amount: 300, weight: 16 },
+          { key: 'steps_800', label: '800 步', type: 'steps', amount: 800, weight: 6 },
+          { key: 'steps_1500', label: '1500 步', type: 'steps', amount: 1500, weight: 2 },
+          { key: 'again', label: '再来一次', type: 'draw', amount: 1, weight: 8 },
+          { key: 'none', label: '谢谢参与', type: 'none', amount: 0, weight: 38 },
+        ],
+      },
+    },
+
+    /**
      * 楼名白名单（用户 2026-10-21）：
      * 「为了防止教室、宿舍被学生不统一填写，请在系统设置中增加教学用楼的楼名列表与
      *   宿舍用楼的楼名列表，这样学生先选择楼名自己再去填写门牌号(纯数字)这样就统一了。」

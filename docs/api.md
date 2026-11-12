@@ -76,9 +76,35 @@
 
 `GET /effective` 生效目标 · `GET /plans` 预设计划 · `GET|POST /body-data` 身体数据（保存即算 BMI 并自动匹配计划） · `GET /my-plan` 我的计划
 
-## 激励视频 /api/reward-video
+## 激励视频 /api/reward-video（**已降级**）
 
-`GET /today` 今日次数/剩余 · `POST /report` 观看完成上报（服务端校验每日上限并加步数）
+`GET /today` 今日次数/剩余（保留给老客户端展示） · `POST /report` **只回 `{success:false, deprecated:true}`，不再发步数**。
+
+> 北斗运动 2.0 起，「看视频」不再直接发步数，改为发**抽奖次数**（见下方 `/api/beidou`）。
+> 旧接口刻意保留而不下线：老版本小程序缓存未更新时仍会调用，直接 404 会让它们弹错误框；
+> 回一句「已升级」既不会误伤，也不会被静默利用继续刷步。
+
+## 北斗运动 /api/beidou（签到 + 转盘抽步数 + 做任务赚次数）
+
+方案与口径唯一说明：`docs/beidou-lottery-plan.md`。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | /today | 页面首屏一次拿全：可抽次数 / 奖池归一概率 / 8 格扇区表 / 签到状态 / 今日已入账四项 / 最近 5 条中奖 / 封顶状态 |
+| POST | /draw | `{drawId}` → **服务端定结果**，返回 `{index, prize, capped, remaining, earned, newBadges}`；`index` 是最终停住的扇区下标 |
+| POST | /video/report | `{watchId}` → 加抽奖次数（**不发步数**）；同一 watchId 幂等 |
+| POST | /share/report | `{shareId}` → 加抽奖次数；服务端最小间隔去重 |
+| POST | /checkin | 连续签到；第 3/7 天按阶梯额外发步数（受每日封顶约束） |
+
+三条口径：
+- **步数只有两个出口**：转盘（`/draw`）与签到阶梯（`/checkin`）。看视频、分享只加次数。
+- **抽奖结果只由服务端定**：`roll` / `index` / `prize` 全在服务端算，前端只负责把第 `index` 格转到指针下；
+  扇区顺序也由服务端下发（`draw.sectors`），**前端不得重排**，否则会出现「停在 A 却发 B」。
+- **每日步数封顶（`draw.dailyStepsCap`，默认 3000）**：达到后步数奖**当场降级为「谢谢参与」**并置 `capped:true`，
+  活动照常进行（不是报错）。这是「次数不限 + 点分享即给」前提下**唯一的成本闸门**。
+
+教师账号与限制账号的处理与 `/api/reward-video` 一致：教师 → `200 + {success:false}`（不用 403003），
+限制登录 → `403 403001`，微信同步受限 → `403 403004`。
 
 ## 喝水 /api/water
 

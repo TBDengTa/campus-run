@@ -22,3 +22,214 @@
   line-height: 1.6;
   color: var(--tt-text-3);
 }
+
+/* ===== 奖池编辑 ===== */
+.rv-odds-warn {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  padding: 16rpx 20rpx;
+  margin-bottom: 16rpx;
+  border-radius: 16rpx;
+  background: var(--td-warning-color-1);
+}
+
+.rv-odds-warn-text {
+  flex: 1;
+  font-size: 22rpx;
+  line-height: 1.4;
+  color: var(--td-warning-color-7);
+}
+
+.rv-prize {
+  padding: 22rpx 0;
+  border-top: 2rpx solid var(--tt-line);
+}
+
+.rv-prize-head {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+}
+
+.rv-prize-idx {
+  flex-shrink: 0;
+  width: 40rpx;
+  height: 40rpx;
+  line-height: 40rpx;
+  text-align: center;
+  border-radius: 50%;
+  font-size: 22rpx;
+  font-weight: 700;
+  color: var(--tt-brand-deep);
+  background: var(--tt-brand-soft);
+}
+
+.rv-prize-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 27rpx;
+  color: var(--tt-text-1);
+}
+
+/* 归一后概率：颜色强调，因为这是要与用户端公示对齐的数字 */
+.rv-prize-pct {
+  flex-shrink: 0;
+  font-size: 24rpx;
+  font-weight: 700;
+  color: var(--tt-brand);
+}
+
+.rv-prize-del {
+  flex-shrink: 0;
+  width: 52rpx;
+  height: 52rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rv-prize-body {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  margin-top: 14rpx;
+  padding-left: 54rpx;
+}
+
+.rv-prize-picker {
+  flex-shrink: 0;
+}
+
+.rv-prize-pick {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  padding: 8rpx 18rpx;
+  border-radius: 12rpx;
+  font-size: 23rpx;
+  color: var(--tt-text-1);
+  background: var(--td-bg-color-component);
+}
+
+.rv-prize-num {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  min-width: 0;
+}
+
+.rv-prize-unit {
+  flex-shrink: 0;
+  font-size: 21rpx;
+  color: var(--tt-text-3);
+}
+
+.rv-prize-input {
+  flex: 1;
+  min-width: 0;
+  padding: 8rpx 14rpx;
+  border-radius: 12rpx;
+  font-size: 24rpx;
+  color: var(--tt-text-1);
+  background: var(--td-bg-color-component);
+}
+
+.rv-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
+  margin-top: 18rpx;
+  padding: 20rpx 0;
+  border-radius: 16rpx;
+  border: 2rpx dashed var(--tt-brand);
+  font-size: 25rpx;
+  color: var(--tt-brand);
+}
+
+/* ===== 签到阶梯 ===== */
+.rv-ms {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  padding: 18rpx 0;
+  border-top: 2rpx solid var(--tt-line);
+}
+
+.rv-ms-day {
+  flex-shrink: 0;
+  width: 120rpx;
+  font-size: 25rpx;
+  color: var(--tt-text-2);
+}
+
+.rv-ms-num {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  min-width: 0;
+}
+
+/* ===== 中奖记录 ===== */
+/* 可点击的整行（展开/收起记录）：只读账号也能点，所以不加 disabled */
+.cfg-fitem-link {
+  cursor: pointer;
+}
+
+.rv-draw {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  padding: 18rpx 0;
+  border-top: 2rpx solid var(--tt-line);
+}
+
+.rv-draw-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2rpx;
+}
+
+.rv-draw-name {
+  font-size: 25rpx;
+  color: var(--tt-text-1);
+}
+
+.rv-draw-cls {
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+}
+
+.rv-draw-prize {
+  flex-shrink: 0;
+  font-size: 24rpx;
+  font-weight: 600;
+  color: var(--tt-brand-deep);
+}
+
+.rv-draw-cap {
+  flex-shrink: 0;
+  padding: 2rpx 10rpx;
+  border-radius: 8rpx;
+  font-size: 18rpx;
+  color: var(--td-warning-color-7);
+  background: var(--td-warning-color-1);
+}
+
+.rv-draw-date {
+  flex-shrink: 0;
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+}
+
+.rv-draw-empty {
+  padding: 40rpx 0;
+  text-align: center;
+  font-size: 24rpx;
+  color: var(--tt-text-3);
+}

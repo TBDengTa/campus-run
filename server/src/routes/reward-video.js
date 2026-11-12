@@ -1,11 +1,9 @@
 const express = require('express');
-const { wrap, ok, ApiError } = require('../utils/response');
+const { wrap, ok } = require('../utils/response');
 const { auth } = require('../middlewares/auth');
 const GoalConfig = require('../models/goal-config');
 const RewardVideoRecord = require('../models/reward-video-record');
-const stepsSvc = require('../services/steps');
 const rewardVideoSvc = require('../services/reward-video');
-const anticheat = require('../services/anticheat');
 const { todayKey } = require('../utils/dates');
 
 const router = express.Router();
@@ -46,47 +44,24 @@ router.get(
   })
 );
 
-// 观看完成上报：一次性入账四项（步数/距离/卡路里/时长）
+// 观看完成上报：**已于 2.0 降级为只回提示，不再发步数**
+//
+// 为什么保留路由而不直接删（D9，用户 2026-11-11 裁决）：老版本小程序（缓存未更新、
+// 或用户长期不更新）仍在调这个接口。直接 404/410 会让这些客户端弹错误框；
+// 保留并回 success:false，它们只会看到一句「已升级」提示，**不会静默继续刷步**。
+// 真正的看视频加次数逻辑在 POST /api/beidou/video/report。
+//
+// ⚠️ 不要再往这里加回发步数的逻辑：北斗 2.0 的口径是「步数只能从转盘/签到出」
+//    （见 docs/beidou-lottery-plan.md §2 R1）。
 router.post(
   '/report',
   wrap(async (req, res) => {
-    // 教师账号不参与运动记录（不加步数/距离/卡路里/时长）。
-    // 这里刻意返回 200 + success:false，而不是 403003：小程序端把 403003 当成「未登录」会跳登录页。
-    if (stepsSvc.isTeacher(req.user)) {
-      return ok(res, { success: false, message: stepsSvc.TEACHER_BLOCK_MESSAGE, error: stepsSvc.TEACHER_BLOCK_MESSAGE });
-    }
-    // 反作弊/人工限制微信同步的账号：激励奖励走同一条步数通道，同样拦截
-    // （403004，小程序端已有对应提示与申诉引导）
-    const syncRestriction = anticheat.activeRestriction(req.user, 'sync');
-    if (syncRestriction) throw restrictedError(syncRestriction);
-
-    const result = await stepsSvc.reportRewardVideo(req.user, { watchId: (req.body || {}).watchId });
-    if (result.error) {
-      return ok(res, { success: false, message: result.error, ...result });
-    }
-    const { newBadges } = await stepsSvc.postSyncRefresh(req.user, [todayKey()]);
-    // 今日已入账的四项（聚合当日 source='beidou' 记录，与记录页/首页统计同源）
-    const earned = await rewardVideoSvc.earnedToday(req.user.openid, todayKey());
-    ok(res, { success: true, ...result, earned, newBadges });
+    ok(res, {
+      success: false,
+      deprecated: true,
+      message: '北斗运动已升级，请更新小程序后重新进入',
+    });
   })
 );
-
-// 限制类错误统一出口（与 routes/run.js 同一套映射）：
-//   login → 403001（整账号限制登录，小程序跳 pages/banned）
-//   sync / gps → 403004（单项能力受限，小程序提示并可申诉）
-function restrictedError(info) {
-  const scope = (info && info.scope) || 'login';
-  const reason = (info && info.reason) || (info && info.message) || '数据异常';
-  const until = (info && info.until) || null;
-  if (scope === 'login') {
-    return new ApiError(403, 403001, `检测到数据异常，账号已被限制登录：${reason}`, {
-      banned: { reason, until, banType: 'login' },
-    });
-  }
-  const text = scope === 'sync' ? '微信同步' : 'GPS 实跑';
-  return new ApiError(403, 403004, `${text}已被限制：${reason}`, {
-    restriction: { scope, text, reason, until },
-  });
-}
 
 module.exports = router;

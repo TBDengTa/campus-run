@@ -1,182 +1,227 @@
-<!-- 教师拦截：blocked=true 时整页不渲染（连奖励内容与广告节点都不进 DOM），
-     页面 JS 同步给出提示并 wx.navigateBack / reLaunch 退出本页。
-     这一层 wx:if 是「首帧也不闪内容」的关键：首帧就能从本地缓存判定教师角色 -->
+<!-- 教师拦截：blocked=true 时整页不渲染（连奖励内容与广告节点都不进 DOM） -->
 <view class="page tt-page" wx:if="{{!blocked}}">
-  <!-- ===== 主视觉 ===== -->
-  <view class="reward-hero">
-    <view class="reward-hero-body">
-      <view class="reward-hero-top">
-        <text class="reward-hero-label">北斗运动</text>
-        <text class="reward-hero-chip">每次 +{{perWatch.steps}} 步</text>
+
+  <!-- ===== 主视觉：今日剩余次数 ===== -->
+  <view class="bd-hero">
+    <view class="bd-hero-body">
+      <view class="bd-hero-top">
+        <text class="bd-hero-label">北斗运动</text>
+        <text class="bd-hero-chip">{{enabled ? '每日 0 点重置' : '活动未开启'}}</text>
       </view>
-      <view class="reward-hero-main">
-        <t-icon name="play-circle" size="52rpx" color="#ffffff" />
-        <text class="reward-hero-tip">{{enabled ? '看完视频，步数 · 距离 · 卡路里 · 时长四项一起到账' : '活动暂未开启，敬请期待'}}</text>
+      <view class="bd-hero-main">
+        <view class="bd-hero-num">
+          <text class="num-font bd-hero-num-val">{{remaining}}</text>
+          <text class="bd-hero-num-unit">次</text>
+        </view>
+        <text class="bd-hero-tip">看完视频、签到、邀请同学都能增加抽奖次数</text>
       </view>
     </view>
   </view>
 
-  <!-- ===== 每次观看可获得（四项） ===== -->
-  <view class="tt-section">每次观看可获得<text class="tt-section-extra">四项同时入账</text></view>
-  <view class="tt-card reward-card">
-    <view class="tt-stat-row reward-stat-row">
-      <view class="tt-stat">
-        <view class="tt-stat-value num-font reward-num">{{perWatch.steps}}</view>
-        <view class="tt-stat-label">步数</view>
-      </view>
-      <view class="tt-stat">
-        <view class="tt-stat-value num-font reward-num">{{perWatchDistanceText}}</view>
-        <view class="tt-stat-label">距离</view>
-      </view>
-      <view class="tt-stat">
-        <view class="tt-stat-value num-font reward-num">{{perWatch.calories}}</view>
-        <view class="tt-stat-label">千卡</view>
-      </view>
-      <view class="tt-stat">
-        <view class="tt-stat-value num-font reward-num">{{perWatchDurationText}}</view>
-        <view class="tt-stat-label">时长</view>
-      </view>
-    </view>
-    <view class="reward-note">奖励写入当日运动记录，记录页 / 排行榜 / 跑分 / 徽章同步生效</view>
+  <!-- ===== 封顶提示（必须在抽到空奖之前就能看到）===== -->
+  <view class="bd-cap" wx:if="{{capText}}">
+    <t-icon name="{{cap.capped ? 'error-circle' : 'info-circle'}}" size="30rpx" color="{{cap.capped ? 'var(--td-warning-color-5)' : 'var(--tt-text-3)'}}" />
+    <text class="bd-cap-text">{{capText}}</text>
   </view>
 
-  <!-- ===== 今日已入账（四项） ===== -->
-  <view class="tt-section">今日已入账<text class="tt-section-extra">{{watchCount}}/{{limit}} 次</text></view>
-  <view class="tt-card reward-card">
-    <view class="tt-stat-row reward-stat-row">
-      <view class="tt-stat">
-        <view class="tt-stat-value num-font reward-num">{{earnedStepsText}}</view>
-        <view class="tt-stat-label">步数</view>
-      </view>
-      <view class="tt-stat">
-        <view class="tt-stat-value num-font reward-num">{{earnedDistanceText}}</view>
-        <view class="tt-stat-label">距离</view>
-      </view>
-      <view class="tt-stat">
-        <view class="tt-stat-value num-font reward-num">{{earnedCaloriesText}}</view>
-        <view class="tt-stat-label">千卡</view>
-      </view>
-      <view class="tt-stat">
-        <view class="tt-stat-value num-font reward-num">{{earnedDurationText}}</view>
-        <view class="tt-stat-label">时长</view>
+  <!-- ===== 转盘 ===== -->
+  <view class="bd-wheel-wrap">
+    <view class="bd-wheel-glow"></view>
+    <!-- 指针（固定在正上方，尖端朝下） -->
+    <view class="bd-pointer"></view>
+    <!-- 盘面：背景是 conic-gradient 画的 8 等分扇区（由 JS 按服务端 sectors 生成），
+         标签用 rotate + translate 定位。旋转只改变观感，结果由服务端下发的 index 决定。 -->
+    <view
+      class="bd-wheel"
+      style="background: {{wheelBg}}; transform: rotate({{rotateDeg}}deg); transition: transform 3.2s cubic-bezier(0.15, 0.9, 0.05, 1);"
+      bind:transitionend="onSpinEnd"
+    >
+      <view class="bd-wedge-line" wx:for="{{sectors}}" wx:key="key" style="transform: rotate({{item.startDeg}}deg);"></view>
+      <view class="bd-label" wx:for="{{sectors}}" wx:key="key" style="transform: rotate({{item.centerDeg}}deg) translateY(-190rpx);">
+        <text class="bd-label-text {{item.type === 'none' ? 'is-none' : ''}}">{{item.label}}</text>
       </view>
     </view>
-
-    <view class="reward-quota">
-      <view class="reward-quota-head">
-        <text class="reward-quota-label">今日额度</text>
-        <text class="reward-quota-value num-font">{{watchCount}}/{{limit}}</text>
-      </view>
-      <view class="reward-quota-track">
-        <view class="reward-quota-fill" style="width: {{limit > 0 ? (watchCount * 100 / limit) : 0}}%"></view>
-      </view>
-      <view class="reward-quota-foot">
-        <text>剩余 {{remaining}} 次 · 每次 +{{perWatch.steps}} 步 / {{perWatchDistanceText}} / {{perWatch.calories}} 千卡 / {{perWatchDurationText}}</text>
-      </view>
+    <!-- 中心抽奖按钮 -->
+    <view class="bd-wheel-center {{spinning ? 'is-spinning' : ''}}" bind:tap="draw">
+      <text class="bd-wheel-center-text">{{spinning ? '抽奖中' : '抽奖'}}</text>
     </view>
   </view>
 
-  <!-- ===== 主行动按钮（观看视频 → 激励视频，isEnded === true 才入账） ===== -->
+  <!-- 抽奖主按钮（中心按钮之外再给一个明确的行动入口，低端机中心点可能难点到）
+       注意：禁用条件只看「剩余次数 <= 0」，不要看 unlimited ——
+       unlimited 只表示每日上限不设限，获得的总次数仍然是有限的。 -->
   <view
-    class="tt-pill-btn primary reward-action {{(!enabled || remaining <= 0 || watching) ? 'disabled' : ''}}"
-    bind:tap="watch"
+    class="tt-pill-btn primary bd-draw-btn {{(!enabled || remaining <= 0 || spinning) ? 'disabled' : ''}}"
+    bind:tap="draw"
   >
-    <t-icon
-      name="{{(!enabled || remaining <= 0) ? 'lock-on' : 'play-circle'}}"
-      size="36rpx"
-      color="#ffffff"
-    />
-    <text>{{watching ? '广告播放中…' : (!enabled ? '活动暂未开启' : (remaining > 0 ? '开启北斗运动领奖励' : '今日已用完'))}}</text>
+    <t-icon name="{{(!enabled || remaining <= 0) ? 'lock-on' : 'gift'}}" size="34rpx" color="#ffffff" />
+    <text>{{spinning ? '抽奖中…' : (!enabled ? '活动暂未开启' : (remaining <= 0 ? '次数不足 · 去做任务' : '开始抽奖'))}}</text>
   </view>
-  <view class="reward-action-note" wx:if="{{!enabled}}">活动暂未开启，请稍后再来</view>
-  <view class="reward-action-note" wx:elif="{{remaining <= 0}}">今日 {{limit}} 次额度已用完，明天 0 点重置</view>
-  <view class="reward-action-note" wx:elif="{{watching}}">请完整看完广告，中途关闭不会入账</view>
+  <view class="bd-draw-note" wx:if="{{!enabled}}">活动暂未开启，请稍后再来</view>
+  <view class="bd-draw-note" wx:elif="{{remaining <= 0}}">
+    <text bind:tap="scrollToTasks">去看看视频、签到或邀请同学 ›</text>
+  </view>
 
-  <!-- ===== 刚刚获得（四项） ===== -->
-  <view class="tt-section" wx:if="{{rewarded}}">刚刚获得</view>
-  <view class="tt-card reward-gain" wx:if="{{rewarded}}">
-    <view class="reward-gain-head">
-      <view class="tt-chip-icon reward-gain-icon">
-        <t-icon name="check-circle" size="44rpx" color="var(--tt-brand)" />
-      </view>
-      <view class="reward-gain-body">
-        <view class="reward-gain-title">四项奖励已入账</view>
-        <view class="reward-gain-sub">步数 · 距离 · 卡路里 · 时长 已计入今日运动记录</view>
+  <!-- ===== 本次中奖结果（服务端下发，不用前端停位推断）===== -->
+  <view class="tt-card bd-prize {{lastPrize.type === 'none' ? 'is-none' : ''}}" wx:if="{{lastPrize}}">
+    <view class="bd-prize-head">
+      <t-icon name="{{lastPrize.icon}}" size="44rpx" color="{{lastPrize.color}}" />
+      <view class="bd-prize-body">
+        <view class="bd-prize-title">{{lastPrize.text}}</view>
+        <view class="bd-prize-sub" wx:if="{{lastPrize.type === 'steps'}}">已计入今日运动记录</view>
+        <view class="bd-prize-sub" wx:elif="{{lastPrize.type === 'draw'}}">次数已回补，可以继续抽</view>
+        <view class="bd-prize-sub" wx:elif="{{lastPrize.capped}}">今日步数奖励额度已用完，明天再来</view>
+        <view class="bd-prize-sub" wx:else>再试一次运气</view>
       </view>
     </view>
-    <view class="tt-stat-row reward-stat-row reward-gain-stats">
+  </view>
+
+  <!-- ===== 签到（连续 7 天阶梯，断签重置）===== -->
+  <view class="tt-section">
+    <text>每日签到</text>
+    <text class="tt-section-extra">{{checkin.done ? '今日已签到' : (checkin.streak ? '已连签 ' + checkin.streak + ' 天' : '还没签到')}}</text>
+  </view>
+  <view class="tt-card bd-checkin">
+    <view class="bd-checkin-days">
+      <view
+        class="bd-checkin-cell {{item.signed ? 'is-signed' : ''}} {{item.isToday ? 'is-today' : ''}}"
+        wx:for="{{checkin.cells}}"
+        wx:key="dayNo"
+      >
+        <view class="bd-checkin-day">{{item.label}}</view>
+        <view class="bd-checkin-icon">
+          <t-icon wx:if="{{item.signed}}" name="check" size="30rpx" color="#ffffff" />
+          <text wx:else class="bd-checkin-dot">{{item.dayNo}}</text>
+        </view>
+        <view class="bd-checkin-reward">{{item.rewardText}}</view>
+      </view>
+    </view>
+    <view
+      class="tt-pill-btn primary bd-checkin-btn {{(checkin.done || !checkin.enabled) ? 'disabled' : ''}}"
+      bind:tap="doCheckin"
+    >
+      <text>{{!checkin.enabled ? '签到暂未开放' : (checkin.done ? '今天已签到' : '签到领奖励')}}</text>
+    </view>
+    <view class="bd-checkin-note">连续签到第 3、7 天额外发步数；断签从第 1 天重新开始</view>
+  </view>
+
+  <!-- ===== 任务（看视频 / 邀请同学）===== -->
+  <view class="tt-section" id="tasks">
+    <text>做任务赚次数</text>
+    <text class="tt-section-extra">步数只能靠抽奖获得</text>
+  </view>
+  <view class="tt-card bd-tasks">
+    <!-- 看视频 -->
+    <view class="bd-task">
+      <view class="bd-task-icon">
+        <t-icon name="play-circle" size="40rpx" color="var(--tt-brand)" />
+      </view>
+      <view class="bd-task-body">
+        <view class="bd-task-title">看完视频</view>
+        <view class="bd-task-sub">
+          +{{video.drawPerWatch}} 次 / 次 · 今日已看 {{video.count}}<text wx:if="{{video.dailyLimit > 0}}">/{{video.dailyLimit}}</text>
+        </view>
+      </view>
+      <view
+        class="tt-pill-btn bd-task-btn {{((video.dailyLimit > 0 && video.count >= video.dailyLimit) || !enabled || !video.drawPerWatch) ? 'disabled' : ''}}"
+        bind:tap="watch"
+      >
+        <text>{{(video.dailyLimit > 0 && video.count >= video.dailyLimit) ? '已用完' : '去观看'}}</text>
+      </view>
+    </view>
+
+    <!-- 邀请同学：**必须是 open-type="share" 的 button**，否则调不起分享面板。
+         bind:tap 只负责上报计次（与分享面板同时发生，互不阻塞） -->
+    <view class="bd-task">
+      <view class="bd-task-icon">
+        <t-icon name="usergroup-add" size="40rpx" color="var(--tt-brand)" />
+      </view>
+      <view class="bd-task-body">
+        <view class="bd-task-title">邀请同学一起跑</view>
+        <view class="bd-task-sub">
+          +{{share.drawPerShare}} 次 / 次 · 今日已邀 {{share.count}}<text wx:if="{{share.dailyLimit > 0}}">/{{share.dailyLimit}}</text>
+        </view>
+      </view>
+      <button
+        class="bd-task-btn bd-share-btn {{((share.dailyLimit > 0 && share.count >= share.dailyLimit) || !enabled || !share.drawPerShare) ? 'disabled' : ''}}"
+        open-type="share"
+        disabled="{{(!enabled || !share.drawPerShare)}}"
+        bind:tap="onShareTap"
+      >{{(share.dailyLimit > 0 && share.count >= share.dailyLimit) ? '已用完' : '去邀请'}}</button>
+    </view>
+  </view>
+
+  <!-- ===== 今日已入账（四项）===== -->
+  <view class="tt-section">今日已入账<text class="tt-section-extra">抽奖与签到所得</text></view>
+  <view class="tt-card bd-card">
+    <view class="tt-stat-row bd-stat-row">
       <view class="tt-stat">
-        <view class="tt-stat-value num-font reward-num">+{{rewarded.steps}}</view>
+        <view class="tt-stat-value num-font bd-num">{{earnedStepsText}}</view>
         <view class="tt-stat-label">步数</view>
       </view>
       <view class="tt-stat">
-        <view class="tt-stat-value num-font reward-num">+{{rewarded.distanceText}}</view>
+        <view class="tt-stat-value num-font bd-num">{{earnedDistanceText}}</view>
         <view class="tt-stat-label">距离</view>
       </view>
       <view class="tt-stat">
-        <view class="tt-stat-value num-font reward-num">+{{rewarded.calories}}</view>
+        <view class="tt-stat-value num-font bd-num">{{earnedCaloriesText}}</view>
         <view class="tt-stat-label">千卡</view>
       </view>
       <view class="tt-stat">
-        <view class="tt-stat-value num-font reward-num">+{{rewarded.durationText}}</view>
+        <view class="tt-stat-value num-font bd-num">{{earnedDurationText}}</view>
         <view class="tt-stat-label">时长</view>
       </view>
     </view>
+    <view class="bd-note">奖励写入当日运动记录，记录页 / 排行榜 / 跑分 / 徽章同步生效</view>
   </view>
 
-  <view class="tt-card reward-badges" wx:if="{{rewarded.badges.length}}">
-    <view class="reward-badges-head">
-      <t-icon name="gift" size="34rpx" color="var(--tt-brand)" />
-      <text>解锁新徽章</text>
-    </view>
-    <view class="reward-badges-list">
-      <!-- 这里的徽章都是本次「新获得」的 → 100% 饱和度原图，不加 grayscale/opacity（未获得态只在徽章页/管理端出现） -->
-      <view class="reward-badge-chip" wx:for="{{rewarded.badges}}" wx:key="key">
-        <!-- icon 为图片 URL / 本地路径时用 image（原色直出），图标名才走 t-icon -->
-        <image
-          wx:if="{{item.icon && (item.icon.indexOf('http') === 0 || item.icon.indexOf('/') === 0)}}"
-          class="reward-badge-img"
-          src="{{item.icon}}"
-          mode="aspectFit"
-          lazy-load
-        />
-        <t-icon wx:else name="star-filled" size="28rpx" color="var(--tt-brand)" />
-        <text>{{item.name}}</text>
+  <!-- ===== 中奖记录（最近 5 条，服务端下发）===== -->
+  <block wx:if="{{recent.length}}">
+    <view class="tt-section">最近中奖</view>
+    <view class="tt-card bd-recent">
+      <view class="bd-recent-row" wx:for="{{recent}}" wx:key="at">
+        <text class="bd-recent-name">
+          {{item.type === 'steps' ? ('+' + item.amount + ' 步') : (item.type === 'draw' ? '再来一次' : '谢谢参与')}}
+        </text>
+        <text class="bd-recent-cap" wx:if="{{item.capped}}">已封顶</text>
+        <text class="bd-recent-time">{{item.atText || ''}}</text>
       </view>
     </view>
-  </view>
+  </block>
 
-  <!-- ===== 规则说明 ===== -->
+  <!-- ===== 规则说明（概率公示由服务端算）===== -->
   <view class="tt-section">规则说明</view>
-  <view class="tt-card reward-rules">
-    <view class="tt-row reward-rule">
-      <view class="reward-rule-icon">
-        <t-icon name="play-circle" size="36rpx" color="var(--tt-brand)" />
-      </view>
+  <view class="tt-card bd-rules">
+    <view class="tt-row bd-rule">
+      <view class="bd-rule-icon"><t-icon name="chart-pie" size="36rpx" color="var(--tt-brand)" /></view>
       <view class="flex-1">
-        <view class="tt-row-title">开启北斗运动</view>
-        <view class="tt-row-sub">每日最多 {{limit}} 次，每次 +{{perWatch.steps}} 步 / {{perWatchDistanceText}} / {{perWatch.calories}} 千卡 / {{perWatchDurationText}}</view>
+        <view class="tt-row-title">中奖概率</view>
+        <view class="tt-row-sub">{{oddsText || '暂未配置奖池'}}</view>
       </view>
     </view>
-    <view class="tt-row reward-rule">
-      <view class="reward-rule-icon">
-        <t-icon name="time" size="36rpx" color="var(--tt-brand)" />
-      </view>
+    <view class="tt-row bd-rule">
+      <view class="bd-rule-icon"><t-icon name="gift" size="36rpx" color="var(--tt-brand)" /></view>
       <view class="flex-1">
-        <view class="tt-row-title">实时到账</view>
-        <view class="tt-row-sub">步数、距离、卡路里、时长一次写入当日记录，可查看记录页</view>
+        <view class="tt-row-title">步数奖励上限</view>
+        <view class="tt-row-sub" wx:if="{{cap.cap > 0}}">每日最多发放 {{cap.cap}} 步，达到上限后步数奖自动变为「谢谢参与」</view>
+        <view class="tt-row-sub" wx:else>当前未设置每日步数上限</view>
       </view>
     </view>
-    <view class="tt-row reward-rule">
-      <view class="reward-rule-icon">
-        <t-icon name="error-circle" size="36rpx" color="var(--tt-brand)" />
+    <view class="tt-row bd-rule">
+      <view class="bd-rule-icon"><t-icon name="calendar" size="36rpx" color="var(--tt-brand)" /></view>
+      <view class="flex-1">
+        <view class="tt-row-title">连续签到</view>
+        <view class="tt-row-sub">连续签到第 3、7 天额外发步数，断签从第 1 天重新开始</view>
       </view>
+    </view>
+    <view class="tt-row bd-rule">
+      <view class="bd-rule-icon"><t-icon name="error-circle" size="36rpx" color="var(--tt-brand)" /></view>
       <view class="flex-1">
         <view class="tt-row-title">请勿作弊</view>
-        <view class="tt-row-sub">模拟器等异常方式观看将被封禁账号</view>
+        <view class="tt-row-sub">模拟器等异常方式将被封禁账号</view>
       </view>
     </view>
   </view>
 
-  <view class="tt-footer">奖励计入当日运动记录，与微信运动步数一并展示</view>
+  <view class="bd-footer">奖励计入当日运动记录，与微信运动步数一并展示</view>
 </view>

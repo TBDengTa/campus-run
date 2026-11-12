@@ -6,6 +6,15 @@ const fmt = require('../../utils/format');
 // 所以 5 分钟内不重复自动同步（手动点「同步微信运动」不受限）。
 const AUTO_SYNC_MIN_GAP = 5 * 60 * 1000;
 
+// 首页完整刷新的最小间隔（毫秒）（2026-11-09 用户确认「30 秒节流」）：
+// onShow 在**每次**进首页都触发 —— 冷启动、切 tab 来回、从别的页面返回，
+// 一次全量刷新 = 6 个 GET + 1 个 POST(badges/check) + 班级卡/班超块跟着各拉一遍。
+// 学生一天切几十次 tab，这就是接入层（EO/CDN）请求量的最大单一来源。
+// 30 秒内重复进入只同步 tabBar 选中态，数据沿用刚刷过的 —— 用户无感，请求量大降。
+// 节流只挂在 onShow 入口：下拉刷新（显式意图）与步数同步成功后的 refresh() 不受限；
+// 时间戳在 refresh() 的成功路径末尾才记 —— 失败不占坑，网络抖动后切回来立刻能重试。
+const HOME_REFRESH_MIN_GAP = 30 * 1000;
+
 // ===== 可选插画素材：把图片放到下列路径即可自动启用（未放置时回退到 CSS 插画）=====
 //   顶部场景图：miniprogram/assets/home/hero.jpg（宽高比约 2.87:1，例如 1500×523；
 //   图内已含「唐唐快跑」标题与标语，放图后页面不再叠加文字，高度按图片比例自适应）
@@ -249,8 +258,12 @@ Page({
     // 未登录 / 已退出 / 游客：统一跳登录页，不执行任何业务逻辑
     if (!getApp().requireLogin()) return;
     this.syncTabBar();
+    // 30 秒节流（HOME_REFRESH_MIN_GAP 处有完整说明）：刚全量刷过就不重复拉，
+    // tabBar 选中态已在上面同步，登录态变化由 refreshUser 的 401 自愈兜底。
+    const now = Date.now();
+    if (this._lastFullRefreshAt && now - this._lastFullRefreshAt < HOME_REFRESH_MIN_GAP) return;
     // 让「我的班级」卡（班主任/班委）与班超块 / 学生会块跟着首页一起刷新
-    this.setData({ classRefreshAt: Date.now(), bcRefreshAt: Date.now() });
+    this.setData({ classRefreshAt: now, bcRefreshAt: now });
     this.refresh();
     // 进页面自动同步微信运动（用户 2026-10-26「微信运动学生账户要进入页面自动同步」）。
     // 放在 refresh() 之后、且不 await：同步依赖 openid 会话，失败绝不能影响首页渲染。
@@ -429,6 +442,10 @@ Page({
       }
       // 徽章按需检测（学生端；教师端不展示徽章，直接跳过）
       if (!isTeacher) this.checkBadges();
+      // 全量刷新完成时间戳：onShow 的 30 秒节流看的就是它（见 HOME_REFRESH_MIN_GAP）。
+      // 记在成功路径末尾而不是开头 —— 失败（catch 了 toast / reLaunch）不占坑，
+      // 下拉刷新与步数同步触发的 refresh() 也会走到这里，同样刷新节流基准，符合直觉。
+      this._lastFullRefreshAt = Date.now();
     } catch (e) {
       if (e.code === 403001) {
         wx.navigateTo({ url: '/pages/banned/banned' });

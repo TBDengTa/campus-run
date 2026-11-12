@@ -50,13 +50,15 @@
 - 注意：schema 开了 `timestamps`，`createdAt` 在 Mongoose 里是 **immutable**，
   测试/脚本要回拨时间必须用原生驱动（`db.collection('run_records').updateMany({$set:{createdAt}})`）
 
-**beidou 记录**：激励视频每看一次 `$inc` 一次（当日一条累加）。单独成条的目的就是
-**让下一次微信同步不会把奖励步数覆盖掉**（旧实现把奖励 `$inc` 进 werun 记录，当日同步 `$set` 时会清掉）。
+**beidou 记录**：北斗运动 2.0 起由**转盘抽奖**与**签到阶梯**写入（每次 `$inc`，当日一条累加）。
+单独成条的目的就是**让下一次微信同步不会把奖励步数覆盖掉**（旧实现把奖励 `$inc` 进 werun 记录，当日同步 `$set` 时会清掉）。
+2.0 之后**看视频与分享不再写本表**（它们只加抽奖次数），见下方 `beidou_day`。
 
 索引：`(openid, date)`、`(date)`
 
 ### goal_config（单例）
 全局默认目标（daily/weekly 的 steps/distance/calories）、反作弊阈值 `anticheat`、激励视频规则 `rewardVideo`、
+北斗运动 2.0 配置 `beidou`（见下）、
 跑分规则 `points`（`dailyGoal` / `weeklyGoal` /
 `extraPercent`（日超出档位 = 个人日目标的百分比，默认 10，1~100）/
 `weeklyExtraPercent`（周超出档位 = 个人周目标的百分比，默认 10，1~100）/
@@ -69,6 +71,46 @@
 BMI 预设计划（bmiMin~bmiMax × 强度偏好匹配，`isDefault` 全局唯一兜底，管理入口 `/api/admin/assessment/plans`；
 被 user_goals 引用中的计划禁止硬删，只能停用）；用户身体数据（height/weight/bmi/bmiLevel）；
 用户当前生效计划（autoMatched 标记，**快照式**：修改计划不回填已应用用户）。
+
+## 北斗运动 2.0（签到 + 转盘抽步数 + 做任务赚次数）
+
+方案与口径：`docs/beidou-lottery-plan.md`。旧 `goal_config.rewardVideo` 段**原样保留**（存量记录与历史统计仍用），
+本节的 `beidou` 段是新增的独立配置，两者互不覆盖。
+
+### goal_config.beidou（配置段，不是独立集合）
+| 字段 | 说明 |
+|---|---|
+| enabled | 总开关；关闭后用户端整页只读 |
+| video.drawPerWatch / dailyLimit / adUnitId | 看视频每次给几次、每日可看次数（0=不限）、广告位 |
+| share.drawPerShare / dailyLimit / minIntervalSec | 邀请每次给几次、每日上限（0=不限）、**服务端最小间隔（防连点，非次数上限）** |
+| checkin.enabled / milestones[] / loopAfter | 签到开关、7 天阶梯（`{draw, steps}`）、满一轮后是否重来 |
+| draw.maxPerDay | 每日抽奖次数上限（**0 = 不限**，用户 2026-11-11 定） |
+| draw.dailyStepsCap | **每日步数奖励上限（默认 3000，唯一成本闸门）**：达标后步数奖降级为空奖 |
+| prizes[] | `{key, label, type: steps\|none\|draw, amount, weight}`，≤8 项 |
+
+### beidou_day（每人每天一份，`openid+date` 唯一）
+所有计数收敛到这一份文档，抽奖并发安全用 `draw.used` 做 CAS 版本号。
+
+| 字段 | 说明 |
+|---|---|
+| openid + date | 复合唯一索引（重复签到/重复建档的硬拦截） |
+| draw.total / used | 今日**获得**总次数 / 今日**已抽**次数（后者是 CAS 版本号） |
+| draw.fromVideo / fromShare / fromCheckin / fromPrize | 各来源计数（排查「次数哪来的」用） |
+| draw.stepsAwarded | **今日抽奖+签到累计发出的步数**（封顶判定唯一依据，新增发步数路径必须累加） |
+| draw.capped | 今日是否已触及封顶（前端常驻提示用） |
+| video.count / watchIds[≤50] | 看视频计数与幂等凭据 |
+| share.count / lastAt | 分享计数与最小间隔时间戳 |
+| checkin.done / at / streak / award | 签到状态；`streak` = 当日签到**后**的连续天数 |
+
+索引：`(openid, date)` unique
+
+### beidou_draws（抽奖流水，审计与概率公示核对）
+每次抽奖一条：`openid` / `date` / `drawId` / `prizeKey` / `type` / `amount` / `roll`（随机数留证）/
+`index`（命中扇区）/ `capped`（是否因封顶被降级）。
+
+- 索引：`(openid, date)`、`drawId` **unique**（幂等：弱网重试/连点只入账一次）、`(date:-1, prizeKey)`（管理端筛选）
+- **管理端只读**（`GET /api/admin/config/beidou-draws`）：不允许补发或撤销 ——
+  改流水会让概率公示与实际发放对不上；要补偿走「人工发徽章」等独立链路。
 
 ## 排行榜
 
@@ -87,8 +129,9 @@ BMI 预设计划（bmiMin~bmiMax × 强度偏好匹配，`isDefault` 全局唯�
 
 ## 赚步数与反作弊
 
-### reward_video_records
-`openid + date`（唯一）→ `watchCount / stepsEarned`，服务端校验每日上限。
+### reward_video_records（**2.0 起只读历史**）
+`openid + date`（唯一）→ `watchCount / stepsEarned / watchIds[]`。
+北斗运动 2.0 起不再写入（看视频改为加抽奖次数，落在 `beidou_day.video`），本表保留存量数据供历史统计与对账。
 
 ### ban_records
 封禁/解封流水：`userId / openid / action(ban|unban) / banType / reason / durationDays / bannedUntil / operator`。

@@ -19,6 +19,28 @@
   一次性调试脚本一律命名 `_tmp-*.js` / `_probe*.js` 并**跑完即删**；它们已被 `.gitignore` 忽略，
   但请仍删掉本机副本 —— 留着会让后来者把无用脚本当成工具误用。
 
+## EO 链路与缓存防护（用户 2026-11-09「严重怀疑会时不时上传数据，因为有腾讯云的EO」）
+- **排查结论（改 EO 相关代码前先读 `docs/edgeone-traffic.md`）**：全量外呼排查确认代码里**没有任何隐匿/定时上传** ——
+  服务端唯一外呼是微信登录 `code2session`（`services/wechat.js`，请求驱动）；小程序全部请求收敛在
+  `utils/request.js` 单一出口、单一业务域名，无统计 SDK、无心跳轮询；唯一自动上传是进首页 werun 步数同步
+  （1-2KB，5 分钟间隔 + 页面存活期 1 次双重护栏，业务必需别拆）。EO 上的流量全部对应正常业务请求。
+- **缓存头三件套**（`server/src/app.js`，回退任何一条都是静默脏数据）：① `/api/*` 全局 `Cache-Control: no-store`
+  （挂在 API 路由挂载**之前**，Express 按注册顺序执行；缺了它 EO 缓存 GET 响应 → 旧榜单/旧公告 + 白扣回源流量）；
+  ② `/health` no-store（探活被边缘缓存 200 = 源站挂了还在「报活」）；③ `/p/:slug` 落地页 `public, max-age=60`
+  （管理端可改的内容给 1 分钟短缓存；曝光统计走 `/api/ads/*` 不受影响）。EO 控制台必须配「**遵循源站**」缓存，
+  强制缓存会无视源站头。
+- **gzip 只在 nginx**（`deploy/nginx/*.conf`：`gzip_proxied any` 是关键，反代到 Node 的 JSON 也压）。
+  **不要**给 Node 加 compression 依赖 —— nginx 统一压，零新依赖、不会双重压缩；图片不在 `gzip_types` 里。
+- **`/uploads` 带 `immutable`**：文件名是内容 SHA，内容永不变，边缘缓存期内不回源校验。
+  头像换新 = 新 SHA = 新 URL，不存在「改了内容缓存没刷」。
+- **首页 onShow 30 秒节流**（`pages/home/home.js::HOME_REFRESH_MIN_GAP`，用户 2026-11-09 确认「30 秒节流」）：
+  onShow 每次全量刷 6 GET + 1 POST 是 EO 请求数最大单一来源。节流**只挂 onShow 入口**
+  （下拉刷新、werun 同步触发的 `refresh()` 不受限）；时间戳 `_lastFullRefreshAt` 记在 `refresh()`
+  **成功路径末尾**（失败不占坑）。节流跳过时仍要 `syncTabBar()`（选中态不能丢）。
+- **上传保持现状**：`CHECK_PHOTO_MAX_MB=100` 是用户 2026-10-28 明确要求（三层对齐见 `routes/upload.js` 文件头）；
+  上传接口**不加**每用户限频（用户 2026-11-09「不加」）。
+  回归：`tools/check-traffic-headers.js`（五处接线逐项盯）。
+
 ## UI 约定（白橙设计系统）
 - 配色/圆角/间距一律使用 `app.wxss` 中的 `--tt-*` 令牌与 `.tt-*` 公共类，禁止在页面里硬编码品牌色或旧蓝色（`#0052d9`）。
 - 底部导航为**自定义 tabBar**（`custom-tab-bar/`，`app.json` 中 `tabBar.custom = true`）：
@@ -279,6 +301,35 @@
   `检查记录` = `only:'unionRecords'`（学生会成员，或 `union.steward` 总管；纯 union.view 不放行）。
   首页与中枢共用 `utils/nav-groups.js::navCtx(user)` 生成上下文（含 `canUnionScanJoin`），
   **不要在 hub.js / home.js 各写一份 ctx** —— 新增身份维度时只改 navCtx。回归：`tools/check-nav-groups.js` 的角色矩阵。
+
+## 北斗运动 2.0（签到 + 转盘抽步数 + 看视频/分享得次数）
+- **方案与口径唯一说明：`docs/beidou-lottery-plan.md`**（改这块之前必读）。用户 2026-11-11 定稿：
+  看视频只给次数不发步数 / 没有免费次数 / 奖池只有步数·空奖·再来一次 / 点分享即计次 / 签到 7 天阶梯 / 改造现有页面。
+- **步数只有两个出口**：`services/beidou.js::drawRound()`（转盘）与 `checkin()`（签到第 3/7 天阶梯）。
+  看视频、分享**只加抽奖次数**。旧 `POST /api/reward-video/report` 已降级为只回 `success:false + deprecated`
+  （老版本客户端缓存未更新时仍会调，不能 404，也**不能**再加回发步数逻辑）。
+- **抽奖结果只由服务端定**：`roll`（`crypto.randomInt`，不用 `Math.random`）/ `index` / `prize` 全在 service 里算，
+  前端只把第 `index` 格转到指针下。**扇区顺序由服务端下发**（`draw.sectors`），前端重排就会「停在 A 却发 B」。
+  概率公示值也由服务端算（`prizes[].percent`），前端只拼字符串。
+- **`draw.dailyStepsCap`（默认 3000）是唯一成本闸门**（用户定了「次数不限 + 点分享即给」，这两条本身没有上限）：
+  达上限后步数奖**当场降级为空奖**并记 `capped:true`（活动照常进行，不是报错）。奖池里没有 `none` 项时
+  必须**合成**一个 0 步空奖来降级 —— 否则 prize 仍是步数奖，封顶就是假的。
+  新增任何发步数路径都必须往 `draw.stepsAwarded` 累加并过 `capRemaining()`。
+- **`remainingOf().unlimited` 只表示「每日上限不设限」，不表示次数无限**：抽奖前必须**无条件**检查
+  `remaining <= 0`。写成 `if (!unlimited && remaining <= 0)` 会让默认配置（`maxPerDay=0`）变成无限抽奖 = 直接刷步。
+- **`$inc` 只能用于数值字段**：`draw.capped` 这类布尔标记必须走 `$set`（混进 `$inc` 会让抽奖接口 500，
+  而且是在步数算好之后才炸）。这条已由 `tools/verify-beidou-lottery.js` 覆盖。
+- **幂等**：`beidou_draws.drawId` 唯一索引（弱网重试/连点只入账一次，重放返回**上次的 index**，前端停位不错位）；
+  看视频 `watchId` 同理。CAS 用 `beidou_day.draw.used` 做版本号，抢输不重试不补发。
+- **断签必须重置**：`streak` 按「昨天是否签到」推（昨天签 → +1；昨天没签 → 1），
+  **不能**用累计签到天数 —— 否则断签的人也能一路领到第 7 天大奖。
+- **教师四处（抽奖/看视频/分享/签到）全部 `200 + success:false`**（不用 403003，客户端会当未登录跳登录页）；
+  `sync` 限制走 403004。教师不产生 `beidou_day` 文档，也不写 `run_records`。
+- **`beidou_draws` 管理端只读**（`GET /api/admin/config/beidou-draws`）：不允许补发/撤销，
+  改流水会让概率公示与实际发放对不上；要补偿走「人工发徽章」等独立链路。
+- 回归：`tools/check-beidou-lottery.js`（静态：结果只由服务端定 / 概率公示 / 非法奖池回退 / 封顶降级 /
+  幂等 / 教师拦截 / 断签重置 / 纯函数行为）+ `tools/verify-beidou-lottery.js`（真连库，含流水与步数对账、
+  封顶降级、断签、最小间隔、教师拦截、旧接口降级、清理核对）。
 
 ## 登录态与退出登录（小程序）
 - 登录态 = `utils/request.js` 的 `isBound()`：**有 token 且已绑定名单账号**（游客 token 不算登录），且未被主动退出。

@@ -45,7 +45,12 @@ function createApp() {
   // 健康检查（部署探活 / 反代 upstream 检测用）：机器读的，保持纯 JSON
   // build=代码构建时间（见上方 buildTag），排查「线上跑的是哪个版本」时一条 curl 就能确认
   // version=应用版本号（来自 package.json），与状态页标题保持同源
-  app.get('/health', (req, res) => res.json({ ok: true, ts: Date.now(), build: buildTag, version: appVersion }));
+  // no-store：探活必须打到源站才有意义 —— 若被边缘（EO/CDN）缓存了 200，
+  // 源站挂了探活还在「报活」，等于没探（2026-11-09 EO 流量排查时一并补上）。
+  app.get('/health', (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json({ ok: true, ts: Date.now(), build: buildTag, version: appVersion });
+  });
 
   // 控制台页面与 API 要读这两份运行指标（见 routes/console.js 的 /public-status 与 dashboard）。
   // 用 app.set 传而不是把它们搬进全局：served / bootAt 是本函数的闭包变量，
@@ -151,12 +156,17 @@ function createApp() {
   app.use('/console/api', require('./routes/console'));
 
   // 广告落地页直出
+  // Cache-Control: public, max-age=60 —— 之前完全没声明缓存策略，「是否被 EO/CDN 缓存」
+  // 全听边缘默认规则（2026-11-09 EO 流量排查发现）。落地页内容管理端随时可改，
+  // 给 1 分钟短缓存：改完最多 1 分钟全网生效，同时高频打开的落地页不必每次回源。
+  // 曝光统计走 POST /api/ads/:id/pv（在 /api/* 的 no-store 域内），不受这里影响。
   app.get('/p/:slug', async (req, res, next) => {
     try {
       const AdPage = require('./models/ad-page');
       const page = await AdPage.findOne({ slug: req.params.slug, enabled: true }).lean();
       if (!page) return res.status(404).send('页面不存在');
       res.set('Content-Type', 'text/html; charset=utf-8');
+      res.set('Cache-Control', 'public, max-age=60');
       res.send(page.htmlContent || '<!doctype html><p>空页面</p>');
     } catch (e) {
       next(e);
@@ -164,7 +174,40 @@ function createApp() {
   });
 
   // 上传文件静态服务
-  app.use('/uploads', express.static(path.join(__dirname, '../uploads'), { maxAge: '7d' }));
+  //
+  // `immutable`（用户 2026-11-09 EO 流量排查补的）：边缘/浏览器在有效期内
+  // **不必回源校验**，省掉大量 304 回源流量。
+  //
+  // ⚠️ 为什么这里加 immutable 是安全的（这点必须核实过，写错会让人以为「改了头像
+  // 看不到新的」）：文件名是 `Date.now()-<随机6位><ext>`（utils/uploader.js::filename），
+  // **每次上传都是新文件名 → 新 URL**，同一个 URL 的内容在事实上永不改变。
+  // （注：AGENTS.md 里写的是「文件名是内容 SHA」——与实际实现不符，实际是时间戳+随机。
+  //  两种策略在 immutable 上等价：只要「同 URL 内容不变」成立，immutable 就成立。）
+  // 删除旧头像时只删磁盘文件，旧 URL 404 —— 不会出现「缓存里还是旧图」的错觉。
+  app.use(
+    '/uploads',
+    express.static(path.join(__dirname, '../uploads'), {
+      maxAge: '7d',
+      immutable: true,
+      setHeaders(res) {
+        // 显式写全，避免不同 Express 版本对 immutable 的序列化差异
+        res.set('Cache-Control', 'public, max-age=604800, immutable');
+        res.set('X-Content-Type-Options', 'nosniff');
+      },
+    })
+  );
+
+  // 小程序 API 一律不缓存（2026-11-09 EO 流量排查补的防护，改之前先读这段）：
+  // 之前 /api/* 20 组路由**没有任何 Cache-Control**，而 console 域早就有了 no-store ——
+  // 也就是说「会不会被 EO/CDN 边缘缓存」完全听天由命：EO 若按默认/扩展名规则缓存了
+  // GET 响应，学生拿到的是边缘的旧榜单/旧公告（脏数据），源站还被白扣回源流量。
+  // API 全是带 Authorization 的动态数据，绝无可缓存的理由，统一 no-store 最稳。
+  // 注意：必须挂在下面所有 app.use('/api/...') **之前**（Express 按注册顺序执行）。
+  // EO 控制台侧也要确认缓存模式是「遵循源站」，强制缓存会无视源站头（见 docs/edgeone-traffic.md）。
+  app.use('/api', (req, res, next) => {
+    res.set('Cache-Control', 'no-store');
+    next();
+  });
 
   app.use('/api/auth', require('./routes/auth'));
   app.use('/api/roster', require('./routes/roster'));
@@ -173,6 +216,8 @@ function createApp() {
   app.use('/api/points', require('./routes/points'));
   app.use('/api/goal', require('./routes/goal'));
   app.use('/api/reward-video', require('./routes/reward-video'));
+  // 北斗运动 2.0（签到 + 转盘抽步数 + 看视频/分享得次数）：见 docs/beidou-lottery-plan.md
+  app.use('/api/beidou', require('./routes/beidou'));
   app.use('/api/water', require('./routes/water'));
   app.use('/api/badges', require('./routes/badge'));
   app.use('/api/appeals', require('./routes/appeal'));
