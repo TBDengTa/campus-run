@@ -355,6 +355,14 @@ Page({
     this.loadFilters();
   },
 
+  // 页面卸载时清掉搜索防抖定时器：否则定时器在页面销毁后触发 reload() → 对已销毁页面 setData（控制台报错）
+  onUnload() {
+    if (this._searchTimer) {
+      clearTimeout(this._searchTimer);
+      this._searchTimer = null;
+    }
+  },
+
   // ===== 筛选选项 =====
   async loadFilters() {
     try {
@@ -574,12 +582,28 @@ Page({
   },
 
   onSearch(e) {
-    this.setData({ keyword: e.detail.value || '' });
+    const keyword = e.detail.value || '';
+    this.setData({ keyword });
     this.updateFilterState();
-    this.reload();
+    // ⚠️ 必须防抖 + 并发保护（用户 2026-11-12 报「搜索冯绍鹏没有同音字检查」的真因）：
+    //   `t-search bind:change` **每敲一个字**就触发一次 reload()，而 reload() 会先清空列表，
+    //   再 await load()；load() 开头 `if (loading) return` 会把**后到的请求直接丢弃** ——
+    //   于是「冯」触发的那次请求在飞，后面「冯绍」「冯绍鹏」全部被丢掉，
+    //   而第一次请求返回的是「冯」的结果（单字，按口径不启用同音）。
+    //   表现就是：搜 3 个字，看到的却是 1 个字的同音行为，还说功能没生效。
+    //   两件事都要做：防抖（少发请求）+ 自增 seq（宁可多算一次，也不能让「最后一次输入」被丢掉）。
+    if (this._searchTimer) clearTimeout(this._searchTimer);
+    this._searchTimer = setTimeout(() => {
+      this._searchTimer = null;
+      this.reload();
+    }, 300);
   },
 
   onClear() {
+    if (this._searchTimer) {
+      clearTimeout(this._searchTimer);
+      this._searchTimer = null;
+    }
     this.setData({ keyword: '' });
     this.reload();
   },
@@ -624,7 +648,13 @@ Page({
 
   async load() {
     const { page, limit, loading } = this.data;
-    if (loading) return;
+    // ⚠️ 只在**翻页**时挡并发（loadingMore），**首屏/搜索不能被挡**（用户 2026-11-12 报的真因）。
+    //   旧写法 `if (loading) return` 会让「搜索时最后一次输入」被静默丢弃：
+    //   输入框逐字触发 reload，第一个请求还在飞，后面几次直接 return ——
+    //   列表最终停在第 1 次请求的结果上（搜「冯绍鹏」看到的却是「冯」的结果）。
+    //   现在改用自增 seq：较老的响应回来时**丢弃自己**，最后一次请求的结果一定生效。
+    if (page > 1 && loading) return;
+    const seq = (this._seq = (this._seq || 0) + 1);
     this.setData({ loading: page === 1, loadingMore: page > 1 });
     try {
       await getApp().ensureLogin();
@@ -635,6 +665,8 @@ Page({
       const q = this.buildQuery({ page, limit });
       if (page === 1) q.withFacets = '1';
       const res = await auth.get('/api/admin/users', q);
+      // 过期响应直接丢弃（见上面的 seq 说明）：否则「先发的慢请求」会覆盖「后发的快请求」
+      if (seq !== this._seq) return;
       // 实时人数随列表一起到（同一次请求 → 与列表结果同时刻同口径）。
       // 判 `!== undefined` 而不是 `'facets' in res`：服务端没算时该键经 JSON 序列化会被丢掉，
       // 但内存对象里可能仍是 undefined —— 用 in 会把「这次没要」（翻页）误判成「刻意不计数」，
@@ -737,9 +769,12 @@ Page({
         this.renderFilterOptions();
       }
     } catch (e) {
+      // 过期失败的请求也不要弹 toast（否则用户看到旧请求的报错，会以为当前搜索失败）
+      if (seq !== this._seq) return;
       wx.showToast({ title: e.message, icon: 'none' });
     } finally {
-      this.setData({ loading: false, loadingMore: false });
+      // 同上：只有「最新那次」才能收尾，否则旧请求会把 loading 提前关掉
+      if (seq === this._seq) this.setData({ loading: false, loadingMore: false });
     }
   },
 

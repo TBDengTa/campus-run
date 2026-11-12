@@ -2292,5 +2292,92 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('时间展示不再从 ISO 串切片（北京时区 formatDateTime）', /fmt\.formatDateTime\(/.test(anoJs2) && !/String\(r\.createdAt\)\.slice/.test(anoJs2));
 }
 
+// ===== 排行榜范围口径（用户 2026-11-12「点击系部与院系出现请完成学生认证」）=====
+// 真实事故：名单导入只写 schoolName/departmentName，不写 schoolId/departmentId
+// （全库 2682 名学生里 1147 人只有名字，26 级整届 1144 人）——
+// 按 id 判可用性 + 按 id 过滤，等于把整届 26 级的「系部 / 院系」两个范围判成「未认证」。
+{
+  const scopeSvc = req('services/ranking-scope');
+  ok('范围口径有单一实现（services/ranking-scope.js）', typeof scopeSvc.scopeClauses === 'function' && typeof scopeSvc.availableScopes === 'function');
+  ok('导出面含 matchOf / mergeMatch / scopeKey', typeof scopeSvc.matchOf === 'function' && typeof scopeSvc.mergeMatch === 'function' && typeof scopeSvc.scopeKey === 'function');
+
+  // ① 只有名字没有 id 的学生：系部 / 院系两个范围必须「可用」
+  const nameOnly = { role: 'student', className: '26级软件技术', schoolName: '北校区', departmentName: '计财系' };
+  const sc = scopeSvc.availableScopes(nameOnly);
+  const byKey = Object.fromEntries(sc.map((s) => [s.key, s]));
+  ok('只有名字（无 id）时班级范围可用', byKey.class.available === true);
+  ok('只有名字（无 id）时系部范围可用（本次事故主因）', byKey.department.available === true);
+  ok('只有名字（无 id）时院系范围可用（本次事故主因）', byKey.school.available === true);
+  ok('范围不可用时下发 needText（前端不自己拼中文）', typeof byKey.department.needText === 'string' && !/请先完成学生认证/.test(byKey.department.needText));
+  ok('字段全缺时班级范围不可用', scopeSvc.availableScopes({ role: 'student' }).find((s) => s.key === 'class').available === false);
+
+  // ② 条件必须同时覆盖「名字」与「id」两种存法（任一命中即在该范围内）
+  const deptClauses = scopeSvc.scopeClauses({ departmentId: '6acc54e725f90e05f2c663ae', departmentName: '计财系', schoolName: '北校区' }, 'department');
+  const deptKeys = deptClauses.map((c) => Object.keys(c).sort().join('+'));
+  ok('系部条件含 departmentId 分支', deptKeys.includes('departmentId'));
+  ok('系部条件含 departmentName 分支（名字兜底）', deptKeys.includes('departmentName+schoolName'));
+  const nameOnlyDept = scopeSvc.scopeClauses(nameOnly, 'department');
+  ok('只有名字的学生也能生成系部条件（不 400）', nameOnlyDept.length > 0);
+  ok('系部条件按院校消歧（同名系部不跨校区混榜）', nameOnlyDept.every((c) => c.schoolName === '北校区' || c.schoolId));
+
+  const schoolClauses = scopeSvc.scopeClauses(nameOnly, 'school');
+  ok('院系条件含 schoolName 分支', schoolClauses.some((c) => c.schoolName === '北校区'));
+
+  const classClauses = scopeSvc.scopeClauses(nameOnly, 'class');
+  ok('班级条件带班名', classClauses.every((c) => c.className === '26级软件技术'));
+  ok('全校范围不加任何条件', scopeSvc.scopeClauses(nameOnly, 'all').length === 0);
+
+  // ③ 缺字段才 400（且是可读中文）
+  let threw = null;
+  try {
+    scopeSvc.scopeClauses({ className: '26级软件技术' }, 'department');
+  } catch (e) {
+    threw = e;
+  }
+  ok('系部名与 id 都缺时抛 400（不是静默空榜）', threw && threw.status === 400 && /系部/.test(threw.message));
+
+  // ④ matchOf 前缀必须挂在**字段**上，不能把 `$or` 拼成 `u.$or`
+  const mixedMe = { departmentId: '6acc54e725f90e05f2c663ae', departmentName: '计财系', schoolName: '北校区' };
+  const prefixed = scopeSvc.matchOf(scopeSvc.scopeClauses(mixedMe, 'department'), 'u.');
+  const flat = JSON.stringify(prefixed);
+  ok('个人榜前缀挂在字段上（u.departmentName，不是 u.$or）', flat.includes('"u.departmentName"') && !flat.includes('"u.$or"') && flat.includes('"$or"'));
+  ok('个人榜 id 分支也带前缀（u.departmentId）', flat.includes('"u.departmentId"'));
+  const bareMixed = scopeSvc.matchOf(scopeSvc.scopeClauses(mixedMe, 'department'), '');
+  ok('班级榜无前缀（直接 $match users）', JSON.stringify(bareMixed).includes('"departmentId"') && !JSON.stringify(bareMixed).includes('"u.'));
+
+  // ⑤ mergeMatch 不能丢条件（两个 $or 直接展开会互相覆盖）
+  const merged = scopeSvc.mergeMatch({ $or: [{ a: 1 }] }, { $or: [{ b: 2 }] });
+  ok('mergeMatch 保留两个 $or（不静默丢范围条件）', Array.isArray(merged.$and) && merged.$and.length === 2);
+
+  // ⑥ scopeKey：同一范围稳定、不同范围不同（缓存键不能串）
+  const k1 = scopeSvc.scopeKey(scopeSvc.scopeClauses({ departmentName: '计财系', schoolName: '北校区' }, 'department'));
+  const k2 = scopeSvc.scopeKey(scopeSvc.scopeClauses({ departmentName: '计财系', schoolName: '北校区' }, 'department'));
+  const k3 = scopeSvc.scopeKey(scopeSvc.scopeClauses({ departmentName: '机电建工系', schoolName: '北校区' }, 'department'));
+  ok('scopeKey 对同一范围稳定', k1 === k2);
+  ok('scopeKey 对不同系部不同（不串用别人的榜单缓存）', k1 !== k3);
+  ok('scopeKey 全校为 all', scopeSvc.scopeKey([]) === 'all');
+
+  // ⑦ 路由接线：ranking.js 必须走单一实现，且不许再按 id 判可用性
+  const rankSrc2 = require('fs').readFileSync(path.join(SERVER, 'routes/ranking.js'), 'utf8');
+  // 说明性注释里会引用「旧写法」原文（正是本节要防的那种），断言必须只看**代码本身**，
+  // 否则注释会把回归防线变成永远失败。去掉块注释与行注释后再断言。
+  const rankCode = rankSrc2.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+  ok('ranking 路由引用 services/ranking-scope', /require\('\.\.\/services\/ranking-scope'\)/.test(rankSrc2));
+  ok('范围可用性读 scopeSvc.availableScopes', /function availableScopes\(me\) \{\s*\n\s*return scopeSvc\.availableScopes\(me\);/.test(rankCode));
+  ok('不再按 !!me.departmentId 判可用（回归防线）', !/available: !!me\.departmentId/.test(rankCode));
+  ok('不再按 !!me.schoolId 判可用（回归防线）', !/available: !!me\.schoolId/.test(rankCode));
+  ok('个人榜 userFilter 带 u. 前缀', /scopeFilter\(me, scope, 'u\.'\)/.test(rankCode));
+  ok('班级榜 userFilter 无前缀', /scopeFilter\(me, scope, ''\)/.test(rankCode));
+  ok('lookupStage 不再用 entries 展开合并 $or（会静默丢范围条件）', !/Object\.entries\(userFilter\)\.reduce/.test(rankCode));
+  ok('lookupStage 单独挂范围条件（scopeCond）', /\.\.\.\(scopeCond \? \[\{ \$match: scopeCond \}\] : \[\]\)/.test(rankCode));
+  ok('班级榜 $match 用 mergeMatch 合并', /scopeSvc\.mergeMatch\(/.test(rankCode));
+
+  // ⑧ 前端：文案读服务端 needText，不再写死「请先完成学生认证」
+  const rankJs = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'pages', 'ranking', 'ranking.js'), 'utf8');
+  const rankWxml = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'pages', 'ranking', 'ranking.wxml'), 'utf8');
+  ok('前端范围提示读服务端 needText', /needText/.test(rankJs) && /data-need-text="\{\{item\.needText\}\}"/.test(rankWxml));
+  ok('前端不再写死「请先完成学生认证」', !/请先完成学生认证/.test(rankJs));
+}
+
 console.log(`\n契约自检：${checked} 项，失败 ${failed}`);
 process.exit(failed ? 1 : 0);

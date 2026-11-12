@@ -139,9 +139,11 @@ Page({
   },
 
   pickScope(e) {
-    const { key, available } = e.currentTarget.dataset;
+    const { key, available, needText } = e.currentTarget.dataset;
     if (!available) {
-      wx.showToast({ title: '请先完成学生认证', icon: 'none' });
+      // 文案由服务端下发（needText），前端不自己拼中文 —— 早前这里写死一句「未认证」提示，
+      // 而系部/院系实际只会「名单没同步」而不是「没认证」，把用户引到错误的补救路径上。
+      wx.showToast({ title: needText || '该范围暂不可用', icon: 'none' });
       return;
     }
     if (key !== this.data.scope) {

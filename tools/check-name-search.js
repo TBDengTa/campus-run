@@ -58,19 +58,18 @@ ok('hasNameScope 与 homophonePatterns 同源', ns.hasNameScope('张') === false
 // ---- 多音字按读音组合展开，不取并集 ----
 {
   const pats = ns.homophonePatterns('曾伟');
-  ok('多音字「曾」展开成 2 种读音组合', pats.length === 2, pats.length);
   const res = pats.map((p) => new RegExp(p));
   const hitZeng = res.some((r) => r.test('曾伟'));
   const hitCeng = res.some((r) => r.test('层伟'));
   ok('两种读音都能命中本人（曾伟 / 层伟）', hitZeng && hitCeng);
+  // 2026-11-12 错音字改造后：同一汉字的**全部读音合进一个字符类**（而不是每读音一条正则）。
+  // 结果集完全相同，但正则条数从 N 降到 1 —— Mongo 的字符类是一次集合查表，比多条正则便宜。
+  // 所以这里断言的不再是「变体数」，而是「一个类里同时含两读音的字」。
+  ok('多音字合并进同一个字符类（正则条数不随读音数膨胀）', pats.length === 1, pats.length);
+  ok('该字符类同时含「曾」(zeng) 与「层」(ceng)', /曾/.test(pats[0]) && /层/.test(pats[0]), pats[0].slice(0, 60));
   // 「层为」是 ceng+wei 的**合法**同音（层·伟），必须命中 —— 这不是串味，是功能本身
   ok('「层为」也算同音命中（ceng + wei）', res.some((r) => r.test('层为')));
-  // 真正要防的是「读音并集」：若把第一个字的读音集与第二个字的读音集混成笛卡尔积，
-  // 就会出现「这一个字的 A 读音 + 那一个字的 B 读音」的假命中。
-  // 判据：组合数必须等于**各字读音数的乘积**（曾 2 × 伟 1 = 2），而不是 2×1 之外的膨胀。
-  const expect = 2 * 1;
-  ok('组合数 = 各字读音数之积（不是并集膨胀）', pats.length === expect, { got: pats.length, expect });
-  // 第二个字不是伟/为/韦…的同音时不得命中
+  // 真正要防的是混进**无关**的字：第二个字不是 wei 的任何同音时必须不命中
   ok('只对第一个字同音、第二个字不同音 → 不命中（层强）', !res.some((r) => r.test('层强')));
   ok('完全无同音关系的名字不命中（王强）', !res.some((r) => r.test('王强')));
 }
@@ -104,6 +103,48 @@ ok('hasNameScope 与 homophonePatterns 同源', ns.hasNameScope('张') === false
   const re = ns.plainRegex('a.b');
   ok('plainRegex 转义元字符（a.b 不匹配 axb）', !re.test('axb') && re.test('a.b'));
   ok('escapeRe 覆盖 RegExp 特殊字符', ns.escapeRe('.*+?^${}()|[]\\') === '\\.\\*\\+\\?\\^\\$\\{\\}\\(\\)\\|\\[\\]\\\\', ns.escapeRe('.*+?^${}()|[]\\'));
+}
+
+// ---- 错音字（方言误读，用户 2026-11-12 追加「如 pin 和 ping」）----
+// 这一类**错的方向特别难发现**：扩展过头就变成「搜谁都能搜到」（比搜不到更糟，
+// 因为用户会真的勾错人）。所以每个方向都要有正例和反例。
+{
+  // 变体生成
+  const v = (py) => ns.fuzzyReadingVariants(py);
+  ok('前后鼻音：peng → 含 pen（鹏 读成「盆」）', v('peng').includes('pen'), v('peng'));
+  ok('前后鼻音：lin → 含 ling（林 读成「灵」）', v('lin').includes('ling'), v('lin'));
+  ok('平翘舌：zhang → 含 zang（张 读成「脏」）', v('zhang').includes('zang'), v('zhang'));
+  ok('f/h：fu → 含 hu（福 读成「胡」）', v('fu').includes('hu'), v('fu'));
+  ok('n/l：nan → 含 lan（南 读成「兰」）', v('nan').includes('lan'), v('nan'));
+  ok('原音节永远在第一位（截断也不会搜不到本人）', v('peng')[0] === 'peng' && v('lin')[0] === 'lin');
+
+  // 关键反例 1：不能叠出非法音节（第一版真实踩过：sh → shh → shheng）
+  const sh = v('sheng');
+  ok('不产生非法音节（没有 shh / zhh 这种串）', sh.every((p) => !/h{2,}|hh/.test(p)), sh);
+  ok('sheng 的合法变体含 sen（平翘舌+前后鼻音同时错）', sh.includes('sen'), sh);
+
+  // 关键反例 2：n/l 与前后鼻音不能叠加（否则 林 → 宁，两个人被合成一个）
+  ok('n/l 结果不再派生（lin 不含 ning ——「林」不能命中「宁」）', !v('lin').includes('ning'), v('lin'));
+  // 刻意**不允许** nan → lang：`nang`(n/l) 与 `lang`(-n/-ng) 两条不同性质的错读叠在一起，
+  // 会把「南」和「浪」这种毫无关系的名字连起来。宁可少覆盖，也不要制造假命中。
+  ok('n/l 不与前后鼻音叠加（nan 不含 lang）', !v('nan').includes('lang'), v('nan'));
+  ok('但两条规则各自都能单独生效（nan 有 nang 和 lan）', v('nan').includes('nang') && v('nan').includes('lan'), v('nan'));
+
+  // 端到端：用户点名的那一幕
+  const feng = ns.homophoneRegexes('冯绍鹏');
+  ok('搜「冯绍鹏」→ 命中错音写法「冯绍盆」', feng.some((r) => r.test('冯绍盆')), feng.length);
+  ok('搜「冯绍鹏」→ 命中同音「冯绍彭」（原名其实是彭，不是鹏）', feng.some((r) => r.test('冯绍彭')));
+  ok('搜「冯绍鹏」→ 仍命中正确写法', feng.some((r) => r.test('冯绍鹏')));
+  const lin = ns.homophoneRegexes('林晓明');
+  ok('搜「林晓明」→ 命中「灵晓明」（pin/ping 类误读）', lin.some((r) => r.test('灵晓明')));
+
+  // 反例：不能因为放宽而互相串
+  ok('搜「冯绍鹏」不命中「王绍鹏」（姓必须对上）', !feng.some((r) => r.test('王绍鹏')));
+  ok('搜「冯绍鹏」不命中「冯绍明」（名必须对上）', !feng.some((r) => r.test('冯绍明')));
+  ok('搜「林晓明」不命中「宁晓明」（n/l 未与鼻音叠加）', !lin.some((r) => r.test('宁晓明')));
+  ok('搜「林晓明」不命中「李四」', !lin.some((r) => r.test('李四')));
+  // 单字门禁对错音同样生效（否则「张」会被扩成「脏/藏/丈…」）
+  ok('单字不启动错音扩展', ns.homophonePatterns('冯').length === 0 && ns.fuzzyReadingVariants('feng').length > 1);
 }
 
 console.log('\n[2] 每个搜索入口都接同一份实现（不许各写一份正则）');
@@ -145,6 +186,25 @@ console.log('\n[3] 前端接线');
   ok('person-picker 有同音提示文案属性', /homophoneHint: \{ type: String/.test(pickerJs));
   ok('person-picker WXML 渲染同音提示', /pp-hint-homophone/.test(pickerWxml) && /\{\{homophoneHint\}\}/.test(pickerWxml));
   ok('搜不到时文案说明「同音字也试过了」（否则用户以为功能没生效）', /同音字也试过了/.test(pickerWxml), '搜不到文案未提同音');
+
+  // ===== 用户管理的搜索必须「最后一次输入一定生效」=====
+  // 用户 2026-11-12 报「搜索冯绍鹏没有同音字的检查」—— 服务端其实是对的，
+  // 真因是前端并发：t-search 每敲一个字触发一次 reload()，reload 先清空列表再 load()，
+  // 而旧 load() 开头 `if (loading) return` 把后到的请求全丢了，
+  // 于是搜 3 个字看到的是第 1 个字（单字，按口径不启用同音）的结果。
+  // 这类 bug 静态检查抓不到语义，只能盯「结构上有没有可能丢掉最后一次请求」。
+  const usersJs = read(ROOT, 'miniprogram', 'packageAdmin', 'users', 'users.js');
+  ok('用户搜索有防抖（不是每个字符都发请求）', /_searchTimer/.test(usersJs) && /clearTimeout\(this\._searchTimer\)/.test(usersJs));
+  ok('load() 不再用 `if (loading) return` 挡掉搜索请求',
+    !/if \(loading\) return;/.test(usersJs), '旧写法会让最后一次输入被静默丢弃');
+  ok('load() 用自增 seq 丢弃过期响应',
+    /const seq = \(this\._seq = \(this\._seq \|\| 0\) \+ 1\)/.test(usersJs) && /if \(seq !== this\._seq\) return;/.test(usersJs));
+  ok('过期响应不覆盖列表（seq 校验在 setData 之前）',
+    /if \(seq !== this\._seq\) return;\s*\n\s*\/\/ 实时人数随列表一起到/.test(usersJs) || /if \(seq !== this\._seq\) return;/.test(usersJs));
+  ok('only 最新那次收尾 loading（旧请求不会提前关掉 loading）',
+    /if \(seq === this\._seq\) this\.setData\(\{ loading: false/.test(usersJs));
+  ok('翻页仍挡并发（只在 page>1 时拦）', /if \(page > 1 && loading\) return;/.test(usersJs));
+  ok('页面卸载清掉搜索定时器（不在已销毁页面上 setData）', /onUnload\(\)[\s\S]{0,140}clearTimeout\(this\._searchTimer\)/.test(usersJs));
 }
 
 console.log(`\n${failed ? `${failed} 项失败` : '全部通过'}（${checked} 项）`);

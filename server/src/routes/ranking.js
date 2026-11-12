@@ -4,6 +4,7 @@ const { auth } = require('../middlewares/auth');
 const RunRecord = require('../models/run-record');
 const WaterRecord = require('../models/water-record');
 const pointsSvc = require('../services/points');
+const scopeSvc = require('../services/ranking-scope');
 const { todayKey, weekRange } = require('../utils/dates');
 
 const router = express.Router();
@@ -18,12 +19,9 @@ const RANGES = {
 };
 
 // 范围：班级 / 系部 / 院系（校区） / 全校
-const SCOPES = {
-  class: { label: '班级' },
-  department: { label: '系部' },
-  school: { label: '院系' },
-  all: { label: '全校' },
-};
+// ⚠️ 匹配口径（含「只有名字没有 id」的兜底）**唯一实现在 services/ranking-scope.js**，
+// 这里只搬标签。个人榜与班级榜共用同一份条件，避免「个人榜能看、班级榜看不了」的漂移。
+const SCOPES = scopeSvc.SCOPES;
 
 // 榜单类型：步数（默认，保持向后兼容） / 达标天数 / 饮水 / 跑分
 // 注：徽章不作为榜单维度 —— 产品口径是「跑分/排名是发放徽章的条件」，而不是徽章参与排名。
@@ -64,29 +62,15 @@ function weekEndKey(startKey) {
 }
 
 // 组织范围过滤（users 集合字段）
-function scopeFilter(me, scope) {
-  if (scope === 'class') {
-    if (!me.className) throw new ApiError(400, 400, '尚未绑定班级，请先完成学生认证');
-    return me.schoolId ? { className: me.className, schoolId: me.schoolId } : { className: me.className };
-  }
-  if (scope === 'department') {
-    if (!me.departmentId) throw new ApiError(400, 400, '尚未绑定系部，请先完成学生认证');
-    return { departmentId: me.departmentId };
-  }
-  if (scope === 'school') {
-    if (!me.schoolId) throw new ApiError(400, 400, '尚未绑定院系，请先完成学生认证');
-    return { schoolId: me.schoolId };
-  }
-  return {}; // all 全校
+// 口径唯一实现在 services/ranking-scope.js（id 为主、名字兜底）——
+// 名单导入只写 schoolName/departmentName，不写两个 id，按 id 判会把整届学生判成「未认证」。
+// prefix：个人榜走 $lookup 之后要挂 `u.`；班级榜直接 $match users，传空串。
+function scopeFilter(me, scope, prefix = '') {
+  return scopeSvc.matchOf(scopeSvc.scopeClauses(me, scope), prefix);
 }
 
 function availableScopes(me) {
-  return [
-    { key: 'class', label: SCOPES.class.label, available: !!me.className },
-    { key: 'department', label: SCOPES.department.label, available: !!me.departmentId },
-    { key: 'school', label: SCOPES.school.label, available: !!me.schoolId },
-    { key: 'all', label: SCOPES.all.label, available: true },
-  ];
+  return scopeSvc.availableScopes(me);
 }
 
 // 姓名隐私遮蔽：张三 → 张**，单字名 → 张*
@@ -98,7 +82,20 @@ function maskName(name) {
 
 // 公共 $lookup users + 范围/隐私过滤 + 展示字段投影
 // isMeMark 占位符会被替换为我的 openid
+//
+// ⚠️ userFilter 可能含 `$or`（系部 / 院系的「id 或名字」两个分支）。早前用
+// `...Object.entries(userFilter).reduce(...)` 把键逐个挂前缀 —— 遇到 `$or` 会拼成
+// `'u.$or'`，那是一个**不存在的字段名**，条件恒不命中 → 榜单静默变空列表（不报错）。
+// 现在统一走 scopeSvc.matchOf(clauses, 'u.')：前缀只加在真实字段上，`$or` 原样保留。
 function lookupStage(userFilter) {
+  const scopeCond = userFilter && Object.keys(userFilter).length ? userFilter : null;
+  const match = {
+    'u.status': { $ne: 'banned' },
+    'u.role': { $ne: 'teacher' },
+    // 示例账号（演示用）不进排行榜：它们不跑真实的步数，混进榜单会挤占真实学生的名次
+    'u.isDemo': { $ne: true },
+    'u.privacy.exitRanking': { $ne: true },
+  };
   return [
     {
       $lookup: {
@@ -109,16 +106,9 @@ function lookupStage(userFilter) {
       },
     },
     { $unwind: '$u' },
-    {
-      $match: {
-        'u.status': { $ne: 'banned' },
-        'u.role': { $ne: 'teacher' },
-        // 示例账号（演示用）不进排行榜：它们不跑真实的步数，混进榜单会挤占真实学生的名次
-        'u.isDemo': { $ne: true },
-        'u.privacy.exitRanking': { $ne: true },
-        ...Object.entries(userFilter).reduce((acc, [k, v]) => ({ ...acc, [`u.${k}`]: v }), {}),
-      },
-    },
+    // 范围条件单独成一个 $match（含 $or 时不能与下面的固定条件合并成一个对象展开）
+    ...(scopeCond ? [{ $match: scopeCond }] : []),
+    { $match: match },
     {
       $lookup: {
         from: 'user_goals',
@@ -402,7 +392,14 @@ async function rankClassRows({ metric, startKey, endKey, scopeFilter: scopedMatc
   const User = require('../models/user');
   const stages = metric === 'points' ? classPointsStages(startKey, endKey, config) : classStages(metric, startKey, endKey);
   const rows = await User.aggregate([
-    { $match: { openid: { $nin: [null, ''] }, status: { $ne: 'banned' }, role: { $ne: 'teacher' }, isDemo: { $ne: true }, 'privacy.exitRanking': { $ne: true }, ...scopedMatch } },
+    {
+      // ⚠️ scopedMatch 可能含 `$or`（系部 / 院系的「id 或名字」两分支），**不能**直接对象展开 ——
+      // 展开时 `$or` 会与基础条件平级合并成同名键互相覆盖，范围条件静默失效（班级榜变全校）。
+      $match: scopeSvc.mergeMatch(
+        { openid: { $nin: [null, ''] }, status: { $ne: 'banned' }, role: { $ne: 'teacher' }, isDemo: { $ne: true }, 'privacy.exitRanking': { $ne: true } },
+        scopedMatch
+      ),
+    },
     ...stages,
     {
       $group: {
@@ -438,16 +435,21 @@ router.get(
     const scope = SCOPES[req.query.scope] ? req.query.scope : 'all';
     const kind = KINDS.includes(req.query.kind) ? req.query.kind : 'person';
 
-    const userFilter = scopeFilter(me, scope);
+    // 个人榜的 userFilter 用在 `$lookup users` 之后 → 字段要带 `u.` 前缀；
+    // 班级榜直接 $match users → 不带前缀。两者同一份 clauses，只差前缀。
+    const userFilter = scopeFilter(me, scope, 'u.');
+    const userFilterBare = scopeFilter(me, scope, '');
     const { startKey, endKey } = rangeWindow(range);
     const metricDef = METRICS[metric];
     const config = metric === 'points' ? await pointsSvc.loadEffective() : null;
 
     // ===== 班级榜：一行一个班，班级跑分 / 班级步数 = 班内学生之和 =====
     if (kind === 'class') {
-      // scope=class 时「班级榜」只剩自己班一行，仍返回（前端会自动收窄范围选择）
-      const scopedMatch = scope === 'class' ? (me.className ? { className: me.className } : {}) : userFilter;
-      const key = ['class', metric, range, scope, scopedMatch.className || '', scopedMatch.schoolId || '', scopedMatch.departmentId || ''].join('|');
+      // scope=class 时「班级榜」只剩自己班一行，仍返回（前端会自动收窄范围选择）。
+      // 与个人榜共用 scopeFilter：早前这里自己拼 `{ className: me.className }`，
+      // 丢掉了院校消歧（同名班跨校区时会把两边混成一行）。
+      const scopedMatch = userFilterBare || {};
+      const key = ['class', metric, range, scope, scopeSvc.scopeKey(scopeSvc.scopeClauses(me, scope))].join('|');
       const rows = await cachedRankRows(key, () => rankClassRows({ metric, startKey, endKey, scopeFilter: scopedMatch, config }));
 
       const list = rows.slice(0, TOP_LIMIT).map((r, i) => ({
@@ -488,7 +490,10 @@ router.get(
     }
 
     // ===== 个人榜 =====
-    const cacheKey = [kind, metric, range, scope, me.schoolId || '', me.departmentId || '', me.className || ''].join('|');
+    // 缓存键必须由**实际生效的范围条件**生成：早前用 me.schoolId/me.departmentId/me.className 拼，
+    // 只有名字没有 id 的学生（26 级整届）这些字段全为空 → 不同系部的两个人算出同一个键，
+    // 互相串用对方的榜单（越权读到别的系部的名次）。scopeKey 对同一范围稳定、对不同范围为不同值。
+    const cacheKey = [kind, metric, range, scope, scopeSvc.scopeKey(scopeSvc.scopeClauses(me, scope))].join('|');
     const rows = await cachedRankRows(cacheKey, () =>
       rankRows({ metric, startKey, endKey, userFilter, myOpenid: me.openid })
     );

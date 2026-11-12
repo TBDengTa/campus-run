@@ -63,12 +63,19 @@
 |---|---|---|
 | GET | /?range=day\|week\|total&scope=school\|department\|class | 步数榜单 |
 
-- `range`：`day` 今日榜 · `week` 本周榜（自然周，周一起） · `total` 总榜（读用户累计缓存），默认 `day`。
-- `scope`：`school` 全校 · `department` 本院系 · `class` 本班，默认 `school`；未绑定院系/班级时返回 400。
-- 返回：`{ range, scope, rangeText, scopeText, date, excluded, excludedReason, participants, list[], me{}, scopes[] }`
-  - `list[]`：`{ rank, userId, nickname, avatarUrl, steps, distance, isMe }`，最多 50 条，按步数倒序。
-  - `me`：`{ rank|null, steps, distance, nickname, avatarUrl }`，未上榜时 `rank` 为 `null`。
-  - `scopes[]`：`{ key, label, available }`，前端据此置灰不可用范围。
+- `range`：`today` 今日榜 · `week` 本周榜（自然周，周一起） · `total` 总榜，默认 `today`。
+- `scope`：`all` 全校（默认） · `school` 本院系（校区） · `department` 本系部 · `class` 本班。
+  **匹配口径 = 「id 为主、名字兜底」**（唯一实现 `services/ranking-scope.js`）：名单导入只写
+  `schoolName` / `departmentName`，`schoolId` / `departmentId` 只在学生认证绑组织架构时才有，
+  所以只要**任一存在**该范围就可选，过滤时两种存法都算命中（同名系部再用院校消歧）。
+  该范围所需字段全都没有时返回 400（`尚未绑定系部/院系/班级…`）。
+- 返回：`{ kind, range, scope, metricText, rangeText, scopeText, unit, date, excluded, excludedReason, participants, list[], me{}, scopes[] }`
+  - `list[]`：个人榜 `{ rank, userOpenid, name, className, planName, steps, distanceKm, value, valueText }`，
+    班级榜 `{ rank, className, value, steps, members }`，最多 50 条。
+  - `me`：个人榜 `{ rank|null, value, valueText, steps, distanceKm, name, className }`；
+    班级榜 `{ rank|null, className, value, valueText, steps, members }`。
+  - `scopes[]`：`{ key, label, available, needText }`，前端据此置灰不可用范围，
+    **不可用时的提示文案直接用 `needText`**（前端不自己拼中文）。
 - **教师账号不参与排名**：`role=teacher` 不出现在任何榜单（`excluded: true`、`me.rank` 恒为 `null`），但仍可查看榜单。
 - 隐私：不返回 `openid`，仅返回用户 `_id` 与展示用昵称/头像；已封禁用户不参与排名。
 

@@ -70,6 +70,7 @@
           bind:tap="pickScope"
           data-key="{{item.key}}"
           data-available="{{item.available}}"
+          data-need-text="{{item.needText}}"
         >
           <text>{{item.label}}</text>
         </view>

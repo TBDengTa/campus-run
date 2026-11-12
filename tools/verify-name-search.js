@@ -121,6 +121,60 @@ const CANDIDATES = ('张章彰樟璋伟玮薇伪位韦明名鸣铭眀宇雨语�
     assert(problems.length === 0, '完全不同音的名字不会被误命中', problems);
   }
 
+  // ---- ⑤ 错音字（方言误读）：用真实姓名验证「错读也能找到人」----
+  // 用户 2026-11-12：「增加错音字 如 pin 和 ping 这种因非普通话而读错的」
+  // 做法：拿真实姓名，把其中一个字换成「读音错一个特征」的字（前后鼻音/平翘舌/n-l），
+  // 再搜，必须仍能命中本人。这是**功能本体**（同音字那一轮已经覆盖了严格同音）。
+  {
+    const FLIP = [
+      // [原韵尾/声母, 替换后的写法]：用来把正确读音改成一个「方言化」的写法
+      [/n$/, 'ng'], [/ng$/, 'n'],
+      [/^zh/, 'z'], [/^z$|^z(?!h)/, 'zh'],
+      [/^ch/, 'c'], [/^sh/, 's'],
+    ];
+    const problems = [];
+    let tested = 0;
+    for (const name of named.slice(0, 60)) {
+      const chars = Array.from(name);
+      let typo = '';
+      for (let i = 0; i < chars.length; i += 1) {
+        const py = pyOf(chars[i]);
+        // 找一个「读音与它只差一个方言特征」的字（同音集合里没有，但模糊变体里有）
+        const fuzzySet = new Set(ns.fuzzyReadingVariants(py).slice(1));
+        if (!fuzzySet.size) continue;
+        const alt = CANDIDATES.find((c) => c !== chars[i] && fuzzySet.has(pyOf(c)) && pyOf(c) !== py);
+        if (alt) {
+          typo = chars.slice(0, i).join('') + alt + chars.slice(i + 1).join('');
+          break;
+        }
+      }
+      if (!typo) continue;
+      tested += 1;
+      const found = (await search(typo)).map((f) => f.realName);
+      if (!found.includes(name)) problems.push({ name, typo, found: found.slice(0, 3) });
+    }
+    assert(tested >= 3, `造出了 ${tested} 个「方言错读」写法用来验证`, tested);
+    assert(problems.length === 0, `方言错读能搜到本人（${tested} 例，前后鼻音/平翘舌/n-l）`, problems);
+  }
+
+  // ---- ⑥ 错音扩展不能把无关的人带出来（放宽的代价必须量化）----
+  //
+  // 这是本轮最容易犯错的地方：错音规则一放宽，就变成「搜谁都能搜到」。
+  // 判据：拿一个真实姓名去搜，返回人数不应比原样子串多出一个数量级。
+  {
+    const subjects = named.slice(0, 5);
+    const problems = [];
+    for (const name of subjects) {
+      const plainCount = await User.countDocuments({ role: { $ne: 'teacher' }, realName: new RegExp(name) });
+      const fuzzyCount = (await search(name)).length;
+      // 允许一定放大（错音就是要放宽），但同一批人里不该翻倍到离谱
+      if (fuzzyCount > Math.max(plainCount + 8, plainCount * 4)) {
+        problems.push({ name, plainCount, fuzzyCount });
+      }
+    }
+    assert(problems.length === 0, '错音扩展的放大倍数可控（不出现「搜谁都能搜到」）', problems);
+  }
+
   // ---- 性能：反向表只建一次，热路径必须很快 ----
   {
     ns.clearCache();

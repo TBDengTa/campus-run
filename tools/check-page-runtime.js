@@ -79,8 +79,13 @@ function makeRequire(state = { get: async () => ({}) }) {
   };
 }
 
+// 最近一次 toast：用例要断言「提示文案是服务端下发的」就必须看到它
+let lastToast = null;
+
 const WX_STUB = {
-  showToast() {},
+  showToast(o) {
+    lastToast = o || null;
+  },
   showModal() {},
   showLoading() {},
   hideLoading() {},
@@ -382,9 +387,126 @@ const TARGETS = [
       }
     },
   },
+  {
+    file: 'packageAdmin/users/users.js',
+    name: '用户管理（搜索并发）',
+    // 用户 2026-11-12 报「搜索冯绍鹏没有同音字的检查」—— 服务端是对的，真因在前端并发：
+    // t-search 每敲一个字触发 reload()，reload 先清空列表再 load()，
+    // 旧 load() 开头 `if (loading) return` 把后到的请求全丢了 →
+    // 搜 3 个字看到的是第 1 个字（单字，按口径不启用同音）的结果。
+    // 这里用**可控制时序的 auth.get** 复现：第 1 个请求慢、后面快，
+    // 断言最终列表是**最后那个请求**的结果。
+    async run(def, state) {
+      const page = makePage(def);
+      const calls = [];
+      state.get = (url, params) => {
+        if (url !== '/api/admin/users') return Promise.resolve({});
+        const kw = (params && params.keyword) || '';
+        calls.push(kw);
+        // 关键字越长返回越快（真实网络就是这样：先发的请求不一定先回）
+        const delay = kw.length === 1 ? 60 : 5;
+        return new Promise((resolve) =>
+          setTimeout(
+            () =>
+              resolve({
+                list: [{ _id: kw || 'x', realName: `name_for_${kw}`, account: `name_for_${kw}`, nickname: '' }],
+                total: 1,
+                page: 1,
+                limit: 20,
+              }),
+            delay
+          )
+        );
+      };
+      // 直接调 load 三次（绕过防抖定时器，专测并发保护这一层）
+      page.data.keyword = '冯';
+      const p1 = page.load();
+      page.data.keyword = '冯绍';
+      const p2 = page.load();
+      page.data.keyword = '冯绍鹏';
+      const p3 = page.load();
+      await Promise.all([p1, p2, p3]);
+      const shown = (page.data.list || []).map((r) => r.realName);
+      ok(
+        shown.length === 1 && shown[0] === 'name_for_冯绍鹏',
+        '并发搜索：最终列表 = 最后一次输入的结果（慢的旧请求不得覆盖）',
+        { shown, calls }
+      );
+      ok(calls.length === 3, '三次输入都真的发出了请求（不再被 loading 挡掉）', calls);
+      ok(page.data.loading === false, 'loading 已收尾（旧请求不会提前关掉它）', page.data.loading);
+    },
+  },
+  {
+    file: 'pages/ranking/ranking.js',
+    name: '排行榜（范围 / 班级榜）',
+    // 用户 2026-11-12 报「点击系部与院系时出现请完成学生认证」。
+    // 真因是服务端按 departmentId/schoolId 判可用性（26 级整届只有名字没有 id），
+    // 前端这一侧另有两条必须钉住的接线：
+    //   ① 提示文案必须读服务端 needText（写死的那句话把用户引到「去做认证」的死路）；
+    //   ② rank.scopes 原样来自接口，页面不得自行兜底成「全部不可用」。
+    run(def, state) {
+      // ---- ① 点不可用范围：提示 = 服务端下发的 needText ----
+      const page = makePage(def);
+      lastToast = null;
+      page.pickScope({
+        currentTarget: {
+          dataset: { key: 'department', available: false, needText: '尚未绑定系部，请联系管理员补全学籍' },
+        },
+      });
+      ok(!!lastToast, '点不可用范围会给出提示（不是静默无反应）');
+      ok(
+        lastToast && lastToast.title === '尚未绑定系部，请联系管理员补全学籍',
+        '提示文案来自服务端 needText（不写死「请完成学生认证」）',
+        lastToast
+      );
+      ok(page.data.scope !== 'department', '不可用范围不会被真的选中', page.data.scope);
+
+      // ---- ② 点可用范围：切换并重新拉榜 ----
+      let loaded = 0;
+      page.load = async () => {
+        loaded += 1;
+      };
+      lastToast = null;
+      page.pickScope({ currentTarget: { dataset: { key: 'school', available: true, needText: '' } } });
+      ok(page.data.scope === 'school', '可用范围会被选中', page.data.scope);
+      ok(loaded === 1 && lastToast === null, '切换范围触发重新加载且不弹提示', { loaded, toast: lastToast });
+
+      // ---- ③ 首屏：接口下发的 scopes 原样进 data（含只有名字的系部/院系可用）----
+      state.get = async (url) => {
+        if (url !== '/api/ranking') return {};
+        return {
+          kind: 'person',
+          metric: 'steps',
+          range: 'today',
+          scope: 'all',
+          metricText: '步数',
+          rangeText: '今日',
+          scopeText: '全校',
+          unit: '步',
+          participants: 1,
+          list: [{ rank: 1, openid: 'o1', name: '张三', className: '26级软件技术', steps: 100, value: 100 }],
+          me: { rank: 1, value: 100, steps: 100, distanceKm: '0.10', name: '张三', className: '26级软件技术' },
+          scopes: [
+            { key: 'class', label: '班级', available: true, needText: '' },
+            { key: 'department', label: '系部', available: true, needText: '' },
+            { key: 'school', label: '院系', available: true, needText: '' },
+            { key: 'all', label: '全校', available: true, needText: '' },
+          ],
+        };
+      };
+      const p2 = makePage(def);
+      return p2.load().then(() => {
+        const scopes = (p2.data.rank && p2.data.rank.scopes) || [];
+        const dept = scopes.find((s) => s.key === 'department') || {};
+        const school = scopes.find((s) => s.key === 'school') || {};
+        ok(dept.available === true && school.available === true, '首屏系部/院系范围可用（只有名字也能用）', { dept, school });
+        ok(p2.data.rank && (p2.data.rank.list || []).length === 1, '榜单列表正常渲染', p2.data.rank && p2.data.rank.list);
+        ok(p2.data.loading === false && !p2.data.error, '加载收尾且无错误', { loading: p2.data.loading, error: p2.data.error });
+      });
+    },
+  },
 ];
 
-console.log('页面运行时自检（在桩环境里真实执行页面 JS 的关键方法）');
 (async () => {
   for (const t of TARGETS) {
     console.log(`\n[${t.name}] ${t.file}`);
