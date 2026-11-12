@@ -243,12 +243,18 @@ if (cm) {
   ok('老查宿记录实到保留、未归按应住−实到回算', ddOld.actualCount === 37 && ddOld.notReturnedCount === 3, JSON.stringify(ddOld));
 
   // 卫生：评价 → 得分折算（公式引擎不支持字符串比较，故走 derived）
+  // ⚠️ 10 分制（用户 2026-11-12「不要满分100分制了，就10分制就行」）：优/良/差 = 10/8/6，
+  //   比值与百分制（100/80/60）完全一致 —— 换刻度、不换标准。
   const hy = cm.DEFAULT_BY_KEY.get('hygiene');
-  for (const [grade, score] of [['优', 100], ['良', 80], ['差', 60]]) {
+  for (const [grade, score] of [['优', 10], ['良', 8], ['差', 6]]) {
     const dh = cm.fillDerived(hy.key, cm.normalizeDetails(hy, { grade }));
     ok(`卫生 评价「${grade}」→ 得分 ${score}`, dh.score === score, `got ${dh.score}`);
   }
   ok('卫生评价不在预设内 → 得分 0（不给满分）', cm.fillDerived(hy.key, cm.normalizeDetails(hy, { grade: '乱填' })).score === 0);
+  ok('卫生得分字段按满分刻度定义（不再是 int max 100）', (() => {
+    const f = (hy.fields || []).find((x) => x && x.key === 'score');
+    return !!f && f.max === cm.FULL_SCORE && f.type !== 'int';
+  })(), JSON.stringify((hy.fields || []).find((x) => x && x.key === 'score')));
 
   // 晚自习「网课」：后续字段清空且不校验必填（班内无学生、在宿舍观看）
   const se = cm.DEFAULT_BY_KEY.get('study_evening');
@@ -268,6 +274,10 @@ if (cm) {
   ok('网课判定兼容数组与字符串', cm.isOnlineDormGrade(['网课']) && cm.isOnlineDormGrade('网课') && !cm.isOnlineDormGrade(['优']));
 
   // 五模块公式与扣分（回归基线，改口径必须同步改这里并说明原因）
+  // ⚠️ 基线 2026-11-12 从百分制整体 ÷10（用户「不要满分100分制了，就10分制就行」）：
+  //   迟到单价 0.05/人、缺勤 0.1/人、未归 0.2/人 = 旧 0.5/1/2 的等比换算，
+  //   **相对扣分关系与排名完全不变**，所以这里每个期望值都恰好是旧值的 1/10。
+  //   若某次改动让某个模块不是「旧值 ÷10」，那是改了惩罚力度，必须另行取得用户确认。
   const base = {
     hygiene: { grade: '良' },
     study_evening: { grade: '优', absentList: students(15) },
@@ -277,11 +287,11 @@ if (cm) {
   };
   const ctx = { shouldCount: 50, shouldStay: 40 };
   const expected = {
-    hygiene: 20, // 良 → 80 分 → 缺 20 分扣 20
-    study_evening: 30, // 35/50 = 70% → (1-0.7)*100 = 30
-    night_dorm: 6, // 未归 3 人 × 2 分
-    morning_exercise: 10, // 45/50 = 90% → (1-0.9)*100 = 10
-    morning_class: 2, // 迟到 4 人 × 0.5 分
+    hygiene: 2, // 良 → 8 分 → 缺 2 分扣 2
+    study_evening: 3, // 35/50 = 70% → (1-0.7)*10 = 3
+    night_dorm: 0.6, // 未归 3 人 × 0.2 分
+    morning_exercise: 1, // 45/50 = 90% → (1-0.9)*10 = 1
+    morning_class: 0.2, // 迟到 4 人 × 0.05 分
   };
   for (const m of cm.DEFAULT_MODULES) {
     const det = cm.fillDerived(m.key, cm.normalizeDetails(m, base[m.key]), ctx);
@@ -289,6 +299,54 @@ if (cm) {
     const deduct = cm.computeDeduct(m, det, met);
     ok(`${m.key} 扣分 = ${expected[m.key]}`, Math.abs(deduct - expected[m.key]) < 0.01, `got ${deduct}`);
   }
+  // ===== 10 分制：刻度只有一个真源（用户 2026-11-12）=====
+  // 历史上满分散在九处硬编码 100（band-chao BASE_SCORE、computeDeduct ×100、看板 100−扣分、
+  // admin 统计 100−扣分、复审档位、卫生折算…），漏改任一处就是「这页 8 分、那页 80 分」，
+  // 而用户正是拿页面互相核对的。这几条断言把「真源 + 不许再出现 100」钉住。
+  const fs2 = require('fs');
+  const rd = (...p) => fs2.readFileSync(path.join(...p), 'utf8');
+  const MINIR = path.join(__dirname, '..', 'miniprogram');
+  const ss = cm && req('services/score-scale');
+  const bcSrc10 = rd(SERVER, 'services/band-chao.js');
+  const boardSrc10 = rd(SERVER, 'services/class-status-board.js');
+  const adminUnion10 = rd(SERVER, 'routes/admin/union.js');
+  const ssSrc10 = rd(SERVER, 'services/score-scale.js');
+  const indexSrc10 = rd(SERVER, 'index.js');
+  const fmtMini10 = rd(MINIR, 'utils/format.js');
+  const classJs10 = rd(MINIR, 'packageAdmin/class/class.js');
+  ok('满分常量 = 10 且由 check-modules 定义', cm.FULL_SCORE === 10, cm.FULL_SCORE);
+  ok('按人扣分单价单点导出（看板复用）', cm.PERSON_DEDUCT && cm.PERSON_DEDUCT.late === 0.05 && typeof cm.personDeduct === 'function',
+    JSON.stringify(cm.PERSON_DEDUCT));
+  ok('score-scale 只转发满分（不自己定义第二份）', ss.FULL_SCORE === cm.FULL_SCORE && ss.LEGACY_FULL_SCORE === 100, ss.FULL_SCORE);
+  ok('band-chao 的满分取自 scoreScale', /const BASE_SCORE = scoreScale\.FULL_SCORE;/.test(bcSrc10), 'BASE_SCORE 又变成字面量了');
+  ok('classSummary 走 scoreScale 算分（不再 BASE_SCORE − 扣分）',
+    /scoreScale\.scoreOf\(d\.deduct\)/.test(bcSrc10) && /scoreScale\.avgScoreOf\(avgDeduct\)/.test(bcSrc10));
+  ok('computeDeduct 折算到 FULL_SCORE（不再 ×100）', /\* FULL_SCORE \* w/.test(seedSrc) && !/\* 100 \* w/.test(seedSrc));
+  ok('按人扣分只有一份实现（rate 退化路径与 deduct 模式共用）',
+    (seedSrc.match(/personDeduct\(details\) \* w/g) || []).length === 2 && !/\* 0\.5;/.test(seedSrc), '又出现两份单价字面量');
+  ok('看板考勤分数用同一份迟到单价', /PERSON_DEDUCT\.late/.test(boardSrc10), '考勤分自己写了迟到单价');
+  ok('看板下发 attendance.score / lateCount', /score: attScore/.test(boardSrc10) && /lateCount: lateTotal/.test(boardSrc10));
+  // 分数与 hasData 必须同一个判定：否则「只有早八记录、没人迟到」的班显示「—」，
+  // 而迟到 3 人的班显示 9.85 —— 老师只会认为统计坏了（比显示 0 分更难解释）
+  ok('考勤分数按 hasData 判定（不是按「率与迟到都为空」推断）',
+    /function attendanceScore\(rateWeighted, lateTotal, hasData\)/.test(boardSrc10)
+      && /if \(!hasData\) return null;/.test(boardSrc10)
+      && /attendanceScore\([\s\S]{0,120}attHasData\)/.test(boardSrc10)
+      && /hasData: attHasData/.test(boardSrc10), '分数与 hasData 又分成两套判定了');
+  ok('管理端记录统计走 scoreScale（不再 100 − 扣分）',
+    !/100 - \(c\.deduct/.test(adminUnion10) && /scoreScale\.avgScoreOf/.test(adminUnion10));
+  ok('得分文案两位小数（0.05 分不能被 round1 吞掉）', /toFixed\(2\)/.test(ssSrc10) && /function scoreText/.test(ssSrc10));
+  ok('10 分制迁移有幂等标记（绝不重复换算）',
+    /isDone\('banchao-score-scale-v10'\)/.test(ssSrc10) && /scoreScale: \{ \$ne: FULL_SCORE \}/.test(ssSrc10));
+  ok('迁移按模块 mode 决定 score 是否换算（不按数值大小猜）',
+    /percentMode\.has\(r\.moduleKey\)/.test(ssSrc10) && !/s > FULL_SCORE/.test(ssSrc10));
+  ok('启动期跑分数迁移（bootstrap 接线）', /migrateToTenPoint/.test(indexSrc10));
+  ok('check_records 落库 scoreScale 刻度标记', !!CheckRecord.schema.path('scoreScale'), '缺该字段则迁移标记写不进去');
+  // 前端：分数文案统一走 utils/format.js::scoreText（「没有数据」不能显示成 0.00 分）
+  ok('format.js 有 scoreText 且把空值显成「—」', /function scoreText\(v\)/.test(fmtMini10) && /scoreText,/.test(fmtMini10));
+  ok('班级页趋势条按满分换算（不再把 score 当百分数）',
+    /percent: barPercent\(d\.score, data\.fullScore\)/.test(classJs10) && !/Math\.min\(100, d\.score\)/.test(classJs10));
+  ok('classSummary 下发 fullScore', /fullScore: BASE_SCORE/.test(bcSrc10));
 
   // 分院：录入台列表页用 null 目标只做模块归属预检；真实目标仍按院系范围拦截。
   // 如果 null 也走院系判定，分院身份会被判成「目标班级没有归属院系」，录入台直接打不开。
@@ -1288,7 +1346,17 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('只在有关键字时才带 keyword', /const kw = String\(this\.data\.keyword \|\| ''\)\.trim\(\)/.test(anoJs3NoComment) && /if \(kw\) query\.keyword = kw/.test(anoJs3NoComment));
   ok('服务端兜底忽略 undefined/null 字面量', /isNoise/.test(anoRoute3) && /undefined\|null\|NaN/.test(anoRoute3));
   // 正则转义（关键字含 . * 等不能让 RegExp 抛错）
-  ok('关键字正则已转义', anoRoute3.indexOf('replace(/[.*+?^${}()|[\\]\\\\]/g') >= 0 || /\\.\*\\+\\?/.test(anoRoute3) || anoRoute3.includes('.replace(/[.*+?'));
+  // 2026-11-12 起转义统一收进 services/name-search.js（同音字搜索那一轮）：
+  // 这里改成断言「该路由走 nameSearch」+「那个服务里真的做了转义」，
+  // 否则各路由各写一份 replace 必然漂移（漏一处就是「关键字带括号就 500」）。
+  const nsSvc3 = require('fs').readFileSync(path.join(SERVER, 'services/name-search.js'), 'utf8');
+  ok(
+    '关键字转义统一收在 name-search（路由不再各写一份）',
+    /nameSearch\.keywordOr\(/.test(anoRoute3) && /function escapeRe/.test(nsSvc3),
+    '转义实现未收进 name-search'
+  );
+  ok('name-search 的 plainRegex 走 escapeRe', /new RegExp\(escapeRe\(/.test(nsSvc3));
+  ok('escapeRe 真的含 RegExp 元字符集', /\[\.\*\+\?\^\$\{\}\(\)\|\[\\\]\\\\\]/.test(nsSvc3), (nsSvc3.match(/function escapeRe[\s\S]{0,120}/) || [''])[0]);
 
   // 理由语义去重（同一件事不该出现两三次）
   ok('理由语义去重', /function dedupeReasons/.test(model3) && /REASON_KINDS/.test(model3));
@@ -1552,7 +1620,7 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   // 用「取该模块定义片段再判 targetTypes」而不是跨注释的正则跨度（注释字数一变就断）
   const evBlock = (cmSrc.match(/key: 'study_evening'[\s\S]*?sort: \d+,/) || [''])[0];
   ok('晚自习以教室为受检对象', /targetTypes: \['classroom'\]/.test(evBlock), evBlock ? '片段已取到' : '片段为空');
-  ok('DEF_VERSION 升到 5（存量库要迁移）', /const DEF_VERSION = 5;/.test(cmSrc));
+  ok('DEF_VERSION 升到 6（10 分制：存量库要迁移结构）', /const DEF_VERSION = 6;/.test(cmSrc));
   ok('迁移会覆盖 targetTypes', /set\.targetTypes = def\.targetTypes;/.test(cmSrc));
   // 教室 / 教学楼由班级台账下发，供前端「优先显示教室」与「按教学楼筛选」
   ok('班级对象下发 classroom / building', /const classroom = String\(p\.classroom/.test(bcSrc) && /building = classroom \? classroom\.split/.test(bcSrc));

@@ -2,10 +2,15 @@
  * 班超（班级检查）汇总服务
  *
  * 口径（**唯一来源**，页面与管理端都从这里取，禁止在路由/页面里另写一套）：
- *   班级得分 = 100 − Σ(该班各模块扣分)，按日计算；
+ *   班级得分 = FULL_SCORE(10) − Σ(该班各模块扣分)，按日计算；
  *   区间（周 / 月）得分 = 区间内各日得分的算术平均（没有记录的日期不参与平均，避免「没查就满分」）；
  *   早操 / 早八：`hasMorningExercise === false` 的班级**不进分母**，`cancelled` 记录退出统计；
  *   宿舍 / 卫生区：记录里已冗余 className（录入时经映射反查写入），班级聚合直接按 className 求和。
+ *
+ * ===== 10 分制（用户 2026-11-12）=====
+ * 满分刻度取自 services/score-scale.js（它转发 check-modules.FULL_SCORE），
+ * **本文件不再自己写 100**：历史上 BASE_SCORE=100 与 computeDeduct 的 ×100 是两处独立硬编码，
+ * 改一处就会出现「扣分按 10 分制、总评按 100 分制」的负分班级。
  */
 const CheckRecord = require('../models/check-record');
 const CheckModule = require('../models/check-module');
@@ -15,15 +20,21 @@ const User = require('../models/user');
 const dates = require('../utils/dates');
 const roster = require('./roster');
 const checkModules = require('./check-modules');
+const scoreScale = require('./score-scale');
 const { liveCounts } = require('./class-counts');
 
 const COUNTED = CheckRecord.COUNTED_STATUS;
-const BASE_SCORE = 100;
+// 满分（10 分制）：唯一真源是 check-modules.FULL_SCORE，这里只是别名，方便本文件沿用旧写法
+const BASE_SCORE = scoreScale.FULL_SCORE;
+
 const RANK_TTL = 60 * 1000;
 const MAX_ROWS = 4000; // 单次区间扫描上限（一学期 5 模块 × 全校班级的量级之内）
 
 // ===== 通用小工具 =====
 const round1 = (n) => Math.round((Number(n) || 0) * 10) / 10;
+// 分数一律两位小数（10 分制）：round1 会把 9.95 收成 10.0，「迟到 1 人」在界面上
+// 就变成「没扣分」—— 百分制时 0.5 分粒度看不出这个问题，刻度换小后必须跟着改。
+const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
 // 「当月第 N 周」：1-7 为第 1 周，8-14 为第 2 周，最后一周截到月末。
 // 与 ISO 周不同，排名页的周选择要落在同一个月内，避免跨月把两周混在一起。
@@ -166,7 +177,10 @@ function metricText(moduleDef, metrics, count) {
       const vals = (metrics || []).map((x) => (x && x.values ? Number(x.values[m.key]) : NaN)).filter((n) => Number.isFinite(n));
       if (!vals.length) continue;
       const sum = vals.reduce((a, b) => a + b, 0);
-      const v = m.decimals === 0 ? Math.round(sum) : round1(sum);
+      // 得分类指标（卫生）走 10 分制：**两位小数**。
+      // 以前 decimals:1 用 round1，9.95 会被显示成「得分 10 分」——
+      // 而同一批数据的扣分是 0.05，两条信息互相矛盾，老师只会认为系统算错了。
+      const v = m.decimals === 0 ? Math.round(sum) : round2(sum);
       out.push(`${m.name} ${v}${m.unit || ''}`);
     }
   }
@@ -186,9 +200,9 @@ async function classSummary({ className, date, range = 'day', weekStartKey, mont
   const cls = byClass.get(className) || { byDate: new Map(), byModule: new Map(), totalDeduct: 0, recordCount: 0 };
 
   const days = [...cls.byDate.values()]
-    .map((d) => ({ date: d.date, deduct: round1(d.deduct), score: round1(BASE_SCORE - d.deduct) }))
+    .map((d) => ({ date: d.date, deduct: round1(d.deduct), score: scoreScale.scoreOf(d.deduct) }))
     .sort((a, b) => (a.date < b.date ? 1 : -1));
-  const avgScore = days.length ? round1(days.reduce((a, b) => a + b.score, 0) / days.length) : null;
+  const avgScore = days.length ? round2(days.reduce((a, b) => a + b.score, 0) / days.length) : null;
 
   const moduleRows = [];
   for (const mod of moduleList) {
@@ -214,14 +228,18 @@ async function classSummary({ className, date, range = 'day', weekStartKey, mont
       optionalWhenMissing: optional,
       noRecordText: optional ? mod.noRecordText || '无迟到' : '',
       recordCount: hit ? hit.count : 0,
-      deduct: hit ? round1(hit.deduct) : 0,
-      score: hit ? round1(BASE_SCORE - hit.deduct) : null,
+      deduct: hit ? round2(hit.deduct) : 0,
+      score: hit ? scoreScale.scoreOf(hit.deduct) : null,
       metricText: hit ? metricText(mod, hit.metrics, hit.count) : '',
     });
   }
 
   return {
     className,
+    // 满分刻度（10 分制）：随汇总一起下发，前端画「得分趋势条」要拿它换算百分比 ——
+    // 以前前端把 score 直接当百分数用（Math.min(100, score)），百分制时恰好对，
+    // 换成 10 分制后条就只有 9.5% 宽。刻度由服务端给，前端不许自己写死 100。
+    fullScore: BASE_SCORE,
     departmentId: profile && profile.departmentId ? String(profile.departmentId) : '',
     departmentName: (profile && profile.departmentName) || '',
     grade: (profile && profile.grade) || '',
@@ -239,7 +257,7 @@ async function classSummary({ className, date, range = 'day', weekStartKey, mont
     from: scope.from,
     to: scope.to,
     score: avgScore, // 区间平均分（当区间无记录时 null，前端显示「—」）
-    deduct: days.length ? round1(days.reduce((a, b) => a + b.deduct, 0) / days.length) : null,
+    deduct: days.length ? round2(days.reduce((a, b) => a + b.deduct, 0) / days.length) : null,
     days,
     recordCount: cls.recordCount,
     modules: moduleRows,
@@ -283,8 +301,10 @@ async function classRanking({ from, to, departmentIds, classNames, className, li
           studentCount: p.studentCount || 0,
           days: dayList.length,
           recordCount: cls.recordCount,
-          deduct: round1(avgDeduct),
-          score: round1(BASE_SCORE - avgDeduct),
+          deduct: round2(avgDeduct),
+          // 走 scoreScale 而不是 BASE_SCORE − 扣分：与 classSummary 同一个出口，
+          // 否则「班级榜第 1 名 9.5 分、点进详情 9.55 分」这种两位小数下的对不上就成了新问题。
+          score: scoreScale.avgScoreOf(avgDeduct),
           // 实习 / 毕业班不参加班超统计：即使历史上有记录，也不进榜
           joinsBandChao: ClassProfile.joinsBandChao(p),
         };

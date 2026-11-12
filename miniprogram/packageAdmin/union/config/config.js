@@ -171,7 +171,7 @@ Page({
           noEntryDept: !(m.entryDeptKeys || []).length,
           scoreText:
             m.scoring && m.scoring.mode === 'percent'
-              ? '百分制扣分'
+              ? '按得分折算扣分'
               : m.scoring && m.scoring.mode === 'rate'
                 ? '出勤率折算'
                 : '按人数扣分',

@@ -9,6 +9,7 @@
 // 周选项 label 直接带日期段，如「第2周(10月8日至10月14日)」—— 用户要求，不用心算第 2 周是哪几天。
 const auth = require('../../utils/request');
 const period = require('../../utils/period');
+const fmt = require('../../utils/format');
 
 const RANGES = [
   { key: 'day', label: '今日' },
@@ -103,9 +104,12 @@ Page({
       }
 
       const data = await auth.get('/api/union/ranking', params);
+      // 分数文案统一走 utils/format.js::scoreText（10 分制两位小数 + 无数据显「—」）：
+      // 以前是 String(r.score)，会把 10 显示成「10」、9.5 显示成「9.5」，
+      // 同一列三种位数，老师会以为榜单算错了（而这一列正是要拿去排名的）。
       const decorate = (r) => ({
         ...r,
-        scoreText: r.score === null || r.score === undefined ? '—' : String(r.score),
+        scoreText: fmt.scoreText(r.score),
       });
       this.applyOptions(data.facets || {});
       this.setData({

@@ -3,6 +3,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const { wrap, ok, ApiError, parsePagination } = require('../../utils/response');
 const { requirePermission } = require('../../middlewares/admin');
+const nameSearch = require('../../services/name-search');
 const anticheat = require('../../services/anticheat');
 const pwd = require('../../services/password');
 const roster = require('../../services/roster');
@@ -904,8 +905,16 @@ async function buildUserMatch(q, omit) {
   const keep = (dim) => omit !== dim;
   if (q.keyword) {
     const kw = String(q.keyword).trim();
-    const re = new RegExp(kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-    cond.$or = [{ nickname: re }, { realName: re }, { studentId: re }, { openid: kw }, { className: re }];
+    // 普通子串 + **同音字智能匹配**（用户 2026-11-12「用户搜索要增加同音字智能搜索，两个字才启动」）：
+    // 姓名类字段（nickname / realName）额外按读音匹配，「张伟」能搜到「章薇」「张玮」；
+    // 学号 / openid / 班级按原样子串（数字与班名没有读音可言）。
+    // 单字（如「张」）不启用同音 —— 单字同音集极大（张有 54 个同音字），
+    // 搜一个字会把无关的人全捞出来，等于没筛。判定与扩展逻辑见 services/name-search.js。
+    cond.$or = nameSearch.keywordOr(kw, {
+      nameFields: ['nickname', 'realName'],
+      textFields: ['studentId', 'className'],
+      exactField: 'openid',
+    });
   }
   // 状态筛选（用户 2026-10-28「在用户管理中筛选封禁是什么都没有的」）：
   //

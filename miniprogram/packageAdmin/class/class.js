@@ -40,6 +40,21 @@ const period = require('../../utils/period');
 
 const PAGE_SIZE = 20;
 
+// ===== 班超分数展示（10 分制，用户 2026-11-12）=====
+// 满分刻度由服务端下发（classSummary 的 fullScore），前端兜底值只为「后端还没部署新版」时
+// 不至于显示成「—」；**不要**在前端自己按百分制补 0 或换算 —— 那会把 9.5 分显示成 95。
+const FULL_SCORE_FALLBACK = 10;
+// 得分文案：仓库约定格式化统一走 utils/format.js::scoreText
+// （两位小数 + 「没有数据」显「—」而不是 0.00 分 —— 后者会被当成差评发进群里）
+const scoreText = fmt.scoreText;
+// 趋势条宽度：得分 ÷ 满分 × 100（百分制时可以直接当百分数用，10 分制必须换算，否则条只有 9.5% 宽）
+const barPercent = (v, full) => {
+  const f = Number(full) > 0 ? Number(full) : FULL_SCORE_FALLBACK;
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(100, Math.round((n / f) * 100)));
+};
+
 // 页面内 4 个 tab（第三个 = 原「班级考勤」，2026-10-19 按用户要求改名为「班超联赛」）
 const TABS = [
   { key: 'students', label: '学生名单' },
@@ -611,15 +626,17 @@ Page({
         skipped: m.skipped,
         skippedReason: m.skippedReason || '',
         // 未录文案：早八这类「只记异常人」的模块显示「无迟到」（服务端 noRecordText），不是「未录」
-        scoreText: m.skipped ? '无' : m.score === null || m.score === undefined ? m.noRecordText || '未录' : String(m.score),
+        scoreText: m.skipped ? '无' : m.score === null || m.score === undefined ? m.noRecordText || '未录' : scoreText(m.score),
         metricText: m.metricText || '',
         state: m.skipped ? 'skip' : !m.entered ? 'missing' : m.deduct > 0 ? 'warn' : 'done',
       }));
       const days = (data.days || []).map((d) => ({
         date: d.date,
         label: `${Number(d.date.slice(5, 7))}/${Number(d.date.slice(8, 10))}`,
-        scoreText: String(d.score),
-        percent: Math.max(0, Math.min(100, d.score)),
+        scoreText: scoreText(d.score),
+        // 趋势条宽度 = 得分占满分的比例（满分由服务端 data.fullScore 下发）。
+        // 10 分制下直接把 score 当百分数会画成 9.5% 宽的条（看着像只得了 9.5%）。
+        percent: barPercent(d.score, data.fullScore),
       }));
       const recent = (data.recent || []).map((r) => ({
         id: r.id,
@@ -627,7 +644,10 @@ Page({
         targetName: r.targetName || '',
         dateText: `${Number(r.date.slice(5, 7))}/${Number(r.date.slice(8, 10))}`,
         statusText: r.statusText,
-        scoreText: r.deduct ? `-${r.deduct}` : '0',
+        // 单条记录显示**扣分**（不是得分）：10 分制下 0.05 也要显出来，
+        // 所以固定两位小数；以前 `-${r.deduct}` 会把 0.05 打成 "-0.05"、把 undefined 打成 "0"，
+        // 数字本身没错但和总评的位数不一致（同页两种位数最容易被当成算错了）。
+        scoreText: r.deduct ? `-${scoreText(r.deduct)}` : scoreText(0),
         appeal: r.appeal,
       }));
       // 区间回显：日/周/月都用服务端的 from～to（比本地算的权威），周还额外带「第N周」说明
@@ -638,7 +658,7 @@ Page({
       this.setData({
         banchaoLoading: false,
         banchao: {
-          scoreText: data.score === null || data.score === undefined ? '—' : String(data.score),
+          scoreText: scoreText(data.score),
           rangeLabel: data.periodLabel || data.rangeLabel || '今日',
           recordCount: data.recordCount || 0,
           // 名次必须取**本接口按当前周期**算的那个（data.ranking），不能用 classRank ——
@@ -649,7 +669,10 @@ Page({
         banchaoModules: modules,
         banchaoDays: days,
         banchaoRecent: recent,
-        banchaoRankingTop: (data.rankingTop || []).map((r, i) => ({ ...r, rankNo: i + 1 })),
+        // 班级榜前三：分数文案预计算（两位小数），模板不再直接渲染 item.score ——
+        // 服务端给的是数字（9.5 / 9.55），直接渲染会出现「同列两种位数」，
+        // 而这一列正是要和上面的总评比对的。
+        banchaoRankingTop: (data.rankingTop || []).map((r, i) => ({ ...r, rankNo: i + 1, scoreText: scoreText(r.score) })),
         banchaoPeriodLabel: spanText,
         rangeWord: RANGE_WORD[this.data.range] || '今日',
         attendanceFrom: from,

@@ -87,6 +87,17 @@ async function bootstrap() {
   await seedUnionDepartments();
   const { seedCheckModules } = require('./services/check-modules');
   await seedCheckModules();
+  // ②b 班超分数**历史数据**换算成 10 分制（用户 2026-11-12）：
+  //     播种只改模块定义（满分/单价），库里已有的 check_records.score/deduct 仍是百分制数值，
+  //     不换算就会出现「历史记录 80 分、新记录 8 分」混在一列里排名。
+  //     幂等靠 migration_flags + 每条 scoreScale 双保险（见 services/score-scale.js）。
+  try {
+    const { migrateToTenPoint } = require('./services/score-scale');
+    const m = await migrateToTenPoint();
+    if (m && !m.skipped) console.log(`[score-scale] 历史检查记录已换算为 10 分制：${m.changed}/${m.scanned} 条有数值变化`);
+  } catch (e) {
+    console.warn('[score-scale] 分数刻度迁移失败（不影响启动，但历史分数与新分数会混刻度）:', e.message);
+  }
   // ③ 宿舍 / 混宿归属的索引迁移（幂等，只动索引不动数据）：
   //    「唯一槽位」索引必须含 className —— 混宿房间与共管卫生区一次检查要按归属班级各存一条，
   //    旧索引会把第二个班那条直接拒掉。Mongoose 不会替换已存在的索引，所以这里显式建新、删旧。

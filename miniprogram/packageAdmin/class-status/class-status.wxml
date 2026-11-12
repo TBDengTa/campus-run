@@ -175,15 +175,17 @@
       <text class="cs-c1">班级</text>
       <text class="cs-cn" wx:if="{{columns.daily}}">日</text>
       <text class="cs-cn" wx:if="{{columns.weekly}}">周</text>
-      <text class="cs-cn" wx:if="{{columns.attendance}}">考勤</text>
+      <text class="cs-cn" wx:if="{{columns.attendance}}">考勤分</text>
     </view>
     <view class="cs-row" wx:for="{{shown}}" wx:key="className" data-name="{{item.className}}" bind:tap="openClass">
       <view class="cs-c1">
         <text class="cs-name">{{item.className}}</text>
-        <text class="cs-sub">{{item.studentCount}}人<text wx:if="{{item.departmentName}}"> · {{item.departmentName}}</text><text wx:if="{{item.runDisabled}}"> · 不参跑</text></text>
+        <text class="cs-sub">{{item.studentCount}}人<text wx:if="{{item.departmentName}}"> · {{item.departmentName}}</text><text wx:if="{{item.attSub}}"> · {{item.attSub}}</text><text wx:if="{{item.runDisabled}}"> · 不参跑</text></text>
       </view>
       <text class="cs-cn cs-num cs-lv-{{item.dailyLevel}}" wx:if="{{columns.daily}}">{{item.dailyText}}</text>
       <text class="cs-cn cs-num cs-lv-{{item.weeklyLevel}}" wx:if="{{columns.weekly}}">{{item.weeklyText}}</text>
+      <!-- 考勤列 = 10 分制分数（用户 2026-11-12「考勤应该显示分数，就10分制」）；
+           扣掉的那一项（迟到人数）写在班级名副行，不撑破 72rpx 的行高 -->
       <text class="cs-cn cs-num cs-lv-{{item.attLevel}}" wx:if="{{columns.attendance}}">{{item.attText}}</text>
     </view>
   </view>

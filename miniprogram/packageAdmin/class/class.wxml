@@ -556,8 +556,8 @@
             </view>
             <text class="cls-bc-record-sub">{{item.dateText}} · {{item.statusText}}{{item.appeal ? ' · 申诉中' : ''}}</text>
           </view>
-          <!-- scoreText 已经带负号（-5 / 0），这里**不能**再加一个前缀 —— 否则会显示成「--5」与「-0」
-               （原班超页的既有 bug，合并时一并修掉；records 列表也是直接渲染 item.deductText） -->
+          <!-- scoreText 已经带负号（-0.05 / 0.00），这里**不能**再加一个前缀 —— 否则会显示成「--5」与「-0」
+               （原班超页的既有 bug，合并时一并修掉；位数由 JS 统一成两位小数，模板不做拼接） -->
           <text class="num-font cls-bc-record-deduct">{{item.scoreText}}</text>
         </view>
         <view class="cls-bc-empty" wx:if="{{!banchaoRecent.length}}">暂无检查记录</view>
@@ -577,7 +577,10 @@
               <text class="cls-bc-top-name">{{item.className}}</text>
               <text class="cls-bc-top-sub">{{item.departmentName || '—'}} · {{item.days}} 天有记录</text>
             </view>
-            <text class="num-font cls-bc-top-score">{{item.score}}</text>
+            <!-- 分数文案由 JS 预计算（10 分制两位小数）：
+                 直接渲染 item.score 会让 9.5 / 9.55 / 10 三种位数混在同一列，
+                 而这一列正是要和上方「总评 hero」逐字对照的。 -->
+            <text class="num-font cls-bc-top-score">{{item.scoreText}}</text>
           </view>
         </view>
       </block>

@@ -62,10 +62,13 @@ const checkModuleSchema = new mongoose.Schema(
       ],
       default: [],
     },
-    // 计分：mode=percent 百分制扣分（缺 1 分扣 1×weight）/ rate 出勤率扣分 / deduct 直接记扣分
+    // 计分：mode=percent 按得分满分折算扣分 / rate 出勤率扣分 / deduct 直接按人数记扣分
+    // ⚠️ fullScore 是**该模块得分的满分**，不是班级总评的满分：折算出的扣分一律归一到
+    //   services/check-modules.js::FULL_SCORE（10 分制）。班级总评满分只有一个真源，
+    //   这里写 100 只会让 percent/rate 模式扣出 100 分、把 10 分制的班扣成负数。
     scoring: {
       mode: { type: String, enum: ['percent', 'rate', 'deduct'], default: 'percent' },
-      fullScore: { type: Number, default: 100 },
+      fullScore: { type: Number, default: 10 },
       weight: { type: Number, default: 1 },
       cap: { type: Number, default: 0 }, // 0 = 不封顶（单模块最多扣多少分）
     },

@@ -31,6 +31,7 @@ const { requireAnyPermission } = require('../../middlewares/admin');
 const StepAnomaly = require('../../models/step-anomaly');
 const StepLabel = require('../../models/step-label');
 const disposal = require('../../services/anomaly-disposal');
+const nameSearch = require('../../services/name-search');
 
 const router = express.Router();
 
@@ -64,13 +65,13 @@ router.get(
       //   前端已改成不传空参数；这里再兜一道，避免其它客户端（H5 / 直连 curl）踩同一个坑。
       const isNoise = /^(undefined|null|NaN)$/i.test(kw);
       if (kw && !isNoise) {
-        // 正则转义：关键字里可能有 . * + 等，直接拼进 RegExp 会报错或语义错乱
-        const safe = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        filter.$or = [
-          { realName: new RegExp(safe, 'i') },
-          { studentId: new RegExp(safe, 'i') },
-          { className: new RegExp(safe, 'i') },
-        ];
+        // 普通子串 + **同音字**（用户 2026-11-12「用户搜索要增加同音字智能搜索」）：
+        // 反作弊按姓名找人时同样会打错字（「张伟 / 张玮」在库里是不同的人）。
+        // 转义、单字不启用、只作用于姓名类字段 —— 全部由 services/name-search.js 统一判定。
+        filter.$or = nameSearch.keywordOr(kw, {
+          nameFields: ['realName'],
+          textFields: ['studentId', 'className'],
+        });
       }
     }
 

@@ -101,12 +101,12 @@ function hiddenKeysInOnlineDorm(fields) {
 const SINGLE_SELECT_KEYS = { grade: true };
 
 // ===== 人名搜索的取数范围 =====
-// 用户原文：晚自习 / 早操 = 班内；查宿 = 宿内；早八 = 校内（支持筛选）。
-// 现状：服务端只有 `GET /api/union/entry/students`（按 className 取本班学生，响应里**已带房间号**），
-// **没有**「按房间取在住名单」与「跨班搜索」两种模式；本轮 routes/union.js 被另一个智能体占用，不能改。
-// 因此宿内 / 校内先按班内名单兜底，并在 UI 上写明「待后端接口支持」——
-// 需要后端补的接口（路径 / 参数 / 返回形状）写在交付报告的「需要后端补的接口清单」里。
-// 名单来源提示（第四轮起服务端已支持宿内 / 校内两种范围，不再是"待支持"占位文案）
+// 现行口径（用户 2026-11-12 报「录入早八时名单怎么是全校呢」后的修订）：
+//   晚自习 / 早操 / **早八** = **本班名单**；查宿 = 宿内名单。
+// 早八以前走「全校名单」，但录入台是**按班级逐条录**的（抽屉标题就是「26级信息安全技术应用 · 48 人」），
+// 给一份全校名录等于让检查人在两千多人里找自己班那 48 个，勾错人还会直接落库、不可回滚。
+// 服务端 scope=school 分支保留（跨班搜索仍是独立能力，别处要用），录入台不再默认走它。
+// 名单来源提示（范围条之外的补充说明）
 const PICKER_API = '/api/union/entry/students';
 const PICKER_HINTS = {
   class: '',
@@ -129,7 +129,12 @@ const ATTENDANCE_META = {
 };
 
 // 卫生「评价 → 得分」的展示副本（与服务端 GRADE_SCORE 同口径）
-const GRADE_SCORE = { 优: 100, 良: 80, 差: 60 };
+// ⚠️ 10 分制（用户 2026-11-12）：比值 1 : 0.8 : 0.6 与百分制一致，只是刻度换成 10 / 8 / 6。
+//    服务端下发字段里的 max 与 hint，这里只在「服务端没给」时兜底 —— 兜底值必须同刻度，
+//    否则首帧预览显示 80 分、提交后落库 8 分（用户会以为录入丢了数据）。
+const GRADE_SCORE = { 优: 10, 良: 8, 差: 6 };
+// 得分字段满分的前端兜底（正常由服务端 fields[].max 下发；这里只防「服务端没给 max」）
+const FULL_SCORE_FALLBACK = 10;
 
 // 表单值 → 数字（空串 / 未填一律按 0，与服务端 fillDerived 的 Number(x)||0 同口径）
 function numOf(v) {
@@ -464,7 +469,8 @@ Page({
         // 已录对象的扣分 / 得分摘要（数据来自服务端 entryTargets 的 score / deduct）：
         // 结算口径是「扣分」优先（scoring.mode 为 deduct 的模块只有 deduct 有值），
         // 得分与扣分都为 null（未录）时不显示，避免每行都挂一个「—」。
-        summary: t.status && (t.deduct || t.score) ? `扣 ${t.deduct} 分` : '',
+        // 10 分制：固定两位小数，否则「扣 0.05 分」和「扣 5 分」在列表里都是「扣 5」这种误读风险。
+        summary: t.status && (t.deduct || t.score) ? `扣 ${fmt.scoreText(t.deduct)} 分` : '',
       };
     });
     // 院校 / 系部 / 年级筛选在 applyFilter 里统一校验：切日期 / 模块后选项不存在会自动回到「全部」
@@ -824,10 +830,10 @@ Page({
         showCancel: false,
       });
     }
-    // 名单类字段按「当前受检对象」取名单。第四轮起服务端支持三种范围（见 pickerScope）：
-    //   · class  → 班内（className）
+    // 名单类字段按「当前受检对象」取名单。服务端支持三种范围（见 pickerScope）：
+    //   · class  → 班内（className）—— 晚自习 / 早操 / **早八**
     //   · dorm   → 宿内（roomId，查宿用；混宿房间会带出别班学生，这是对的 —— 查宿按房间核对人）
-    //   · school → 校内（scope=school，早八迟到人用，支持关键字筛选与分页）
+    //   · school → 校内（scope=school，跨班搜索；录入台当前不用，保留给后续「按人查全校」场景）
     // moduleKey 必须带上：服务端 /entry/students 的 requireModule() 需要它。
     const scope = this.pickerScope();
     const pickerQuery = { moduleKey: this.data.moduleKey || (this.data.module && this.data.module.key) || '' };
@@ -842,14 +848,17 @@ Page({
     }
     // 名单范围标题（用户 2026-11-04「缺勤名单中没有显示本班级或本宿舍的名称」）：
     // 让检查人一眼确认在给谁录名单 —— 晚自习=教室·班级（教室优先是本模块的产品口径），
-    // 查宿=楼栋房间（混宿名单要核对房间），早八=全校（跨班搜索本来就是全校范围）。
-    // 整句在 JS 拼，模板不写三元拼接。
+    // 早操 / 早八=本班（**不再是全校**，用户 2026-11-12 报「名单怎么是全校呢」），
+    // 查宿=楼栋房间（混宿名单要核对房间）。整句在 JS 拼，模板不写三元拼接。
+    // 教室只在「以教室为检查场所」的模块（targetTypes 认 classroom）里带上：
+    // 早八/早操的教室字段是班级台账里的固定教室，写在迟到名单上会让人以为名单按教室取。
+    const showClassroom = (this.data.module && (this.data.module.targetTypes || []).includes('classroom')) === true;
     const scopeLabel =
       scope === 'dorm'
         ? target.targetName || target.className || ''
         : scope === 'school'
           ? '全校名单 · 输入姓名 / 学号搜索'
-          : [target.classroom, target.className].filter(Boolean).join(' · ');
+          : [showClassroom ? target.classroom : '', target.className].filter(Boolean).join(' · ');
     const pickerShowClass = scope === 'dorm';
     const form = this.buildInitialForm(target);
     const moduleKey = this.data.moduleKey || (this.data.module && this.data.module.key) || '';
@@ -939,13 +948,12 @@ Page({
     wx.navigateTo({ url: `/packageUnion/record/record?id=${id}` });
   },
 
-  // 「本字段的名单该从哪来」：查宿 → 宿内；早八 → 校内；其余 → 班内
-  // 目前服务端只有「按 className 取本班」一种模式，宿内 / 校内先按班内兜底并在 UI 上写明
-  // （需要后端补的接口清单见交付报告，本轮不改被占用的 routes/union.js）。
+  // 「本字段的名单该从哪来」：查宿 → 宿内；其余（含早八）→ **本班**。
+  // 早八以前返回 'school'（全校名单），用户 2026-11-12 报这就是 BUG：
+  // 录入是按班逐条录的，名单却给全校 → 既看不出在给谁录、也容易勾到别班的人。
   pickerScope() {
     const key = String(this.data.moduleKey || (this.data.module && this.data.module.key) || '');
     if (key === 'night_dorm') return 'dorm';
-    if (key === 'morning_class') return 'school';
     return 'class';
   },
 
@@ -1368,14 +1376,18 @@ Page({
   },
 
   // 检查项合计自动写进「总评得分」（用户仍可手改）
+  // ⚠️ 换算目标必须是**得分字段的满分**（服务端 fields 下发，10 分制下是 10），
+  //    以前这里硬编码 ×100 —— 换刻度后漏改就会出现「检查项合计 8/10、总评得分 80」，
+  //    提交时被服务端按 max=10 夹成 10 分，用户看到的和存进去的完全两回事。
   syncItemScore(key) {
     const list = this.data.form[key] || [];
     if (!list.length) return;
     const total = list.reduce((a, b) => a + (Number(b.score) || 0), 0);
     const max = list.reduce((a, b) => a + (Number(b.max) || 0), 0);
-    if (max > 0 && this.data.form.score !== undefined) {
-      this.setData({ 'form.score': Math.round((total / max) * 100) });
-    }
+    if (max <= 0 || this.data.form.score === undefined) return;
+    const scoreField = ((this.data.module && this.data.module.fields) || []).find((f) => f && f.key === 'score') || {};
+    const fullScore = Number(scoreField.max) > 0 ? Number(scoreField.max) : FULL_SCORE_FALLBACK;
+    this.setData({ 'form.score': Math.round((total / max) * fullScore * 100) / 100 });
   },
 
   // ===== 留证照片（type='photo'）=====

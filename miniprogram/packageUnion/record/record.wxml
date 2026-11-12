@@ -15,15 +15,15 @@
       </view>
     </view>
 
-    <!-- ===== 扣分与指标 ===== -->
+    <!-- ===== 扣分与指标（10 分制，用户 2026-11-12；文案由 JS 预计算，模板不拼数字）===== -->
     <view class="tt-section">扣分与指标</view>
     <view class="tt-card rd-score-card">
       <view class="rd-score-box">
-        <text class="num-font rd-deduct">{{record.deduct || 0}}</text>
-        <text class="rd-score-l">{{record.status === 'cancelled' ? '扣分（已作废，不计入）' : '扣分（计入班超总评）'}}</text>
+        <text class="num-font rd-deduct">{{record.deductText}}</text>
+        <text class="rd-score-l">{{record.status === 'cancelled' ? '扣分（已作废，不计入）' : '扣分（计入班超总评，满分 10 分）'}}</text>
       </view>
       <view class="rd-score-box">
-        <text class="num-font rd-score-v">{{record.score || 0}}</text>
+        <text class="num-font rd-score-v">{{record.scoreText}}</text>
         <text class="rd-score-l">检查得分</text>
       </view>
     </view>

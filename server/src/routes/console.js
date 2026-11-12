@@ -41,6 +41,7 @@ const StepLabel = require('../models/step-label');
 const BanRecord = require('../models/ban-record');
 const disposal = require('../services/anomaly-disposal');
 const acConfig = require('../services/anticheat-config');
+const nameSearch = require('../services/name-search');
 
 const router = express.Router();
 
@@ -375,12 +376,12 @@ router.get(
       const kw = String(req.query.keyword).trim();
       const isNoise = /^(undefined|null|NaN)$/i.test(kw);
       if (kw && !isNoise) {
-        const safe = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        kwOr = [
-          { realName: new RegExp(safe, 'i') },
-          { studentId: new RegExp(safe, 'i') },
-          { className: new RegExp(safe, 'i') },
-        ];
+        // 与小程序管理端同一把尺子（services/name-search.js）：姓名含同音字匹配、≥2 个汉字才启用。
+        // 两端各写一份正则必然漂移 —— 会出现「同一个人在控制台搜得到、在小程序搜不到」。
+        kwOr = nameSearch.keywordOr(kw, {
+          nameFields: ['realName'],
+          textFields: ['studentId', 'className'],
+        });
       }
     }
 

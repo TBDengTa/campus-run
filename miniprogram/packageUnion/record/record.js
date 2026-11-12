@@ -4,6 +4,7 @@
 // 三种操作权限都由服务端下发（canEdit / canReview / canAppeal），前端只按开关渲染按钮，
 // 点了之后仍由服务端二次校验 —— 前端隐藏不是权限。
 const auth = require('../../utils/request');
+const fmt = require('../../utils/format');
 
 // 时段展示（与 packageUnion/entry 的 periodLabel 同口径；那边未导出，这里保留只读副本）
 const PERIOD_TEXT = {
@@ -119,6 +120,12 @@ Page({
         record: {
           ...record,
           statusClass: record.status === 'approved' ? 'done' : record.status === 'submitted' ? 'todo' : 'warn',
+          // 分数文案预计算（10 分制，用户 2026-11-12）：模板里原先是 `{{record.deduct || 0}}`，
+          // 直接渲染数字会出现「扣分 0.05 / 得分 8」这种位数不一致；
+          // 而且 `|| 0` 会把 0.05 之外的合法值原样吐出、把 undefined 变成 0 ——
+          // 「没有这一项」和「扣 0 分」是两件事，必须分开显示（0 分是差评）。
+          deductText: fmt.scoreText(record.deduct),
+          scoreText: fmt.scoreText(record.score),
         },
         module,
         fields,
@@ -436,11 +443,15 @@ const STATUS_LABELS = {
 };
 
 // 单个字段的新旧值 → 一行可读文案（如「状态：已提交 → 已复核」）
-function valueText(v) {
+// ⚠️ 分数类字段（得分 / 扣分）必须走 10 分制的两位小数：留痕里出现「扣分：4 → 0.05」
+//    与「扣分：4 → .05」的区别就是老师能不能看懂这次改判改了多少。
+const SCORE_CHANGE_KEYS = { score: true, deduct: true };
+function valueText(v, key) {
   if (v === undefined || v === null || v === '') return '空';
   if (typeof v === 'string' && STATUS_LABELS[v]) return STATUS_LABELS[v];
   if (Array.isArray(v)) return `${v.length} 项`;
   if (typeof v === 'object') return '已修改';
+  if (SCORE_CHANGE_KEYS[key] && Number.isFinite(Number(v))) return fmt.scoreText(v);
   return String(v);
 }
 
@@ -452,9 +463,9 @@ function changeLines(changes) {
     const label = FIELD_LABELS[key] || key;
     const hasFrom = val && Object.prototype.hasOwnProperty.call(val, 'from');
     if (hasFrom) {
-      out.push(`${label}：${valueText(val.from)} → ${valueText(val.to)}`);
+      out.push(`${label}：${valueText(val.from, key)} → ${valueText(val.to, key)}`);
     } else if (val && Object.prototype.hasOwnProperty.call(val, 'to')) {
-      out.push(`${label}：${valueText(val.to)}`);
+      out.push(`${label}：${valueText(val.to, key)}`);
     } else {
       out.push(label);
     }

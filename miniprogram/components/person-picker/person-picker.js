@@ -68,6 +68,10 @@ Component({
     scopeLabel: { type: String, value: '' },
     // 结果行里显示学生班级：查宿（混宿房间会带出别班学生）不标班级就没法核对
     showClass: { type: Boolean, value: false },
+    // 同音字搜索提示（用户 2026-11-12「增加同音字智能搜索功能，两个字才启动」）：
+    // 默认显示，因为「搜不到人」时用户的第一反应是以为名字录错了 ——
+    // 明确写出来他才敢输入听错的那个字。
+    homophoneHint: { type: String, value: '姓名支持同音字（输入两个字以上）' },
   },
 
   data: {

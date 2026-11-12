@@ -153,6 +153,22 @@ function num2(v) {
   return Number.isFinite(n) ? n.toFixed(2) : '—';
 }
 
+/**
+ * 班超分数（10 分制，用户 2026-11-12「不要满分100分制了」）→ 展示文案。
+ *
+ * 两条都是踩过的坑：
+ *  ① **必须两位小数**：10 分制下「迟到 1 人」只扣 0.05 分，一位小数会把 9.95 收成 10.0，
+ *     录入人以为「提交了但没生效」；百分制时代 0.5 分粒度看不出这个问题。
+ *  ② **没有数据 ≠ 0 分**：`Number(null) === 0` 是有限数，所以不能直接把 num2 当分数格式化器用
+ *     —— 那会把「这个班今天没有任何检查记录」显示成「0.00 分」，而 0 分是最严重的差评，
+ *     会被截图发进工作群。null / undefined / 非法一律显「—」。
+ */
+function scoreText(v) {
+  if (v === null || v === undefined || v === '') return '—';
+  const n = Number(v);
+  return Number.isFinite(n) ? n.toFixed(2) : '—';
+}
+
 module.exports = {
   TZ,
   toDate,
@@ -170,4 +186,5 @@ module.exports = {
   kmh,
   paceText,
   num2,
+  scoreText,
 };

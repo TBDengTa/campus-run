@@ -19,6 +19,7 @@
 //     测量失败用兜底常量（FALLBACK_HEIGHT_RPX）；
 //   · 头部（班级名 / 「今日班超」/ 第 n/N 个班）与圆点指示器在 swiper 之外，是固定不滑的。
 const auth = require('../../utils/request');
+const fmt = require('../../utils/format');
 
 Page({});
 
@@ -166,13 +167,15 @@ Component({
         name: m.shortName || m.name,
         // 未录文案：早八这类「只记异常人」的模块显示「无迟到」（服务端下发 noRecordText），
         // 不能一律显示「未录」——那会让老师以为纪检部漏录了。
-        valueText: m.skipped ? '无' : !m.entered ? m.noRecordText || '未录' : m.metricText || (m.score === null ? '—' : `${m.score}`),
+        // 得分兜底（metricText 为空时）也走 scoreText：10 分制两位小数，与班级页同口径。
+        valueText: m.skipped ? '无' : !m.entered ? m.noRecordText || '未录' : m.metricText || fmt.scoreText(m.score),
         state: m.skipped ? 'skip' : !m.entered ? 'missing' : m.deduct > 0 ? 'warn' : 'done',
       }));
       const rank = data.ranking || {};
       return {
         className,
-        scoreText: data.score === null || data.score === undefined ? '—' : String(data.score),
+        // 10 分制（用户 2026-11-12）：统一走 utils/format.js::scoreText（两位小数 + 无数据「—」）
+        scoreText: fmt.scoreText(data.score),
         rangeLabel: data.rangeLabel || '今日',
         rankText: rank.rank ? `全校第 ${rank.rank} / ${rank.total}` : '',
         modules,

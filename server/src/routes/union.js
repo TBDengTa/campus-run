@@ -28,6 +28,9 @@ const unionSvc = require('../services/union');
 const reviewSvc = require('../services/union-review');
 const checkModules = require('../services/check-modules');
 const bandChao = require('../services/band-chao');
+// 姓名搜索（普通子串 + 同音字，≥2 个汉字才启用）：三个名单分支共用同一把尺子，
+// 口径与理由见 services/name-search.js 文件头（用户 2026-11-12）。
+const nameSearch = require('../services/name-search');
 const roster = require('../services/roster');
 const { liveCount } = require('../services/class-counts');
 
@@ -990,6 +993,20 @@ router.get(
     assertMember(identity);
     const moduleDef = await requireModule(req.query.moduleKey);
 
+    // ===== 关键字搜索（三种范围共用一把尺子）=====
+    // 用户 2026-11-12「考勤录入时的用户名搜索请增加同音字智能搜索，两个字才启动」。
+    // 口径全在 services/name-search.js：
+    //   · 姓名（realName / nickname）→ 普通子串 **+ 同音字**（≥2 个汉字才启用）
+    //   · 学号 / 班级 / 账号 → 普通子串（数字与班名没有读音）
+    // ⚠️ 三个分支（班内 / 宿内 / 校内）**必须都走它**：以前只有「校内」与「班内」有搜索，
+    //    查宿分支连 keyword 都没读 —— 搜索框在查宿名单里输什么都不动，用户只会认为页面卡了。
+    const keyword = String(req.query.keyword || '').trim().slice(0, 30);
+    const kwOr = (fields) =>
+      nameSearch.keywordOr(keyword, {
+        nameFields: ['realName', 'nickname'],
+        textFields: fields,
+      }) || [];
+
     // ===== 宿内名单（查宿）=====
     const roomId = String(req.query.roomId || '').trim();
     if (roomId) {
@@ -1006,8 +1023,14 @@ router.get(
         .limit(300)
         .lean();
       const openids = assigns.map((a) => a.openid).filter(Boolean);
+      // 关键字在**取 users 时**就过滤（而不是取回来再筛）：房间最多 300 人在住，
+      // 但关键字命中通常只有 1-2 人，让 Mongo 做比在 Node 里遍历更省。
+      // 注意必须保留原 assign 顺序（按学号排过的），所以筛完后仍按 studentId 排。
+      const userCond = { openid: { $in: openids }, role: { $ne: 'teacher' } };
+      const ors = kwOr(['studentId']);
+      if (ors.length) userCond.$or = ors;
       const users = openids.length
-        ? await User.find({ openid: { $in: openids }, role: { $ne: 'teacher' } })
+        ? await User.find(userCond)
             .select('openid realName nickname account studentId className')
             .lean()
         : [];
@@ -1034,12 +1057,12 @@ router.get(
         residentCount: assigns.length,
         limit: checkModules.FIELD_LIMIT,
         list,
+        keyword,
       });
     }
 
-    // ===== 校内名单（早八迟到人）：跨班搜索 + 分页 =====
+    // ===== 校内名单（跨班搜索 + 分页）=====
     if (String(req.query.scope || '') === 'school') {
-      const keyword = String(req.query.keyword || '').trim().slice(0, 30);
       const page = Math.max(1, Number(req.query.page) || 1);
       const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 20));
       // 范围收敛：校级（含全校主席团）看全校；分会只看本校区展开出的院系
@@ -1050,10 +1073,8 @@ router.get(
         cond.departmentId = { $in: ids };
       }
       if (req.query.className) cond.className = String(req.query.className).trim();
-      if (keyword) {
-        const re = new RegExp(keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-        cond.$or = [{ realName: re }, { nickname: re }, { account: re }, { studentId: re }, { className: re }];
-      }
+      const ors = kwOr(['account', 'studentId', 'className']);
+      if (ors.length) cond.$or = ors;
       const [total, rows] = await Promise.all([
         User.countDocuments(cond),
         User.find(cond)
@@ -1069,6 +1090,7 @@ router.get(
         limit,
         total,
         hasMore: page * limit < total,
+        keyword,
         list: rows.map((u) => ({
           userId: String(u._id),
           name: u.realName || u.nickname || u.account || '未命名',
@@ -1091,7 +1113,13 @@ router.get(
     const perm = unionSvc.canEnterModule(identity, moduleDef, target.departmentId);
     if (!perm.ok) throw new ApiError(403, 403002, perm.reason);
 
-    const students = await User.find({ className, role: { $ne: 'teacher' } })
+    // 班内名单：关键字同样生效（含同音字）。以前这里完全不读 keyword ——
+    // 前端搜索框在「班内」范围（晚自习 / 早操 / 早八）输什么都没反应，
+    // 而这三类正是最常用的录入场景。一个班 48 人靠翻列表找人，等于没有搜索。
+    const classCond = { className, role: { $ne: 'teacher' } };
+    const classOrs = kwOr(['account', 'studentId']);
+    if (classOrs.length) classCond.$or = classOrs;
+    const students = await User.find(classCond)
       .select('realName nickname account studentId')
       .sort({ studentId: 1 })
       .limit(300)
@@ -1115,6 +1143,7 @@ router.get(
       // 应住人数：来自住宿名单（dorm_assignments）实时聚合，查宿预填用。
       dormCount: target.dormCount || 0,
       limit: checkModules.FIELD_LIMIT,
+      keyword,
       list: students.map((s) => ({
         userId: String(s._id),
         name: s.realName || s.nickname || s.account || '未命名',
@@ -1990,19 +2019,20 @@ router.get(
 
     // 分类计数：**一次聚合**，不在 Node 侧拉全量。
     // ⚠️ 分组口径必须与 bandOf 完全一致，否则「徽标上的数字」与「点进去的条数」对不上 ——
-    //   这里直接把每条记录的 deduct 映射成档位 key 再 $group（不写第二份区间条件）。
+    //   区间**由 reviewSvc.SCORE_BANDS 生成**（不写第二份字面量）：10 分制换刻度时
+    //   改一处就会让「档位徽标 30 条、点进去 0 条」，而那正是分档功能唯一的价值所在。
+    const bandBranches = reviewSvc.SCORE_BANDS.slice(0, -1).map((b, i) => ({
+      case: i === 0 ? { $lte: [{ $ifNull: ['$deduct', 0] }, b.max] } : { $lte: ['$deduct', b.max] },
+      then: b.key,
+    }));
     const aggRows = await CheckRecord.aggregate([
       { $match: base },
       {
         $addFields: {
           band: {
             $switch: {
-              branches: [
-                { case: { $lte: [{ $ifNull: ['$deduct', 0] }, 0] }, then: 'full' },
-                { case: { $lte: ['$deduct', 2] }, then: 'low' },
-                { case: { $lte: ['$deduct', 5] }, then: 'mid' },
-              ],
-              default: 'high',
+              branches: bandBranches,
+              default: reviewSvc.SCORE_BANDS[reviewSvc.SCORE_BANDS.length - 1].key,
             },
           },
         },

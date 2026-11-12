@@ -390,7 +390,8 @@ Page({
     const cells = buildCheckinCells({ ...checkin, milestones: checkin.milestones });
     const todayCell = cells.find((c) => c.isToday) || cells[Math.min(checkin.streak || 0, cells.length - 1)];
     const prizes = (data.draw && data.draw.prizes) || [];
-    const sectorList = (data.draw && data.draw.sectors) || [];    const capText =
+    const sectorList = (data.draw && data.draw.sectors) || [];
+    const capText =
       cap.cap > 0 && cap.capped
         ? `今日步数奖励已达上限（${cap.cap} 步），明天再来`
         : cap.cap > 0
@@ -417,7 +418,7 @@ Page({
       },
       cap: { cap: cap.cap || 0, used: cap.used || 0, left: cap.left || 0, capped: !!cap.capped },
       capText,
-      earned,
+      earned: e,
       earnedStepsText: fmt.formatNumber(e.steps || 0),
       earnedDistanceText: fmt.formatDistance(e.distance || 0),
       earnedCaloriesText: fmt.formatNumber(e.calories || 0),

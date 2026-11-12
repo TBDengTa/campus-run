@@ -15,6 +15,17 @@
  * 另外加 60 秒内存缓存：这张表的数据变化很慢（老师刷新不是为了看秒级变化），
  * 缓存能让人连续点击时**立刻**出结果（与 `routes/class.js::classRankCache` 同一思路）。
  *
+ * ===== 考勤分数（用户 2026-11-12「考勤是100%应该显示分数，并且不要满分100分制了，就10分制」）=====
+ * 考勤列以前只显示加权出勤率（96.7%），老师要自己心算「这相当于几分」；现在直接给分数：
+ *   考勤分 = 满分(10) × 加权出勤率 − 早八迟到人数 × 单价
+ * 两条必须一起守住的口径：
+ *   ① 单价取 services/check-modules.js::PERSON_DEDUCT.late —— 与早八模块扣分**同一个常量**。
+ *      这里另写一份（哪怕只差 0.05）就会出现「看板 9.9 分、班超 9.95 分」，
+ *      而这页的分数是要被复制发进工作群的。
+ *   ② 展示保留**两位小数**（scoreScale.scoreText）：10 分制下迟到 1 人只扣 0.05，
+ *      一位小数会把 9.95 显示成 10.0，看着就是「扣了个寂寞」。
+ * ratePercent 仍然下发（档位筛选、其它页面、口径对照都要用），只是考勤列不再显示它。
+ *
  * ===== 达标口径（改这里前先读对应实现，禁止另写一份）=====
  *   生效目标 = 个人计划优先，否则全局默认 —— 同 `services/goals.js::getEffectiveGoal`
  *   （这里用 $lookup + $ifNull 复刻同一优先级，注释里逐条对应，改动要与该函数同步）。
@@ -32,6 +43,8 @@ const CheckRecord = require('../models/check-record');
 const GoalConfig = require('../models/goal-config');
 const dates = require('../utils/dates');
 const roster = require('./roster');
+const checkModules = require('./check-modules');
+const scoreScale = require('./score-scale');
 
 // 行的年级口径（用户 2026-11-03 多选年级筛选）：ClassProfile.grade 大量为空
 // （只有导入/手填才有值），按班级名「23级大数据技术」解析兜底 ——
@@ -56,7 +69,34 @@ const CACHE_TTL = 60 * 1000;
 const boardCache = new Map();
 
 const round1 = (n) => Math.round((Number(n) || 0) * 10) / 10;
+const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const pct = (num, den) => (den > 0 ? round1((num / den) * 100) : null);
+
+/**
+ * 考勤分数（10 分制）：加权出勤率折算 + 早八迟到按人扣。
+ *
+ * 为什么早八要单独扣而不是并进率：早八模块**没有应到/实到**（只记迟到人，见
+ * check-modules 的 morning_class 定义），拿不出分母，所以它不参与加权率；
+ * 但它的迟到确实要扣分 —— 否则「迟到 10 人的班」和「一个人都没迟到」同分。
+ *
+ * ⚠️ 第三个参数 hasData 是**必需的**，不能靠「率与迟到都为空」推断：
+ *   只有一个早八记录、且没人迟到的班，率没有、迟到 0 —— 若据此返回 null 就显示「—」，
+ *   而同班若有 3 人迟到却显示 9.85，于是出现「迟到的有分、没迟到的反而没分」，
+ *   老师只会认为统计坏了。有数据就给分（满分 10 − 0 = 10.00），没数据才是「—」。
+ *
+ * @param {number|null} rateWeighted 有应到模块的加权出勤率（0~1.5，可能 >1 的插班）
+ * @param {number} lateTotal 区间内早八迟到总人数
+ * @param {boolean} hasData 该班在区间内是否有任何考勤记录
+ * @returns {number|null} 分数（两位小数）；完全没有考勤数据时 null（前端显示「—」）
+ */
+function attendanceScore(rateWeighted, lateTotal, hasData) {
+  if (!hasData) return null;
+  const late = Number(lateTotal) || 0;
+  const hasRate = rateWeighted !== null && rateWeighted !== undefined;
+  // 率封顶满分：出勤率 >1（插班导致实到 > 应到）不该白送超额分，与 computeDeduct 同一护栏
+  const base = hasRate ? Math.min(1, Math.max(0, rateWeighted)) * scoreScale.FULL_SCORE : scoreScale.FULL_SCORE;
+  return round2(Math.max(0, base - late * checkModules.PERSON_DEDUCT.late));
+}
 
 /**
  * 全校班级状态总览。
@@ -320,6 +360,12 @@ async function classStatusBoard({ today, days, force } = {}) {
       rateWSum += m.rateW;
     }
     const attRate = shouldSum > 0 ? round1((rateWSum / shouldSum) * 100) : null;
+    // 早八迟到人数（分数里要扣的那一项）：只取早八模块，别的模块的 lateCount 不参与，
+    // 否则将来某个模块也写 lateCount 就会重复扣分。
+    const lateTotal = (att.morning_class && att.morning_class.late) || 0;
+    // hasData 必须在分数之前定：它同时决定「考勤列显示分数还是 —」与「考勤统计 N 天那行出不出现」
+    const attHasData = shouldSum > 0 || !!att.morning_class;
+    const attScore = attendanceScore(shouldSum > 0 ? rateWSum / shouldSum : null, lateTotal, attHasData);
 
     return {
       className: p.className,
@@ -338,7 +384,12 @@ async function classStatusBoard({ today, days, force } = {}) {
       attendance: {
         modules,
         ratePercent: attRate,
-        hasData: shouldSum > 0 || !!att.morning_class,
+        // 考勤分数（10 分制，用户 2026-11-12）+ 早八迟到人数（分数里扣了什么，要能看见）
+        score: attScore,
+        lateCount: lateTotal,
+        // hasData 与分数同一个判定（attHasData）：两处分别写就会漂移成
+        // 「考勤统计那行出现了，但分数列是 —」
+        hasData: attHasData,
       },
       flags: {
         hasMorningExercise: p.hasMorningExercise !== false,
@@ -511,6 +562,9 @@ function brief(r) {
     achievedToday: r.run.achievedToday,
     achievedWeek: r.run.achievedWeek,
     attendanceRate: r.attendance.ratePercent,
+    // 考勤分数（10 分制）：复制文案与外部对照都用它，别再让读的人自己从百分数换算
+    attendanceScore: r.attendance.score,
+    lateCount: r.attendance.lateCount,
   };
 }
 
@@ -680,10 +734,18 @@ function buildCopyText({ day, from, weekStart, totals, filtered, tags, rows, cop
   }
 
   // 逐行：按复制口径只写要的那个指标
+  // 考勤分数只在 copy=all 时出现（用户 2026-11-12「考勤要显示分数」）：
+  // 收窄成「只要日达标」时附考勤就是噪音 —— 与上面「另一指标不再出现」是同一条设计。
   const rowLine = (r) => {
     const parts = [];
     if (scope !== 'weekly') parts.push(`今日 ${r.run.achievedToday}/${r.studentCount} 人（${rateOf(r.run.dailyRate)}）`);
     if (scope !== 'daily') parts.push(`本周 ${r.run.achievedWeek}/${r.studentCount} 人（${rateOf(r.run.weeklyRate)}）`);
+    if (scope === 'all') {
+      const att = r.attendance || {};
+      if (att.score !== null && att.score !== undefined) {
+        parts.push(`考勤 ${scoreScale.scoreText(att.score)} 分${att.lateCount ? `（迟到 ${att.lateCount} 人）` : ''}`);
+      }
+    }
     return `· ${r.className}：${parts.join('，')}${r.departmentName ? `｜${r.departmentName}` : ''}`;
   };
 
@@ -729,6 +791,7 @@ module.exports = {
   applyBoardFilter,
   QUICK_FILTERS,
   buildCopyText,
+  attendanceScore,
   MODULES,
   clearCache,
   CACHE_TTL,

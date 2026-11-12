@@ -49,27 +49,33 @@ if (svc) {
   ok('导出 SCORE_BANDS / bandOf / bandCond', ['SCORE_BANDS', 'bandOf', 'bandCond'].every((k) => svc[k] !== undefined));
   ok('四档（满分 / 轻微 / 中等 / 较重）', Array.isArray(svc.SCORE_BANDS) && svc.SCORE_BANDS.length === 4, svc.SCORE_BANDS && svc.SCORE_BANDS.length);
   // 边界逐例（闭区间、逐档递减）
+  // ⚠️ 10 分制（用户 2026-11-12）：档位边界是百分制（0/2/5）的等比 ÷10 → 0/0.5/1。
+  //   换的是刻度不是标准：同一条记录在两个时代必须落同一档，否则管理员会看到
+  //   「昨天还是中等、今天变轻微」而数据一条都没改。
   const cases = [
     [0, 'full'],
     [undefined, 'full'],
     [-1, 'full'],
     ['abc', 'full'],
+    [0.05, 'low'], // 迟到 1 人的扣分：必须落「轻微」，不能因为太小而掉进满分档
     [0.5, 'low'],
-    [2, 'low'],
-    [2.5, 'mid'],
-    [5, 'mid'],
-    [5.5, 'high'],
-    [100, 'high'],
+    [0.55, 'mid'],
+    [1, 'mid'],
+    [1.1, 'high'],
+    [100, 'high'], // 百分制时代的历史数值（未迁移数据）仍归最重档，等着被人工看
   ];
   for (const [input, want] of cases) {
     ok(`bandOf(${JSON.stringify(input)}) = ${want}`, svc.bandOf(input).key === want, svc.bandOf(input).key);
   }
   // 条件与分档必须同源（否则筛选与归档对不上）
   const lowCond = svc.bandCond('low');
-  ok('bandCond(low) 是 (0, 2]', lowCond && lowCond.deduct.$gt === 0 && lowCond.deduct.$lte === 2, lowCond);
+  ok('bandCond(low) 是 (0, 0.5]', lowCond && lowCond.deduct.$gt === 0 && lowCond.deduct.$lte === 0.5, lowCond);
+  ok('bandCond(mid) 是 (0.5, 1]', (() => { const c = svc.bandCond('mid'); return c && c.deduct.$gt === 0.5 && c.deduct.$lte === 1; })(), svc.bandCond('mid'));
   ok('bandCond(full) 含「没写 deduct」的历史记录', !!svc.bandCond('full') && JSON.stringify(svc.bandCond('full')).includes('$not'), svc.bandCond('full'));
   ok('bandCond(high) 只有下界（无上界）', !!svc.bandCond('high') && svc.bandCond('high').deduct.$lte === undefined);
   ok('非法 / 空档 → 不筛（null）', svc.bandCond('') === null && svc.bandCond('xx') === null);
+  // 队列的**分类计数**聚合必须从 SCORE_BANDS 生成区间（写死字面量就会与徽标对不上）
+  ok('队列分档计数由 SCORE_BANDS 生成聚合分支', /bandBranches = reviewSvc\.SCORE_BANDS/.test(ROUTE) && !/\{ case: \{ \$lte: \[\'\$deduct\', 2\] \}, then: 'low' \}/.test(ROUTE));
 }
 
 // ===== 2) 单条 / 队列 / 批量共用一份判定与写入 =====

@@ -35,9 +35,11 @@ const SanitaryArea = require('../../models/sanitary-area');
 
 const unionSvc = require('../../services/union');
 const checkModules = require('../../services/check-modules');
+const nameSearch = require('../../services/name-search');
 const classProfilesSvc = require('../../services/class-profiles');
 const { liveCounts } = require('../../services/class-counts');
 const bandChao = require('../../services/band-chao');
+const scoreScale = require('../../services/score-scale');
 const formula = require('../../services/formula');
 const roster = require('../../services/roster');
 
@@ -276,8 +278,11 @@ router.get(
     }
     const keyword = str(req.query.keyword, 40);
     if (keyword) {
-      const re = new RegExp(keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-      filter.$or = [{ realName: re }, { studentId: re }, { className: re }];
+      // 成员列表找人：姓名含同音字匹配，学号 / 班级原样子串（见 services/name-search.js）
+      filter.$or = nameSearch.keywordOr(keyword, {
+        nameFields: ['realName'],
+        textFields: ['studentId', 'className'],
+      });
     }
     const [total, rows, departments, schools] = await Promise.all([
       UnionMember.countDocuments(filter),
@@ -578,8 +583,12 @@ router.get(
     const filter = { role: { $ne: 'teacher' } };
     const keyword = str(req.query.keyword, 40);
     if (keyword) {
-      const re = new RegExp(keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-      filter.$or = [{ realName: re }, { studentId: re }, { account: re }, { className: re }];
+      // 添加成员时的候选人搜索：姓名支持同音字（「张伟」能搜到「章薇」），
+      // 学号 / 账号 / 班级仍按原样子串 —— 见 services/name-search.js 的三条口径。
+      filter.$or = nameSearch.keywordOr(keyword, {
+        nameFields: ['realName'],
+        textFields: ['studentId', 'account', 'className'],
+      });
     }
     if (req.query.className) filter.className = str(req.query.className, 60);
     // 院校（校区）筛选：添加成员时按选中的院校收敛候选人（学籍里的院校多数只有文本名，故按 schoolName 匹配）
@@ -1427,8 +1436,12 @@ router.get(
     if (req.query.className) filter.className = String(req.query.className);
     if (req.query.status) filter.status = String(req.query.status);
     if (req.query.keyword) {
-      const re = new RegExp(str(req.query.keyword, 30).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-      filter.$or = [{ realName: re }, { studentId: re }, { roomNo: re }];
+      // 宿舍台账找人：姓名含同音字匹配（「张伟」能搜到「章薇」），房间号/学号原样子串。
+      // 单字不启用同音（「张」的同音有 54 个字，搜一个字等于没筛）—— 见 services/name-search.js。
+      filter.$or = nameSearch.keywordOr(String(req.query.keyword).trim().slice(0, 30), {
+        nameFields: ['realName'],
+        textFields: ['studentId', 'roomNo'],
+      });
     }
     const [total, rows] = await Promise.all([
       DormAssignment.countDocuments(filter),
@@ -1894,10 +1907,13 @@ router.get(
     ok(res, {
       classes: byClass.map((c) => ({
         className: c._id || '未分班',
-        deduct: Math.round((c.deduct || 0) * 10) / 10,
-        avgDeduct: c.days ? Math.round(((c.deduct || 0) / c.days) * 10) / 10 : 0,
+        deduct: Math.round((c.deduct || 0) * 100) / 100,
+        avgDeduct: c.days ? Math.round(((c.deduct || 0) / c.days) * 100) / 100 : 0,
         days: c.days,
-        score: c.days ? Math.round((100 - (c.deduct || 0) / c.days) * 10) / 10 : null,
+        // 得分走 services/score-scale.js（10 分制唯一出口）：这里曾硬编码 `100 - 扣分/天数`，
+        // 与班级页 / 首页班超卡不是同一处算分，改刻度时最容易漏 —— 漏了就是
+        // 「同一个班，管理端统计 92 分、班级页 9.2 分」。
+        score: c.days ? scoreScale.avgScoreOf((c.deduct || 0) / c.days) : null,
         recordCount: c.count,
       })),
       modules: byModule.map((m) => ({

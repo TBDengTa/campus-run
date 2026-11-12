@@ -63,10 +63,11 @@ const METRIC_CHIPS = [
 ];
 
 // 显示内容（列表列）与复制内容（文案强调哪个指标）—— 两个独立开关
+// 考勤列 2026-11-12 起显示**分数**（10 分制），标签跟着改，否则「考勤」两字会被读成百分数
 const COLUMN_TOGGLES = [
   { key: 'daily', label: '日达标' },
   { key: 'weekly', label: '周达标' },
-  { key: 'attendance', label: '考勤' },
+  { key: 'attendance', label: '考勤分' },
 ];
 const COPY_SCOPES = [
   { key: 'all', label: '全部' },
@@ -77,8 +78,13 @@ const COPY_SCOPES = [
 const DAY_OPTIONS = [3, 7, 14, 30];
 
 const rateLevel = (v) => (v === null || v === undefined ? 'none' : v >= 100 ? 'ok' : v >= 60 ? 'warn' : 'bad');
-const attLevel = (v) => (v === null || v === undefined ? 'none' : v >= 90 ? 'ok' : v >= 70 ? 'warn' : 'bad');
+// 考勤**分数**的档位（10 分制，用户 2026-11-12「考勤要显示分数」）：
+// 阈值是原百分制档位（90/70）等比 ÷10，判定结果与换刻度前一致 —— 换的是刻度，不是标准。
+const attScoreLevel = (v) => (v === null || v === undefined ? 'none' : v >= 9 ? 'ok' : v >= 7 ? 'warn' : 'bad');
 const rateText = (v) => (v === null || v === undefined ? '—' : `${v}%`);
+// 分数一律两位小数，且「没有考勤数据」显「—」而不是 0.00 分（0 分是最严重的差评，
+// 会被截图发进工作群）—— 统一走 utils/format.js::scoreText，与班级页同一口径。
+const scoreText = fmt.scoreText;
 
 Page({
   data: {
@@ -337,7 +343,9 @@ Page({
   buildFooter(d) {
     const parts = ['达标 = 步数 ≥ 生效目标（个人计划优先）'];
     if (d.weekStart) parts.push(this.data.selectedDate ? `周起点 ${d.weekStart}` : `本周起点 ${d.weekStart}`);
-    if (this.data.hasAttendance) parts.push(`考勤按应到人数加权（${d.from} 起），早八只记迟到`);
+    // 考勤口径必须写清「10 分制」与早八怎么扣：老师照着这个数字催人，
+    // 不知道「9.95 分」是迟到 1 人扣出来的，就会以为统计出错。
+    if (this.data.hasAttendance) parts.push(`考勤为 10 分制，按应到人数加权（${d.from} 起），早八每迟到 1 人扣 0.05 分`);
     return `${parts.join('；')}。`;
   },
 
@@ -371,6 +379,9 @@ Page({
   decorate(r) {
     const run = r.run || {};
     const att = r.attendance || {};
+    // 考勤列显示**分数**（10 分制，用户 2026-11-12）；出勤率仍留在副信息里对照，
+    // 因为「9.5 分」和「95%」说的是同一件事，但发群里的报告两个都可能出现。
+    const attScoreText = scoreText(att.score);
     return {
       className: r.className,
       departmentName: r.departmentName || '',
@@ -380,8 +391,12 @@ Page({
       dailyLevel: rateLevel(run.dailyRate),
       weeklyText: rateText(run.weeklyRate),
       weeklyLevel: rateLevel(run.weeklyRate),
-      attText: att.ratePercent === null || att.ratePercent === undefined ? '—' : `${att.ratePercent}%`,
-      attLevel: attLevel(att.ratePercent),
+      attText: attScoreText,
+      attLevel: attScoreLevel(att.score),
+      // 分数下面那行小字：迟到人数（分数里扣掉的那一项）。
+      // 出勤率**不再重复显示**：分数就是率的折算结果，同一行给两个数只会让人
+      // 去核对「9.85 和 98.5% 是不是同一个意思」，反而更慢。
+      attSub: att.lateCount ? `迟到 ${att.lateCount} 人` : '',
       // 不参跑的班要标出来：否则「0%」会被误读成没完成，而实际上本班不用跑
       runDisabled: run.enabled === false,
     };
@@ -602,7 +617,7 @@ Page({
     const numCols = [];
     if (cols.daily) numCols.push({ key: 'daily', head: '日达标', w: 108 });
     if (cols.weekly) numCols.push({ key: 'weekly', head: '周达标', w: 108 });
-    if (cols.attendance) numCols.push({ key: 'att', head: '考勤', w: 96 });
+    if (cols.attendance) numCols.push({ key: 'att', head: '考勤分', w: 100 });
     const stuW = 78;
     const xOf = [];
     let x = W - PAD;
@@ -667,7 +682,7 @@ Page({
     ctx.textAlign = 'left';
     ctx.fillStyle = C.sub;
     ctx.font = '20px sans-serif';
-    ctx.fillText('达标 = 步数 ≥ 生效目标（个人计划优先）· 考勤按应到人数加权', PAD, footY + 26);
+    ctx.fillText('达标 = 步数 ≥ 生效目标（个人计划优先）· 考勤为 10 分制，按应到人数加权', PAD, footY + 26);
     if (omitted > 0) ctx.fillText(`其余 ${omitted} 个班未列出（共 ${this.data.rows.length} 个）`, PAD, footY + 54);
     ctx.fillStyle = C.brand;
     ctx.fillText('唐唐快跑 · 班级状态', PAD, footY + footH - 26);

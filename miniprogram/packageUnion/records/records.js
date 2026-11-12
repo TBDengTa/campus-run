@@ -8,6 +8,7 @@
 //    没有任何字段级的高级筛选，不要凭空调参数（传了也会被忽略，界面却像生效了 —— 这类假筛选最坑人）。
 //    「仅我的」= mine=1；「待复核」= status=submitted。两者都是上面已有的参数，没有发明新契约。
 const auth = require('../../utils/request');
+const fmt = require('../../utils/format');
 
 const STATUS_ALL = { key: '', label: '全部' };
 
@@ -156,7 +157,10 @@ Page({
         return {
           ...r,
           dateText: `${Number(r.date.slice(5, 7))}/${Number(r.date.slice(8, 10))}`,
-          deductText: r.deduct ? `-${r.deduct}` : '0',
+          // 10 分制（用户 2026-11-12）：扣分固定两位小数。
+          // 以前是模板字符串直出，0.05 与 5 在列表里都只有两位有效数字的视觉宽度，
+          // 而同页的「检查记录」详情用的是 scoreText（两位小数）—— 两处位数不一致最容易被当成算错。
+          deductText: r.deduct ? `-${fmt.scoreText(r.deduct)}` : fmt.scoreText(0),
           statusClass: r.status === 'approved' ? 'done' : r.status === 'submitted' ? 'todo' : 'warn',
           appealText,
           appealClass: r.appeal && r.appeal.status === 'pending' ? 'pending' : 'done',

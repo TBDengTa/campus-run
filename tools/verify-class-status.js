@@ -194,6 +194,23 @@ function assert(cond, label, extra) {
       `综合考勤率 = 各模块按应到加权（${row.className}：${row.attendance.ratePercent}% vs 期望 ${exp}%）`,
       { got: row.attendance.ratePercent, exp }
     );
+    // 考勤**分数**（10 分制，用户 2026-11-12）：率折算 + 早八迟到扣减，必须与率同源可推
+    const lateN = row.attendance.lateCount || 0;
+    // 只有早八记录（没有任何「应到/实到」模块）时没有率：分数 = 满分 − 迟到×0.05
+    const expScore =
+      shouldSum > 0
+        ? Math.round((Math.min(1, rateW / shouldSum) * 10 - lateN * 0.05) * 100) / 100
+        : Math.round((10 - lateN * 0.05) * 100) / 100;
+    assert(
+      row.attendance.score !== null && Math.abs(row.attendance.score - expScore) < 0.02,
+      `考勤分数 = 10 × 加权率 − 迟到×0.05（${row.className}：${row.attendance.score} vs 期望 ${expScore}）`,
+      { got: row.attendance.score, expScore, lateN }
+    );
+    assert(
+      row.attendance.score === null || (row.attendance.score >= 0 && row.attendance.score <= 10),
+      '考勤分数在 0~10 区间（10 分制，不出现百分制数值）',
+      row.attendance.score
+    );
     // 早八不得有比率（它只记迟到人数）
     if (mods.morning_class) {
       assert(
@@ -508,13 +525,50 @@ function assert(cond, label, extra) {
         assert(me.should === 40 && me.actual === 36, '早操应到/实到读的是 details', { s: me.should, a: me.actual });
         assert(nc.should === 40 && nc.actual === 38, '查宿读 details.shouldStay（不是 shouldCount）', { s: nc.should, a: nc.actual });
         assert(mc.rate === null && mc.ratePercent === null && (mc.lateCount || mc.late) === 3, '早八只记迟到、不给比率', mc);
+        // 考勤分数（用户 2026-11-12「考勤应该显示分数，10 分制」）：
+        // 期望 = 10 × 加权率 − 迟到 3 人 × 0.05，与上面**独立**再算一遍（不复用被测函数的实现）
+        const expScore = Math.round((exp * 10 - 3 * 0.05) * 100) / 100;
+        assert(
+          att.score !== null && att.score !== undefined && Math.abs(att.score - expScore) < 0.02,
+          `考勤分数 = 10×加权率 − 迟到×0.05（期望 ${expScore}，且必须体现迟到扣分）`,
+          { got: att.score, expScore }
+        );
+        assert(att.lateCount === 3, '考勤带 lateCount（分数里扣了什么要能看见）', att.lateCount);
+        assert(att.score > 0 && att.score < 10, '考勤分数落在 10 分制区间', att.score);
       }
+
+      // ---- [10b] 只有早八记录、且没人迟到：分数必须是 10.00 而不是「—」 ----
+      // 这是 10 分制改造里最容易写错的一处：若分数按「率与迟到都为空 → null」推断，
+      // 就会出现「迟到 3 人的班显示 9.85、一个都没迟到的班显示 —」，
+      // 老师只会认为统计坏了（比显示 0 分更难解释）。
+      const CLS2 = `verify考勤_${TS}乙班`;
+      await ClassProfile.create({ className: CLS2, status: 'normal' });
+      await CheckRecord.create({
+        moduleKey: 'morning_class',
+        date: day,
+        period: '',
+        targetType: 'class',
+        targetId: CLS2,
+        targetName: CLS2,
+        className: CLS2,
+        details: { lateCount: 0, lateList: [] },
+        metrics: { values: { lateCount: 0 } },
+        status: 'submitted',
+      });
+      const rb2 = await board.classStatusBoard({ force: true });
+      const row2 = rb2.rows.find((x) => x.className === CLS2);
+      assert(!!row2 && row2.attendance.hasData === true, '只有早八记录也算「有考勤数据」', row2 && row2.attendance);
+      assert(!!row2 && row2.attendance.score === 10, '无迟到 = 满分 10.00（不是 —、不是 0）', row2 && row2.attendance.score);
+      assert(!!row2 && row2.attendance.ratePercent === null, '早八不产生出勤率（率仍为 null）', row2 && row2.attendance.ratePercent);
+      await CheckRecord.deleteMany({ className: CLS2 });
+      await ClassProfile.deleteOne({ className: CLS2 });
     } finally {
       // 清理 + 强制刷新缓存：不留 60 秒的脏行给线上页面
-      await CheckRecord.deleteMany({ className: CLS });
-      await ClassProfile.deleteOne({ className: CLS });
+      // ⚠️ 两个临时班都要清：CLS2 的清理写在 try 里，一旦中途抛错就漏在库里
+      await CheckRecord.deleteMany({ className: { $in: [CLS, `verify考勤_${TS}乙班`] } });
+      await ClassProfile.deleteMany({ className: { $in: [CLS, `verify考勤_${TS}乙班`] } });
       await board.classStatusBoard({ force: true }).catch(() => {});
-      const left = await CheckRecord.countDocuments({ className: CLS });
+      const left = await CheckRecord.countDocuments({ className: { $in: [CLS, `verify考勤_${TS}乙班`] } });
       assert(left === 0, '临时考勤记录清理干净', left);
     }
   }

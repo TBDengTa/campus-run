@@ -78,8 +78,10 @@
     </view>
 
     <view class="pp-hint" wx:if="{{loading}}">搜索中…</view>
-    <view class="pp-hint" wx:elif="{{!list.length}}">{{keyword ? '没有匹配的学生' : '输入姓名或学号开始搜索'}}</view>
+    <view class="pp-hint" wx:elif="{{!list.length}}">{{keyword ? '没有找到这个姓名（同音字也试过了）' : '输入姓名或学号开始搜索'}}</view>
     <view class="pp-hint" wx:elif="{{loadingMore}}">加载中…</view>
     <view class="pp-hint" wx:elif="{{hasMore}}" bind:tap="onLoadMore">加载更多</view>
+    <!-- 同音字提示（用户 2026-11-12）：只列全部时显示，提醒「按读音找人也行」 -->
+    <view class="pp-hint pp-hint-homophone" wx:if="{{!keyword && homophoneHint}}">{{homophoneHint}}</view>
   </view>
 </view>

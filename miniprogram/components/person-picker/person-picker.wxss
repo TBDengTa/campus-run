@@ -268,3 +268,13 @@
   font-size: 20rpx;
   color: var(--tt-text-3);
 }
+
+/* 同音字提示（用户 2026-11-12）：比普通提示更弱一档，它是「补充说明」不是状态；
+   用品牌淡底而不是纯灰字，是为了让人扫一眼就知道这是可用功能而不是报错。 */
+.pp-hint-homophone {
+  padding: 14rpx 16rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-brand-soft);
+  color: var(--tt-brand-deep);
+  opacity: 0.85;
+}

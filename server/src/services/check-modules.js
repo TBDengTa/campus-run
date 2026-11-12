@@ -8,7 +8,14 @@
  *
  * 口径常量（**前端只做即时预览，提交与统计仍以服务端为准**，避免两端算出不同结果）：
  *   出勤率 rate = metric('metric')，分母是 divisor=true 的字段（人数类）；
- *   班级总评 = 100 − Σ(各模块 deduce)，见 services/band-chao.js。
+ *   班级总评 = FULL_SCORE(10) − Σ(各模块 deduce)，见 services/band-chao.js。
+ *
+ * ===== 10 分制（用户 2026-11-12「不要满分100分制了，就10分制就行」）=====
+ * 满分基准只有 FULL_SCORE 这一个常量，任何一处出现 100 都是回归（历史数据由
+ * migrateScoreScale() 一次性 ÷10 换算，所以**相对扣分关系与百分制完全等值**：
+ * 百分制的 80 分 = 10 分制的 8 分，不是重新定口径，只是换刻度）。
+ * 模块自己的 scoring.fullScore 仍可读（运营可能改成 5 / 20），但**折算出的扣分一律
+ * 归一到 FULL_SCORE**——否则一个 fullScore=100 的模块能把 10 分制的班级直接扣成负数。
  *
  * ===== 派生人数（fields[].derived = true）=====
  * 原则：**能从已知数推导出来的人数，一律不让用户填**（需求原话：「实到不用填，选缺勤名单自动算」）。
@@ -49,6 +56,19 @@ const FIELD_LIMIT = 200;
 // 现场照片（type:'photo'）单条记录最多几张：与 routes/union.js 顶层 photos 的 slice(0,9) 同口径
 const PHOTO_LIMIT = 9;
 
+// ===== 班超满分刻度（10 分制，用户 2026-11-12）=====
+// 全链路**唯一**的满分定义：模块折算、班级总评、看板考勤分、复审分档都以它为准。
+// 之前是硬编码 100，改一处就会与其它九处漂移（「这页 8 分、那页 80 分」）。
+const FULL_SCORE = 10;
+
+// 按人扣分的单价（10 分制）：**未归 0.2 / 缺勤 0.1 / 迟到 0.05**（分/人）。
+// 这是百分制（2 / 1 / 0.5）的**等比 ÷10**，不是重新定 severity —— 用户要的是换刻度，
+// 不是改惩罚力度；任何一处改动都会让「同一批记录，新旧口径排名不同」，那才是最难解释的回归。
+// ⚠️ 代价：迟到 1 人只扣 0.05 分，**展示必须保留两位小数**（round2），
+//    否则 9.95 会被 round1 收成 10.0，录入人以为「录了没生效」（这正是用户报的那类问题）。
+// ⚠️ 这份单价同时被 services/class-status-board.js 的考勤分数复用，别在两边各写一份。
+const PERSON_DEDUCT = { notReturned: 0.2, absent: 0.1, late: 0.05 };
+
 // ===== 五个内置模块的默认定义（管理端可改名称/部门/选项/权重，key 不可改）=====
 const DEFAULT_MODULES = [
   {
@@ -69,10 +89,10 @@ const DEFAULT_MODULES = [
       { key: 'remark', label: '说明', type: 'textarea' },
       // derived：得分由「评价」折算（公式引擎不支持字符串比较/三元，见 services/formula.js 文件头，
       // 所以折算必须在这里做数字派生，metric / computeDeduct 只引用这个数字）
-      { key: 'score', label: '得分', type: 'int', min: 0, max: 100, derived: true, hint: '系统自动折算：优 100 / 良 80 / 差 60' },
+      { key: 'score', label: '得分', type: 'number', min: 0, max: FULL_SCORE, derived: true, hint: '系统自动折算：优 10 / 良 8 / 差 6' },
     ],
     metrics: [{ key: 'score', name: '得分', unit: '分', decimals: 1, formula: 'score' }],
-    scoring: { mode: 'percent', fullScore: 100, weight: 1, cap: 0 },
+    scoring: { mode: 'percent', fullScore: FULL_SCORE, weight: 1, cap: 0 },
     sort: 1,
   },
   {
@@ -106,7 +126,7 @@ const DEFAULT_MODULES = [
       { key: 'absentCount', label: '缺勤人数', type: 'int', min: 0, derived: true, hint: '系统自动计算：缺勤名单人数' },
     ],
     metrics: [{ key: 'rate', name: '出勤率', unit: '%', decimals: 1, formula: 'actualCount / shouldCount' }],
-    scoring: { mode: 'rate', fullScore: 100, weight: 1, cap: 0 },
+    scoring: { mode: 'rate', fullScore: FULL_SCORE, weight: 1, cap: 0 },
     sort: 2,
   },
   {
@@ -174,7 +194,9 @@ const DEFAULT_MODULES = [
     periods: ['morning_class'],
     fields: [
       // 早八：无法同步课表 → **只记迟到人**（用户第四轮口径），不记应到/实到/缺勤
-      { key: 'lateList', label: '迟到名单', type: 'students', maxItems: FIELD_LIMIT, hint: '在校内名单里搜索选择（可按班级/姓名/学号筛选）' },
+      // ⚠️ 名单范围=**本班**（用户 2026-11-12「名单怎么是全校呢」）：录入台按班级逐条录，
+      //    提示文案与录入台 pickerScope 必须同一口径，写「校内名单」会让人以为勾别班的人也对。
+      { key: 'lateList', label: '迟到名单', type: 'students', maxItems: FIELD_LIMIT, hint: '在本班名单里搜索选择迟到学生（可按姓名 / 学号筛选）' },
       { key: 'photos', label: '现场照片', type: 'photo' },
       // derived：迟到人数 = 迟到名单人数（名单是数组，公式引擎只认数字，所以必须派生出数字字段）
       { key: 'lateCount', label: '迟到人数', type: 'int', min: 0, derived: true, hint: '系统自动计算：迟到名单人数' },
@@ -364,56 +386,71 @@ function computeMetrics(moduleDef, details) {
 
 // ===== 模块扣分折算 =====
 /**
- * 单条记录的扣分（用于班级总评求和）
- *   percent：扣分 = (满分 − 得分)/满分 × 100 × 权重（即缺 1 分扣 1 分）
- *   rate   ：扣分 = (1 − 出勤率) × 满分 × 权重（出勤率 >1 记 0 分，不倒加分）
- *   deduct ：直接按记录里的人数类扣分项累计
+ * 单条记录的扣分（用于班级总评求和；**结果一律落在 FULL_SCORE=10 的刻度上**）
+ *   percent：扣分 = (满分 − 得分)/满分 × 10 × 权重（10 分制下缺 1 分扣 1 分）
+ *   rate   ：扣分 = (1 − 出勤率) × 10 × 权重（出勤率 >1 记 0 分，不倒加分）
+ *   deduct ：直接按记录里的人数类扣分项累计（单价见 PERSON_DEDUCT）
  * 封顶 cap：单模块每日累计扣分上限（0 = 不封顶）
+ *
+ * ⚠️ 为什么 percent/rate 都用 FULL_SCORE 而不是模块自己的 scoring.fullScore：
+ *   存量库里内置模块的 fullScore 可能还是**百分制的 100**（运营在管理端改过、或迁移没跑到的模块）。
+ *   若按它折算，一条「出勤率 0」的记录就扣 100 分，而班级总评满分只有 10 分 →
+ *   直接扣成 −90，整个榜单全负、排名失去意义。刻度只有一个（FULL_SCORE），
+ *   模块 fullScore 只当「得分满分」用（percent 模式里做分子分母，比值不变），
+ *   要调惩罚力度请用 weight。
  */
 function computeDeduct(moduleDef, details, metrics) {
   const sc = moduleDef.scoring || {};
   const weight = Number(sc.weight);
   const w = Number.isFinite(weight) && weight > 0 ? weight : 1;
-  const full = Number(sc.fullScore) || 100;
+  // 模块自己的得分满分（percent 模式只取它的**比值**，所以 100 或 10 都不影响结果）
+  const full = Number(sc.fullScore) > 0 ? Number(sc.fullScore) : FULL_SCORE;
   const mode = sc.mode || 'percent';
 
   if (mode === 'percent') {
     const score = Number(details.score);
     const s = Number.isFinite(score) ? Math.max(0, Math.min(full, score)) : full;
-    return round2(((full - s) / full) * 100 * w);
+    // × FULL_SCORE：把「缺了满分的一部分」翻译成 10 分制的扣分
+    return round2(((full - s) / full) * FULL_SCORE * w);
   }
   if (mode === 'rate') {
     const rate = Number(metrics && metrics.ratios && metrics.ratios.rate);
     // ⚠️ 分母缺失 = 出勤率**不适用**，不能当成「出勤率 0」：
     //    网课班没有实到可言（shouldCount 被清 0 → 公式除零 → evaluate 返回 0），
-    //    若把 0 当真实出勤率，网课班会被算成 (1-0)*100 = **满分扣分**（真实踩过的 bug）。
+    //    若把 0 当真实出勤率，网课班会被算成 (1-0)×满分 = **满分扣分**（真实踩过的 bug）。
     //    判定依据：该模块的分母字段（divisor）在 details 里是 0 / 缺失。
     //    退化方式：分母为 0 时**改用按人计扣**（缺勤/未归/迟到人数），而不是直接 0 分 ——
     //    这样「台账缺失但确实录了缺勤名单」的班仍会被扣到（不静默放过），
     //    而网课班（缺勤与名单都被清空）自然就是 0 分。
     const divisorField = (moduleDef.fields || []).find((f) => f && f.divisor);
     const divisorVal = divisorField ? Number(details && details[divisorField.key]) || 0 : null;
-    if (divisorVal === 0) {
-      const n = (k) => Number(details[k]) || 0;
-      const byPerson = n('notReturnedCount') * 2 + n('absentCount') * 1 + n('lateCount') * 0.5;
-      return round2(byPerson * w);
-    }
+    if (divisorVal === 0) return round2(personDeduct(details) * w);
     const r = Number.isFinite(rate) ? Math.max(0, Math.min(1, rate)) : 0;
-    return round2((1 - r) * full * w);
+    // 一律 × FULL_SCORE（不是模块 fullScore）：见函数头「刻度只有一个」
+    return round2((1 - r) * FULL_SCORE * w);
   }
   // deduct：以「人」为单位累计（第四轮口径：只保留新表单里真实存在的键）
-  //   缺勤（absentCount）1 分/人、迟到（lateCount）0.5 分/人、未归（notReturnedCount）2 分/人。
+  //   单价见 PERSON_DEDUCT（10 分制 = 百分制等比 ÷10）。
   //   旧的 violationCount / lateReturnCount / earlyLeaveCount 已随字段删除，不再参与计算
   //   （它们在新表单里没有对应输入，永久为 0）。
-  const n = (k) => Number(details[k]) || 0;
-  const total = n('notReturnedCount') * 2 + n('absentCount') * 1 + n('lateCount') * 0.5;
-  return round2(total * w);
+  return round2(personDeduct(details) * w);
+}
+
+// 按人计扣的**唯一**实现（rate 模式分母缺失的退化路径与 deduct 模式共用）：
+// 两处以前各写一份 `n('notReturnedCount') * 2 + ...`，改刻度时漏一处就会出现
+// 「同一批记录，两条路径扣的分不在一个量级」。
+function personDeduct(details) {
+  const n = (k) => Number(details && details[k]) || 0;
+  return n('notReturnedCount') * PERSON_DEDUCT.notReturned
+    + n('absentCount') * PERSON_DEDUCT.absent
+    + n('lateCount') * PERSON_DEDUCT.late;
 }
 
 // 派生值推算（**唯一写入方**）：能从已知数推出来的值，一律由这里算，客户端传值一律不算数。
 //
 // 第五轮口径（用户反馈驱动）：
-//   卫生（hygiene）    ：评价 优/良/差 → 得分 100/80/60（公式引擎不支持字符串比较，
+//   卫生（hygiene）    ：评价 优/良/差 → 得分 10/8/6（10 分制，用户 2026-11-12；
+//                        公式引擎不支持字符串比较，
 //                        所以折算必须在这里落成数字派生字段，metric / computeDeduct 只引用它）
 //   晚自习/早操/查宿  ：**实到人数不再手填**，选完缺勤/未归名单后自动推算：
 //                        实到 = 应到（应住） − 名单人数（≥0）；缺勤/未归 = 名单人数。
@@ -424,7 +461,8 @@ function computeDeduct(moduleDef, details, metrics) {
 // ⚠️ 兼容老记录：老记录的 actualCount 是用户手填后落库的，读回时**必须保留**；
 //   否则历史考勤会被全部重算成「全勤」，这是比显示 0 更严重的数据事故。
 //   新提交的 actualCount 在 normalizeDetails 里已作为 derived 被剔除 → 这里拿不到旧值，才按名单推算。
-const GRADE_SCORE = { 优: 100, 良: 80, 差: 60 };
+// 优/良/差 的比值（1 : 0.8 : 0.6）与百分制时代完全一致，只是刻度换成 10 分制。
+const GRADE_SCORE = { 优: 10, 良: 8, 差: 6 };
 // 晚自习「网课」时要清空并跳过校验的字段（保持与前端 entry.js 的 hiddenKeysInOnlineDorm 同口径）
 const ONLINE_DORM_CLEARED = ['actualCount', 'absentList', 'reason'];
 
@@ -531,7 +569,13 @@ async function getModule(key) {
 //         v5 = 2026-10-26：晚自习 targetTypes 由 ['class'] 改为 ['classroom']
 //              （用户「晚自习不应该显示班级 应该优先显示教室，并增加筛选教学楼」）——
 //              存量库的 targetTypes 必须靠这次迁移更新，否则代码改了线上仍是旧值。
-const DEF_VERSION = 5;
+//         v6 = 2026-11-12：**10 分制**（用户「不要满分100分制了，就10分制就行」）——
+//              内置模块的 scoring.fullScore / 卫生得分字段 / 按人扣分单价全部换刻度。
+//              存量库必须靠这次迁移把 fields 里的 max=100 与 hint 换掉，否则录入台
+//              仍按百分制校验、提示也说「优 100」（代码改了等于没改）。
+//              ⚠️ 结构迁移会连 scoring 一起覆盖（含运营改过的 weight）—— 这是 defVersion
+//              既有语义（v5 就如此）；刻度改动无法只覆盖一半，覆盖后管理端可再调权重。
+const DEF_VERSION = 6;
 
 // 启动期幂等播种：内置模块的 key/结构以代码为准（entryDeptKeys 每次同步，保证鉴权口径一致），
 // 运营可改的部分（名称、字段选项、计分权重）**只在首次创建时写入，之后不覆盖**；
@@ -553,9 +597,21 @@ async function seedCheckModules() {
       // fields / metrics 是**结构**：必须整体换成新定义，否则线上还是旧表单。
       set.fields = def.fields;
       set.metrics = def.metrics;
-      set.scoring = def.scoring;
       set.targetTypes = def.targetTypes;
       set.periods = def.periods;
+      // ⚠️ v6（10 分制）起 scoring **只覆盖刻度、保留运营改过的 weight / cap**：
+      //   旧写法整体覆盖 scoring 会把学校在管理端调过的权重静默抹回 1
+      //   （与权限组 / entryDeptKeys 的「假生效」同一类问题）。刻度是必须换的（不换
+      //   存量库仍按 fullScore 100 折算），权重不是 —— 权重换了会直接改排名，必须留给管理员。
+      const keepNum = (k) => {
+        const v = Number(exists.scoring && exists.scoring[k]);
+        return Number.isFinite(v) && v >= 0 ? v : def.scoring[k];
+      };
+      set.scoring = {
+        ...def.scoring,
+        weight: keepNum('weight') > 0 ? keepNum('weight') : def.scoring.weight,
+        cap: keepNum('cap'),
+      };
       // 名称与简称属于"结构的一部分"（用户第四轮改了名字，如「教室卫生检查」→「卫生检查」）：
       // 一并更新；运营之后想改仍可在管理端改（版本已落，不会再被覆盖）。
       set.name = def.name;
@@ -624,6 +680,10 @@ module.exports = {
   derivedKeysOf,
   FIELD_LIMIT,
   PHOTO_LIMIT,
+  FULL_SCORE,
+  PERSON_DEDUCT,
+  personDeduct,
+  GRADE_SCORE,
   DEF_VERSION,
   DetailError,
   listModules,

@@ -144,10 +144,13 @@ const TAG = `rv_verify_${TS}`;
 
     // ---- 2) 造四条待复核记录（四档扣分各一条）----
     // 扣分档位必须由真实分数派生，所以直接指定 deduct（这就是落库字段本身）
+    // ⚠️ 10 分制（用户 2026-11-12）：deduct 与 score 都在 10 分刻度上（score = 满分 − 扣分），
+    //   档位边界 0 / 0.5 / 1。造百分制数值会让分档断言测的是"旧刻度下的巧合"。
     // ⚠️ 每条必须**独立 targetId**：uniq_slot_active_v2 唯一键是
     //   (moduleKey, targetType, targetId, date, period, className)，
     //   同一教室同一天只能有一条生效记录 —— 复用 targetId 会直接 E11000（第一次就踩到了）。
     const date = require(path.join(serverDir, 'src', 'utils', 'dates')).todayKey();
+    const FULL = require(path.join(serverDir, 'src', 'services', 'check-modules')).FULL_SCORE;
     const mkRec = async ({ deduct, inspector, inspectorName, deptKey, slot, extra = {} }) => {
       const doc = await CheckRecord.create({
         moduleKey: 'hygiene',
@@ -161,10 +164,11 @@ const TAG = `rv_verify_${TS}`;
         inspectorOpenid: inspector,
         inspectorName,
         inspectorDeptKey: deptKey,
-        details: { grade: ['良'], score: 100 - deduct, photos: [] },
-        metrics: { ratios: {}, values: { score: 100 - deduct } },
-        score: 100 - deduct,
+        details: { grade: ['良'], score: FULL - deduct, photos: [] },
+        metrics: { ratios: {}, values: { score: FULL - deduct } },
+        score: FULL - deduct,
         deduct,
+        scoreScale: FULL,
         photos: [],
         remark: '端到端验证用临时记录',
         status: 'submitted',
@@ -176,9 +180,9 @@ const TAG = `rv_verify_${TS}`;
     };
 
     const recFull = await mkRec({ deduct: 0, inspector: minister.openid, inspectorName: '复审-部长', deptKey: 'life', slot: 'a' });
-    const recLow = await mkRec({ deduct: 1.5, inspector: presidium.openid, inspectorName: '复审-主席团', deptKey: 'presidium', slot: 'b' });
-    const recMid = await mkRec({ deduct: 3, inspector: presidium.openid, inspectorName: '复审-主席团', deptKey: 'presidium', slot: 'c' });
-    const recHigh = await mkRec({ deduct: 8, inspector: presidium.openid, inspectorName: '复审-主席团', deptKey: 'presidium', slot: 'd' });
+    const recLow = await mkRec({ deduct: 0.4, inspector: presidium.openid, inspectorName: '复审-主席团', deptKey: 'presidium', slot: 'b' });
+    const recMid = await mkRec({ deduct: 0.8, inspector: presidium.openid, inspectorName: '复审-主席团', deptKey: 'presidium', slot: 'c' });
+    const recHigh = await mkRec({ deduct: 2, inspector: presidium.openid, inspectorName: '复审-主席团', deptKey: 'presidium', slot: 'd' });
 
     // ---- 3) 队列：分档与计数 ----
     console.log('\n[1] 队列分档');
@@ -298,7 +302,22 @@ const TAG = `rv_verify_${TS}`;
 
     // ---- 10) 服务层口径（不经 HTTP，直接单测分档与判定）----
     console.log('\n[8] 服务层口径');
-    assert(reviewSvc.bandOf(2).key === 'low' && reviewSvc.bandOf(2.5).key === 'mid', '分档闭区间正确');
+    // 10 分制（用户 2026-11-12）：边界 0 / 0.5 / 1，闭区间逐档递减。
+    // 用「迟到 1 人 = 0.05 分」这种真实粒度一起验：分档最小的可观测值必须落进「轻微」，
+    // 不能因为太小而掉回「满分」（那会让「迟到了但界面显示满分」成为常态）。
+    assert(
+      reviewSvc.bandOf(0).key === 'full' &&
+        reviewSvc.bandOf(0.05).key === 'low' &&
+        reviewSvc.bandOf(0.5).key === 'low' &&
+        reviewSvc.bandOf(0.5 + 1e-9).key === 'mid' &&
+        reviewSvc.bandOf(1).key === 'mid' &&
+        reviewSvc.bandOf(1.01).key === 'high',
+      '分档闭区间正确（10 分制 0 / 0.5 / 1）',
+      [0, 0.05, 0.5, 1, 1.01].map((d) => reviewSvc.bandOf(d).key)
+    );
+    // 档位条件与分档必须同源：用 bandCond 反查能命中同一批（这是「徽标数字与点进去条数一致」的根）
+    const lowCond = reviewSvc.bandCond('low');
+    assert(lowCond.deduct.$gt === 0 && lowCond.deduct.$lte === 0.5, 'bandCond(low) 是 (0, 0.5]', lowCond);
     const identityOfPres = await unionSvc.resolveIdentity(presidium);
     const identityOfMin = await unionSvc.resolveIdentity(minister);
     const modDef = await checkModules.getModule('hygiene');

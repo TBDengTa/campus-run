@@ -27,8 +27,13 @@ const checkRecordSchema = new mongoose.Schema(
 
     details: { type: mongoose.Schema.Types.Mixed, default: {} },
     metrics: { type: mongoose.Schema.Types.Mixed, default: {} },
-    score: { type: Number, default: 0 }, // 本条折算分（百分制得分或扣分，语义见模块 scoring.mode）
+    score: { type: Number, default: 0 }, // 本条折算分（满分制得分或扣分，语义见模块 scoring.mode；刻度见 scoreScale）
     deduct: { type: Number, default: 0 }, // 本条折算出的人均/整体扣分（班级总评直接求和）
+    // ===== 分数刻度标记（10 分制迁移用，用户 2026-11-12）=====
+    // 记「这条记录的 score/deduct 是按哪个满分写进去的」。历史数据是 100，迁移时改成 10。
+    // ⚠️ 为什么必须落库而不是运行时猜：`score=8` 既可能是百分制的 8 分、也可能是 10 分制的 8 分，
+    //    按数值判断会把已换算过的数据**再除一次 10**（不可逆损坏）。见 services/score-scale.js。
+    scoreScale: { type: Number, default: 10 },
 
     photos: { type: [String], default: [] },
     remark: { type: String, default: '' },

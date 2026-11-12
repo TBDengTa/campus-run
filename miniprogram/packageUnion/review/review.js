@@ -73,7 +73,10 @@ Page({
         ...r,
         // 已在别的分页页里勾选过的条目，重新载入后要保持勾选态
         checked: !!(this._sel && this._sel.has(r.id)),
-        deductText: r.deduct ? `-${fmt.formatNumber(r.deduct)}` : '0',
+        // 扣分文案：10 分制下必须固定两位小数（0.05 / 1.50 / 10.00 同列对齐）。
+        // 以前用 formatNumber（千分位整数风格），会出现「-0.05」与「-2」混排，
+        // 复审的人扫一眼分不清「扣了两分」还是「扣了 0.2 分」。
+        deductText: r.deduct ? `-${fmt.scoreText(r.deduct)}` : fmt.scoreText(0),
         photos: r.photos || [],
         // 照片被服务端裁剪（宿舍照片对无权者不下发原图）：给出可读说明，不留白
         photoMaskText: r.photosBlurred ? r.photoNote || '宿舍照片仅检查人 / 主席团 / 所属部门部长 / 教师可见' : '',

@@ -243,6 +243,48 @@ function makeInstance() {
   ok('navigateTo 失败退到 redirectTo（不静默）', /wx\.navigateTo\(\{ url, fail: \(\) => wx\.redirectTo/.test(recordJs));
   ok('页面栈快满时直接 redirectTo', /stack\.length >= 9/.test(recordJs) && /wx\.redirectTo\(\{ url, fail: failToast \}\)/.test(recordJs));
 
+  // ===== 早八名单范围 = 本班（用户 2026-11-12「录入早八时名单怎么是全校呢」）=====
+  // 录入台是按班级逐条录的，名单给全校 = 让检查人在两千多人里勾自己班的人，
+  // 勾错人直接落库且不可回滚。这三条钉住：不再传 scope=school、范围条写班级名。
+  inst.data.moduleKey = 'morning_class';
+  inst.data.module = {
+    key: 'morning_class',
+    name: '早八出勤',
+    targetTypes: ['class'],
+    fields: [
+      { key: 'lateList', label: '迟到名单', type: 'students' },
+      { key: 'lateCount', label: '迟到人数', type: 'int', derived: true },
+    ],
+  };
+  inst.data.targets = [
+    { targetId: '26级信息安全技术应用', targetName: '26级信息安全技术应用', className: '26级信息安全技术应用', targetType: 'class', classroom: '1号教学楼·201', studentCount: 48 },
+  ];
+  inst.pickTarget({ currentTarget: { dataset: { id: '26级信息安全技术应用' } } });
+  ok('早八名单走班内（pickerScope 不再返回 school）', inst.pickerScope() === 'class', inst.pickerScope());
+  ok('早八查询参数带 className、不带 scope=school',
+    inst.data.pickerQuery.className === '26级信息安全技术应用' && !inst.data.pickerQuery.scope,
+    JSON.stringify(inst.data.pickerQuery));
+  ok('早八范围条显示班级名（不是「全校名单」）',
+    inst.data.scopeLabel === '26级信息安全技术应用' && !/全校/.test(inst.data.scopeLabel),
+    inst.data.scopeLabel);
+  ok('早八范围条不带教室（名单按班取，教室会误导）', !/教学楼/.test(inst.data.scopeLabel), inst.data.scopeLabel);
+  ok('早八名单不带原因选项（迟到不是缺勤，服务端 withReason 按 key 判定）',
+    /with-reason="\{\{f\.key !== 'lateList'\}\}/.test(fs.readFileSync(path.join(MINI, 'packageUnion', 'entry', 'entry.wxml'), 'utf8')));
+
+  // 晚自习仍以教室优先（不能被这次改动顺手改掉）
+  inst.data.moduleKey = 'study_evening';
+  inst.data.module = {
+    key: 'study_evening',
+    name: '晚自习考勤',
+    targetTypes: ['classroom'],
+    fields: [{ key: 'absentList', label: '缺勤名单', type: 'students' }],
+  };
+  inst.data.targets = [
+    { targetId: '23级大数据技术', targetName: '23级大数据技术', className: '23级大数据技术', targetType: 'classroom', classroom: '3号教学楼·105' },
+  ];
+  inst.pickTarget({ currentTarget: { dataset: { id: '23级大数据技术' } } });
+  ok('晚自习范围条仍是「教室 · 班级」', inst.data.scopeLabel === '3号教学楼·105 · 23级大数据技术', inst.data.scopeLabel);
+
   console.log(`\n${failed ? `FAILED ${failed}` : '全部通过'}`);
   process.exitCode = failed ? 1 : 0;
 })();
