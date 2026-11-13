@@ -165,13 +165,28 @@ for (const wxml of wxmls) {
   }
 
   for (const m of src.matchAll(/class="([^"]*)"/g)) {
+    // 记录哪些 token 是「拼接前缀」：class="bd-fx bd-fx-{{fxRarity}}" 里
+    // 第二个 token 在清理后剩下 `bd-fx-`（缺了被插值的部分），它本身就不是完整类名，
+    // 不能按「未定义」处理 —— 真正被拼出来的是 bd-fx-normal / bd-fx-rare / bd-fx-rarest，
+    // 只要**这些后缀类**里有定义就算通过（见下面的 prefixOk 判定）。
+    const prefixTokens = new Set();
+    for (const t of m[1].matchAll(/([a-zA-Z][\w-]*-)\s*\{\{/g)) prefixTokens.add(t[1]);
     const cleaned = m[1].replace(/\{\{[^}]*\}\}/g, ' ');
     const tokens = cleaned
       .split(/\s+/)
       .map((t) => t.trim())
       .filter((c) => c && !/[{}]/.test(c));
     classUse += tokens.length;
-    const unknown = tokens.filter((c) => !definedClasses.has(c) && !/^rank-$/.test(c));
+    const unknown = tokens.filter((c) => {
+      if (definedClasses.has(c)) return false;
+      if (/^rank-$/.test(c)) return false;
+      // 前缀类：只要存在以它为前缀的具体类（bd-fx- → bd-fx-normal 等）就算有样式
+      if (prefixTokens.has(c)) {
+        for (const d of definedClasses) if (d.indexOf(c) === 0) return false;
+        return true;
+      }
+      return true;
+    });
     if (!unknown.length) continue;
     // 同一个 class 属性里只要有一个类有样式，其余未定义的就是「修饰钩子」（无害）；
     // 全部未定义说明这个节点完全没有样式，是真问题。

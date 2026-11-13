@@ -62,6 +62,22 @@ router.get(
   })
 );
 
+// 中奖播报（只读）：最近有人中奖的记录，姓名已脱敏
+//
+// 为什么不拦教师：教师进不了活动页（前端三道拦截），但接口本身是**公开只读**的，
+// 给它 403 只会在日志里制造噪音，没有安全收益。真正的护栏在 winnersFeed 里
+// （脱敏 / 排除不参与排名 / 排除封禁与教师 / 单人最多 2 条）。
+router.get(
+  '/winners',
+  wrap(async (req, res) => {
+    const data = await beidouSvc.winnersFeed({
+      limit: req.query.limit,
+      excludeOpenid: req.user && req.user.openid,
+    });
+    ok(res, data);
+  })
+);
+
 // 抽奖：{ drawId } → 服务端定结果，前端只播动画
 router.post(
   '/draw',

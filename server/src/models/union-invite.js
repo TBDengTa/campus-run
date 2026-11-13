@@ -26,8 +26,10 @@ const unionInviteSchema = new mongoose.Schema(
     studentId: { type: String, default: '' },
     className: { type: String, default: '' },
 
-    // 过期与使用状态：一次性（用掉即作废），默认 10 分钟有效
-    expiresAt: { type: Date, required: true, index: true },
+    // 过期与使用状态：一次性（用掉即作废），默认 10 分钟有效。
+    // ⚠️ 这里刻意**不写 index: true**：下面已有 TTL 索引 { expiresAt: 1 }，
+    //    两处都声明会让 Mongoose 报「Duplicate schema index」并建两个同名键的索引。
+    expiresAt: { type: Date, required: true },
     usedAt: { type: Date, default: null },
     // 谁用掉的（干部 openid / 姓名），便于审计「这条码被谁扫了」
     usedByOpenid: { type: String, default: '' },

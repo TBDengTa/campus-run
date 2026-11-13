@@ -61,6 +61,21 @@
   border-color: var(--tt-brand);
 }
 
+/* 清单外的历史楼名（只为「沿现住楼调床位」补的那一条）：虚线 + 次要色，
+   一眼和标准白名单区分开，避免被当成可选楼名继续往里写新记录。 */
+.ds-chip-legacy {
+  color: var(--tt-text-2);
+  border: 2rpx dashed var(--tt-line);
+  background: transparent;
+}
+
+.ds-chip-legacy.on {
+  color: var(--tt-brand);
+  border-color: var(--tt-brand);
+  border-style: dashed;
+  background: var(--tt-brand-soft);
+}
+
 /* 床位号是 1~8 的短数字：等宽方块，排成一行更好点 */
 .ds-chip-sm {
   min-width: 84rpx;

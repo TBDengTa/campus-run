@@ -492,9 +492,11 @@ function uploadCheckPhoto(filePath, options = {}) {
 
         if (!body) {
           if (status === 413) {
+            // 2026-11-12 起检查照片**不限制体积**：再遇到 413 是网关配置没放开
+            //（Nginx client_max_body_size 应为 0），不要再让用户去压缩一张本来没超限的照片。
             reject(
               new Error(
-                '照片太大，被服务器网关拒绝（Nginx 的 client_max_body_size 需大于单张上限）。请压缩后再传，或联系管理员调整服务器上限'
+                '照片被服务器网关拒绝（Nginx 的 client_max_body_size 需设为 0）。请稍后重试，或联系管理员检查网关配置'
               )
             );
             return;
@@ -520,7 +522,8 @@ function uploadCheckPhoto(filePath, options = {}) {
       fail: (e) => {
         const msg = String((e && e.errMsg) || '');
         if (/timeout/i.test(msg)) {
-          reject(new Error('上传超时（照片较大或网络较慢），请重试或换小一点的照片'));
+          // 上传超时是网络/服务端处理慢，不是「照片超过上限」（上限已全部解除）
+          reject(new Error('上传超时（照片较大或网络较慢），请检查网络后重试'));
           return;
         }
         if (/cancel/i.test(msg)) {

@@ -14,22 +14,19 @@ const upload = makeUploader({ maxMb: AVATAR_MAX_MB });
 
 // 检查留证照片：现场拍摄需要比其它入口宽松得多。用**独立的 multer 实例**，不动头像链路。
 //
-// 用户要求演进（都记下来，避免以后有人"顺手"调小）：
+// 用户要求演进（都记下来，避免以后有人"顺手"加限制）：
 //   2026-10-26 ① 「现场照片选相册的照片上传错误」→ 相册原图 6~12MB，5MB 上限直接拒掉；
 //   2026-10-26 ② 「检查录入照片可以大一点 清晰一点」→ 别为了能传就压得很糊；
-//   2026-10-28 ③ 「我希望不限制照片大小，或者限制 100MB」→ 上限提到 **100MB**。
+//   2026-10-28 ③ 「我希望不限制照片大小，或者限制 100MB」→ 上限提到 100MB；
+//   2026-11-12 ④ 「检查录入中的照片依然存在录入失败的问题，解除所有上传照片的限制」
+//              → **彻底取消体积上限**（0 = 不限制），同时去掉前端张数上限与强制压缩。
 //
-// 为什么是 100MB 而不是"完全不限制"：
-//   完全不限 = 任何人可以往服务器硬盘灌任意大小的文件（一次上传就能占满磁盘），
-//   这在生产上是不可接受的。100MB 已经远超手机原图（iPhone ProRAW 也就 25~75MB），
-//   实际上等于"日常不会撞到上限"，同时仍然有一道防滥用闸门。
-//
-// 上限必须在**三层同时对上**，否则会撞到中间那层却收不到可读的报错：
-//   ① 前端 entry.js 的 PHOTO_SAFE_BYTES / 压缩策略
-//   ② 本文件 CHECK_PHOTO_MAX_MB（multer fileSize）
-//   ③ nginx client_max_body_size（deploy/nginx/*.conf，现为 128m）
-// 想再调整不必改代码：设 .env 的 CHECK_PHOTO_MAX_MB（缺省 100）。
-const CHECK_PHOTO_MAX_MB = Number(process.env.CHECK_PHOTO_MAX_MB || 100) || 100;
+// 现在的口径：
+//   · 本文件 **不设** fileSize（multer 不限体积）；
+//   · nginx 同步 `client_max_body_size 0`（否则网关会先回 413，Node 根本收不到请求）；
+//   · 前端 entry.js 原图直传、张数不限（`wx.chooseMedia` 单次最多 9 张，可连续添加）；
+//   · 想恢复上限不必改代码：设 .env 的 CHECK_PHOTO_MAX_MB（缺省 0 = 不限制）。
+const CHECK_PHOTO_MAX_MB = Number(process.env.CHECK_PHOTO_MAX_MB || 0) || 0;
 const checkPhotoUpload = makeUploader({ maxMb: CHECK_PHOTO_MAX_MB });
 
 const router = express.Router();
@@ -67,7 +64,7 @@ router.post(
   })
 );
 
-// 检查留证照片上传（学生会成员专用）：限 5MB 图片，入库 category='check_photo'。
+// 检查留证照片上传（学生会成员专用）：图片，**不限体积**，入库 category='check_photo'。
 //
 // 与头像的两个**刻意不同点**（改动前请先读这里）：
 //   ① **只有学生会成员能传**：检查录入台是学生会职能，非成员上传只会产出无法归属的孤儿文件。

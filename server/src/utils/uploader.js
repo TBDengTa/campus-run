@@ -30,7 +30,11 @@ const MIME_TO_EXT = {
 
 // multer 工厂：默认图片落盘（diskStorage）；memory=true 用内存存储（名单等临时文件，不落盘）；
 // accept 缺省校验图片，传扩展名数组（如 ['.xlsx', '.csv']）时按扩展名校验
+// maxMb <= 0 = **不限制体积**（用户 2026-11-12「解除所有上传照片的限制」）。
+// 不传时沿用 config.uploadMaxMb（头像等入口仍有上限，只有检查照片显式传 0）。
 function makeUploader({ dir = UPLOAD_DIR, maxMb = config.uploadMaxMb, memory = false, accept } = {}) {
+  const sizeMb = Number(maxMb);
+  const limits = sizeMb > 0 ? { fileSize: sizeMb * 1024 * 1024 } : {};
   const storage = memory
     ? multer.memoryStorage()
     : multer.diskStorage({
@@ -52,7 +56,7 @@ function makeUploader({ dir = UPLOAD_DIR, maxMb = config.uploadMaxMb, memory = f
       });
   return multer({
     storage,
-    limits: { fileSize: maxMb * 1024 * 1024 },
+    limits,
     fileFilter(req, file, cb) {
       if (!accept) {
         // ⚠️ 不能只看 mimetype（用户 2026-10-26 报「拍照能传、图库不行」）：

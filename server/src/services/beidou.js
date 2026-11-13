@@ -6,6 +6,7 @@ const BeidouDraw = require('../models/beidou-draw');
 const RunRecord = require('../models/run-record');
 const wechat = require('./wechat');
 const rewardVideoSvc = require('./reward-video');
+const { maskName } = require('./name-mask');
 const { todayKey, addDays } = require('../utils/dates');
 
 /**
@@ -185,6 +186,8 @@ async function loadConfig() {
   }));
   return {
     enabled: b.enabled !== false,
+    // 音效总开关（管理端可关）：关掉后前端连 WAV 都不合成，省电也省心
+    sfxEnabled: b.sfxEnabled !== false,
     video: {
       drawPerWatch: clampInt(b.video && b.video.drawPerWatch, LIMITS.drawPerWatch, 0) || 0,
       dailyLimit: clampInt(b.video && b.video.dailyLimit, LIMITS.videoDailyLimit, 0) || 0,
@@ -213,6 +216,7 @@ async function loadConfig() {
 function normalizeBeidouInput(input = {}) {
   const out = {};
   if (input.enabled !== undefined) out.enabled = input.enabled !== false;
+  if (input.sfxEnabled !== undefined) out.sfxEnabled = input.sfxEnabled !== false;
 
   if (input.video && typeof input.video === 'object') {
     out.video = {};
@@ -351,10 +355,16 @@ async function drawRound(user, { drawId } = {}) {
   const nonce = String(drawId || '').trim().slice(0, 64);
   if (!nonce) return { success: false, message: '缺少抽奖凭据' };
 
-  const day = await ensureDay(openid, date);
+  // 先对齐历史来源账本（老文档没有 used* 字段，不对齐会把新抽奖错算成某个来源）
+  let day = await ensureDay(openid, date);
+  day = await alignLegacyUsage(day);
+  if (!day) day = await ensureDay(openid, date);
 
   // ① 幂等：同一个 drawId 重复提交 → 原样返回上一次结果（不再消耗次数、不再发步数）
-  const dup = await BeidouDraw.findOne({ drawId: nonce }).lean();
+  //
+  // ⚠️ 必须带 openid 查：幂等的语义是「**这个人**这一笔」，不带 openid 时
+  //    两个用户撞出同一个 drawId 就会把对方的结果当成自己的（且对方发的步数会算在头上）。
+  const dup = await BeidouDraw.findOne({ openid, drawId: nonce }).lean();
   if (dup) {
     const r = remainingOf(day, cfg);
     return {
@@ -412,13 +422,18 @@ async function drawRound(user, { drawId } = {}) {
   }
 
   // ④ CAS 占一次 draw.used（用旧值做版本号；抢输就是并发，不重试不补发）
+  //
+  // ⚠️ 同时扣减**来源账本**（usedVideo/usedShare/…）：两边必须在**同一次原子更新**里完成，
+  //    否则「used 加了、来源没加」会让来源余额虚高，下一次抽奖就扣错来源。
+  //    这里用同一个 $inc 下发，MongoDB 单文档更新本身是原子的。
+  const source = pickSource(day);
+  const sourceInc = source === 'unknown' ? {} : { [`draw.${SOURCE_USED_FIELD[source]}`]: 1 };
   const claimed = await BeidouDay.findOneAndUpdate(
     { _id: day._id, 'draw.used': day.draw.used },
-    { $inc: { 'draw.used': 1 } },
+    { $inc: { 'draw.used': 1, ...sourceInc } },
     { new: true }
   );
   if (!claimed) return { success: false, message: '操作过于频繁，请稍后再试' };
-
   // ⑤ 写流水（drawId 唯一索引兜底：万一 CAS 之后又撞上，说明是同一笔重试，回滚 used 即可）
   let drawDoc;
   try {
@@ -432,11 +447,16 @@ async function drawRound(user, { drawId } = {}) {
       roll,
       index,
       capped,
+      // 本笔消耗的机会来自哪个渠道（管理端按来源筛选的依据）
+      source,
     });
   } catch (e) {
-    // 唯一键冲突 = 并发的同一笔：撤销刚占用的次数，把上一次结果返回
-    await BeidouDay.updateOne({ _id: claimed._id }, { $inc: { 'draw.used': -1 } }).catch(() => {});
-    const again = await BeidouDraw.findOne({ drawId: nonce }).lean();
+    // 唯一键冲突 = 并发的同一笔：撤销刚占用的次数**与来源账本**（两边都要退，否则来源余额永久偏差）
+    await BeidouDay.updateOne(
+      { _id: claimed._id },
+      { $inc: { 'draw.used': -1, ...(source === 'unknown' ? {} : { [`draw.${SOURCE_USED_FIELD[source]}`]: -1 }) } }
+    ).catch(() => {});
+    const again = await BeidouDraw.findOne({ openid, drawId: nonce }).lean();
     if (again) {
       return {
         success: true,
@@ -681,6 +701,294 @@ async function checkin(user) {
   };
 }
 
+/**
+ * 启动期幂等迁移：把 `drawId` 的**全局唯一**索引换成 `(openid, drawId)` 按人唯一。
+ *
+ * 为什么必须显式删旧索引（与 services/dorms.js::migrateSlotIndex 同一类陷阱）：
+ * Mongoose 只会新建缺失的索引，**不会替换已存在的同名/同键索引**。
+ * 旧的 `drawId_1 unique` 继续存在时，两个用户撞出同一个 drawId，第二条插入会被直接拒掉，
+ * 而调用方把它当「重复提交」走了幂等分支 → 返回 success:true + **别人的奖品**，
+ * 自己的次数不扣、步数不发，日志里一点痕迹都没有。
+ *
+ * 旧数据不会与新索引冲突（全局唯一必然蕴含按人唯一），所以先建后删是安全的。
+ */
+async function migrateDrawIdIndex() {
+  const col = BeidouDraw.collection;
+  const idx = await col.indexes();
+  const names = idx.map((i) => i.name);
+  const out = { created: false, dropped: [] };
+  if (!names.includes('openid_1_drawId_1')) {
+    await col.createIndex({ openid: 1, drawId: 1 }, { unique: true, name: 'openid_1_drawId_1' });
+    out.created = true;
+  }
+  if (names.includes('drawId_1')) {
+    await col.dropIndex('drawId_1');
+    out.dropped.push('drawId_1');
+  }
+  // 冗余索引：source_1 是 source_1_date_-1 的左前缀，留着只多付写放大、不会被选中查询
+  if (names.includes('source_1')) {
+    await col.dropIndex('source_1');
+    out.dropped.push('source_1');
+  }
+  return out;
+}
+
+// ===== 中奖播报（只读，别人也能看到）=====
+
+/**
+ * 稀有度：由**服务端**判定，前端不得自己算。
+ *
+ * 口径（方案 Q4 定档）：
+ *   · rarest = 该奖池里 percent 最小 **且 ≤ 10%**（只取最小不够：
+ *     奖池很平时「最小」可能也有 25%，人人都成了「最稀有」，播报就没意义了）；
+ *   · rare   = percent < 10%；
+ *   · normal = 其余。
+ *
+ * 为什么门槛要写死 10%：这是「值得播报」的门槛，不是概率算法的一部分。
+ * 用配置去调它没有意义（调松了就等于全员稀有），所以放常量而不是进 goal_config。
+ */
+const RARE_PERCENT = 10;
+
+function rarityOf(prize, prizes) {
+  if (!prize || prize.type === 'none') return 'none';
+  const pct = Number(prize.percent);
+  if (!Number.isFinite(pct)) return 'normal';
+  const minPct = Math.min(...(prizes || []).map((p) => Number(p.percent)).filter((n) => Number.isFinite(n)));
+  if (Number.isFinite(minPct) && pct <= minPct + 1e-9 && pct <= RARE_PERCENT) return 'rarest';
+  if (pct < RARE_PERCENT) return 'rare';
+  return 'normal';
+}
+
+/**
+ * 中奖播报：最近 N 条「有人中奖」的记录（不含谢谢参与）。
+ *
+ * 三条口径：
+ *   ① **姓名脱敏，完整姓名永不出服务端**（services/name-mask.js::maskName）；
+ *   ② **不参与排名（privacy.exitRanking）的学生不进播报** ——
+ *      这类学生表达过「不想被公开」，把他放进滚动播报与他的选择自相矛盾；
+ *   ③ **同一人最多占 2 条**，避免一个人连中把整条播报刷满。
+ *
+ * 空态由前端渲染（接口正常返回空数组 = 今天还没人中奖），不在这里造假数据。
+ *
+ * @param {{limit?:number, excludeOpenid?:string}} opts
+ */
+async function winnersFeed({ limit = 20, excludeOpenid } = {}) {
+  const n = Math.min(50, Math.max(1, Number(limit) || 20));
+  const cfg = await loadConfig();
+  const byKey = new Map((cfg.prizes || []).map((p) => [p.key, p]));
+
+  // 多取一些再过滤/去重，避免前面全是被过滤的人导致最终不足 n 条
+  const rows = await BeidouDraw.find({ type: { $ne: 'none' } })
+    .sort({ createdAt: -1 })
+    .limit(n * 4)
+    .lean();
+  if (!rows.length) return { items: [], rarityText: buildRarityText(cfg.prizes) };
+
+  const openids = [...new Set(rows.map((r) => r.openid).filter(Boolean))];
+  const User = require('../models/user');
+  const users = openids.length
+    ? await User.find({ openid: { $in: openids } })
+        .select('openid realName nickname privacy role status')
+        .lean()
+    : [];
+  const userOf = new Map(users.map((u) => [u.openid, u]));
+
+  const perUser = new Map();
+  const items = [];
+  for (const r of rows) {
+    if (items.length >= n) break;
+    const u = userOf.get(r.openid);
+    if (!u) continue; // 用户已删除（账号清理会连带删流水，这里是兜底）
+    if (u.role === 'teacher') continue; // 教师不参与（正常不会产生流水）
+    if (u.status === 'banned') continue; // 被封禁账号不上播报
+    if (u.privacy && u.privacy.exitRanking) continue; // 口径 ②
+    const cnt = perUser.get(r.openid) || 0;
+    if (cnt >= 2) continue; // 口径 ③
+    perUser.set(r.openid, cnt + 1);
+
+    const prize = byKey.get(r.prizeKey) || { key: r.prizeKey, label: '', type: r.type, percent: null };
+    items.push({
+      // 脱敏名（唯一出口）：完整姓名不下发
+      nameMasked: maskName(u.realName || u.nickname),
+      prizeKey: r.prizeKey,
+      prizeLabel: prize.label || (r.type === 'steps' ? `${r.amount} 步` : r.type === 'draw' ? '再来一次' : ''),
+      prizeType: r.type,
+      amount: r.amount || 0,
+      rarity: rarityOf({ ...prize, type: r.type, percent: prize.percent }, cfg.prizes),
+      percent: prize.percent == null ? null : prize.percent,
+      // 只给「今天 10:24」这一级，不下发 ISO 串让前端各转一套
+      atText: fmtClock(r.createdAt, { withDay: true }),
+      isMine: !!excludeOpenid && r.openid === excludeOpenid,
+    });
+  }
+  return { items, rarityText: buildRarityText(cfg.prizes) };
+}
+
+// 播报用的时间文案：今天 → 「10:24」，昨天 → 「昨天 10:24」，更早 → 「11-10 10:24」
+function fmtClock(d, { withDay = false } = {}) {
+  if (!d) return '';
+  const dt = d instanceof Date ? d : new Date(d);
+  if (Number.isNaN(dt.getTime())) return '';
+  const hh = String(dt.getHours()).padStart(2, '0');
+  const mi = String(dt.getMinutes()).padStart(2, '0');
+  if (!withDay) return `${hh}:${mi}`;
+  const today = todayKey();
+  const yest = addDays(today, -1);
+  const key = toDateKeyLocal(dt);
+  if (key === today) return `${hh}:${mi}`;
+  if (key === yest) return `昨天 ${hh}:${mi}`;
+  return `${key.slice(5)} ${hh}:${mi}`;
+}
+
+// 本地日历键（与 utils/dates 的 toDateKey 同口径，这里避免额外 require 的循环依赖顾虑）
+function toDateKeyLocal(dt) {
+  const y = dt.getFullYear();
+  const m = String(dt.getMonth() + 1).padStart(2, '0');
+  const day = String(dt.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+// 概率区间文案（规则区折叠时也能看到关键信息）
+function buildRarityText(prizes) {
+  const list = (prizes || []).filter((p) => Number.isFinite(Number(p.percent)));
+  if (!list.length) return '';
+  const min = list.reduce((a, b) => (Number(a.percent) <= Number(b.percent) ? a : b));
+  const max = list.reduce((a, b) => (Number(a.percent) >= Number(b.percent) ? a : b));
+  return `最低概率奖：${min.label} ${min.percent}% · 最高：${max.label} ${max.percent}%`;
+}
+
+// ===== 抽奖来源账本（用户 2026-11-12「抽奖来源筛选(签到、分享、视频)」）=====
+
+/**
+ * 次数来源的扣减优先级。
+ *
+ * 为什么需要它：次数是一个**合并池**（draw.total），抽奖时到底「花的哪一次」本来没有答案。
+ * 但管理端要按来源筛选，就必须给每笔消耗一个归属。这里定死顺序，语义是：
+ *   ① prize（再来一次）**最先用** —— 它是上一次抽奖当场回补的，等于「接着抽」，
+ *      先花掉才不会让「再来一次」永远沉在池底、显得这个奖没生效；
+ *   ② checkin（签到）—— 签到是当日一次性动作，次数容易在池里挂着没人用；
+ *   ③ video（看视频）—— 主要产出渠道；
+ *   ④ share（分享）—— 成本最低的来源，放最后（它本身没有上限，优先花它会让
+ *      「签到/看视频」的投入显得没有意义）。
+ *
+ * ⚠️ 这个顺序一旦对外解释过就不能随便改：它决定了「签到来源的中奖记录」有多少。
+ *    改顺序 = 历史统计口径漂移，所以写死在代码里、不进 goal_config。
+ */
+const SOURCE_ORDER = ['prize', 'checkin', 'video', 'share'];
+
+// 来源 → 中文文案。**唯一定义处**（管理端列表标签、筛选分面、口径说明都读它）。
+// 为什么放这里而不是路由/页面：文案与 SOURCE_ORDER 必须同源 ——
+// 分两处写，改了优先级顺序后页面还在说老规矩，管理员按说明去理解数据就会理解反。
+const SOURCE_TEXT = {
+  prize: '再来一次',
+  checkin: '签到',
+  video: '看视频',
+  share: '邀请',
+  unknown: '未记录',
+};
+
+// 口径说明里用的长文案（解释「这一笔机会是怎么来的」）
+const SOURCE_TEXT_LONG = {
+  prize: '再来一次（上一次抽奖当场回补）',
+  checkin: '签到奖励',
+  video: '看视频奖励',
+  share: '邀请同学奖励',
+  unknown: '未记录（本次改造前的历史数据，或次数账本异常）',
+};
+
+/**
+ * 来源口径整句（服务端拼，前端只渲染）。
+ * 顺序直接从 SOURCE_ORDER 生成，所以改了优先级这句话自动跟着变。
+ */
+function sourceNote() {
+  return (
+    '抽奖次数是一个合并池，抽奖时按 ' +
+    SOURCE_ORDER.map((s) => SOURCE_TEXT[s]).join(' → ') +
+    ' 的优先级从各来源余额里扣一笔，扣到谁就记谁。' +
+    '因此「来源」指的是这一笔机会的账本归属，不是用户从哪个页面点进来的。'
+  );
+}
+
+// 来源 → beidou_day 里「已用」字段名
+const SOURCE_USED_FIELD = {
+  prize: 'usedPrize',
+  checkin: 'usedCheckin',
+  video: 'usedVideo',
+  share: 'usedShare',
+};
+
+// 来源 → beidou_day 里「获得」字段名
+const SOURCE_FROM_FIELD = {
+  prize: 'fromPrize',
+  checkin: 'fromCheckin',
+  video: 'fromVideo',
+  share: 'fromShare',
+};
+
+/**
+ * 判定这次抽奖应该扣哪个来源（纯函数，不改状态）。
+ *
+ * 余额 = 获得 − 已用。按 SOURCE_ORDER 找到第一个有余额的来源。
+ * 全部为 0 时返回 'unknown' —— 这**只可能**发生在老数据（本次改造前抽的奖没有 used* 字段）
+ * 或者人为改库之后。返回 unknown 而不是随便挑一个，是为了让管理端能明确看到「口径不明」，
+ * 而不是把它静默算进某个来源把统计做假。
+ *
+ * @returns {'video'|'share'|'checkin'|'prize'|'unknown'}
+ */
+function pickSource(day) {
+  const d = (day && day.draw) || {};
+  for (const s of SOURCE_ORDER) {
+    const from = Number(d[SOURCE_FROM_FIELD[s]]) || 0;
+    const used = Number(d[SOURCE_USED_FIELD[s]]) || 0;
+    if (from - used > 0) return s;
+  }
+  return 'unknown';
+}
+
+/**
+ * 兼容历史数据（本次改造前抽的奖）：
+ *
+ * 老文档只有 `used`，没有 `usedVideo/usedShare/…`。如果不处理，pickSource 会看到
+ * 「fromVideo=3、usedVideo=0」→ 认为视频还有 3 次余额，于是一直把新抽奖算成「视频来源」，
+ * 而实际上那 3 次早就抽掉了 —— 来源统计整片失真，且**不会报任何错**。
+ *
+ * 修正办法：如果「各来源已用之和」< `used`，说明有差额是老数据消耗的，
+ * 把这部分差额压到**当前已用最多的那个来源**上（没有就压到 video），
+ * 让「∑used* == used」成立。这是一次性对齐，不影响新数据（新数据两边天然相等）。
+ *
+ * 打补丁时用 `$inc` 而不是 `$set`：并发下不会把别人刚加的数覆盖掉。
+ */
+async function alignLegacyUsage(day) {
+  if (!day || !day._id) return day;
+  const d = day.draw || {};
+  const used = Number(d.used) || 0;
+  let sum = 0;
+  for (const s of SOURCE_ORDER) sum += Number(d[SOURCE_USED_FIELD[s]]) || 0;
+  if (sum >= used) return day; // 已经对齐（正常情况）
+  const gap = used - sum;
+  // 压到当前已用最多的来源上；全都为 0 时压到 video（最符合「老版本主要靠看视频」的实际）。
+  // ⚠️ best 必须从 0 起而不是 -1：从 -1 起时「全都为 0」会让第一项（prize）满足 `0 > -1`，
+  //    于是 gap 被记到 prize 上——注释说压到 video、代码压到 prize，
+  //    而 prize 是扣减优先级最高的来源，等于凭空给它欠下余额（来源统计从此说不清）。
+  let target = 'video';
+  let best = 0;
+  for (const s of SOURCE_ORDER) {
+    const v = Number(d[SOURCE_USED_FIELD[s]]) || 0;
+    if (v > best) {
+      best = v;
+      target = s;
+    }
+  }
+  try {
+    await BeidouDay.updateOne({ _id: day._id }, { $inc: { [`draw.${SOURCE_USED_FIELD[target]}`]: gap } });
+  } catch (e) {
+    /* 对齐失败不能阻塞抽奖：最坏结果是这一次来源记为 unknown，不影响发奖 */
+    return day;
+  }
+  const fresh = await BeidouDay.findById(day._id);
+  return fresh || day;
+}
+
 // ===== 今日概览（页面首屏）=====
 
 async function todayState(user) {
@@ -695,6 +1003,7 @@ async function todayState(user) {
 
   // 最近 5 条中奖记录：前端不自己攒（切页面就没了），统一由服务端下发
   const recent = await BeidouDraw.find({ openid }).sort({ createdAt: -1 }).limit(5).lean();
+  const byKey = new Map((cfg.prizes || []).map((p) => [p.key, p]));
   // 今日已入账（四项）：真源 = run_records(source='beidou')，与记录页/首页统计同源
   const earned = await rewardVideoSvc.earnedToday(openid, date);
   const cap = capRemaining(day, cfg);
@@ -702,6 +1011,8 @@ async function todayState(user) {
   return {
     enabled: cfg.enabled,
     date,
+    // 音效总开关（管理端可关）：前端据此决定是否初始化音频，关闭时连合成都跳过
+    sfxEnabled: cfg.sfxEnabled !== false,
     video: { ...cfg.video, count: day.video.count, remaining: Math.max(0, cfg.video.dailyLimit - day.video.count) },
     share: { ...cfg.share, count: day.share.count, remaining: cfg.share.dailyLimit ? Math.max(0, cfg.share.dailyLimit - day.share.count) : -1 },
     checkin: {
@@ -722,14 +1033,25 @@ async function todayState(user) {
     },
     // 封顶状态：前端要在抽到空奖**之前**就告诉用户「今日步数奖励已到上限」
     cap: { ...cap, capped: day.draw.capped || cap.capped },
+    // 概率区间：规则区折叠时也要能看到（合规：概率公示不能藏在展开项里）
+    rarityText: buildRarityText(cfg.prizes),
     earned,
-    recent: recent.map((r) => ({
-      prizeKey: r.prizeKey,
-      type: r.type,
-      amount: r.amount,
-      capped: r.capped,
-      at: r.createdAt,
-    })),
+    // ✅ atText 是本次补的历史 bug：早前只下发 `at`（Date 对象），
+    //    而 WXML 渲染的是 `item.atText` → 最近中奖的时间列恒为空白。
+    //    时间文案统一在服务端拼（formatDateTime 的口径），前端不自己转。
+    recent: recent.map((r) => {
+      const p = byKey.get(r.prizeKey) || {};
+      return {
+        prizeKey: r.prizeKey,
+        prizeLabel: p.label || (r.type === 'steps' ? `${r.amount} 步` : r.type === 'draw' ? '再来一次' : '谢谢参与'),
+        type: r.type,
+        amount: r.amount,
+        capped: r.capped,
+        rarity: r.type === 'none' ? 'none' : rarityOf({ ...p, type: r.type }, cfg.prizes),
+        at: r.createdAt,
+        atText: fmtClock(r.createdAt),
+      };
+    }),
   };
 }
 
@@ -752,6 +1074,20 @@ module.exports = {
   reportShare,
   checkin,
   todayState,
+  winnersFeed,
+  // 来源账本：管理端筛选与统计共用的唯一口径
+  SOURCE_ORDER,
+  SOURCE_USED_FIELD,
+  SOURCE_FROM_FIELD,
+  // 来源文案与口径说明：管理端列表标签/分面/说明句都读这里（唯一定义处）
+  SOURCE_TEXT,
+  SOURCE_TEXT_LONG,
+  sourceNote,
+  pickSource,
+  migrateDrawIdIndex,
+  rarityOf,
+  buildRarityText,
+  RARE_PERCENT,
   // 测试/工具用：暴露给 verify 脚本按需重置
   _models: { BeidouDay, BeidouDraw },
 };

@@ -38,8 +38,10 @@ const WRITE_ACTIONS =
 // `toggleTrack`（同页「查看轨迹」）同理：GET /:id/gps + 打开地图弹层，纯读。
 // `toggleDraws`（北斗运动配置页「展开中奖记录」，2026-11-11）同理：只发 GET /beidou-draws
 // 分页读流水，不写任何东西 —— 只读账号（config.view）也要能对账。
+// `clearDrawFilter*`（同页「清空筛选 / 全部来源」，2026-11-12）同理：只是把本地筛选条件置空
+// 再发一次 GET，不写任何数据。只读账号同样需要能筛选对账。
 const UI_ONLY_ACTIONS =
-  /^(toggleContent|toggleHist|toggleTrack|toggleFilters|clearFilters|clearGrades|toggleDeptExpand|toggleModuleDept|clearKeyword|resetFilters|clearChecked|toggleBulk|clearClassFilter|toggleBadgeGroup|toggleBatchMode|toggleCheckAll|toggleRow|toggleExpand|toggleGroup|togglePick|toggleSelect|toggleSheet|toggleTab|toggleCard|toggleUnfold|toggleUnassigned|toggleFilters|switchTab|switchSlot|onCat|onItemTap|onResetFilters|onFormVisible|onIconVisible|onMode|preview|copyLink|goStats|changeYear|chooseIcon|closeForm|closeSheet|closeResult|closePickers|closeTransferSheet|closeDeptAdd|closeModuleEdit|closeAdd|clearResult|back|close[A-Z]\w*|resetModule|toggleDraws)$/;
+  /^(toggleContent|toggleHist|toggleTrack|toggleFilters|clearFilters|clearGrades|toggleDeptExpand|toggleModuleDept|clearKeyword|resetFilters|clearChecked|toggleBulk|clearClassFilter|toggleBadgeGroup|toggleBatchMode|toggleCheckAll|toggleRow|toggleExpand|toggleGroup|togglePick|toggleSelect|toggleSheet|toggleTab|toggleCard|toggleUnfold|toggleUnassigned|toggleFilters|switchTab|switchSlot|onCat|onItemTap|onResetFilters|onFormVisible|onIconVisible|onMode|preview|copyLink|goStats|changeYear|chooseIcon|closeForm|closeSheet|closeResult|closePickers|closeTransferSheet|closeDeptAdd|closeModuleEdit|closeAdd|clearResult|back|close[A-Z]\w*|resetModule|toggleDraws|clearDrawFilterSource|clearDrawFilter)$/;
 
 // 整页都需要写权限才能进入（不存在只读用户）
 const WRITE_ONLY_PAGES = new Set([

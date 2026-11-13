@@ -51,7 +51,7 @@
 | GET | /days?page&limit | 按天聚合分页（`$sum` 各来源） |
 | GET | /detail/:id | 记录详情（含轨迹） |
 
-记录来源 `source`：`werun` 微信运动 / `gps` GPS 实跑 / `beidou` 北斗（激励视频奖励步数）。
+记录来源 `source`：`werun` 微信运动 / `gps` GPS 实跑 / `beidou` 北斗（转盘抽奖与签到阶梯奖励的步数）。
 前端统一用 `utils/format.js::sourceOf(source)` 取展示文案与图标（勿各页各写三元表达式）。
 
 > **教师账号不参与运动记录**：`role=teacher` 调用 `/sync-werun`、`/gps` 一律返回 `403 + code 403003`；
@@ -102,6 +102,32 @@
 | POST | /video/report | `{watchId}` → 加抽奖次数（**不发步数**）；同一 watchId 幂等 |
 | POST | /share/report | `{shareId}` → 加抽奖次数；服务端最小间隔去重 |
 | POST | /checkin | 连续签到；第 3/7 天按阶梯额外发步数（受每日封顶约束） |
+| GET | /winners?limit=20 | 中奖播报（滚动条数据源）：`{ items: [{ nameMasked, prizeLabel, rarity, atText, isMine }], rarityText }` |
+
+播报四条口径（`items` 已过滤）：姓名**只下发脱敏串**（`services/name-mask.js::maskName`，完整姓名永不出服务端）；
+`privacy.exitRanking` 的学生不进播报；封禁/教师不进；同一人最多 2 条防刷屏；`type='none'`（谢谢参与）不播报。
+
+**管理端**（`/api/admin/config/*`，读要 `config.view`、写要 `config.manage`）：
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | /beidou-draws | 中奖记录明细，**只读**。筛选参数 `dateFrom` / `dateTo`（`YYYY-MM-DD` 闭区间，非法值忽略、倒序自动纠正）、`source`、`prizeKey`、`page` / `limit`。返回 `{ list, total, filters, facets, sourceNote }`，`facets.source` 是**排除 source 自身后**的分面计数（否则选了「视频」就只剩视频一项有数，看不出别的来源有多少） |
+| GET | /beidou-draws/sources | 来源口径说明：`{ order, text, textLong, note }`，全部取自 `beidou.js` 的唯一定义 |
+
+**`sourceNote`**（列表接口直接下发）= 来源口径整句，由 `SOURCE_ORDER` 生成
+（`抽奖次数是一个合并池，抽奖时按 再来一次 → 签到 → 看视频 → 邀请 的优先级…`）。
+页面**原样渲染**，不要硬编码这句：早先它写死在 WXML 里，改了优先级顺序页面还在说老规矩，
+管理员会按反的说明去理解数据（`check-beidou-lottery` 第 [8b] 节有反向断言）。
+
+`list[]` 每条含 `realName / studentId / className / prizeLabel / sourceText / capped / roll / index`：
+`sourceText` 与 `prizeLabel` 由服务端拼好下发（前端不自己映射中文，避免与服务端漂移）；
+`roll` / `index` 是留证字段，用于证明结果不是后台改出来的。
+
+> ⚠️ `source` 是**账本归属**，不是「用户从哪个页面点进来」：抽奖次数是一个合并池，
+> 扣减优先级固定为 `prize（再来一次）→ checkin → video → share`，扣到哪个来源就记哪个。
+> 不变量 `∑used* == draw.used`。改造前落库的老文档没有 `used*` 字段，抽奖前由
+> `services/beidou.js::alignLegacyUsage()` 一次性补齐（不对齐会把新抽奖全部错归到同一个来源，
+> 来源统计整片失真且不报任何错）；索引本身的迁移是启动期的 `migrateDrawIdIndex()`，两件事别混。
 
 三条口径：
 - **步数只有两个出口**：转盘（`/draw`）与签到阶梯（`/checkin`）。看视频、分享只加次数。
@@ -236,7 +262,7 @@
 | 内容 | `/content/announcements | /content/changelogs | /content/holidays | /content/organizations | /content/badges` 的增删改查 |
 | 配置 | `GET|PUT /config`（目标/分时段/反作弊/激励视频） |
 | 班级 | `GET /class/profiles`（台账列表） · `GET|PUT /class/:className/profile` · **`GET /class/status-board?days=7&quick&department&keyword`**（全校班级状态总览，见下） |
-| 上传 | `POST /upload`（multipart，字段 file，返回图片 URL） |
+| 上传 | `POST /upload`（multipart，字段 file，返回图片 URL；`POST /upload/check-photo` 检查照片**不限体积 / 张数**） |
 
 ### GET /api/admin/class/status-board（班级状态总览）
 

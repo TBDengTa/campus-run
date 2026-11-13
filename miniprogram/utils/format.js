@@ -115,7 +115,7 @@ function parseDateKey(key) {
   return { y, m, d, week: `周${week}` };
 }
 
-// 记录来源展示（run_records.source）：微信运动 / GPS 实跑 / 北斗（激励视频奖励步数）
+// 记录来源展示（run_records.source）：微信运动 / GPS 实跑 / 北斗（转盘抽奖与签到阶梯奖励的步数）
 const SOURCE_MAP = {
   werun: { sourceText: '微信运动', sourceIcon: 'logo-wechat-stroke' },
   gps: { sourceText: 'GPS 实跑', sourceIcon: 'location' },

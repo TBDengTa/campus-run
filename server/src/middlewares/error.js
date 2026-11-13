@@ -16,12 +16,13 @@ function errorHandler(err, req, res, next) {
   if (err.name === 'MulterError') {
     // 用户 2026-10-28「上传不成功要提示原因」：
     //   旧实现一律回「文件超出大小限制」，用户不知道上限多少、也不知道该压还是该换图。
-    //   现在把**实际上限**报出来（上限随 .env 的 CHECK_PHOTO_MAX_MB 变，不能写死在文案里），
+    //   现在把**实际上限**报出来（检查照片已不限体积，0 时回落到其它入口的上限），
     //   并按错误码区分：超大小 / 字段名不对 / 文件数过多 / 分段过多。
-    const limitMb = Number(process.env.CHECK_PHOTO_MAX_MB || 100) || 100;
+    const photoMb = Number(process.env.CHECK_PHOTO_MAX_MB || 0) || 0;
+    const limitMb = photoMb > 0 ? photoMb : config.uploadMaxMb;
     let msg = '文件上传失败';
     if (err.code === 'LIMIT_FILE_SIZE') {
-      msg = `照片太大：单张最多 ${limitMb} MB，请压缩后重试，或换一张更小的照片`;
+      msg = `文件太大：该入口单张上限约 ${limitMb} MB（检查照片入口已取消体积限制），请换更小的文件重试`;
     } else if (err.code === 'LIMIT_FILE_COUNT') {
       msg = '一次上传的文件数量过多';
     } else if (err.code === 'LIMIT_UNEXPECTED_FILE') {
@@ -34,11 +35,12 @@ function errorHandler(err, req, res, next) {
   // nginx 在 Node 之前拦下超限请求时会回 413（请求根本没到业务代码）。
   // 这里兜一道：反代没透传、或 body-parser 抛 413 时，也要给出可读原因。
   if (err.status === 413 || err.statusCode === 413) {
-    const limitMb = Number(process.env.CHECK_PHOTO_MAX_MB || 100) || 100;
+    const photoMb = Number(process.env.CHECK_PHOTO_MAX_MB || 0) || 0;
     return res.status(413).json({
       code: 413,
-      message: `照片太大：单张最多 ${limitMb} MB（若持续失败，请确认 Nginx 的 client_max_body_size 足够大）`,
-      limitMb,
+      message:
+        '请求体过大被网关 / 解析器拒绝：检查照片入口已取消体积限制，请确认 Nginx 的 client_max_body_size 设为 0',
+      limitMb: photoMb > 0 ? photoMb : 0,
     });
   }
   if (err.code === 11000) {

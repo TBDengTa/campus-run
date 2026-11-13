@@ -65,14 +65,13 @@ const PRESIDIUM_ROLES = ['president', 'vice_president'];
 function assertRoleFitsDept(role, deptKey) {
   const r = String(role || '');
   const d = String(deptKey || '');
-  const isPresidiumDept = d === unionSvc.PRESIDIUM_KEY;
-  const isPresidiumRole = PRESIDIUM_ROLES.includes(r);
-  if (isPresidiumDept && !isPresidiumRole) {
+  // 判定唯一实现在 services/union.js::roleFitsDept（用户端新增成员 / 扫码加人也走它），
+  // 这里只负责把「不匹配」翻译成可读文案 —— 两边各写一套必然漂移。
+  if (unionSvc.roleFitsDept(r, d)) return;
+  if (d === unionSvc.PRESIDIUM_KEY) {
     throw new ApiError(400, 400, '主席团成员只能是主席或副主席，不能设为部长 / 副部长 / 部员');
   }
-  if (isPresidiumRole && !isPresidiumDept) {
-    throw new ApiError(400, 400, '主席 / 副主席必须挂在主席团，不能归入业务部门');
-  }
+  throw new ApiError(400, 400, '主席 / 副主席必须挂在主席团，不能归入业务部门');
 }
 const str = (v, max = 120) => String(v === undefined || v === null ? '' : v).trim().slice(0, max);
 

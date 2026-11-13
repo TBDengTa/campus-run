@@ -34,6 +34,14 @@ const stepAnomalySchema = new mongoose.Schema(
     // 「这条是规则判的还是模型判的」—— 可解释性对反作弊系统是硬要求。
     modelScore: { type: Number, default: null },
     modelLevel: { type: String, default: '' },
+    // ===== 有监督模型（用户 2026-11-12「阶段性自升级」）=====
+    // 判定当时有监督模型处于第几阶段（0 无监督 / 1 影子辅助 / 2 主判）。
+    // 必须存：同一条线索的分数可能由三路输入（无监督/物理约束/有监督）中的任一路给出，
+    // 「为什么封」这件事事后只能靠这个字段还原（模型会继续升级，事后无法重算）。
+    modelStage: { type: Number, default: 0 },
+    // 有监督模型当时给出的作弊概率与风险分（影子阶段精度评估的唯一数据源）
+    supervisedProb: { type: Number, default: null },
+    supervisedScore: { type: Number, default: null },
     // 判定时的特征快照（Mixed）：管理员处置这条记录后，
     // 它连同特征一起进入 step_labels 作为训练样本。
     // **必须在这里存一份**：原始 run_records 可能被清理，而训练集不能因此残缺。

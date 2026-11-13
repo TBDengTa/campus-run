@@ -46,6 +46,18 @@ function applyAnticheatInput(doc, input = {}) {
     changed.banDays = ac.banDays;
   }
 
+  // ===== 阶段性自升级开关（用户 2026-11-12）=====
+  // 与 enabled 同一口径：**显式传了才动**。旧调用方（小程序表单）不带这两个字段时
+  // 绝不能把它们悄悄写成默认值 —— 那等于「只改阈值却把自动升级打开/关掉」。
+  if (input.autoUpgrade !== undefined) {
+    ac.autoUpgrade = input.autoUpgrade !== false;
+    changed.autoUpgrade = ac.autoUpgrade;
+  }
+  if (input.autoDemote !== undefined) {
+    ac.autoDemote = input.autoDemote !== false;
+    changed.autoDemote = ac.autoDemote;
+  }
+
   // ===== AI 严谨度（用户 2026-10-28「可以调整 AI 封禁的严谨程度」）=====
   if (input.aiStrictness != null) {
     const mode = String(input.aiStrictness);

@@ -53,8 +53,8 @@ const COMMON_VARS = [
 // **必须定义在 DEFAULT_MODULES 之前**（模块定义里用到了它，const 有暂时性死区 —— 放后面会启动即崩）
 const FIELD_LIMIT = 200;
 
-// 现场照片（type:'photo'）单条记录最多几张：与 routes/union.js 顶层 photos 的 slice(0,9) 同口径
-const PHOTO_LIMIT = 9;
+// 现场照片（type:'photo'）：**不限制张数**（用户 2026-11-12「解除所有上传照片的限制」）。
+// 单条记录的照片数由「前端已上传成功的 URL」决定，写入时不再裁剪 —— 静默丢图不可恢复。
 
 // ===== 班超满分刻度（10 分制，用户 2026-11-12）=====
 // 全链路**唯一**的满分定义：模块折算、班级总评、看板考勤分、复审分档都以它为准。
@@ -84,7 +84,7 @@ const DEFAULT_MODULES = [
     fields: [
       // 评价：优 / 良 / 差（不再逐项打分 —— 用户第四轮口径）
       { key: 'grade', label: '评价', type: 'select', options: ['优', '良', '差'], required: true, hint: '优 / 良 / 差' },
-      // photos 是通用字段（type:'photo'）：URL 数组，≤9 张，选填；宿舍场景受隐私裁剪（见 services/union.js::cropPhotos）
+      // photos 是通用字段（type:'photo'）：URL 数组，**张数不限**，选填；宿舍场景受隐私裁剪（见 services/union.js::cropPhotos）
       { key: 'photos', label: '现场照片', type: 'photo', hint: '为保证学生隐私，宿舍照片仅检查人、学生会主席团、所属部门部长、教师账号可见' },
       { key: 'remark', label: '说明', type: 'textarea' },
       // derived：得分由「评价」折算（公式引擎不支持字符串比较/三元，见 services/formula.js 文件头，
@@ -336,13 +336,12 @@ function normalizeDetails(moduleDef, raw) {
       continue;
     }
     if (f.type === 'photo') {
-      // 现场照片：URL 数组，≤9 张、每张 ≤300 字符（与 routes/union.js 的顶层 photos 处理口径一致）。
+      // 现场照片：URL 数组，**不限张数 / 不截断 URL**（用户 2026-11-12「解除所有上传照片的限制」）。
       // 只收 http(s):// 的字符串，丢弃本地临时路径（wxfile:// / tmp 之类绝不能落库）
       const arr = Array.isArray(v) ? v : [];
       out[f.key] = arr
         .filter((x) => typeof x === 'string' && /^https?:\/\//i.test(x.trim()))
-        .slice(0, PHOTO_LIMIT)
-        .map((x) => x.trim().slice(0, 300));
+        .map((x) => x.trim());
       continue;
     }
     if (f.type === 'items') {
@@ -679,7 +678,7 @@ module.exports = {
   DERIVED_KEYS,
   derivedKeysOf,
   FIELD_LIMIT,
-  PHOTO_LIMIT,
+
   FULL_SCORE,
   PERSON_DEDUCT,
   personDeduct,

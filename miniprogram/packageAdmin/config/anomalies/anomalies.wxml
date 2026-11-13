@@ -47,6 +47,65 @@
     </view>
   </view>
 
+  <!-- ===== 阶段性自升级（用户 2026-11-12「请增加阶段性自升级」）=====
+       三级阶梯：0 无监督 → 1 影子辅助（分数封顶在自动封禁线以下，只进待研判）→
+       2 有监督主判（可越过自动封禁线）。
+       展示字段全部由服务端 snapshot 算好（阶梯/缺失项/指标文案），
+       模板只管渲染 —— Web 控制台与这里必须给出同一个结论。 -->
+  <view class="sa-stage" wx:if="{{stages}}">
+    <view class="sa-stage-head">
+      <text class="sa-stage-title">阶段性自升级</text>
+      <text class="sa-stage-switch">{{stages.switchText}}</text>
+    </view>
+    <view class="sa-stage-rule">{{stages.ruleText}}</view>
+
+    <view class="sa-stage-src" wx:for="{{stages.list}}" wx:for-item="src" wx:key="source">
+      <view class="sa-stage-src-head">
+        <text class="sa-stage-src-name">{{src.sourceText}}</text>
+        <text class="sa-stage-cur">{{src.stageText}}</text>
+        <text class="sa-stage-mode" wx:if="{{src.isManual}}">手动锁定</text>
+      </view>
+
+      <!-- 阶梯 -->
+      <view class="sa-stage-ladder">
+        <view class="sa-stage-step {{item.current ? 'current' : ''}} {{item.done ? 'done' : ''}}"
+              wx:for="{{src.ladder}}" wx:for-item="item" wx:key="key">
+          <text class="sa-stage-mark">{{item.mark}}</text>
+          <view class="sa-stage-step-body">
+            <text class="sa-stage-step-t">{{item.text}}</text>
+            <text class="sa-stage-step-d">{{item.desc}}</text>
+          </view>
+        </view>
+      </view>
+
+      <!-- 关键数字 -->
+      <view class="sa-stage-kv">
+        <text>{{src.sampleText}}</text>
+        <text>{{src.shadowText}}</text>
+      </view>
+      <view class="sa-stage-kv" wx:if="{{src.metrics.length}}">
+        <text wx:for="{{src.metrics}}" wx:for-item="mt" wx:key="k">{{mt.k}} {{mt.v}}</text>
+      </view>
+
+      <!-- 下一阶段：缺什么 -->
+      <view class="sa-stage-next {{src.nextOk ? 'is-ok' : ''}}">
+        <text class="sa-stage-next-t">{{src.nextTitle}}</text>
+        <text class="sa-stage-next-tip" wx:if="{{src.nextTip}}">{{src.nextTip}}</text>
+        <view class="sa-stage-miss" wx:for="{{src.nextMissing}}" wx:for-item="ms" wx:key="*this">· {{ms}}</view>
+      </view>
+
+      <view class="sa-stage-warn" wx:if="{{src.demoteWarn}}">⚠ 自动降级条件已满足：{{src.demoteWarn}}</view>
+      <view class="sa-stage-last" wx:if="{{src.lastEvalText}}">{{src.lastEvalText}}</view>
+
+      <!-- 动作（服务端 anticheat.manage，前端只控显隐） -->
+      <view class="sa-stage-acts" wx:if="{{canModel}}">
+        <view class="sa-stage-btn pri" data-source="{{src.source}}" bind:tap="evaluateModel">立即评估</view>
+        <view class="sa-stage-btn" data-source="{{src.source}}" data-mode="manual" bind:tap="manualStage" wx:if="{{!src.isManual}}">手动指定</view>
+        <view class="sa-stage-btn" data-source="{{src.source}}" data-mode="auto" bind:tap="manualStage" wx:else>恢复自动</view>
+      </view>
+    </view>
+  </view>
+
   <!-- 搜索：按姓名 / 学号 / 班级 -->
   <view class="sa-search">
     <t-icon name="search" size="28rpx" color="var(--tt-text-3)" />

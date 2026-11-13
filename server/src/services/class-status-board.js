@@ -60,11 +60,42 @@ const MODULES = [
 ];
 const MODULE_KEYS = MODULES.map((m) => m.key);
 
-// 单次最多统计多少天（考勤区间上限，与班级页一致）
-const MAX_DAYS = 92;
-const DEFAULT_DAYS = 7;
+// ===== 考勤统计区间（用户 2026-11-12「要本日、本周、本月，而不是3天7天这样」）=====
+// 旧口径是「往前回看 N 天」（3/7/14/30），用户明确否掉：老师看的是「本周/本月考勤怎么样」，
+// 不是「最近 7 天」。窗口一律**锚定所选日期**（today 参数）：
+//   本日 = 所选日当天；本周 = 所选日所在 ISO 周（周一起，到所选日）；本月 = 所选日所在月（1 号起）。
+// 非法值回退「本周」（与旧默认 7 天最接近，缓存也最友好）。
+const ATT_RANGES = {
+  day: { label: '本日' },
+  week: { label: '本周' },
+  month: { label: '本月' },
+};
+const DEFAULT_RANGE = 'week';
 
-// 缓存 60 秒：见文件头「性能口径」。key 里带 today/from/span/周起点，跨天自动失效。
+// ===== 考勤计算规则文案（用户 2026-11-12「要在图片下面标注考勤计算规则，如迟到缺勤等逻辑」）=====
+// **服务端生成**：图片、页面脚注、复制文案三处共用同一份中文 —— 前端自己写一份必然与
+// 实际算式漂移（改了单价忘了改说明，老师照着错误说明去质疑正确的分数）。
+//
+// ⚠️ 措辞必须与 attendanceScore() 的真实算式一致，特别是**两类扣分机制不同**：
+//   · 早操/晚自习/查宿走「出勤率」：缺勤/未归是通过**压低实到人数**影响分数的，
+//     每人扣多少**取决于班大小**（10 ÷ 应到人数），不是固定单价 —— 写成固定数字就是说谎；
+//   · 早八没有应到实到（只记迟到人），走固定单价 PERSON_DEDUCT.late。
+// 数字全部从 check-modules.PERSON_DEDUCT / scoreScale.FULL_SCORE 取值拼句，不写死。
+function buildAttRuleLines() {
+  const pd = checkModules.PERSON_DEDUCT;
+  const full = scoreScale.FULL_SCORE;
+  return [
+    `考勤分 = ${full} × 加权出勤率 − 早八迟到人数 × ${pd.late}`,
+    `早操 / 晚自习：出勤率 = 实到 ÷ 应到；缺勤 1 人扣 ${full} ÷ 应到人数（班越大扣得越少）`,
+    '查宿：在宿率 = 实住 ÷ 应住；未归按同样方式压低在宿率',
+    `早八：只记迟到人、无应到实到，固定每迟到 1 人扣 ${pd.late} 分`,
+    `满分 ${full} 分，扣完为止（最低 0 分）；区间内没有任何考勤记录的班显示「—」，不是 0 分`,
+  ];
+}
+
+// 缓存 60 秒：见文件头「性能口径」。key 里带 today/from/周起点/**考勤窗口**，跨天自动失效。
+//   窗口必须在 key 里：少了这一维，切「本日/本周/本月」会命中上一个窗口的结果
+//   （数字看着正常但区间是错的，正是这页最要命的静默 bug）。
 const CACHE_TTL = 60 * 1000;
 const boardCache = new Map();
 
@@ -99,21 +130,51 @@ function attendanceScore(rateWeighted, lateTotal, hasData) {
 }
 
 /**
+ * 考勤统计窗口：把「本日 / 本周 / 本月」翻译成起止日历键。
+ *
+ * 一律**锚定所选日期**（不是「今天」）：回看历史某天时，考勤窗口也该停在那一天所属的
+ * 本日至本日 / 本周至该日 / 本月至该日 —— 否则「10月5日的班级状态」里考勤却是 10 月
+ * 整月（含 10 月 5 日之后那些天的数据），与日列周列口径自相矛盾。
+ *
+ * ⚠️ 周起点用 ISO 周一（dates.weekRange），与校园跑周达标、班超周口径同一个真源。
+ *   刻意**不用** band-chao 的「当月第 N 周」：那是排名页的月锚定周，两套周混用会出现
+ *   「考勤说本周、跑分说本周却是不同区间」。
+ *
+ * @param {string} rangeKey day | week | month（非法值回退 DEFAULT_RANGE）
+ * @param {string} day 锚定的日历键
+ * @returns {{from: string, to: string, range: string, rangeLabel: string}}
+ */
+function attWindow(rangeKey, day) {
+  const range = ATT_RANGES[rangeKey] ? rangeKey : DEFAULT_RANGE;
+  if (range === 'day') return { from: day, to: day, range, rangeLabel: ATT_RANGES.day.label };
+  if (range === 'month') {
+    const { startKey } = dates.monthRange(day.slice(0, 7));
+    return { from: startKey, to: day, range, rangeLabel: ATT_RANGES.month.label };
+  }
+  const { startKey } = dates.weekRange(day);
+  return { from: startKey, to: day, range, rangeLabel: ATT_RANGES.week.label };
+}
+
+/**
  * 全校班级状态总览。
  * @param {object} [opts]
  * @param {string} [opts.today] 覆盖「今天」（便于测试与补算）
- * @param {number} [opts.days] 考勤回看天数（默认 7，上限 92）
+ * @param {string} [opts.attRange] 考勤统计窗口 day|week|month（默认 week；用户 2026-11-12 要求本日/本周/本月）
+ * @param {number} [opts.days] **已废弃**：旧「往前 N 天」口径，传了也按 attRange 走
  * @param {boolean} [opts.force] 忽略缓存
  */
-async function classStatusBoard({ today, days, force } = {}) {
+async function classStatusBoard({ today, attRange, days, force } = {}) {
   // today 覆盖「今天」（2026-11-03 前端日期选择接入）：非法/缺省一律回退服务器今天，
   // 不能让拼错的参数悄悄统计出一个空日期（与 quick 非法值=全量同一防呆口径）。
   const day = dates.isValidDateKey(today) ? today : dates.todayKey();
-  const span = Math.min(Math.max(Number(days) || DEFAULT_DAYS, 1), MAX_DAYS);
-  const from = dates.addDays(day, -(span - 1));
+  // 考勤窗口：本日/本周/本月（用户 2026-11-12）。刻意**不**兼容旧的 days 参数语义 ——
+  // 老客户端传 days=7 时这里按 attRange 缺省（本周）走，而不是假装还支持「回看 7 天」：
+  // 两套窗口并存迟早出现「脚注说本周、数据是回看 7 天」，那比统一成本周更难解释。
+  const win = attWindow(attRange, day);
+  const { from, range: attRangeKey, rangeLabel: attRangeLabel } = win;
   const { startKey: weekStart } = dates.weekRange(day);
 
-  const cacheKey = `${day}|${from}|${weekStart}|${span}`;
+  const cacheKey = `${day}|${from}|${weekStart}|${attRangeKey}`;
   if (!force) {
     const hit = boardCache.get(cacheKey);
     if (hit && Date.now() - hit.at < CACHE_TTL) return hit.value;
@@ -129,7 +190,7 @@ async function classStatusBoard({ today, days, force } = {}) {
   const skipped = profiles.length - activeNames.length;
 
   if (!activeNames.length) {
-    const empty = buildResult({ day, from, weekStart, span, totals: emptyTotals(skipped), rows: [], attBy: new Map() });
+    const empty = buildResult({ day, from, weekStart, attRangeKey, attRangeLabel, totals: emptyTotals(skipped), rows: [], attBy: new Map() });
     boardCache.set(cacheKey, { at: Date.now(), value: empty });
     return empty;
   }
@@ -411,7 +472,7 @@ async function classStatusBoard({ today, days, force } = {}) {
     return String(a.className).localeCompare(String(b.className), 'zh-CN');
   });
 
-  const result = buildResult({ day, from, weekStart, span, totals: null, rows, attBy, skipped });
+  const result = buildResult({ day, from, weekStart, attRangeKey, attRangeLabel, totals: null, rows, attBy, skipped });
   boardCache.set(cacheKey, { at: Date.now(), value: result });
   return result;
 }
@@ -428,7 +489,7 @@ function emptyTotals(skipped) {
  *   ② 班里没有学生（studentCount=0）—— 空班，催也没对象；
  *   ③ 没有达标率（dailyRate=null）—— 分母为 0，无意义。
  */
-function buildResult({ day, from, weekStart, span, rows, skipped }) {
+function buildResult({ day, from, weekStart, attRangeKey, attRangeLabel, rows, skipped }) {
   const students = rows.reduce((a, r) => a + r.studentCount, 0);
   const aToday = rows.reduce((a, r) => a + r.run.achievedToday, 0);
   const aWeek = rows.reduce((a, r) => a + r.run.achievedWeek, 0);
@@ -462,7 +523,13 @@ function buildResult({ day, from, weekStart, span, rows, skipped }) {
     today: day,
     from,
     weekStart,
-    days: span,
+    // 考勤窗口（用户 2026-11-12 本日/本周/本月）：range 是 key、rangeLabel 是中文，
+    // 前端标题与图片都直接用 rangeLabel，不许自己按 from~to 反推「这是几天」。
+    attRange: attRangeKey,
+    attRangeLabel,
+    // 考勤计算规则（用户 2026-11-12「要在图片下面标注考勤计算规则，如迟到缺勤等逻辑」）：
+    // 服务端一份定义，页面脚注 / 生成图片 / 复制文案三处共用。
+    attRuleLines: buildAttRuleLines(),
     totals,
     rows,
     departments,
@@ -480,7 +547,7 @@ function buildResult({ day, from, weekStart, span, rows, skipped }) {
       attendanceMissing: attendanceMissing.map(brief),
     },
     // 未筛选态的完整报告（有筛选时由 applyBoardFilter 重新生成对应文案）
-    copyText: buildCopyText({ day, from, weekStart, totals, filtered: null, tags: [], rows, copy: 'all' }),
+    copyText: buildCopyText({ day, from, weekStart, totals, filtered: null, tags: [], rows, copy: 'all', attRangeLabel }),
   };
 }
 
@@ -525,6 +592,7 @@ function applyBoardFilter(board, { school, department, grades, quick, level, met
               tags: [],
               rows: board.rows,
               copy: copyScope,
+              attRangeLabel: board.attRangeLabel,
             }),
       copyScope,
     };
@@ -546,6 +614,7 @@ function applyBoardFilter(board, { school, department, grades, quick, level, met
       tags,
       rows,
       copy: copyScope,
+      attRangeLabel: board.attRangeLabel,
     }),
     copyScope,
   };
@@ -703,7 +772,7 @@ function filterBoard(board, { school, department, grades, quick, level, metric, 
  *  与「显示内容」是两回事：可以列表看着三列、复制时只要日达标那份名单，
  *  所以它是独立参数，不由列显隐推导。
  */
-function buildCopyText({ day, from, weekStart, totals, filtered, tags, rows, copy }) {
+function buildCopyText({ day, from, weekStart, totals, filtered, tags, rows, copy, attRangeLabel }) {
   const scoped = Array.isArray(tags) && tags.length > 0;
   const scope = copy === 'daily' || copy === 'weekly' ? copy : 'all';
   const scopeLabel = { daily: '日达标', weekly: '周达标' }[scope];
@@ -774,8 +843,20 @@ function buildCopyText({ day, from, weekStart, totals, filtered, tags, rows, cop
   const attendanceMissing = list.filter(QUICK_FILTERS.attMissing.test);
   if (attendanceMissing.length) {
     lines.push('');
-    lines.push(`考勤待补班级（${from} 至今无任何考勤记录，共 ${attendanceMissing.length} 个）：`);
+    // 窗口措辞用服务端 rangeLabel（本日/本周/本月），不写死「至今」：
+    // 旧文案「{from} 至今」在本月窗口下会变成「11月1日 至今」，老师以为是「到今天为止的全部」，
+    // 而实际选的是 11月10日 那天 —— 回看历史日期时这句话就是错的。
+    lines.push(`考勤待补班级（${attRangeLabel || '本周'}：${from} ~ ${day} 无任何考勤记录，共 ${attendanceMissing.length} 个）：`);
     for (const r of attendanceMissing) lines.push(`· ${r.className}`);
+  }
+
+  // 考勤计算规则（用户 2026-11-12「要标注考勤计算规则，如迟到缺勤等逻辑」）：
+  // 只在 copy=all（带考勤分数）时附 —— 收窄到只看日达标时考勤规则是噪音，
+  // 与上面「另一指标不出现」是同一条设计。
+  if (scope === 'all') {
+    lines.push('');
+    lines.push('考勤计算规则：');
+    for (const l of buildAttRuleLines()) lines.push(`· ${l}`);
   }
 
   return lines.join('\n');

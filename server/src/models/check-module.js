@@ -11,7 +11,7 @@ const fieldSchema = new mongoose.Schema(
     label: { type: String, default: '' },
     // number 数值 / int 整数 / text 文本 / textarea 多行 / select 单选 / students 学生多选名单
     // items 卫生类扣分项（[{key,label,score,max}]）/ bool 开关
-    // photo 检查记录现场照片（URL 数组，≤9 张）—— 第四轮引入
+    // photo 检查记录现场照片（URL 数组，张数不限；用户 2026-11-12 解除上传限制）—— 第四轮引入
     // ⚠️ 这是**闭合 enum**：新字段类型必须同步加在这里，否则 check_modules.save() 直接校验失败
     //    （services/check-modules.js 里加了 type:'photo' 却没改这里 → 播种/保存即炸）。
     type: { type: String, enum: ['number', 'int', 'text', 'textarea', 'select', 'students', 'items', 'bool', 'photo'], required: true },

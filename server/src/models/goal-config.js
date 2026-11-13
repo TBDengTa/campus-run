@@ -57,6 +57,17 @@ const goalConfigSchema = new mongoose.Schema(
       // custom 档才读这两个；其它档位忽略（避免"改了但没生效"的困惑）
       aiSuspiciousThreshold: { type: Number, default: 0.62 }, // 达到它 = 记一条「待研判」异常
       aiAutoBanThreshold: { type: Number, default: 0.78 }, // 达到它 = 自动限制
+
+      // ===== 阶段性自升级开关（用户 2026-11-12「请增加阶段性自升级」）=====
+      // 有监督模型分三级：0 无监督 → 1 影子辅助（只进待研判）→ 2 有监督主判（可封号）。
+      // 两个开关只控制**定时评估能不能自动动阶段**；关掉后评估照跑、指标照更新，
+      // 管理端仍能看到「已达闸门」并手动升（手动动阶段不受这两个开关影响）。
+      // 为什么不设「自动升级必须人工再点一次确认」：影子阶段本身就是那道确认 ——
+      // 它没有封号权力，最多把记录推进待研判队列，误判的代价只是多几条待看记录。
+      autoUpgrade: { type: Boolean, default: true },
+      // 自动降级：模型过时（作弊手法变了）时自动退一级。**默认开**——
+      // 「只会升级不会降级」的模型是单向棘轮，只会越来越松。
+      autoDemote: { type: Boolean, default: true },
     },
     rewardVideo: {
       dailyLimit: { type: Number, default: 10 }, // 每日观看上限
@@ -88,6 +99,9 @@ const goalConfigSchema = new mongoose.Schema(
      */
     beidou: {
       enabled: { type: Boolean, default: true },
+      // 音效总开关（用户 2026-11-12「增加点音效」）：关掉后用户端连 WAV 都不合成。
+      // 音效是运行时**代码合成**的（主包已超限，不放 mp3），见 utils/sfx.js。
+      sfxEnabled: { type: Boolean, default: true },
       // 看视频：看完给几次抽奖机会（**不再发步数**）
       video: {
         drawPerWatch: { type: Number, default: 1 },

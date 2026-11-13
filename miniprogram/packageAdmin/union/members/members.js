@@ -7,8 +7,11 @@
 //   · 不再有「校 / 分院」层级概念，统一用院校选择器（校学生会 + 各院校）；
 //   · 学年用选择器（2026学年…2024学年），默认当前学年，服务端按 9 月自动切换。
 //
-// 权限：union.view 查看、union.manage 增改删（服务端逐个校验）；成员是独立集合，
-// 不会让成员顺带获得管理端权限。
+// 权限（服务端逐个校验）：
+//   · 管理员：union.view 查看、union.manage 增改删；
+//   · 学生会干部：主席团 / 部长 / 副部长按**成员身份**管理，范围由服务端判定
+//     （校级全校 / 分院本院 / 部长本部门），不依赖管理端权限。成员是独立集合，
+//     不会让成员顺带获得管理端权限。
 const auth = require('../../../utils/request');
 // 部门「归属校区」判定与配置页共用一份：两页各写必然漂移
 //（配置页只显示本校区部门、成员页却能把人分到别校区的部门）
@@ -41,7 +44,8 @@ Page({
   refreshPermission() {
     const user = getApp().globalData.userInfo || {};
     const perms = user.effectivePermissions || [];
-    // 用户 2026-10-28：主席团可管理（虽是学生但服务端放行），部长/副部长只读。
+    // 用户 2026-11-12：主席团（正副主席）与部长 / 副部长 / 总管都能管理成员，
+    // 范围由服务端判定（校级全校；分院限本院；部长限本部门），前端只控入口显隐。
     this.setData({ canManage: canUnionScanJoin(user, perms) });
   },
 
@@ -54,6 +58,8 @@ Page({
     hasMore: false,
     keyword: '',
     canManage: false,
+    // 能否「调部门」：服务端只放行主席团 / 总管（部长只能在原部门内改职务 / 离任）
+    canTransfer: false,
 
     // 筛选：院校（'' = 全部，'school' = 全校，其它 = 院校组织 id）
     campusOptions: [{ id: '', name: '全部成员' }, { id: 'school', name: '校学生会' }],
@@ -87,13 +93,21 @@ Page({
     addTermIndex: 0,
     saving: false,
     pickerQuery: {},
+    // 添加成员的鉴权路径（用户 2026-11-12）：
+    //   admin  = 持 union.manage / '*' 的管理员 → 管理端接口，全校范围；
+    //   leader = 学生会干部（主席团 / 部长 / 副部长 / 总管）→ 用户端接口，服务端按身份收敛范围。
+    addMode: 'admin',
+    pickerApi: '/api/admin/union/members/candidates',
+    addHint: '',
+    addScopeMissing: false,
   },
 
   onLoad() {
     if (!getApp().requireLogin()) return;
     const user = getApp().globalData.userInfo || {};
     const perms = user.effectivePermissions || [];
-    // 用户 2026-10-28：主席团可管理（虽是学生但服务端放行），部长/副部长只读。
+    // 用户 2026-11-12：主席团（正副主席）与部长 / 副部长 / 总管都能管理成员，
+    // 范围由服务端判定（校级全校；分院限本院；部长限本部门），前端只控入口显隐。
     this.setData({ canManage: canUnionScanJoin(user, perms) });
   },
 
@@ -170,6 +184,14 @@ Page({
         page,
         total: data.total || 0,
         hasMore: !!data.hasMore,
+        // 服务端下发的「能否跨部门调整」：部长 / 副部长为 false（只能改职务 / 离任）。
+        // 管理端接口没有这个字段 → 管理员按 full 权限放行（不能把管理员的调部门入口也藏掉）。
+        canTransfer:
+          data.canTransfer !== undefined
+            ? !!data.canTransfer
+            : (((getApp().globalData.userInfo || {}).effectivePermissions) || []).some(
+                (p) => p === '*' || p === 'union.manage'
+              ),
       });
       // 注意：applyOptions 只刷新选项、**不复位已选筛选**；reset 只表示「重新拉第一页」
       this.applyOptions(data);
@@ -401,8 +423,13 @@ Page({
         const failed = [];
         for (const id of ids) {
           try {
-            const body = action === 'role' ? { role: payload.role } : { deptKey: payload.deptKey };
-            await auth.put(`/api/union/manage/members/${id}`, body);
+            if (action === 'leave') {
+              // 离任走 POST /remove（PUT 只接受 role/deptKey，发空体会 400）
+              await auth.post(`/api/union/manage/members/${id}/remove`, {});
+            } else {
+              const body = action === 'role' ? { role: payload.role } : { deptKey: payload.deptKey };
+              await auth.put(`/api/union/manage/members/${id}`, body);
+            }
             updatedIds.push(id);
           } catch (e) {
             failed.push({ id, name: '', reason: (e && e.message) || '失败' });
@@ -450,6 +477,10 @@ Page({
   },
 
   batchSetDept() {
+    if (!this.data.canTransfer) {
+      wx.showToast({ title: '只有主席团 / 总管可以调部门', icon: 'none' });
+      return;
+    }
     // 候选部门：按**当前院校筛选**收敛（若选了具体院校），否则给全量里各院校通用的部门。
     // 主席团排除：调部门不负责设主席，那是「改职务」的事。
     const opts = (this.buildDeptFilterOptions(this.data.campus) || []).filter((d) => d.key && d.key !== 'presidium');
@@ -486,8 +517,13 @@ Page({
     const member = this.data.list.find((m) => m.id === id);
     if (!member || !action) return;
     if (action === 'role') this.editRole(member);
-    else if (action === 'dept') this.transferDept(member);
-    else if (action === 'leave') this.leave(member);
+    else if (action === 'dept') {
+      if (!this.data.canTransfer) {
+        wx.showToast({ title: '只有主席团 / 总管可以调部门', icon: 'none' });
+        return;
+      }
+      this.transferDept(member);
+    } else if (action === 'leave') this.leave(member);
   },
 
   // 右滑（或滑不动时）的兜底入口：点「⋯」弹出同一套操作
@@ -495,12 +531,17 @@ Page({
     const id = e.currentTarget.dataset.id;
     const member = this.data.list.find((m) => m.id === id);
     if (!member) return;
+    // 动作表随权限变：部长的「调部门」在服务端必然 403，不要摆出来
+    const actions = ['改职务'];
+    if (this.data.canTransfer) actions.push('调部门');
+    actions.push('离任');
     wx.showActionSheet({
-      itemList: ['改职务', '调部门', '离任'],
+      itemList: actions,
       success: (res) => {
-        if (res.tapIndex === 0) this.editRole(member);
-        else if (res.tapIndex === 1) this.transferDept(member);
-        else if (res.tapIndex === 2) this.leave(member);
+        const picked = actions[res.tapIndex];
+        if (picked === '改职务') this.editRole(member);
+        else if (picked === '调部门') this.transferDept(member);
+        else if (picked === '离任') this.leave(member);
       },
     });
   },
@@ -581,7 +622,15 @@ Page({
   },
 
   // ===== 添加成员 =====
+  //
+  // 两条鉴权路径（用户 2026-11-12「正副主席可以管理或增加本院校相应部门成员」）：
+  //   · 管理员（union.manage / '*'）→ 管理端接口，全校范围（原行为不变）；
+  //   · 学生会干部（主席团 / 部长 / 副部长 / 总管）→ 用户端接口，
+  //     可选院校 / 部门 / 职务全部由服务端 `/api/union/manage/join-options?manage=1` 下发，
+  //     服务端还会在写入时再校验一次（前端只负责不给越权选项，不承担鉴权）。
   async openAdd() {
+    const perms = ((getApp().globalData.userInfo || {}).effectivePermissions) || [];
+    const canAdminAdd = perms.includes('*') || perms.includes('union.manage');
     this.setData({
       showAdd: true,
       picked: [],
@@ -591,6 +640,80 @@ Page({
       // 避免上一次选过主席团后残留成「请选择部门 + 主席」这种怪组合
       roleOptions: DEPT_ROLE_SET,
       roleIndex: DEPT_ROLE_SET.length - 1,
+      pickerQuery: {},
+      addMode: canAdminAdd ? 'admin' : 'leader',
+      pickerApi: canAdminAdd ? '/api/admin/union/members/candidates' : '/api/union/manage/members/candidates',
+      addHint: canAdminAdd
+        ? ''
+        : '可添加范围由你的学生会职务决定：校级正副主席 = 全校；分院正副主席 = 本院；部长 / 副部长 = 本部门',
+      addScopeMissing: false,
+      // 干部身份要等 join-options 回来才有选项：先清空旧选项，避免抽屉里残留上一个账号的范围
+      ...(canAdminAdd
+        ? {}
+        : {
+            addCampusOptions: [{ id: 'school', name: '加载中…' }],
+            addDeptOptions: [{ key: '', name: '加载中…' }],
+            roleOptions: DEPT_ROLE_SET,
+            roleIndex: 0,
+          }),
+    });
+    if (!canAdminAdd) await this.loadLeaderAddOptions();
+  },
+
+  // 干部身份：拉取「本人可添加的院校 / 部门 / 职务」。
+  async loadLeaderAddOptions() {
+    try {
+      const res = await auth.get('/api/union/manage/join-options', { manage: 1 });
+      this._leaderDepts = (res && res.departments) || [];
+      const campusOptions = [];
+      if (this._leaderDepts.some((d) => d && d.level === 'school')) {
+        campusOptions.push({ id: 'school', name: '校学生会' });
+      }
+      for (const c of (res && res.campuses) || []) {
+        campusOptions.push({ id: String(c.id), name: c.name || '未命名校区' });
+      }
+      if (!campusOptions.length) campusOptions.push({ id: 'school', name: '校学生会' });
+      this.setData(
+        {
+          addCampusOptions: campusOptions,
+          addScopeMissing: !!(res && res.scopeMissing),
+        },
+        () => this.applyLeaderCampus(0)
+      );
+    } catch (e) {
+      this.setData({ addScopeMissing: true });
+      wx.showToast({ title: e.message || '读取可添加范围失败', icon: 'none' });
+    }
+  },
+
+  // 干部身份：按院校（校区）过滤服务端下发的条目。
+  applyLeaderCampus(index) {
+    const campus = this.data.addCampusOptions[index] || {};
+    const all = this._leaderDepts || [];
+    const depts = all.filter((d) =>
+      campus.id === 'school' ? d.level === 'school' : d.level === 'branch' && String(d.schoolId || '') === String(campus.id)
+    );
+    // 首项是「请选择部门」占位：不能默认落在主席团上 ——
+    // 否则用户点开「添加」直接提交，会把一个普通部员加成副主席（默认职务取该部门第一项）。
+    const deptOptions = [{ key: '', name: '请选择部门', level: '', schoolId: '', roles: [] }].concat(
+      depts.map((d) => ({
+        key: d.key,
+        name: d.name,
+        level: d.level,
+        schoolId: d.schoolId || '',
+        schoolName: d.schoolName || '',
+        levelText: d.levelText || '',
+        // 服务端下发的是 {key,text}；选择器 WXML 用 label，这里统一成 label
+        roles: (d.roles || []).map((r) => ({ key: r.key, label: r.text || r.label || r.key })),
+      }))
+    );
+    this.setData({
+      addCampusIndex: index,
+      addDeptOptions: deptOptions,
+      addDeptIndex: 0,
+      roleOptions: [{ key: 'member', label: '部员' }],
+      roleIndex: 0,
+      // 候选人范围由服务端按身份收敛，前端不再传院校名（避免文本名不一致反而筛空）
       pickerQuery: {},
     });
   },
@@ -618,6 +741,10 @@ Page({
 
   onAddCampus(e) {
     const index = Number(e.detail.value) || 0;
+    if (this.data.addMode === 'leader') {
+      this.applyLeaderCampus(index);
+      return;
+    }
     const campus = this.data.addCampusOptions[index] || {};
     // 院校同时作为候选人搜索条件：学籍里的院校多数只有文本名，按名字过滤更准
     // ⚠️ 部门选项**必须跟着校区重算**（用户 2026-10-21「互不干扰」）：
@@ -650,6 +777,11 @@ Page({
 
   onAddRole(e) {
     const roleIndex = Number(e.detail.value) || 0;
+    if (this.data.addMode === 'leader') {
+      // 干部身份：职务选项由服务端按「部门 + 本人等级」下发，直接采用，不再本地联动
+      this.setData({ roleIndex });
+      return;
+    }
     const role = (this.data.roleOptions[roleIndex] || {}).key || '';
     // 反向联动：选到主席 / 副主席 → 部门自动锁定主席团（部门下拉里本来也有主席团这一项）
     if (PRESIDIUM_ROLES.includes(role)) {
@@ -666,6 +798,16 @@ Page({
     const addDeptIndex = Number(e.detail.value) || 0;
     const dept = this.data.addDeptOptions[addDeptIndex] || {};
     this.setData({ addDeptIndex });
+    if (this.data.addMode === 'leader') {
+      if (!dept.key) {
+        // 回到「请选择部门」占位：职务给最低档，避免沿用上一个部门的高职务
+        this.setData({ roleOptions: [{ key: 'member', label: '部员' }], roleIndex: 0 });
+        return;
+      }
+      const roles = (dept.roles || []).map((r) => ({ key: r.key, label: r.text || r.label || r.key }));
+      this.setData({ roleOptions: roles.length ? roles : [{ key: 'member', label: '部员' }], roleIndex: 0 });
+      return;
+    }
     // 正向联动：部门变了，职务选项跟着换（见 syncRoleOptionsForDept）
     this.syncRoleOptionsForDept(dept.key || '');
   },
@@ -676,12 +818,14 @@ Page({
 
   async submitAdd() {
     if (this.data.saving) return;
+    const isLeader = this.data.addMode === 'leader';
     const campus = this.data.addCampusOptions[this.data.addCampusIndex] || {};
     const role = (this.data.roleOptions[this.data.roleIndex] || {}).key || 'member';
     const dept = this.data.addDeptOptions[this.data.addDeptIndex] || {};
     const term = this.data.addTermOptions[this.data.addTermIndex] || {};
+    const userIds = this.data.picked.map((p) => p.userId).filter(Boolean);
 
-    if (!this.data.picked.length) {
+    if (!userIds.length) {
       wx.showToast({ title: '请先搜索并选择学生', icon: 'none' });
       return;
     }
@@ -689,6 +833,56 @@ Page({
       wx.showToast({ title: '请选择部门', icon: 'none' });
       return;
     }
+
+    // ===== 干部身份：走用户端接口，范围由服务端校验 =====
+    if (isLeader) {
+      // 服务端下发的条目自带 level：'school' = 校学生会，'branch' = 具体院校（校区）
+      const level = dept.level === 'branch' ? 'branch' : 'school';
+      const schoolId = level === 'branch' ? String(dept.schoolId || campus.id || '') : '';
+      if (level === 'branch' && (!schoolId || schoolId === 'school')) {
+        wx.showToast({ title: '请选择院校（校区）', icon: 'none' });
+        return;
+      }
+      this.setData({ saving: true });
+      try {
+        const res = await auth.post('/api/union/manage/members', {
+          level,
+          schoolId,
+          deptKey: dept.key,
+          role,
+          termId: term.termId || '',
+          // 落库仍只写学年名（termName），届次是派生展示，不进库
+          termName: term.rawName || term.termName || '',
+          userIds,
+        });
+        const failed = (res && res.failed) || [];
+        if (failed.length) {
+          // 部分失败必须逐条说明（只报成功数会让人以为全好了）
+          wx.showModal({
+            title: `新增 ${res.created || 0} 人，${failed.length} 人失败`,
+            content: failed
+              .slice(0, 8)
+              .map((f) => `${f.name || f.userId}：${f.reason || '失败'}`)
+              .join('\n'),
+            showCancel: false,
+          });
+        } else {
+          wx.showToast({
+            title: `新增 ${res.created || 0} 人${res.skipped ? `，跳过 ${res.skipped}` : ''}`,
+            icon: 'none',
+          });
+        }
+        this.setData({ showAdd: false, picked: [] });
+        await this.load(true);
+      } catch (e) {
+        wx.showToast({ title: e.message || '添加失败', icon: 'none' });
+      } finally {
+        this.setData({ saving: false });
+      }
+      return;
+    }
+
+    // ===== 管理员身份：管理端接口（全校范围，原行为不变）=====
     // 部门必须属于所选校区（用户 2026-10-21「互不干扰」）。
     // 即使选项已按校区过滤，这里仍兜一道：换校区后残留的旧选择、
     // 或两人同时操作导致选项过期，都会落库成「洋河成员 + 北校区部门」这种矛盾数据。
@@ -696,7 +890,7 @@ Page({
       wx.showToast({ title: `「${dept.name}」不属于所选校区，请重新选择`, icon: 'none', duration: 2500 });
       return;
     }
-    // 部门 ↔ 职务匹配（与后端 assertRoleFitsDept 同一口径）：
+    // 部门 ↔ 职务匹配（与后端 roleFitsDept 同一口径）：
     //   主席团只能设 主席/副主席；主席/副主席只能挂主席团。
     if (dept.key === 'presidium' && !PRESIDIUM_ROLES.includes(role)) {
       wx.showToast({ title: '主席团成员只能是主席或副主席', icon: 'none', duration: 2500 });
@@ -722,37 +916,14 @@ Page({
 
     this.setData({ saving: true });
     try {
-      // 添加成员：用户端**没有这个接口**（加人走「扫码加人」——学生出示二维码、干部扫码），
-      // 管理端 /api/admin/union/members 要求 union.manage，干部（学生）必然 403。
-      //
-      // 判断口径：持 union.manage / '*' 的是管理员 → 走管理端添加；
-      // 否则是干部（主席团 / 部长，靠身份加人）→ 引导到扫码加人页。
-      const perms = (getApp().globalData.userInfo || {}).effectivePermissions || [];
-      const canAdminAdd = perms.includes('*') || perms.includes('union.manage');
-      if (!canAdminAdd) {
-        this.setData({ saving: false });
-        wx.showModal({
-          title: '请用扫码加人',
-          content:
-            '你的身份是学生会干部（不是管理员），加人需要学生出示「加入学生会二维码」后扫码加入。\n\n现在去扫码加人？',
-          confirmText: '去扫码',
-          success: (r) => {
-            if (r.confirm) {
-              this.closeAdd();
-              wx.navigateTo({ url: '/packageAdmin/union/scan-join/scan-join' });
-            }
-          },
-        });
-        return;
-      }
-      if (this.data.picked.length === 1) {
+      if (userIds.length === 1) {
         const one = this.data.picked[0];
         await auth.post('/api/admin/union/members', { ...body, userId: one.userId });
         wx.showToast({ title: `已添加 ${one.name}`, icon: 'success' });
       } else {
         const res = await auth.post('/api/admin/union/members/bulk', {
           ...body,
-          userIds: this.data.picked.map((p) => p.userId),
+          userIds,
         });
         const extra = res.failed && res.failed.length ? `，${res.failed.length} 个失败` : '';
         wx.showToast({

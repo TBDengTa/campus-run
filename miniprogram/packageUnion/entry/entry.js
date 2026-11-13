@@ -15,9 +15,9 @@ const auth = require('../../utils/request');
 const fmt = require('../../utils/format');
 
 // ===== 留证照片（type='photo'）=====
-// 用户已确认：拍照**选填**，单次最多 9 张。
-// 9 与服务端同口径（routes/union.js 写入时 photos.slice(0, 9)，models/check-record.js 的 photos 数组）
-// —— 两边不一致会出现「前端让传 12 张、后端静默丢 3 张」这种查不出来的丢图。
+// 拍照**选填、张数不限**（用户 2026-11-12「解除所有上传照片的限制」）。
+// 服务端也不再裁剪张数（routes/union.js / check-modules.js 都不再 slice），
+// 所以「前端传多少、库里就存多少」，不存在静默丢图。
 
 // ===== 受检对象类型（用户 2026-10-26 第 4 点：卫生检查要能按 宿舍 / 班级 / 室外 筛选）=====
 // key 与服务端 check-modules.js 的 targetTypes 一一对应：
@@ -35,19 +35,12 @@ const TARGET_TYPE_TEXT = {
   outdoor: '室外',
 };
 
-const MAX_PHOTOS = 9;
-// ===== 上传前的自适应压缩阈值 =====
-// 原则：**能不动就不动**——小图原样上传，不损失任何画质；只有大图才压，且压到刚够用。
-//
-// PHOTO_SAFE_BYTES：原图小于它就**原样上传**（完全不压）。
-//   用户 2026-10-28「我希望不限制照片大小，或者限制 100MB」→ 服务端上限已提到 100MB，
-//   所以安全线也提到 95MB（留 5MB 余量给 multipart 包装与平台差异）。
-//   实际效果：手机相册原图（3~12MB，ProRAW 也就 25~75MB）基本都走原图，画质零损失。
-//   超过 95MB 才压缩 —— 那种体量已接近上限，压缩是为了「能传上去」而不是省空间。
-//
-// PHOTO_MAX_EDGE：长边超过它才缩边（px）。2560 足以看清门牌 / 板报文字等现场细节。
-const PHOTO_SAFE_BYTES = 95 * 1024 * 1024;
-const PHOTO_MAX_EDGE = 2560;
+// 单次选择张数：wx.chooseMedia 平台上限就是 9 张/次；用户可以连续点「拍照 / 相册」累加，
+// 页面不再设总张数上限（以前单次最多 9 张，第 10 张会被直接拦住）。
+const PHOTO_PICK_COUNT = 9;
+// 平台上传通道对超大文件可能直接 fail（服务端已不限制，但客户端不受我们控制）：
+// **原图优先**，只有 uploadFile 失败后才压缩重试一次（不是上传前的预压缩，不影响正常画质）。
+const PHOTO_RETRY_EDGE = 2560;
 // 照片字段的 type。后端已把 check-module 的 type enum 定为 'photo'，
 // 这里同时容忍 'photos' / 'image' 两种写法（契约演进期的保守兼容，**不改字段名**）。
 const PHOTO_TYPES = ['photo', 'photos', 'image'];
@@ -283,7 +276,6 @@ Page({
     //   status：pending 待传 / uploading 上传中 / done 已上传 / failed 失败可重试
     photos: [],
     photosFailedCount: 0,
-    maxPhotos: MAX_PHOTOS,
     uploading: false,
     // 「网课」分支：grade='网课' 时隐藏后续字段并清空（仅晚自习）
     onlineDorm: false,
@@ -938,7 +930,8 @@ Page({
     }
     // 已有照片：转成抽屉里的预览态（status:'done' + url，与上传完成后的结构一致）
     const photos = (rec.photos || []).map((url) => ({ url, path: url, status: 'done', progress: 100 }));
-    this.setData({ form, photos: photos.slice(0, MAX_PHOTOS) }, () => this.afterFormChange(form));
+    // 记录里有多少张就显示多少张（不再按 9 张截断）
+    this.setData({ form, photos }, () => this.afterFormChange(form));
   },
 
   // 查看该对象当日已有记录（抽屉里「该对象当日已有记录」提示条上的「查看」）
@@ -1405,19 +1398,14 @@ Page({
   onChoosePhoto(e) {
     const field = (e && e.currentTarget && e.currentTarget.dataset.field) || this.photoFieldKey();
     if (this.data.uploading) return;
-    const remain = MAX_PHOTOS - this.data.photos.length;
-    if (remain <= 0) {
-      wx.showToast({ title: `最多 ${MAX_PHOTOS} 张`, icon: 'none' });
-      return;
-    }
     const that = this;
     wx.chooseMedia({
-      count: remain,
+      // 平台单次上限 9 张；不限制总张数，用户可以反复添加（服务端也已不限张数）
+      count: PHOTO_PICK_COUNT,
       mediaType: ['image'],
       sourceType: ['album', 'camera'],
-      // compressed：小程序会把原图压到约 1280px 宽。规格“原图”在服务端 5MB 限制下经常被拒，
-      // 而检查留证只需要看清现场，不需要印刷级画质。
-      sizeType: ['compressed'],
+      // 原图直传：解除所有上传限制后不再压画质（用户 2026-11-12）
+      sizeType: ['original'],
       success(res) {
         const files = (res && res.tempFiles) || [];
         if (!files.length) return;
@@ -1467,105 +1455,63 @@ Page({
     if (!item || !item.path) return;
     this.patchPhoto(index, { status: 'uploading', progress: 0, error: '' });
     try {
-      // ⚠️ 上传前**强制压缩**（用户 2026-10-26「现场照片依旧是选择相册的照片上传错误」）。
-      //
-      // 为什么必须有这一步：服务端 /api/upload/check-photo 限 5MB，而
-      //   · 相机拍照 → 微信当场压成 ~1MB JPEG → 能过；
-      //   · 相册原图 → 6~12MB（尤其 iPhone/高像素安卓）→ 直接 400「文件超出大小限制」。
-      // chooseMedia 的 sizeType:['compressed'] **并不保证**真的压到 5MB 以内
-      // （它按平台策略压，相册大图仍可能超限），所以这里再压一次兜底。
-      // 观察：头像上传加压缩后就好了，这里当时漏了 —— 于是表现为「拍照行、相册不行」。
-      // 压到 quality 60 通常能到 200~800KB，足以看清现场（检查留证不需要印刷画质）。
-      const src = await this.compressForUpload(item.path);
-      const data = await auth.uploadCheckPhoto(src, {
+      // 原图直传（用户 2026-11-12「解除所有上传照片的限制」）：
+      // 服务端与 nginx 都已取消体积上限，不再为了「压到上限内」损失画质。
+      // 逐张上传、进度与失败原因仍按单张显示。
+      const data = await auth.uploadCheckPhoto(item.path, {
         onProgress: (percent) => this.patchPhoto(index, { progress: Number(percent) || 0 }),
       });
       this.patchPhoto(index, { status: 'done', progress: 100, url: (data && data.url) || '' });
     } catch (err) {
       // 把**真实原因**显示出来（用户 2026-10-26「检查录入上传照片依旧失败」，
-      // 但界面上只有一句「上传失败」，无法判断是 403 / 超时 / 域名白名单 / 图片过大）。
-      // 区分几类，给出能照着做的下一步：
-      //   · code 403002 → 身份识别不到（学生会成员校验没过）
-      //   · code 401    → 登录态过期
-      //   · 超过 5MB    → 提示换一张或重拍（压缩后仍超限的极端情况）
-      //   · 其它        → 原样带出服务端 message，并附 code 便于反馈
+      // 但界面上只有一句「上传失败」，无法判断是 403 / 超时 / 域名白名单）。
       const code = err && err.code;
-      // ⚠️ 不要再用正则把服务端文案覆盖成笼统的「照片太大」了（用户 2026-10-28
-      //   「上传不成功要提示原因」）：服务端现在会明确说「单张最多 100 MB」，
-      //   而这里一句「请重拍或换一张」把那个关键信息吃掉了。
-      // 保留策略：服务端有可读 message 就**原样展示**；只有日志类错误才补一句引导。
+      // 身份 / 登录问题压缩也没用，不重试；其它失败先尝试「压缩后重传一次」——
+      // 服务端已不限制体积，但小程序 uploadFile 通道对超大原图仍可能直接 fail。
+      if (code !== 401 && code !== 403002) {
+        const retried = await this.retryWithCompressed(item, index);
+        if (retried) return;
+      }
       let msg = (err && err.message) || '上传失败';
       if (code === 403002) msg = '上传被拒：你还不是学生会成员（请确认已在成员名单中）';
       else if (code === 401) msg = '登录已过期，请重新登录后再传';
-      // 其它情况保留 msg 原文（含服务端给出的真实上限与原因）
+      // 服务端 / 网络层有可读 message 就原样展示（含超时、网关 413 等真实原因）
       this.patchPhoto(index, { status: 'failed', error: msg });
     }
   },
 
-  /**
-   * 上传前压缩（**自适应**，用户 2026-10-26「你直接压缩不行吗 而且检查录入照片可以大一点 清晰一点」）。
-   *
-   * 设计原则：**能不动就不动，要动也只动到刚够用**。
-   *   ① 小图（≤ PHOTO_SAFE_BYTES）→ **原样上传**，一点画质都不损失；
-   *   ② 大图 → 从高画质开始压，逐级降质量（85 → 70 → 55），**够小就立刻停**；
-   *   ③ 尺寸过大才缩边，且只缩到 2560（不是一刀切 1280）。
-   *
-   * 为什么不直接用 chooseMedia 的 sizeType:['compressed']：
-   *   它按平台策略压，**不保证**落在服务端上限内（相册大图仍可能 6~12MB），
-   *   而且压多少不可控 —— 可能把一张本来 1MB 的清晰照片也重压一遍。
-   *
-   * 服务端上限见 routes/upload.js 的 CHECK_PHOTO_MAX_MB（缺省 10MB）；
-   * 这里按 8MB 目标压，留余量给 multipart 包装与不同平台差异。
-   *
-   * @param {string} src 本地临时文件路径
-   * @returns {Promise<string>} 可上传的路径（可能是原图，也可能是压缩后的）
-   */
-  async compressForUpload(src) {
-    // 环境不支持 → 原样传（服务端仍会按上限把关）
-    if (!wx.compressImage) return src;
-
-    // 先看原图大小：够小就直接用原图，**完全不压**（保画质）
-    const size = await this.getFileSize(src);
-    if (size > 0 && size <= PHOTO_SAFE_BYTES) return src;
-
-    // 逐级降质量，直到落进安全线；从高画质开始，尽量少损失
-    let current = src;
-    for (const quality of [85, 70, 55]) {
-      const out = await this.tryCompress(current, quality);
-      if (!out) continue;
-      current = out;
-      const s = await this.getFileSize(current);
-      if (s > 0 && s <= PHOTO_SAFE_BYTES) return current; // 够小就停，不再降画质
+  // 失败兜底：把原图压缩到平台更容易接收的体积后重传**一次**。
+  // 只在 uploadOne 的 catch 里调用（原图优先），成功返回 true。
+  async retryWithCompressed(item, index) {
+    if (!wx.compressImage || !item || !item.path) return false;
+    // 小于 2MB 的图压缩也不会改变「上传通道拒绝」的结论，省一次等待
+    if (item.size && item.size < 2 * 1024 * 1024) return false;
+    let small = '';
+    for (const quality of [80, 60]) {
+      small = await this.tryCompress(item.path, quality);
+      if (small && small !== item.path) break;
     }
-    return current; // 最低档仍偏大就交给服务端判定（会给出明确提示）
+    if (!small || small === item.path) return false;
+    try {
+      const data = await auth.uploadCheckPhoto(small, {
+        onProgress: (percent) => this.patchPhoto(index, { progress: Number(percent) || 0 }),
+      });
+      this.patchPhoto(index, { status: 'done', progress: 100, url: (data && data.url) || '' });
+      return true;
+    } catch (e) {
+      return false;
+    }
   },
 
-  // 读本地临时文件大小（失败返回 0 = 未知，调用方按「需要压缩」处理）
-  getFileSize(path) {
-    return new Promise((resolve) => {
-      try {
-        wx.getFileSystemManager().getFileInfo({
-          filePath: path,
-          success: (r) => resolve((r && r.size) || 0),
-          fail: () => resolve(0),
-        });
-      } catch (e) {
-        resolve(0);
-      }
-    });
-  },
-
-  // 单次压缩：quality 越高越清晰、体积越大
+  // 单次压缩（只给失败兜底用）：quality 越高越清晰、体积越大
   tryCompress(src, quality) {
     return new Promise((resolve) => {
       wx.compressImage({
         src,
         quality,
-        // 长边上限 2560：足以看清门牌、板报文字等现场细节，
-        // 不像 1280 那样糊掉；只有超大原图才会被缩边。
-        compressedWidth: PHOTO_MAX_EDGE,
+        compressedWidth: PHOTO_RETRY_EDGE,
         success: (r) => resolve((r && r.tempFilePath) || ''),
-        fail: () => resolve(''), // 压不动就让上层继续用当前文件
+        fail: () => resolve(''),
       });
     });
   },
@@ -1596,7 +1542,7 @@ Page({
     this.uploadOne(index, this.photoFieldKey()).then(() => this.syncPhotoForm(this.photoFieldKey()));
   },
 
-  // 删除某一张（**上限 9 张的删除入口**：删掉后才能继续加）
+  // 删除某一张（张数不限后仍然需要：传错 / 重拍要能撤掉）
   removePhoto(e) {
     const index = Number(e.currentTarget.dataset.index);
     const list = (this.data.photos || []).slice();
@@ -1744,11 +1690,10 @@ Page({
       period: periods[periodIndex] || '',
       details,
       // 留证照片在**顶层**（check_records.photos）：只发送已上传成功、拿到 URL 的那些；
-      // 上限 9 与服务端 slice(0, 9) 同口径。
+      // 张数不限（用户 2026-11-12），服务端也不再裁剪。
       photos: (this.data.photos || [])
         .filter((p) => p.status === 'done' && p.url)
-        .map((p) => p.url)
-        .slice(0, MAX_PHOTOS),
+        .map((p) => p.url),
     };
     // 申诉改判：带 settleAppeal 提交时，服务端在**同一条 revision** 里
     // 既写「改了什么」也写「申诉成立」，并把记录落成「已复核」。

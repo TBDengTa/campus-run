@@ -23,13 +23,15 @@
     </view>
 
     <scroll-view scroll-y class="tt-sheet-body">
-      <!-- ① 楼号：只能选。没有配置楼名时给出明确指引，而不是退回手打（那等于白做白名单）。 -->
+      <!-- ① 楼号：只能选。没有配置楼名时给出明确指引，而不是退回手打（那等于白做白名单）。
+           胶囊来自服务端 `buildings`（系统设置的宿舍楼清单），组件只在「该生现住楼不在清单里」
+           时补一条带 legacy 标记的旧楼名 —— 见 dorm-sheet.js 文件头，不补会把人堵死。 -->
       <view class="tt-sheet-label">楼号</view>
-      <block wx:if="{{buildings.length}}">
+      <block wx:if="{{chips.length}}">
         <view class="ds-chips">
           <view
-            class="ds-chip {{pickBuilding === item.name ? 'on' : ''}}"
-            wx:for="{{buildings}}"
+            class="ds-chip {{pickBuilding === item.name ? 'on' : ''}} {{item.legacy ? 'ds-chip-legacy' : ''}}"
+            wx:for="{{chips}}"
             wx:key="name"
             data-name="{{item.name}}"
             bind:tap="tapBuilding"
@@ -39,6 +41,7 @@
         </view>
       </block>
       <view class="ds-hint" wx:else>还没配置宿舍楼。请到「系统设置 → 楼名管理」添加宿舍用楼后再绑定。</view>
+      <view class="ds-hint" wx:if="{{legacyBuilding}}">「{{legacyBuilding}}」不在系统设置的宿舍楼清单里（历史写法）。沿用它可以只改床位；换成上面标准楼名即按新清单纠正记录。</view>
 
       <!-- ② 门号：唯一的手输项，纯数字 -->
       <view class="tt-sheet-label">门号</view>

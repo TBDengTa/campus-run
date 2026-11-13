@@ -37,7 +37,7 @@
 | 字段 | 说明 |
 |---|---|
 | openid + date | 复合索引；date 为 YYYY-MM-DD |
-| source | `werun` 微信运动同步 / `gps` GPS 实跑 / `beidou` 北斗（激励视频奖励步数） |
+| source | `werun` 微信运动同步 / `gps` GPS 实跑 / `beidou` 北斗（转盘抽奖与签到阶梯奖励的步数） |
 | steps / distance(m) / calories / durationSeconds / pace | 指标 |
 | goalAchieved | 当日总量是否达标（在最后一条 werun 记录上标记，判定必须用当日总量） |
 | routePoints | GPS 轨迹 `[{latitude, longitude, timestamp}]`（上限 5000 点） |
@@ -106,11 +106,23 @@ BMI 预设计划（bmiMin~bmiMax × 强度偏好匹配，`isDefault` 全局唯�
 
 ### beidou_draws（抽奖流水，审计与概率公示核对）
 每次抽奖一条：`openid` / `date` / `drawId` / `prizeKey` / `type` / `amount` / `roll`（随机数留证）/
-`index`（命中扇区）/ `capped`（是否因封顶被降级）。
+`index`（命中扇区）/ `capped`（是否因封顶被降级）/ `source`（本笔机会的来源）。
 
-- 索引：`(openid, date)`、`drawId` **unique**（幂等：弱网重试/连点只入账一次）、`(date:-1, prizeKey)`（管理端筛选）
-- **管理端只读**（`GET /api/admin/config/beidou-draws`）：不允许补发或撤销 ——
-  改流水会让概率公示与实际发放对不上；要补偿走「人工发徽章」等独立链路。
+- `source` 取值 `video 看视频 / share 邀请 / checkin 签到 / prize 再来一次 / unknown 老数据`。
+  ⚠️ 它是**账本归属**而不是「用户从哪个页面点进来」：次数是一个合并池（`beidou_day.draw.total`），
+  抽奖时按固定优先级 `prize → checkin → video → share` 从各来源余额里扣一笔，扣到谁就记谁
+  （唯一实现 `services/beidou.js::pickSource`；优先级写死在代码里不进配置 —— 调松等于全员稀有/统计口径漂移）。
+  配对字段是 `beidou_day.draw.usedVideo/usedShare/usedCheckin/usedPrize`，
+  不变量：**∑used\* == draw.used**，且每个 `used* <= from*`。
+- 索引：`(openid, date)`、`(openid, drawId)` **unique**、`(date:-1, prizeKey)`、`(source, date:-1)`（管理端按来源+日期筛）
+- ⚠️ **幂等索引必须含 `openid`，不能是 `drawId` 全局唯一**：
+  客户端 drawId 是「时间戳+随机串」，跨用户理论上会撞。全局唯一时后来者撞上别人的记录 →
+  被幂等分支当成「重复提交」→ 返回**别人的奖品与 index**，自己次数不扣、步数不发，
+  而接口回 `success:true`，日志毫无痕迹。幂等语义从来是「同一个人同一笔」。
+  旧库的 `drawId_1 unique` 由启动迁移 `services/beidou.js::migrateDrawIdIndex()` 显式删除
+  （Mongoose 只新建缺失索引、不会替换已存在的旧索引，与 `dorms.js::migrateSlotIndex` 同一类陷阱）。
+- **管理端只读**（`GET /api/admin/config/beidou-draws`，支持 `dateFrom/dateTo/source/prizeKey` 筛选 + 分面计数）：
+  不允许补发或撤销 —— 改流水会让概率公示与实际发放对不上；要补偿走「人工发徽章」等独立链路。
 
 ## 排行榜
 
@@ -139,6 +151,40 @@ BMI 预设计划（bmiMin~bmiMax × 强度偏好匹配，`isDefault` 全局唯�
 ### appeals
 申诉：`openid / banRecordId / content / status(pending|approved|rejected) / reply / reviewedBy / reviewedAt`。
 同一用户同时仅允许一条 pending。
+
+### anticheat_model_states（唐跑AI数据模型的**阶段状态**，每来源一份）
+用户 2026-11-12「阶段性自升级」。上一版只有「标注攒够了可以升级」的提示、没有升级动作，
+本集合记录模型实际处在哪一级、凭什么升的、谁批的。
+
+| 字段 | 说明 |
+|---|---|
+| source | `werun` / `gps`，**unique**（两套特征与模型，状态必须分开） |
+| stage / stageKey | `0 unsupervised` 无监督 / `1 assist` 影子辅助 / `2 primary` 有监督主判 |
+| mode | `auto`（默认，评估可自动动阶段）/ `manual`（管理员手动指定过；自动评估**只写建议**） |
+| stateVersion | CAS 版本号，多进程同时评估时**抢输的进程放弃写入**（不互相覆盖） |
+| model | 有监督逻辑回归：`features[]`（训练时按覆盖率挑定的特征清单，推理只按它取维度）/ `bias` / `weights[]` / `means[]` / `stds[]` / `operating{pSuspicious,pAutoBan}` |
+| metrics | `auc`（分层 K 折均值）/ `aucStd`（折间波动，稳定性闸门看它）/ `aucFolds[]` / `precisionAtSuspicious` / `precisionAtAutoBan` / `recallAtAutoBan` / `samples` |
+| coverage | 各特征的样本覆盖率（解释「为什么某个维度没进模型」：老标注缺 2026-10-29 才加的 ruleHits） |
+| stagedAt | 进入当前阶段的时刻（主判要求影子阶段驻留 ≥3 天；降级要求满 24 小时） |
+| history[] | `{at, from, to, reason, operator, metrics}`，最近 50 条，可追责 |
+
+`stage` 的语义与护栏（改这块先读 `services/anticheat-upgrade.js` 文件头）：
+- **影子辅助阶段分数封顶在自动封禁线以下**（取当前生效阈值 −0.02，不写死 0.78），只能进待研判；
+- 升级闸门是量化的（样本量 / 类别平衡 / 交叉验证 AUC ± 波动 / 精度 / 影子实测精度），缺什么用中文下发；
+- **降级能自动发生**（线上实测精度 <60% 或 AUC <0.6 → 退一级）；只会升不会降的模型是单向棘轮。
+
+### step_labels / step_anomalies 的有监督字段（2026-11-12 增）
+两张表各增三项，构成「影子证据」的完整通路（少写一层就永远升不到主判）：
+
+| 字段 | 说明 |
+|---|---|
+| modelStage | 判定/标注当时有监督模型处在第几阶段（旧数据为 0，**一律不算影子证据**，不猜） |
+| supervisedProb | 当时的作弊概率（0~1，逻辑回归输出） |
+| supervisedScore | 映射后的风险分（与无监督分同一量纲，锚定当前生效阈值） |
+
+`step_anomalies` 侧由 `services/steps.js` 在写线索时落库；`step_labels` 侧由
+`services/anomaly-disposal.js::recordFeedback` 在人工标注时带入 —— 「影子实测精度」
+= 只看 `modelStage >= 1` 的标注里，被判为可疑的那些有多少比例人工确认是作弊。
 
 ## 健康模块
 

@@ -83,9 +83,15 @@ Page({
         quickRooms.push(s.roomText);
       }
       // 宿舍楼快捷（用户 2026-10-21「系统设置里维护宿舍用楼的楼名列表，选楼名再填门牌号」）：
-      // ① 先用后台配置的**宿舍用楼**清单（即使还没住过人也列出来 —— 新楼要能直接选）；
-      // ② 再并入历史已有房间的楼（配置漏配时不会因为清单为空就填不了宿舍）。
-      // 配置的楼排前面：那是学校认定的标准楼名，历史数据里的可能是错的写法。
+      // ⚠️ 楼号胶囊**只认系统设置那份清单**（用户 2026-11-12 报「这里多出来 1号楼 与 洋河」）：
+      //   管理端路径的 data.buildings 是**全校所有房间**聚合出来的楼名，里面必然掺着
+      //   手打出来的旧写法 / 错写法（实测「洋河」160 间 739 人在住，标准清单早已改成
+      //   「洋河-男宿 / 洋河-女宿」；「1号楼」只有 1 间房号 999、0 人在住）。
+      //   把它们并进胶囊 = 白名单失效，按楼栋统计、按房间查宿又对不上，
+      //   而且同一个班从「我的班级」进（只聚合本班学生）和从「班级管理」进（全校）
+      //   会看到两套楼名 —— 正是用户说的「图1 图2 多两块、图3 正常」。
+      //   清单为空时才退回历史楼名（新学校忘了配，不该什么都选不了）；
+      //   「某个学生现住楼不在清单里」由 dorm-sheet 单独补一条 legacy 胶囊兜住，不会堵死改床位。
       // ⚠️ 走班级域的只读楼名接口（/api/class/buildings）而不是 /api/admin/config/buildings：
       //    宿管维护楼名需要 building.manage，而「填宿舍先选楼」只需要 class.view / 班主任身份
       //    （用户 2026-10-22「为什么教师权限组无法获取楼名」）。
@@ -93,10 +99,11 @@ Page({
         .get('/api/class/buildings')
         .then((r) => (r && r.dorm) || [])
         .catch(() => []);
-      const cfgSet = new Set(cfgBuildings);
-      const merged = cfgBuildings
-        .map((name) => ({ name, rooms: ((data.buildings || []).find((x) => x.name === name) || {}).rooms || 0 }))
-        .concat((data.buildings || []).filter((b) => !cfgSet.has(b.name)));
+      const histBuildings = data.buildings || [];
+      const histOf = (name) => (histBuildings.find((x) => x && x.name === name) || {}).rooms || 0;
+      const merged = cfgBuildings.length
+        ? cfgBuildings.map((name) => ({ name, rooms: histOf(name) }))
+        : histBuildings;
       this.setData({
         loading: false,
         students,

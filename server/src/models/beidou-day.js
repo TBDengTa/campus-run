@@ -24,6 +24,18 @@ const beidouDaySchema = new mongoose.Schema(
       fromShare: { type: Number, default: 0 },
       fromCheckin: { type: Number, default: 0 },
       fromPrize: { type: Number, default: 0 }, // 「再来一次」产生的次数
+
+      /**
+       * 各来源**已消耗**的次数（与上面 from* 配对，余额 = from* − used*）。
+       *
+       * 为什么必须单独记：次数是一个合并池（total），不带来源账本的话，
+       * 「这次抽奖算视频还是算签到」根本无法判定 —— 用户 2026-11-12 要的
+       * 「抽奖来源筛选」就只能靠猜。这里按优先级扣减，扣到谁流水里就记谁。
+       */
+      usedVideo: { type: Number, default: 0 },
+      usedShare: { type: Number, default: 0 },
+      usedCheckin: { type: Number, default: 0 },
+      usedPrize: { type: Number, default: 0 },
       // 今日抽奖 + 签到累计**发出的步数**：dailyStepsCap 的判定唯一依据。
       // ⚠️ 这是方案里唯一的成本闸门（用户 2026-11-11 定了「次数不限 + 点分享即给」），
       //    任何新增的「发步数」路径都必须往这里累加，否则封顶就是假的。

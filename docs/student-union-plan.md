@@ -263,8 +263,9 @@ isUnionMember: Boolean,   // 便于首页「学生会块」快速判断
    ⚠️ `grade` 在 details 里是**数组**（select 口径），判定必须用 `isOnlineDormGrade()` 兼容数组与字符串
    —— 前端按数组、后端按字符串比过一次，网课班因此仍被要求填实到人数。
 
-> 照片字段 `photos`（`type:'photo'`）**选填、≤9 张**，前端上传到 `POST /api/upload/check-photo`
-> （成员可传、≤5MB、`category='check_photo'`），落库在 `check_records.photos`（**顶层字段**，不在 details）。
+> 照片字段 `photos`（`type:'photo'`）**选填、张数不限**（用户 2026-11-12 解除所有上传限制），
+> 前端上传到 `POST /api/upload/check-photo`（成员可传、**不限体积 / 不压缩**、`category='check_photo'`），
+> 落库在 `check_records.photos`（**顶层字段**，不在 details）。
 > 宿舍场景的照片受隐私裁剪：仅**检查人 / 学生会主席团 / 所属部门部长 / 教师账号**可见，
 > 其余人**不下发原图 URL**（`photos: []` + `photosBlurred` + `photoCount`）——
 > ⚠️ 「模糊」必须是不给原图 URL；用 CSS 模糊一个真 URL 等于没做（抓包即得）。

@@ -10,7 +10,7 @@
  * 楼名（`buildings`）也在这里一起返回：班主任要填宿舍就得先选楼，
  * 而 `/api/admin/config/buildings` 挂在 building.view / building.manage / config.view 下 ——
  * 教师权限组没有这些权限（那是**宿管维护楼名清单**的权限，不该发给所有教师）。
- * 所以宿舍视图自己把「系统设置里配置的宿舍楼 ∪ 历史上出现过的楼」合并好下发，
+ * 所以宿舍视图自己把楼名候选下发好（口径见 `buildingOptions`：**以系统设置的清单为准**），
  * 班主任不必、也不该拿到楼名管理的权限。
  */
 const { ApiError } = require('../utils/response');
@@ -35,6 +35,43 @@ async function currentDorm(openid) {
     bedNo: doc.bedNo || '',
     status: doc.status || '',
   };
+}
+
+/**
+ * 楼号候选的**唯一口径**（用户 2026-11-12 报「班级宿舍管理与用户详情的弹窗多出来
+ * 『1号楼』『洋河』两块，而『我的班级 → 宿舍管理』只有配置的 5 栋」）。
+ *
+ * 两条规则：
+ *  ① 系统设置里的宿舍楼清单 —— 胶囊是**白名单**，标准楼名只有这一份；
+ *  ② 清单为空时才退回「历史出现过的楼」：新学校忘了配，不该让人什么都选不了。
+ *
+ * ⚠️ 刻意**不再无条件并入**「历史上出现过的所有楼」。房间是按自由文本「楼名·门号」
+ * 自动建档的（`services/dorms.js::assignStudentRoom`），所以手打过的旧写法 / 错写法
+ * （实测库里：「洋河」160 间、739 人在住 —— 后来才拆成「洋河-男宿 / 洋河-女宿」；
+ *  「1号楼」1 间房号 999、0 人在住 —— 测试残留）会永久挂在**所有人**的楼号胶囊里。
+ * 白名单掺进第二套写法，等于让「统一楼名」这件事失效（按楼栋统计、按房间查宿又对不上）。
+ *
+ * 「某个学生正住在清单外的楼里」不在这里兜：那是**展示层**的事，两个入口共用
+ * `components/dorm-sheet`，规则只在那一处实现（否则管理端与班级域又会各漂移一套）。
+ *
+ * @param {string[]} cfgList 系统设置的宿舍楼清单
+ * @param {Map<string,number>|Array<[string,number]>} historical 历史楼名 → 房间数
+ */
+function buildingOptions(cfgList, historical) {
+  const cfg = (Array.isArray(cfgList) ? cfgList : []).map((s) => String(s || '').trim()).filter(Boolean);
+  const hist = historical instanceof Map ? historical : new Map(historical || []);
+  const out = [];
+  const seen = new Set();
+  const push = (name, rooms) => {
+    const n = String(name || '').trim();
+    if (!n || seen.has(n)) return;
+    seen.add(n);
+    out.push({ name: n, rooms: Number(rooms) || 0 });
+  };
+  for (const name of cfg) push(name, hist.get(name) || 0);
+  // 只有「一条都没配」才列历史楼：配了 5 栋还塞进脏楼名，正是本次报障的成因
+  if (!cfg.length) for (const [name, n] of hist) push(name, n);
+  return out;
 }
 
 // 系统设置里配置的楼名（goal_config.buildings）；没配置过就是空数组
@@ -82,20 +119,8 @@ async function buildDormPayload(user) {
     buildingCount.set(b, (buildingCount.get(b) || 0) + 1);
   }
 
-  // 配置清单在前（它才是「应该住哪几栋」的唯一来源），历史里多出来的楼补在后面，
-  // 避免「配置了新楼但没学生住过」时下拉里选不到。
-  const buildings = [];
-  const seenB = new Set();
-  for (const name of cfgBuildings) {
-    if (seenB.has(name)) continue;
-    seenB.add(name);
-    buildings.push({ name, rooms: buildingCount.get(name) || 0 });
-  }
-  for (const [name, n] of buildingCount.entries()) {
-    if (seenB.has(name)) continue;
-    seenB.add(name);
-    buildings.push({ name, rooms: n });
-  }
+  // 楼号候选：口径全在 buildingOptions（以配置清单为准，不再把历史脏楼名无条件塞进来）。
+  const buildings = buildingOptions(cfgBuildings, buildingCount);
 
   const quickRooms = [];
   const seen = new Set();

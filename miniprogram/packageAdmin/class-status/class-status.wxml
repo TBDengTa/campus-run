@@ -138,16 +138,17 @@
     </picker>
   </view>
 
-  <!-- 「考勤统计 N 天」只在真有考勤数据时出现；区间随所选日期联动（没有「周」语义） -->
+  <!-- 考勤统计窗口（用户 2026-11-12「要本日、本周、本月，而不是3天7天这样」）；
+       仍在「真有考勤数据」时才出现，区间说明由服务端回显的 from~to 拼 -->
   <view class="cs-bar cs-bar-days" wx:if="{{hasAttendance}}">
     <text class="cs-bar-k">考勤统计</text>
     <view
-      class="cs-day {{days === item ? 'on' : ''}}"
-      wx:for="{{dayOptions}}"
-      wx:key="*this"
-      data-days="{{item}}"
-      bind:tap="onDays"
-    >{{item}}天</view>
+      class="cs-day {{attRange === item.key ? 'on' : ''}}"
+      wx:for="{{attRangeOptions}}"
+      wx:key="key"
+      data-key="{{item.key}}"
+      bind:tap="onAttRange"
+    >{{item.label}}</view>
     <text class="cs-bar-s">{{attRangeText}}</text>
   </view>
 

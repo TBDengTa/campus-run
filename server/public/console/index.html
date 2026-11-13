@@ -90,6 +90,17 @@
         <div class="grid g2" id="modelGrid"></div>
         <div class="grid g3 gap-top" id="threshGrid"></div>
       </div>
+      <!-- 阶段性自升级（用户 2026-11-12「可以升级了…请增加阶段性自升级」）：
+           三级阶梯：0 无监督 → 1 影子辅助（只进待研判）→ 2 有监督主判（可封号）。
+           卡片渲染的全部字段由 /console/api/model-stages 服务端预算（前端不做二次计算），
+           避免 Web 与小程序两处各算一份后出现「页面说还差 5 条、系统却不升」。 -->
+      <div class="card">
+        <div class="card-h">
+          <div class="card-t">阶段性自升级</div>
+          <div class="card-sub" id="stageTag"></div>
+        </div>
+        <div id="stageBox"></div>
+      </div>
       <div class="card">
         <div class="card-h"><div class="card-t">待研判队列（按来源与标注分开）</div></div>
         <div id="matrixBox"></div>
@@ -163,6 +174,10 @@
       <div class="card">
         <div class="card-h"><div class="card-t">自动处置开关</div></div>
         <div id="enableBox"></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><div class="card-t">自升级开关</div><div class="card-sub">只控制定时评估能不能自动动阶段</div></div>
+        <div id="autoUpgradeBox"></div>
       </div>
     </div>
   </div>

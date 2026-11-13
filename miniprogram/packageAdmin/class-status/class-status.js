@@ -75,7 +75,25 @@ const COPY_SCOPES = [
   { key: 'weekly', label: '只要周达标' },
 ];
 
-const DAY_OPTIONS = [3, 7, 14, 30];
+// 考勤统计窗口（用户 2026-11-12「要本日、本周、本月，而不是3天7天这样」）。
+// key 与服务端 ATT_RANGES 一一对应；窗口起止由**服务端**按所选日期算（本日/本周/本月
+// 都锚定所选日），前端只传 key —— 前端自己算周/月起点迟早和班超的 ISO 周对不上。
+const ATT_RANGE_OPTIONS = [
+  { key: 'day', label: '本日' },
+  { key: 'week', label: '本周' },
+  { key: 'month', label: '本月' },
+];
+const DEFAULT_ATT_RANGE = 'week';
+
+// ===== 生成图片的底部规则块布局常量（逻辑像素，画布按 ×2 出图）=====
+// 字符预算 = (画布宽 750 − 左右内距 28×2) ÷ 20px 字号 ≈ 34 个汉字。
+// 见 wrapCanvasLines 的注释：宁可提前换行，也不能溢出画布（measureText 拿不到，
+// 因为画布高度要在拿到 ctx 之前算出来）。
+const RULE_LINE_CHARS = 34;
+const RULE_LINE_H = 30;
+const RULE_TITLE_H = 34;
+// 落款那一行的高度（没有规则块时底部就只有它，与改造前的 120 保持同一观感）
+const RULE_BRAND_H = 60;
 
 const rateLevel = (v) => (v === null || v === undefined ? 'none' : v >= 100 ? 'ok' : v >= 60 ? 'warn' : 'bad');
 // 考勤**分数**的档位（10 分制，用户 2026-11-12「考勤要显示分数」）：
@@ -93,15 +111,22 @@ Page({
     metricChips: METRIC_CHIPS,
     columnToggles: COLUMN_TOGGLES,
     copyScopes: COPY_SCOPES,
-    dayOptions: DAY_OPTIONS,
+    attRangeOptions: ATT_RANGE_OPTIONS,
 
     quick: '',
     level: '',
     metric: 'daily',
-    days: 7,
+    // 考勤统计窗口：day | week | month（用户 2026-11-12，替代旧的「回看 N 天」）
+    attRange: DEFAULT_ATT_RANGE,
+    attRangeLabel: '本周',
+    // 服务端下发的考勤计算规则（用户 2026-11-12「要在图片下面标注考勤计算规则」）：
+    // 页面脚注与生成图片共用同一份，前端不写一个字 —— 改了单价忘了改说明就是说谎。
+    attRuleLines: [],
+    attRuleText: '',
     // 日期选择（2026-11-03）：空串 = 今天。选日期后日列/周列/考勤窗口一次联动：
     //   日达标 = 所选当天；周达标 = 所选日所在 ISO 周（周一至该日）；
-    //   考勤 = 所选日往前 N 天（考勤按天回看，永远没有「周」语义）。
+    //   考勤 = 按 attRange 窗口（本日/本周/本月），同样**锚定所选日**（2026-11-12 改）。
+    //   旧口径「考勤按天回看、永远没有周语义」已被用户否掉：老师要的是「本周考勤怎么样」。
     selectedDate: '',
     todayKeyText: '',
     dateLabel: '今天',
@@ -192,7 +217,8 @@ Page({
 
   buildQuery() {
     const d = this.data;
-    const q = { days: d.days };
+    // 考勤窗口传 key（本日/本周/本月），起止由服务端算 —— 不再传 days（旧「回看 N 天」）
+    const q = { attRange: d.attRange };
     // 选了非今天的日期才传（保持「今天」走服务端默认口径，缓存也最友好）
     if (d.selectedDate) q.today = d.selectedDate;
     if (d.selectedGrades.length) q.grades = d.selectedGrades.join(',');
@@ -234,10 +260,18 @@ Page({
         today: d.today || '',
         from: d.from || '',
         weekStart: d.weekStart || '',
-        days: d.days || this.data.days,
-        // 联动展示：快捷 chip 文案随日期换词；考勤行标出实际统计区间
+        // 窗口以服务端回显为准（非法值会被回退成 week，前端跟着改，否则 chip 与数据不符）
+        attRange: d.attRange || this.data.attRange,
+        attRangeLabel: d.attRangeLabel || '',
+        attRuleLines: d.attRuleLines || [],
+        attRuleText: (d.attRuleLines || []).join('；'),
+        // 联动展示：快捷 chip 文案随日期换词；考勤行标出实际统计区间（带窗口名）
         chips: this.chipsFor(),
-        attRangeText: d.from ? `${d.from} ~ ${d.today || ''}（早操/早八/晚自习/查宿）` : '',
+        attRangeText: d.from
+          ? d.from === d.today
+            ? `${d.today}（仅当日，早操/早八/晚自习/查宿）`
+            : `${d.from} ~ ${d.today || ''}（${d.attRangeLabel || ''}，早操/早八/晚自习/查宿）`
+          : '',
         gradeChips: (grades.length ? grades : []).map((g) => ({
           key: g,
           label: `${g}级`,
@@ -261,7 +295,7 @@ Page({
         ...this.copyScopeView(this.data.copyScope),
         hasFilter,
         emptyTitle: hasFilter ? '当前筛选条件下没有班级' : '没有班级数据',
-        footerText: this.buildFooter(d),
+        footerText: this.buildFooter(d, hasAttendance),
       });
     } catch (e) {
       if (seq !== this._seq) return;
@@ -283,6 +317,10 @@ Page({
         hasFilter: false,
         emptyTitle: '没有班级数据',
         footerText: '',
+        // 规则说明也要清：失败时留着上一次的规则文案，会被当成「数据是新的、只是没刷新」
+        attRuleLines: [],
+        attRuleText: '',
+        attRangeText: '',
         errorText: noPerm ? '没有查看班级状态的权限（需要 class.view）' : e.message || '加载失败，请下拉重试',
       });
     }
@@ -340,12 +378,20 @@ Page({
   },
 
   // 整句在 JS 拼：模板里写「本周起点 {{weekStart}}」会在字段为空时留下断句
-  buildFooter(d) {
+  //
+  // ⚠️ hasAttendance 必须由**调用方传进来**，不能读 this.data.hasAttendance：
+  //   本函数在 load() 的那一次 setData 里被调用，而 hasAttendance 是**同一次 setData** 才写入的，
+  //   此刻 this.data 还是上一次的旧值 —— 首次进页面永远拿到 false，考勤规则就永远不出现在脚注里。
+  //   （仓库里 buildMetrics 已因同一个坑留过注释，这是第二次踩。）
+  buildFooter(d, hasAtt) {
     const parts = ['达标 = 步数 ≥ 生效目标（个人计划优先）'];
     if (d.weekStart) parts.push(this.data.selectedDate ? `周起点 ${d.weekStart}` : `本周起点 ${d.weekStart}`);
-    // 考勤口径必须写清「10 分制」与早八怎么扣：老师照着这个数字催人，
-    // 不知道「9.95 分」是迟到 1 人扣出来的，就会以为统计出错。
-    if (this.data.hasAttendance) parts.push(`考勤为 10 分制，按应到人数加权（${d.from} 起），早八每迟到 1 人扣 0.05 分`);
+    // 考勤规则**用服务端下发的句子**（用户 2026-11-12「要标注考勤计算规则，如迟到缺勤等逻辑」）：
+    // 以前这里硬编码「每迟到 1 人扣 0.05 分」，单价改了页面不会跟着改 ——
+    // 老师照着过时的说明质疑正确的分数，比没有说明更糟。
+    if (hasAtt && (d.attRuleLines || []).length) {
+      parts.push(`考勤（${d.attRangeLabel || ''}：${d.from} ~ ${d.today}）：${d.attRuleLines[0]}`);
+    }
     return `${parts.join('；')}。`;
   },
 
@@ -442,10 +488,11 @@ Page({
     this.setData({ copyScope: key, ...this.copyScopeView(key) }, () => this.load());
   },
 
-  onDays(e) {
-    const days = Number((e.currentTarget.dataset || {}).days) || 7;
-    if (days === this.data.days) return;
-    this.setData({ days }, () => this.load());
+  // 考勤统计窗口切换（本日/本周/本月，用户 2026-11-12 替代旧的「回看 N 天」）
+  onAttRange(e) {
+    const key = String((e.currentTarget.dataset || {}).key || '');
+    if (!key || key === this.data.attRange) return;
+    this.setData({ attRange: key }, () => this.load());
   },
 
   onSchool(e) {
@@ -534,6 +581,10 @@ Page({
   // 画的是「当前筛选后的展示行表格」（所见即所转）：标题带服务端下发的筛选标签
   // 与班数，数值颜色与列表同一套 level 口径 —— 纯文本报告仍走「复制」（copyText
   // 服务端生成），图片负责不被微信折叠。
+  //
+  // 表格下面必须附**考勤计算规则**（用户 2026-11-12「要在图片下面标注考勤计算规则，
+  // 如迟到缺勤等逻辑」）：图片是要发进工作群的，群里的人看不到页面脚注，
+  // 只看到「9.85 分」就会问「这分怎么来的」。规则句子来自服务端，前端只负责换行绘制。
   onShareImage() {
     const rows = this.data.shown || [];
     if (!rows.length) {
@@ -544,13 +595,23 @@ Page({
     const shownRows = rows.slice(0, MAX_ROWS);
     const omitted = rows.length - shownRows.length;
 
+    // 规则块：标题 1 行 + 每条规则按宽度折行（画布没有自动换行，必须自己切）
+    const ruleLines = this.data.attRuleLines || [];
+    const ruleTitle = `考勤计算规则（${this.data.attRangeLabel || '本周'}：${this.data.from} ~ ${this.data.today}）`;
+    // 标题不折行（它最长也就 30 字左右），规则条目逐条折行后加「· 」
+    const wrapped = ruleLines.length ? [ruleTitle, ...this.wrapCanvasLines(ruleLines, RULE_LINE_CHARS)] : [];
+    // 底部布局只算一次（planShareFooter），高度与绘制共用同一份 ——
+    // 分两处各算迟早「高度按 A 算、绘制按 B 画」，画布溢出是**静默**的：
+    // 图片生成成功、发出去才发现规则被切掉半行，而这图是要进工作群的。
+    const foot = this.planShareFooter({ omitted, wrapped });
+
     // 布局（逻辑像素，node 尺寸 ×2 保清晰）
     const W = 750;
     const PAD = 28;
     const titleH = 118;
     const headH = 56;
     const rowH = 54;
-    const footH = 120;
+    const footH = foot.footH;
     const H = titleH + headH + shownRows.length * rowH + footH;
 
     const query = wx.createSelectorQuery().in(this);
@@ -565,7 +626,7 @@ Page({
       canvas.height = H * 2;
       const ctx = canvas.getContext('2d');
       ctx.scale(2, 2);
-      this.drawShareImage(ctx, { W, PAD, titleH, headH, rowH, footH, shownRows, omitted });
+      this.drawShareImage(ctx, { W, PAD, titleH, headH, rowH, footH, shownRows, foot });
       wx.canvasToTempFilePath({
         canvas,
         success: (r) => {
@@ -584,6 +645,60 @@ Page({
     });
   },
 
+  /**
+   * 图片底部布局：达标口径 → 截断说明 → 考勤规则块 → 落款。
+   *
+   * 返回 footH（总高）与每一行的 y（相对 footY 的偏移），绘制只按这里给的位置画。
+   * 单独成函数是因为画布高度必须在**创建画布之前**算出来（先有高度才有 ctx），
+   * 而绘制发生在之后 —— 两处各写一遍坐标，改动时漏一处就是内容重叠/被切。
+   *
+   * @param {{omitted:number, wrapped:string[]}} p wrapped 为空数组 = 后端没给规则
+   */
+  planShareFooter({ omitted, wrapped }) {
+    const lines = [{ text: '达标 = 步数 ≥ 生效目标（个人计划优先）', kind: 'note' }];
+    if (omitted > 0) lines.push({ text: `其余 ${omitted} 个班未列出（共 ${this.data.rows.length} 个）`, kind: 'note' });
+    if (wrapped && wrapped.length) {
+      // 第一条是规则标题（品牌色加粗），其余是规则条目
+      lines.push({ text: wrapped[0], kind: 'ruleTitle' });
+      for (let i = 1; i < wrapped.length; i += 1) lines.push({ text: wrapped[i], kind: 'rule' });
+    }
+    let y = 26;
+    const placed = [];
+    for (const ln of lines) {
+      placed.push({ ...ln, y });
+      // 规则标题行稍高一点（与条目拉开一档，避免挤成一坨灰字看不出哪句是标题）
+      y += ln.kind === 'ruleTitle' ? RULE_TITLE_H : ln.kind === 'note' ? 28 : RULE_LINE_H;
+    }
+    // 落款固定在底部（与改造前同一位置感），所以 footH 取「内容高度」与「最小底高」的较大者：
+    // 没有规则块时也不会让落款贴到分隔线上。
+    return { lines: placed, footH: Math.max(RULE_BRAND_H, y + 26) };
+  },
+
+  /**
+   * 规则条目按宽度折行（canvas 2d 没有自动换行），每条前面加「· 」。
+   *
+   * 用「字符预算」而不是逐字 measureText：measureText 需要先拿到 ctx，
+   * 而画布高度要在创建画布**之前**算出来（先有高度才有 ctx）—— 先有鸡还是先有蛋。
+   * 20px 字号下汉字约等于一个全角宽，预算取 (750 - 28*2) / 20 ≈ 34 个汉字；
+   * 混排 ASCII（数字/括号）实际更窄，所以只会**提前**换行，不会溢出画布 —— 这个方向是安全的。
+   */
+  wrapCanvasLines(lines, budget) {
+    const out = [];
+    const per = Math.max(8, budget - 2); // 扣掉「· 」两个前缀字符
+    for (const raw of lines || []) {
+      const text = String(raw || '').trim();
+      if (!text) continue;
+      if (text.length <= per) {
+        out.push(`· ${text}`);
+        continue;
+      }
+      for (let i = 0; i < text.length; i += per) {
+        out.push(i === 0 ? `· ${text.slice(i, i + per)}` : `  ${text.slice(i, i + per)}`);
+      }
+    }
+    return out;
+  },
+
   saveShareImage(path) {
     wx.saveImageToPhotosAlbum({
       filePath: path,
@@ -593,7 +708,7 @@ Page({
   },
 
   // 真正的绘制（拆出来便于阅读；颜色与列表 level 口径一致）
-  drawShareImage(ctx, { W, PAD, titleH, headH, rowH, footH, shownRows, omitted }) {
+  drawShareImage(ctx, { W, PAD, titleH, headH, rowH, footH, shownRows, foot }) {
     const cols = this.data.columns;
     const C = {
       text: '#1f2329', sub: '#8a919f', line: '#e4e7ec', zebra: '#fafbfc',
@@ -677,14 +792,23 @@ Page({
       });
     });
 
-    // 底部：口径 + 截断说明 + 落款
+    // 底部：达标口径 + 截断说明 + **考勤计算规则**（用户 2026-11-12）+ 落款。
+    // 每一行的 y 全部来自 planShareFooter（与算高度同一份），这里只负责上色与字号。
     const footY = headY + headH + shownRows.length * rowH;
     ctx.textAlign = 'left';
-    ctx.fillStyle = C.sub;
-    ctx.font = '20px sans-serif';
-    ctx.fillText('达标 = 步数 ≥ 生效目标（个人计划优先）· 考勤为 10 分制，按应到人数加权', PAD, footY + 26);
-    if (omitted > 0) ctx.fillText(`其余 ${omitted} 个班未列出（共 ${this.data.rows.length} 个）`, PAD, footY + 54);
+    ctx.textBaseline = 'middle';
+    for (const ln of foot.lines) {
+      if (ln.kind === 'ruleTitle') {
+        ctx.fillStyle = C.brand;
+        ctx.font = 'bold 20px sans-serif';
+      } else {
+        ctx.fillStyle = C.sub;
+        ctx.font = '20px sans-serif';
+      }
+      ctx.fillText(ln.text, PAD, footY + ln.y);
+    }
     ctx.fillStyle = C.brand;
+    ctx.font = '20px sans-serif';
     ctx.fillText('唐唐快跑 · 班级状态', PAD, footY + footH - 26);
     // 顶部分隔线
     ctx.strokeStyle = C.line;

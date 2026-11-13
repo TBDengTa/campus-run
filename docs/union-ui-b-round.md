@@ -2354,6 +2354,60 @@ UI 重做（`config/buildings`）：顶部渐变说明卡 + 两张分栏卡片�
 只要账号能切换，就必须有「换代」机制。现在登录会递增 `permissionEpoch`，
 页面 `onShow` 据此重算 —— 这是唯一可持续的做法（逐页 onShow 里重算权限太容易漏）。
 
+### 追加（2026-11-12）：学生会成员管理范围 + 干部直接添加成员
+
+用户口径：
+「学生会正副主席应该可以管理或增加本院校相应部门成员，正副部长可以管理或增加本部门的成员，
+全校的正副主席可以管理全校的院系和部门。」
+
+#### 之前为什么不行（四个叠加点）
+1. **成员页「添加」只给管理员**：`submitAdd` 发现调用者没有 `union.manage` 就弹
+   「请用扫码加人」，干部（主席团 / 部长 / 副部长）在成员页根本加不了人。
+2. **扫码加人的范围只校验了「部门存在 + scope 与层级匹配」**：共用部门（生活部 / 学习部）
+   在两个校区各展开一条，分院干部选到外校区那条也能通过 → 能把成员加进外校区分会。
+3. **成员页的部门筛选项返回全部部门**：列表本身按 `memberManageAllowed` 过滤了，
+   但筛选下拉还列着外校区部门 —— 能选到却永远 0 条，看起来像「筛选坏了」。
+4. **老成员只有 `departmentId`（无 schoolId / schoolName）**：`sameCampus` 判不出同校，
+   分院主席团在列表里看得见、却一条都管不了（静默 403）。
+
+#### 实现
+- **范围唯一实现** `services/union.js`：
+  `managerScopeOf / campusAllowed / canManageMemberSlot / canGrantRole / roleFitsDept`；
+  `sameCampus` 增加 `departmentId ∈ identity.departmentIds` 的老数据兜底。
+  职务等级从路由搬进 service（`ROLE_RANK` / `PRESIDIUM_RANK` / `roleRank` / `maxRoleRank`），
+  管理端与用户端只引用，不再各写一份。
+- **用户端新增接口**（`routes/union.js`）：
+  `GET /api/union/manage/members/candidates`（候选人按本院校收敛）、
+  `POST /api/union/manage/members`（单条 / 批量，逐条失败不影响其它，上限 100）；
+  写入字段与去重口径与管理端一致。
+- **扫码加人收紧**：`join-options` 按 `managerScopeOf` 收敛校区；`?manage=1` 时额外下发主席团
+  （成员页添加主席 / 副主席要用，扫码仍然排除主席团）；`/invite/:token/accept` 与
+  `PUT /manage/members/:id` 的调部门都过 `canManageMemberSlot`。
+- **前端** `packageAdmin/union/members`：添加抽屉按身份走两条路 ——
+  管理员 → 管理端接口（原行为）；干部 → 用户端接口，院校 / 部门 / 职务全部读
+  `join-options?manage=1` 下发项（前端只负责不给越权选项，服务端仍会再校验）。
+
+#### 口径表
+| 身份 | 可管理 / 可添加 |
+|---|---|
+| 校主席团（正 / 副主席） | 校级主席团 + 全校任意院校的任意部门 |
+| 分院主席团（正 / 副主席） | 本院校任意部门（含本院主席团）；不能跨校区、不能加校级 |
+| 校级部长 / 副部长 | 本部门；可跨校区 |
+| 分院部长 / 副部长 | 本部门 + 本院校；不能跨校区 |
+| 普通部员 | 无 |
+
+授予上限：副主席不能授予主席；副部长不能授予部长；不能授予高于自己的职务。
+
+⚠️ 「管理全校的院系和部门」指**成员**（把学生加进某个院校的某个部门 / 改职务 / 移出），
+不是改部门配置本身 —— 部门的增删改仍走管理端 `union.manage`（学生干部不持有管理端权限）。
+
+#### 验收
+- `tools/check-union-member-scope.js`（静态 + 纯函数矩阵，0 失败）
+- `tools/verify-union-member-scope.js`（真连库：join-options 范围 / 候选人范围 / 本院可加 /
+  跨校区 403 / 本部门可加 / 别部门 403 / 校主席团全校 / 副主席授予上限 / 教师逐条失败 /
+  非成员 403 / 清理核对 0）
+- `tools/check-server-contract.js` → **887 项 0 失败**
+
 
 
 

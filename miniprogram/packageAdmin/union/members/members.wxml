@@ -75,7 +75,8 @@
 
       <view slot="right" class="um-swipe-actions">
         <view class="um-swipe-btn role" data-action="role" data-id="{{item.id}}" catch:tap="onSwipeAction">改职务</view>
-        <view class="um-swipe-btn dept" data-action="dept" data-id="{{item.id}}" catch:tap="onSwipeAction">调部门</view>
+        <!-- 调部门只给主席团 / 总管（服务端 PUT 的口径）；部长调部门必然 403，不显示假入口 -->
+        <view wx:if="{{canTransfer}}" class="um-swipe-btn dept" data-action="dept" data-id="{{item.id}}" catch:tap="onSwipeAction">调部门</view>
         <view class="um-swipe-btn leave" data-action="leave" data-id="{{item.id}}" catch:tap="onSwipeAction">离任</view>
       </view>
     </t-swipe-cell>
@@ -99,7 +100,7 @@
     </view>
     <view class="um-batch-acts">
       <view class="um-batch-act" bind:tap="batchSetRole">改职务</view>
-      <view class="um-batch-act" bind:tap="batchSetDept">调部门</view>
+      <view wx:if="{{canTransfer}}" class="um-batch-act" bind:tap="batchSetDept">调部门</view>
       <view class="um-batch-act leave" bind:tap="batchLeave">离任</view>
     </view>
   </view>
@@ -114,9 +115,13 @@
 
     <scroll-view scroll-y class="um-sheet-body">
       <view class="um-tip">搜索学生库选择成员（可多选批量添加），不用手输学号或姓名</view>
+      <view class="um-tip" wx:if="{{addHint}}">{{addHint}}</view>
+      <view class="um-tip um-tip-warn" wx:if="{{addScopeMissing}}">
+        你的成员记录还没有绑定院校，暂时无法确定可添加范围，请联系管理员在「学生会成员」里补全院校
+      </view>
 
       <person-picker
-        api="/api/admin/union/members/candidates"
+        api="{{pickerApi}}"
         extra-query="{{pickerQuery}}"
         limit="{{100}}"
         selected="{{picked}}"

@@ -461,3 +461,201 @@
   font-size: 20rpx;
   color: var(--tt-text-3);
 }
+
+/* ===== 阶段性自升级（用户 2026-11-12）=====
+   三级阶梯：当前级橙色左边框高亮、已达级绿色、未达级灰。
+   「下一阶段缺什么」用红色列出 —— 那是管理员唯一需要行动的地方。 */
+.sa-stage {
+  margin: 0 24rpx 16rpx;
+  padding: 20rpx 22rpx;
+  border-radius: 14rpx;
+  background: var(--tt-bg-card, #fff);
+}
+
+.sa-stage-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+}
+
+.sa-stage-title {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.sa-stage-switch {
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+}
+
+.sa-stage-rule {
+  margin: 8rpx 0 14rpx;
+  font-size: 20rpx;
+  line-height: 1.6;
+  color: var(--tt-text-3);
+}
+
+.sa-stage-src {
+  padding: 16rpx 0 4rpx;
+  border-top: 1rpx solid var(--tt-border, #f0f0f0);
+}
+
+.sa-stage-src-head {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-bottom: 12rpx;
+}
+
+.sa-stage-src-name {
+  font-size: 25rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.sa-stage-cur {
+  padding: 2rpx 12rpx;
+  border-radius: 999rpx;
+  background: var(--tt-brand-soft, #fff3e8);
+  color: var(--tt-brand, #ff6b00);
+  font-size: 20rpx;
+}
+
+.sa-stage-mode {
+  padding: 2rpx 12rpx;
+  border-radius: 999rpx;
+  background: var(--tt-bg-page);
+  color: var(--tt-text-3);
+  font-size: 20rpx;
+}
+
+.sa-stage-ladder {
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.sa-stage-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 10rpx;
+  padding: 10rpx 14rpx;
+  border-radius: 10rpx;
+  border-left: 6rpx solid var(--tt-border, #eee);
+  background: var(--tt-bg-page);
+}
+
+.sa-stage-step.done {
+  border-left-color: var(--td-success-color-5, #16a34a);
+  background: var(--td-success-color-1, #ecf9f2);
+}
+
+.sa-stage-step.current {
+  border-left-color: var(--tt-brand, #ff6b00);
+  background: var(--tt-brand-soft, #fff3e8);
+}
+
+.sa-stage-mark {
+  font-size: 22rpx;
+  color: var(--tt-text-2);
+  line-height: 1.5;
+}
+
+.sa-stage-step-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.sa-stage-step-t {
+  font-size: 23rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.sa-stage-step-d {
+  font-size: 20rpx;
+  line-height: 1.5;
+  color: var(--tt-text-3);
+}
+
+.sa-stage-kv {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20rpx;
+  margin-top: 10rpx;
+  font-size: 20rpx;
+  color: var(--tt-text-2);
+}
+
+.sa-stage-next {
+  margin-top: 12rpx;
+  padding: 12rpx 14rpx;
+  border-radius: 10rpx;
+  border: 1rpx dashed var(--tt-border, #e5e5e5);
+}
+
+.sa-stage-next.is-ok {
+  border-style: solid;
+  border-color: var(--td-success-color-3, #b7e6cd);
+  background: var(--td-success-color-1, #ecf9f2);
+}
+
+.sa-stage-next-t {
+  display: block;
+  font-size: 22rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.sa-stage-next-tip {
+  display: block;
+  margin-top: 4rpx;
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+}
+
+.sa-stage-miss {
+  margin-top: 4rpx;
+  font-size: 20rpx;
+  line-height: 1.6;
+  color: var(--td-error-color-6, #d54941);
+}
+
+.sa-stage-warn {
+  margin-top: 10rpx;
+  padding: 10rpx 14rpx;
+  border-radius: 10rpx;
+  background: var(--td-error-color-1, #fdecee);
+  color: var(--td-error-color-6, #d54941);
+  font-size: 20rpx;
+  line-height: 1.6;
+}
+
+.sa-stage-last {
+  margin-top: 8rpx;
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+}
+
+.sa-stage-acts {
+  display: flex;
+  gap: 12rpx;
+  margin-top: 14rpx;
+}
+
+.sa-stage-btn {
+  padding: 10rpx 22rpx;
+  border-radius: 999rpx;
+  border: 1rpx solid var(--tt-border, #e5e5e5);
+  background: var(--tt-bg-card, #fff);
+  color: var(--tt-text-2);
+  font-size: 22rpx;
+}
+
+.sa-stage-btn.pri {
+  border-color: var(--tt-brand, #ff6b00);
+  background: var(--tt-brand, #ff6b00);
+  color: #fff;
+}

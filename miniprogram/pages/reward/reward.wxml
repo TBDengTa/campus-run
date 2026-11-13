@@ -1,227 +1,161 @@
-<!-- 教师拦截：blocked=true 时整页不渲染（连奖励内容与广告节点都不进 DOM） -->
-<view class="page tt-page" wx:if="{{!blocked}}">
+<!-- 教师拦截：blocked=true 时整页不渲染 -->
+<view class="page tt-page bd-page" wx:if="{{!blocked}}">
 
-  <!-- ===== 主视觉：今日剩余次数 ===== -->
-  <view class="bd-hero">
-    <view class="bd-hero-body">
-      <view class="bd-hero-top">
-        <text class="bd-hero-label">北斗运动</text>
-        <text class="bd-hero-chip">{{enabled ? '每日 0 点重置' : '活动未开启'}}</text>
+  <!-- ===== 中奖播报（常驻一行）===== -->
+  <view class="bd-feed">
+    <view class="bd-feed-icon">🎉</view>
+    <view class="bd-feed-track" wx:if="{{feed.length}}">
+      <view class="bd-feed-item {{item.isMine ? 'is-mine' : ''}}" wx:for="{{feed}}" wx:key="index" wx:if="{{index === feedIndex}}">
+        <text class="bd-feed-name">{{item.nameMasked}}</text>
+        <text class="bd-feed-act">刚抽中</text>
+        <text class="bd-feed-prize">{{item.prizeLabel}}</text>
+        <text class="bd-feed-rare" wx:if="{{item.rarity === 'rarest'}}">稀有</text>
+        <text class="bd-feed-time">{{item.atText}}</text>
       </view>
-      <view class="bd-hero-main">
-        <view class="bd-hero-num">
-          <text class="num-font bd-hero-num-val">{{remaining}}</text>
-          <text class="bd-hero-num-unit">次</text>
-        </view>
-        <text class="bd-hero-tip">看完视频、签到、邀请同学都能增加抽奖次数</text>
-      </view>
+    </view>
+    <view class="bd-feed-track" wx:else>
+      <text class="bd-feed-empty">{{feedEmptyText}}</text>
     </view>
   </view>
 
-  <!-- ===== 封顶提示（必须在抽到空奖之前就能看到）===== -->
+  <!-- ===== 转盘区（次数 + 盘 + 封顶提示，全在第一屏）===== -->
+  <view class="bd-wheel-wrap">
+    <!-- 次数：收成盘上方一行，不再单独占一张卡 -->
+    <view class="bd-count">
+      <text class="bd-count-num num-font">{{remaining}}</text>
+      <text class="bd-count-unit">次可抽</text>
+      <text class="bd-count-sep">·</text>
+      <text class="bd-count-earned">今日已得 {{earned.steps || 0}} 步</text>
+      <!-- 音效开关：很多人在地铁上打开，必须能一键关 -->
+      <view class="bd-sfx {{sfxMuted ? 'is-off' : ''}}" bind:tap="toggleSfx">
+        <t-icon name="{{sfxMuted ? 'sound-mute' : 'sound'}}" size="30rpx" color="{{sfxMuted ? 'var(--tt-text-3)' : 'var(--tt-brand)'}}" />
+      </view>
+    </view>
+
+    <!-- 光效层（只在稀有/最稀有时亮） -->
+    <view class="bd-glow {{fx === 'rare' || fx === 'rarest' ? 'is-on' : ''}} {{fx === 'rarest' ? 'is-gold' : ''}}"></view>
+
+    <!-- 指针 -->
+    <view class="bd-pointer {{spinning ? 'is-spin' : ''}}"></view>
+
+    <!-- 盘面：8 个 clip-path 楔形（不用 conic-gradient：安卓兼容性差会渲染成纯色） -->
+    <view class="bd-wheel" style="transform: rotate({{rotateDeg}}deg);" bind:transitionend="onSpinEnd">
+      <view
+        class="bd-sector bd-sector-{{item.tint}} {{activeIndex === index ? 'is-hit' : ''}}"
+        wx:for="{{sectors}}"
+        wx:key="key"
+        style="clip-path: {{item.clip}}; -webkit-clip-path: {{item.clip}};"
+      >
+        <view class="bd-sector-body" style="transform: rotate({{item.midDeg}}deg) translateY(-152rpx);">
+          <text class="bd-sector-val">{{item.shortLabel}}</text>
+          <text class="bd-sector-unit">{{item.type === 'steps' ? '步' : (item.type === 'draw' ? '一次' : '')}}</text>
+        </view>
+      </view>
+      <!-- 扇区分隔线（纯装饰） -->
+      <view class="bd-wedge" wx:for="{{sectors}}" wx:key="key" style="transform: rotate({{item.startDeg}}deg);"></view>
+    </view>
+
+    <!-- 中心抽奖按钮 -->
+    <view class="bd-center {{spinning ? 'is-spinning' : ''}} {{(!enabled || remaining <= 0) ? 'is-disabled' : ''}}" bind:tap="draw">
+      <text class="bd-center-main">{{spinning ? '抽奖中' : (enabled ? (remaining <= 0 ? '没次数' : '抽奖') : '未开启')}}</text>
+      <text class="bd-center-sub" wx:if="{{!spinning && remaining > 0}}">{{remaining}} 次</text>
+    </view>
+
+    <!-- 最稀有的爆点横幅 -->
+    <view class="bd-burst" wx:if="{{fx === 'rarest'}}">
+      <text class="bd-burst-text">🎊 恭喜抽中稀有奖</text>
+    </view>
+  </view>
+
+  <!-- 封顶提示：必须在抽到空奖之前就能看到 -->
   <view class="bd-cap" wx:if="{{capText}}">
-    <t-icon name="{{cap.capped ? 'error-circle' : 'info-circle'}}" size="30rpx" color="{{cap.capped ? 'var(--td-warning-color-5)' : 'var(--tt-text-3)'}}" />
+    <t-icon name="{{cap.capped ? 'error-circle' : 'info-circle'}}" size="26rpx" color="{{cap.capped ? 'var(--td-warning-color-5)' : 'var(--tt-text-3)'}}" />
     <text class="bd-cap-text">{{capText}}</text>
   </view>
-
-  <!-- ===== 转盘 ===== -->
-  <view class="bd-wheel-wrap">
-    <view class="bd-wheel-glow"></view>
-    <!-- 指针（固定在正上方，尖端朝下） -->
-    <view class="bd-pointer"></view>
-    <!-- 盘面：背景是 conic-gradient 画的 8 等分扇区（由 JS 按服务端 sectors 生成），
-         标签用 rotate + translate 定位。旋转只改变观感，结果由服务端下发的 index 决定。 -->
-    <view
-      class="bd-wheel"
-      style="background: {{wheelBg}}; transform: rotate({{rotateDeg}}deg); transition: transform 3.2s cubic-bezier(0.15, 0.9, 0.05, 1);"
-      bind:transitionend="onSpinEnd"
-    >
-      <view class="bd-wedge-line" wx:for="{{sectors}}" wx:key="key" style="transform: rotate({{item.startDeg}}deg);"></view>
-      <view class="bd-label" wx:for="{{sectors}}" wx:key="key" style="transform: rotate({{item.centerDeg}}deg) translateY(-190rpx);">
-        <text class="bd-label-text {{item.type === 'none' ? 'is-none' : ''}}">{{item.label}}</text>
-      </view>
-    </view>
-    <!-- 中心抽奖按钮 -->
-    <view class="bd-wheel-center {{spinning ? 'is-spinning' : ''}}" bind:tap="draw">
-      <text class="bd-wheel-center-text">{{spinning ? '抽奖中' : '抽奖'}}</text>
-    </view>
+  <view class="bd-cap" wx:if="{{remaining <= 0 && enabled}}">
+    <t-icon name="info-circle" size="26rpx" color="var(--tt-text-3)" />
+    <text class="bd-cap-text" bind:tap="scrollToTasks">次数用完了，去做任务赚次数 ›</text>
   </view>
 
-  <!-- 抽奖主按钮（中心按钮之外再给一个明确的行动入口，低端机中心点可能难点到）
-       注意：禁用条件只看「剩余次数 <= 0」，不要看 unlimited ——
-       unlimited 只表示每日上限不设限，获得的总次数仍然是有限的。 -->
-  <view
-    class="tt-pill-btn primary bd-draw-btn {{(!enabled || remaining <= 0 || spinning) ? 'disabled' : ''}}"
-    bind:tap="draw"
-  >
-    <t-icon name="{{(!enabled || remaining <= 0) ? 'lock-on' : 'gift'}}" size="34rpx" color="#ffffff" />
-    <text>{{spinning ? '抽奖中…' : (!enabled ? '活动暂未开启' : (remaining <= 0 ? '次数不足 · 去做任务' : '开始抽奖'))}}</text>
-  </view>
-  <view class="bd-draw-note" wx:if="{{!enabled}}">活动暂未开启，请稍后再来</view>
-  <view class="bd-draw-note" wx:elif="{{remaining <= 0}}">
-    <text bind:tap="scrollToTasks">去看看视频、签到或邀请同学 ›</text>
-  </view>
-
-  <!-- ===== 本次中奖结果（服务端下发，不用前端停位推断）===== -->
-  <view class="tt-card bd-prize {{lastPrize.type === 'none' ? 'is-none' : ''}}" wx:if="{{lastPrize}}">
-    <view class="bd-prize-head">
-      <t-icon name="{{lastPrize.icon}}" size="44rpx" color="{{lastPrize.color}}" />
-      <view class="bd-prize-body">
-        <view class="bd-prize-title">{{lastPrize.text}}</view>
-        <view class="bd-prize-sub" wx:if="{{lastPrize.type === 'steps'}}">已计入今日运动记录</view>
-        <view class="bd-prize-sub" wx:elif="{{lastPrize.type === 'draw'}}">次数已回补，可以继续抽</view>
-        <view class="bd-prize-sub" wx:elif="{{lastPrize.capped}}">今日步数奖励额度已用完，明天再来</view>
-        <view class="bd-prize-sub" wx:else>再试一次运气</view>
-      </view>
-    </view>
-  </view>
-
-  <!-- ===== 签到（连续 7 天阶梯，断签重置）===== -->
-  <view class="tt-section">
-    <text>每日签到</text>
-    <text class="tt-section-extra">{{checkin.done ? '今日已签到' : (checkin.streak ? '已连签 ' + checkin.streak + ' 天' : '还没签到')}}</text>
-  </view>
-  <view class="tt-card bd-checkin">
+  <!-- ===== 签到（7 格压成一条横条）===== -->
+  <view class="bd-strip bd-checkin" wx:if="{{checkin.enabled}}">
     <view class="bd-checkin-days">
-      <view
-        class="bd-checkin-cell {{item.signed ? 'is-signed' : ''}} {{item.isToday ? 'is-today' : ''}}"
-        wx:for="{{checkin.cells}}"
-        wx:key="dayNo"
-      >
-        <view class="bd-checkin-day">{{item.label}}</view>
-        <view class="bd-checkin-icon">
-          <t-icon wx:if="{{item.signed}}" name="check" size="30rpx" color="#ffffff" />
-          <text wx:else class="bd-checkin-dot">{{item.dayNo}}</text>
-        </view>
-        <view class="bd-checkin-reward">{{item.rewardText}}</view>
+      <view class="bd-cl {{item.signed ? 'is-signed' : ''}} {{item.isToday ? 'is-today' : ''}}" wx:for="{{checkin.cells}}" wx:key="dayNo">
+        <text class="bd-cl-d">{{item.dayNo}}</text>
+        <text class="bd-cl-r">{{item.big ? '大' : ''}}</text>
       </view>
     </view>
-    <view
-      class="tt-pill-btn primary bd-checkin-btn {{(checkin.done || !checkin.enabled) ? 'disabled' : ''}}"
-      bind:tap="doCheckin"
-    >
-      <text>{{!checkin.enabled ? '签到暂未开放' : (checkin.done ? '今天已签到' : '签到领奖励')}}</text>
-    </view>
-    <view class="bd-checkin-note">连续签到第 3、7 天额外发步数；断签从第 1 天重新开始</view>
-  </view>
-
-  <!-- ===== 任务（看视频 / 邀请同学）===== -->
-  <view class="tt-section" id="tasks">
-    <text>做任务赚次数</text>
-    <text class="tt-section-extra">步数只能靠抽奖获得</text>
-  </view>
-  <view class="tt-card bd-tasks">
-    <!-- 看视频 -->
-    <view class="bd-task">
-      <view class="bd-task-icon">
-        <t-icon name="play-circle" size="40rpx" color="var(--tt-brand)" />
-      </view>
-      <view class="bd-task-body">
-        <view class="bd-task-title">看完视频</view>
-        <view class="bd-task-sub">
-          +{{video.drawPerWatch}} 次 / 次 · 今日已看 {{video.count}}<text wx:if="{{video.dailyLimit > 0}}">/{{video.dailyLimit}}</text>
-        </view>
-      </view>
-      <view
-        class="tt-pill-btn bd-task-btn {{((video.dailyLimit > 0 && video.count >= video.dailyLimit) || !enabled || !video.drawPerWatch) ? 'disabled' : ''}}"
-        bind:tap="watch"
-      >
-        <text>{{(video.dailyLimit > 0 && video.count >= video.dailyLimit) ? '已用完' : '去观看'}}</text>
-      </view>
-    </view>
-
-    <!-- 邀请同学：**必须是 open-type="share" 的 button**，否则调不起分享面板。
-         bind:tap 只负责上报计次（与分享面板同时发生，互不阻塞） -->
-    <view class="bd-task">
-      <view class="bd-task-icon">
-        <t-icon name="usergroup-add" size="40rpx" color="var(--tt-brand)" />
-      </view>
-      <view class="bd-task-body">
-        <view class="bd-task-title">邀请同学一起跑</view>
-        <view class="bd-task-sub">
-          +{{share.drawPerShare}} 次 / 次 · 今日已邀 {{share.count}}<text wx:if="{{share.dailyLimit > 0}}">/{{share.dailyLimit}}</text>
-        </view>
-      </view>
-      <button
-        class="bd-task-btn bd-share-btn {{((share.dailyLimit > 0 && share.count >= share.dailyLimit) || !enabled || !share.drawPerShare) ? 'disabled' : ''}}"
-        open-type="share"
-        disabled="{{(!enabled || !share.drawPerShare)}}"
-        bind:tap="onShareTap"
-      >{{(share.dailyLimit > 0 && share.count >= share.dailyLimit) ? '已用完' : '去邀请'}}</button>
+    <view class="bd-strip-btn {{(checkin.done) ? 'is-done' : ''}}" bind:tap="doCheckin">
+      {{checkin.done ? '已签到' : '签到'}}
     </view>
   </view>
 
-  <!-- ===== 今日已入账（四项）===== -->
-  <view class="tt-section">今日已入账<text class="tt-section-extra">抽奖与签到所得</text></view>
-  <view class="tt-card bd-card">
-    <view class="tt-stat-row bd-stat-row">
-      <view class="tt-stat">
-        <view class="tt-stat-value num-font bd-num">{{earnedStepsText}}</view>
-        <view class="tt-stat-label">步数</view>
-      </view>
-      <view class="tt-stat">
-        <view class="tt-stat-value num-font bd-num">{{earnedDistanceText}}</view>
-        <view class="tt-stat-label">距离</view>
-      </view>
-      <view class="tt-stat">
-        <view class="tt-stat-value num-font bd-num">{{earnedCaloriesText}}</view>
-        <view class="tt-stat-label">千卡</view>
-      </view>
-      <view class="tt-stat">
-        <view class="tt-stat-value num-font bd-num">{{earnedDurationText}}</view>
-        <view class="tt-stat-label">时长</view>
-      </view>
+  <!-- ===== 任务（两个并排胶囊）===== -->
+  <view class="bd-tasks" id="tasks">
+    <view class="bd-task {{((video.dailyLimit > 0 && video.count >= video.dailyLimit) || !enabled || !video.drawPerWatch) ? 'is-disabled' : ''}}" bind:tap="watch">
+      <t-icon name="play-circle" size="30rpx" color="var(--tt-brand)" />
+      <text class="bd-task-t">看视频</text>
+      <text class="bd-task-v">+{{video.drawPerWatch}}次</text>
     </view>
-    <view class="bd-note">奖励写入当日运动记录，记录页 / 排行榜 / 跑分 / 徽章同步生效</view>
+    <button class="bd-task bd-share {{((share.dailyLimit > 0 && share.count >= share.dailyLimit) || !enabled || !share.drawPerShare) ? 'is-disabled' : ''}}"
+      open-type="share" bind:tap="onShareTap">
+      <t-icon name="usergroup-add" size="30rpx" color="var(--tt-brand)" />
+      <text class="bd-task-t">邀请</text>
+      <text class="bd-task-v">+{{share.drawPerShare}}次</text>
+    </button>
   </view>
 
-  <!-- ===== 中奖记录（最近 5 条，服务端下发）===== -->
-  <block wx:if="{{recent.length}}">
-    <view class="tt-section">最近中奖</view>
-    <view class="tt-card bd-recent">
-      <view class="bd-recent-row" wx:for="{{recent}}" wx:key="at">
-        <text class="bd-recent-name">
-          {{item.type === 'steps' ? ('+' + item.amount + ' 步') : (item.type === 'draw' ? '再来一次' : '谢谢参与')}}
-        </text>
-        <text class="bd-recent-cap" wx:if="{{item.capped}}">已封顶</text>
-        <text class="bd-recent-time">{{item.atText || ''}}</text>
-      </view>
-    </view>
-  </block>
+  <!-- ===== 今日已入账（一行文字）===== -->
+  <view class="bd-earned">
+    <text class="bd-earned-label">今日已入账</text>
+    <text class="bd-earned-val">{{earnedLine}}</text>
+  </view>
 
-  <!-- ===== 规则说明（概率公示由服务端算）===== -->
-  <view class="tt-section">规则说明</view>
-  <view class="tt-card bd-rules">
-    <view class="tt-row bd-rule">
-      <view class="bd-rule-icon"><t-icon name="chart-pie" size="36rpx" color="var(--tt-brand)" /></view>
-      <view class="flex-1">
-        <view class="tt-row-title">中奖概率</view>
-        <view class="tt-row-sub">{{oddsText || '暂未配置奖池'}}</view>
-      </view>
+  <!-- ===== 规则（默认折叠：概率区间在折叠时也可见）===== -->
+  <view class="bd-rules">
+    <view class="bd-rules-head" bind:tap="toggleRules">
+      <text class="bd-rules-title">规则与概率</text>
+      <text class="bd-rules-brief">{{rarityText}}</text>
+      <t-icon name="{{showRules ? 'chevron-up' : 'chevron-down'}}" size="26rpx" color="var(--tt-text-3)" />
     </view>
-    <view class="tt-row bd-rule">
-      <view class="bd-rule-icon"><t-icon name="gift" size="36rpx" color="var(--tt-brand)" /></view>
-      <view class="flex-1">
-        <view class="tt-row-title">步数奖励上限</view>
-        <view class="tt-row-sub" wx:if="{{cap.cap > 0}}">每日最多发放 {{cap.cap}} 步，达到上限后步数奖自动变为「谢谢参与」</view>
-        <view class="tt-row-sub" wx:else>当前未设置每日步数上限</view>
+    <view class="bd-rules-body" wx:if="{{showRules}}">
+      <view class="bd-rule-row">
+        <text class="bd-rule-k">中奖概率</text>
+        <text class="bd-rule-v">{{oddsText || '暂未配置奖池'}}</text>
       </view>
-    </view>
-    <view class="tt-row bd-rule">
-      <view class="bd-rule-icon"><t-icon name="calendar" size="36rpx" color="var(--tt-brand)" /></view>
-      <view class="flex-1">
-        <view class="tt-row-title">连续签到</view>
-        <view class="tt-row-sub">连续签到第 3、7 天额外发步数，断签从第 1 天重新开始</view>
+      <view class="bd-rule-row">
+        <text class="bd-rule-k">步数上限</text>
+        <text class="bd-rule-v" wx:if="{{cap.cap > 0}}">每日最多 {{cap.cap}} 步，超出后步数奖变「谢谢参与」</text>
+        <text class="bd-rule-v" wx:else>当前未设上限</text>
       </view>
-    </view>
-    <view class="tt-row bd-rule">
-      <view class="bd-rule-icon"><t-icon name="error-circle" size="36rpx" color="var(--tt-brand)" /></view>
-      <view class="flex-1">
-        <view class="tt-row-title">请勿作弊</view>
-        <view class="tt-row-sub">模拟器等异常方式将被封禁账号</view>
+      <view class="bd-rule-row">
+        <text class="bd-rule-k">连续签到</text>
+        <text class="bd-rule-v">第 3、7 天额外发步数，断签从第 1 天重来</text>
+      </view>
+      <view class="bd-rule-row">
+        <text class="bd-rule-k">奖励去向</text>
+        <text class="bd-rule-v">写入当日运动记录，排行榜 / 跑分 / 徽章同步生效</text>
       </view>
     </view>
   </view>
 
-  <view class="bd-footer">奖励计入当日运动记录，与微信运动步数一并展示</view>
+  <!-- ===== 中奖弹层（三档动效）===== -->
+  <view class="bd-fx bd-fx-{{fxRarity}} {{fx ? 'is-on' : ''}}" wx:if="{{fx}}" catch:tap="noop">
+    <!-- 彩带（只有最稀有） -->
+    <block wx:if="{{fx === 'rarest'}}">
+      <view class="bd-confetti" wx:for="{{confetti}}" wx:key="k"
+        style="left: {{item.left}}%; animation-delay: {{item.delay}}ms; animation-duration: {{item.dur}}ms;"></view>
+    </block>
+    <view class="bd-card {{fx === 'rarest' ? 'is-gold' : ''}}">
+      <view class="bd-card-icon">
+        <t-icon name="{{lastPrize.icon}}" size="56rpx" color="{{lastPrize.type === 'none' ? 'var(--tt-text-3)' : '#fff'}}" />
+      </view>
+      <text class="bd-card-title">{{lastPrize.text}}</text>
+      <text class="bd-card-sub" wx:if="{{lastPrize.type === 'steps'}}">已计入今日运动记录</text>
+      <text class="bd-card-sub" wx:elif="{{lastPrize.type === 'draw'}}">次数已回补，可以接着抽</text>
+      <text class="bd-card-sub" wx:elif="{{lastPrize.capped}}">今日步数额度已用完</text>
+      <text class="bd-card-sub" wx:else>再试一次运气</text>
+      <view class="bd-card-btn" bind:tap="draw" wx:if="{{remaining > 0 && lastPrize.type !== 'none'}}">再抽一次</view>
+    </view>
+  </view>
 </view>

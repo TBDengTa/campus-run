@@ -1,5 +1,46 @@
 const section = require('./section');
 const auth = require('../../utils/request');
+const fmt = require('../../utils/format');
+
+// 本地日历键 YYYY-MM-DD（日期 picker 的 end 上界用；不允许选未来）
+function todayKey() {
+  const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+// 奖品 key → 展示名（筛选回显用；找不到就显示 key，不吞掉信息）
+function prizeLabelOf(prizes, key) {
+  if (!key) return '';
+  const hit = (prizes || []).find((p) => p.key === key);
+  return hit ? hit.label : key;
+}
+
+/**
+ * 中奖明细行的展示字段（模块级纯函数，便于运行时自检直接调用）。
+ *
+ * 为什么在 JS 里拼而不是写进模板：仓库约定「含变量的整句一律 JS 预计算」——
+ * 模板里写 `{{item.type === 'steps' ? ('+' + item.amount + ' 步') : ...}}`
+ * 等于把服务端下发的 prizeLabel 又重拼一遍，管理员改了奖项名称后这里不会跟着变。
+ */
+function decorateDraws(list) {
+  return (list || []).map((r) => {
+    // 学号必须显示：本校姓名可重复（账号同名靠密码区分），只给姓名等于没法定位到人
+    const whoSub = [r.studentId, r.className].filter(Boolean).join(' · ');
+    return {
+      ...r,
+      whoSubText: whoSub,
+      prizeText:
+        r.prizeLabel
+        || (r.type === 'steps' ? `${r.amount} 步` : r.type === 'draw' ? '再来一次' : '谢谢参与'),
+      prizePrefix: r.type === 'steps' ? '+' : '',
+      // 时间走 formatDateTime（北京时区），绝不从 ISO 串切片
+      timeText: fmt.formatDateTime(r.createdAt) || r.date || '',
+      sourceText: r.sourceText || '未记录',
+    };
+  });
+}
 
 /**
  * 北斗运动 2.0 配置页（签到 / 转盘奖池 / 看视频 / 分享）。
@@ -26,8 +67,24 @@ Page({
     drawsPage: 1,
     drawsLoading: false,
     showDraws: false,
+    // 中奖记录筛选（用户 2026-11-12）：日期范围 / 抽奖来源 / 奖品
+    drawFilter: { dateFrom: '', dateTo: '', source: '', prizeKey: '' },
+    drawFilterActive: false,
+    // 来源口径整句（服务端下发，页面只渲染；空则不显示，不编造一份）
+    sourceNote: '',
+    sourceFacets: [], // [{key,label,count}]
+    prizeOptions: [],
+    // labels/keys 都含首项「全部奖品」/''（与 onDrawPrize 的下标语义配套）
+    prizeLabels: ['全部奖品'],
+    prizeKeys: [''],
+    drawFilterPrizeIndex: 0,
+    drawFilterPrizeLabel: '',
     // 奖池校验提示（权重全 0 / 无法归一）
     oddsInvalid: '',
+    // 日期 picker 上界（不允许选未来，否则永远筛出空）
+    todayKeyText: todayKey(),
+    // 奖品下拉当前文案（picker 不回填会一直显示「全部奖品」，误导管理员）
+    drawFilterPrizeLabel: '',
   },
 
   onShow() {
@@ -154,18 +211,53 @@ Page({
     this.setData({ 'config.beidou.prizes': rows, oddsInvalid });
   },
 
-  // ===== 中奖记录（只读）=====
+  // ===== 中奖记录（只读 + 筛选）=====
+  //
+  // 三个筛选维度（用户 2026-11-12）：日期范围 / 抽奖来源 / 奖品。
+  // ⚠️ 筛选条件一律由**服务端**执行（query 参数），前端只传不筛 ——
+  //    前端本地筛选会让「共 N 条」与列表对不上，且翻页时越翻越少。
   async loadDraws(reset) {
     if (this.data.drawsLoading) return;
     const page = reset ? 1 : this.data.drawsPage;
     this.setData({ drawsLoading: true });
     try {
-      const data = await auth.get(`/api/admin/config/beidou-draws?page=${page}&limit=20`);
+      // 组装查询串：空值不传（服务端把非法/空值当「不筛」）
+      const f = this.data.drawFilter || {};
+      const q = [`page=${page}`, 'limit=20'];
+      if (f.dateFrom) q.push(`dateFrom=${encodeURIComponent(f.dateFrom)}`);
+      if (f.dateTo) q.push(`dateTo=${encodeURIComponent(f.dateTo)}`);
+      if (f.source) q.push(`source=${encodeURIComponent(f.source)}`);
+      if (f.prizeKey) q.push(`prizeKey=${encodeURIComponent(f.prizeKey)}`);
+      const data = await auth.get(`/api/admin/config/beidou-draws?${q.join('&')}`);
+      // 明细字段一律在这里预计算：模板里不写三元拼接（服务端已下发 prizeLabel / sourceText，
+      // 前端再拼一遍「+N 步」就是第二份口径，改了服务端文案页面不会跟着变）。
+      const rows = decorateDraws(data.list || []);
+      // 奖池候选只在第一次拿到（给奖品下拉用）
+      const prizes = (data.facets && data.facets.prizes) || this.data.prizeOptions || [];
+      // ⚠️ labels / keys 都必须在**最前面插一个「全部奖品」占位**，与 prizeKeys 下标一一对应。
+      //    早先只 map 奖品本身、却在 onDrawPrize 里按「下标 0 = 全部」做 idx-1 偏移，
+      //    于是整个下拉错位一格：选第一个奖品 = 不筛选、选第二个 = 筛中第一个，
+      //    而且永远筛不到最后一个奖品 —— 不报错、只是结果一直是错的。
+      const prizeLabels = ['全部奖品'].concat(prizes.map((p) => p.label));
+      const prizeKeys = [''].concat(prizes.map((p) => p.key));
       this.setData({
-        draws: reset ? data.list : this.data.draws.concat(data.list || []),
+        draws: reset ? rows : this.data.draws.concat(rows),
         drawsTotal: data.total || 0,
         drawsPage: page + 1,
         drawsLoading: false,
+        // 分面计数：下拉里直接显示「视频 12」，避免选完才发现是空
+        sourceFacets: (data.facets && data.facets.source) || [],
+        prizeOptions: prizes,
+        prizeLabels,
+        prizeKeys,
+        // 来源口径整句：服务端拼好下发（含扣减优先级）。页面不再硬编码顺序，
+        // 否则 SOURCE_ORDER 一改，说明句就在骗管理员。
+        sourceNote: data.sourceNote || this.data.sourceNote || '',
+        // 有筛选时把「已筛」状态回显出来
+        drawFilterActive: !!(f.dateFrom || f.dateTo || f.source || f.prizeKey),
+        // 奖品下拉的当前文案与下标（picker 需要显式回填，否则每次打开都高亮第一项）
+        drawFilterPrizeLabel: prizeLabelOf(prizes, f.prizeKey),
+        drawFilterPrizeIndex: Math.max(0, prizeKeys.indexOf(f.prizeKey || '')),
       });
     } catch (e) {
       this.setData({ drawsLoading: false });
@@ -173,12 +265,57 @@ Page({
     }
   },
 
+  // 日期范围（两个 picker 共用，data-key 区分起止）
+  onDrawDate(e) {
+    const { key } = e.currentTarget.dataset;
+    const val = e.detail.value || '';
+    this.setData({ [`drawFilter.${key}`]: val });
+    this.loadDraws(true);
+  },
+
+  // 来源 chips（点同一条再点一次 = 取消筛选）
+  onDrawSource(e) {
+    const { key } = e.currentTarget.dataset;
+    const cur = (this.data.drawFilter || {}).source || '';
+    this.setData({ 'drawFilter.source': cur === key ? '' : key });
+    this.loadDraws(true);
+  },
+
+  // 「全部来源」：只清来源维度，不影响日期/奖品（与「清空筛选」区分开）
+  clearDrawFilterSource() {
+    this.setData({ 'drawFilter.source': '' });
+    this.loadDraws(true);
+  },
+
+  // 奖品 picker：range 的第一项就是「全部奖品」占位，所以**下标直接查 prizeKeys**，
+  // 不能再做 idx-1 偏移（那是 labels/keys 没插占位时的写法，两者必须配套改）。
+  onDrawPrize(e) {
+    const idx = Number(e.detail.value);
+    const key = this.data.prizeKeys[idx];
+    this.setData({
+      'drawFilter.prizeKey': key || '',
+      // 同步回填下标与文案：不回填的话管理员下次打开 picker 高亮的还是第一项
+      drawFilterPrizeIndex: Number.isFinite(idx) ? idx : 0,
+      drawFilterPrizeLabel: prizeLabelOf(this.data.prizeOptions, key || ''),
+    });
+    this.loadDraws(true);
+  },
+
+  // 清空筛选：三个维度一起清，奖品下标也要归零（否则 picker 高亮与实际条件不一致）
+  clearDrawFilter() {
+    this.setData({
+      drawFilter: { dateFrom: '', dateTo: '', source: '', prizeKey: '' },
+      drawFilterPrizeIndex: 0,
+      drawFilterPrizeLabel: '',
+    });
+    this.loadDraws(true);
+  },
+
   toggleDraws() {
     const next = !this.data.showDraws;
     this.setData({ showDraws: next });
     if (next && !this.data.draws.length) this.loadDraws(true);
   },
-
   loadMoreDraws() {
     if (this.data.draws.length >= this.data.drawsTotal) return;
     this.loadDraws(false);

@@ -219,6 +219,12 @@ async function recordFeedback(rec, label, note, operator) {
       ruleScore: rec.score || 0,
       // 特征快照：将来训练有监督模型要用。不存的话原始记录被清理，这批标注永远无法参与训练。
       features: rec.features || null,
+      // 有监督模型的影子证据（用户 2026-11-12 阶段性自升级）：
+      // 「判定当时处于第几阶段 + 当时的作弊概率」必须一起落进标注，
+      // 否则升级到主判（可封号）之前那段「模型真实跑过、人工复核过」的证据永远算不出来。
+      modelStage: Number(rec.modelStage) || 0,
+      supervisedProb: rec.supervisedProb == null ? null : Number(rec.supervisedProb),
+      supervisedScore: rec.supervisedScore == null ? null : Number(rec.supervisedScore),
       operator: operator || 'admin',
       note,
     }

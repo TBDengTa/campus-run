@@ -26,7 +26,7 @@
  *    （都是 anticheat.manualBan），要求两个权限项之一即可，不算放松。
  */
 const express = require('express');
-const { wrap, ok } = require('../../utils/response');
+const { wrap, ok, ApiError } = require('../../utils/response');
 const { requireAnyPermission } = require('../../middlewares/admin');
 const StepAnomaly = require('../../models/step-anomaly');
 const StepLabel = require('../../models/step-label');
@@ -38,6 +38,9 @@ const router = express.Router();
 const VIEW = requireAnyPermission(['anticheat.view', 'user.view']);
 const LABEL = requireAnyPermission(['anticheat.label']);
 const BAN = requireAnyPermission(['anticheat.ban', 'user.manage']);
+// 阶段性自升级是「改模型行为」的操作（评估会写阶段、手动指定会直接影响谁能被自动封），
+// 因此挂 anticheat.manage，**不兼容 user.manage** —— 那是封人的权力，不是改模型的权力。
+const MANAGE = requireAnyPermission(['anticheat.manage']);
 
 // 列表：默认只看待研判（open）；也支持查已处置的（banned / dismissed / all）
 router.get(
@@ -215,6 +218,59 @@ router.get(
       }
     }
     ok(res, out);
+  })
+);
+
+// ===== 唐跑AI数据模型 · 阶段性自升级（用户 2026-11-12）=====
+//
+// 与 Web 控制台共用 services/anticheat-upgrade.js 的唯一实现，这里只鉴权与取参：
+//   GET  /model-stages    阶段快照（view，兼容 user.view —— 与列表同口径）
+//   POST /model-evaluate  立即评估（manage）
+//   PUT  /model-stage     手动指定阶段 / 解除锁定（manage）
+//
+// 权限：评估会**写**阶段与模型，所以挂 anticheat.manage（只读的 view 不够）。
+// 手动指定阶段同样是 manage —— 它是会影响自动封禁行为的操作。
+router.get(
+  '/model-stages',
+  VIEW,
+  wrap(async (req, res) => {
+    const upgradeSvc = require('../../services/anticheat-upgrade');
+    ok(res, await upgradeSvc.snapshot());
+  })
+);
+
+router.post(
+  '/model-evaluate',
+  MANAGE,
+  wrap(async (req, res) => {
+    const upgradeSvc = require('../../services/anticheat-upgrade');
+    const source = String((req.body || {}).source || 'all');
+    const operator = (req.user && (req.user.openid || req.user.account)) || 'admin';
+    const results =
+      source === 'all'
+        ? await upgradeSvc.evaluateAll({ operator })
+        : [await upgradeSvc.evaluateSource(source, { operator })];
+    ok(res, { results, snapshot: await upgradeSvc.snapshot() });
+  })
+);
+
+router.put(
+  '/model-stage',
+  MANAGE,
+  wrap(async (req, res) => {
+    const upgradeSvc = require('../../services/anticheat-upgrade');
+    const body = req.body || {};
+    const source = String(body.source || '');
+    const operator = (req.user && (req.user.openid || req.user.account)) || 'admin';
+    if (!['werun', 'gps'].includes(source)) throw new ApiError(400, 400, 'source 只能是 werun / gps');
+    if (body.mode === 'auto') {
+      const r = await upgradeSvc.releaseManual(source, { operator, note: body.note });
+      return ok(res, { ...r, snapshot: await upgradeSvc.snapshot() });
+    }
+    const stage = Number(body.stage);
+    if (!Number.isFinite(stage) || stage < 0 || stage > 2) throw new ApiError(400, 400, 'stage 只能是 0 / 1 / 2');
+    const r = await upgradeSvc.manualSetStage(source, stage, { operator, note: body.note });
+    ok(res, { ...r, snapshot: await upgradeSvc.snapshot() });
   })
 );
 

@@ -23,7 +23,7 @@ EO 上看到的流量方向是**入站**，全部能对应到真实业务请求�
 |---|---|---|---|
 | 首页 onShow 全量刷新（6 GET + 1 POST） | 每次进首页（含切 tab 来回） | 小 JSON × 7 | 已加 30 秒节流（`HOME_REFRESH_MIN_GAP`），这是**请求数**的最大来源 |
 | `POST /api/run/sync-werun` | 进首页自动同步步数 | 1-2KB 密文 | 业务必需，已有双重护栏 |
-| `POST /api/upload/check-photo` 等上传 | 学生会检查拍照等用户操作 | **单张可达 100MB** | 上行/回源流量的最大来源；上限是 2026-10-28 用户明确要求保留的，不要顺手调小 |
+| `POST /api/upload/check-photo` 等上传 | 学生会检查拍照等用户操作 | 单张 = 原图大小（**不设上限**） | 上行/回源流量的最大来源；用户 2026-11-12 明确要求解除所有照片上传限制，不要顺手加回上限 |
 | `GET /uploads/*`（头像 / 检查照片 / 广告图） | 页面渲染 | 图片大小 | nginx 直出 + 7 天缓存 + immutable，EO 命中后不回源 |
 | `POST /api/ads/:id/pv` | 广告素材曝光 | 极小 | 静默埋点 |
 | Excel 名单导入 / 头像 / 广告素材上传 | 管理端操作 | 中 | 用户主动触发 |
@@ -53,9 +53,10 @@ EO 上看到的流量方向是**入站**，全部能对应到真实业务请求�
    强制缓存规则只应对 `/uploads` 这类静态路径，绝不能对 `/api/*` 与 `/p/` 开。
 2. **按「加速流量 vs 回源流量 × 路径」拆分看流量**：回源流量应与 nginx access log 对得上；
    「EO → 源站」方向（若可见）不应有任何主动外发。
-3. **上行流量对应上传接口**：检查照片单张上限 100MB（`.env` 的 `CHECK_PHOTO_MAX_MB`
-   可调，三层对齐：前端 `PHOTO_SAFE_BYTES` / multer / nginx `client_max_body_size 128m`），
-   调整时三层必须同时改，否则报错不可读（见 `server/src/routes/upload.js` 文件头）。
+3. **上行流量对应上传接口**：检查照片**不设体积上限**（`.env` 的 `CHECK_PHOTO_MAX_MB=0`；
+   三层对齐：multer 不设 fileSize / nginx `client_max_body_size 0` / 前端原图直传）。
+   只放开了检查照片，头像等入口仍有各自上限；调整时三层必须同时改，否则报错不可读
+   （见 `server/src/routes/upload.js` 文件头）。
 
 ## 五、服务器侧排查命令
 

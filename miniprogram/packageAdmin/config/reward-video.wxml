@@ -211,24 +211,74 @@
     </view>
 
     <block wx:if="{{showDraws}}">
+      <!-- ===== 筛选区（日期范围 / 抽奖来源 / 奖品）===== -->
+      <view class="rv-filter">
+        <view class="rv-filter-row">
+          <text class="rv-filter-label">日期</text>
+          <picker class="rv-filter-pick" mode="date" end="{{todayKeyText}}" value="{{drawFilter.dateFrom}}" bindchange="onDrawDate" data-key="dateFrom">
+            <view class="rv-filter-val {{drawFilter.dateFrom ? 'is-set' : ''}}">{{drawFilter.dateFrom || '开始日期'}}</view>
+          </picker>
+          <text class="rv-filter-tilde">~</text>
+          <picker class="rv-filter-pick" mode="date" end="{{todayKeyText}}" value="{{drawFilter.dateTo}}" bindchange="onDrawDate" data-key="dateTo">
+            <view class="rv-filter-val {{drawFilter.dateTo ? 'is-set' : ''}}">{{drawFilter.dateTo || '结束日期'}}</view>
+          </picker>
+        </view>
+
+        <!-- 来源 chips：带分面计数，避免「选完才发现是空」 -->
+        <view class="rv-filter-row">
+          <text class="rv-filter-label">来源</text>
+          <view class="rv-filter-chips">
+            <view class="rv-chip {{!drawFilter.source ? 'is-on' : ''}}" bind:tap="clearDrawFilterSource">全部</view>
+            <view
+              class="rv-chip {{drawFilter.source === item.key ? 'is-on' : ''}}"
+              wx:for="{{sourceFacets}}"
+              wx:key="key"
+              bind:tap="onDrawSource"
+              data-key="{{item.key}}"
+            >{{item.label}} {{item.count}}</view>
+          </view>
+        </view>
+
+        <view class="rv-filter-row">
+          <text class="rv-filter-label">奖品</text>
+          <!-- range 第一项是「全部奖品」占位，value 必须绑实际下标（写死 0 会让每次打开都高亮第一项） -->
+          <picker class="rv-filter-pick" range="{{prizeLabels}}" value="{{drawFilterPrizeIndex}}" bindchange="onDrawPrize">
+            <view class="rv-filter-val {{drawFilter.prizeKey ? 'is-set' : ''}}">
+              {{drawFilter.prizeKey ? drawFilterPrizeLabel : '全部奖品'}}
+            </view>
+          </picker>
+          <view class="rv-filter-clear" wx:if="{{drawFilterActive}}" bind:tap="clearDrawFilter">清空筛选</view>
+        </view>
+
+        <view class="rv-filter-meta">
+          共 {{drawsTotal}} 条<text wx:if="{{drawFilterActive}}"> · 已筛选</text>
+        </view>
+      </view>
+
+      <!-- ===== 明细列表（字段全部由 JS 预计算，模板不拼句子）===== -->
       <view class="rv-draw" wx:for="{{draws}}" wx:key="_id">
         <view class="rv-draw-main">
           <text class="rv-draw-name">{{item.realName || '未知学生'}}</text>
-          <text class="rv-draw-cls" wx:if="{{item.className}}">{{item.className}}</text>
+          <text class="rv-draw-sub" wx:if="{{item.whoSubText}}">{{item.whoSubText}}</text>
         </view>
-        <text class="rv-draw-prize">
-          {{item.type === 'steps' ? ('+' + item.amount + ' 步') : (item.type === 'draw' ? '再来一次' : '谢谢参与')}}
-        </text>
-        <text class="rv-draw-cap" wx:if="{{item.capped}}">封顶</text>
-        <text class="rv-draw-date">{{item.date}}</text>
+        <view class="rv-draw-tags">
+          <text class="rv-draw-src rv-src-{{item.source}}">{{item.sourceText}}</text>
+          <text class="rv-draw-prize">{{item.prizePrefix}}{{item.prizeText}}</text>
+          <text class="rv-draw-cap" wx:if="{{item.capped}}">封顶</text>
+        </view>
+        <text class="rv-draw-date">{{item.timeText}}</text>
       </view>
-      <view class="rv-draw-empty" wx:if="{{!draws.length}}">暂无中奖记录</view>
+      <view class="rv-draw-empty" wx:if="{{!draws.length}}">
+        {{drawFilterActive ? '当前筛选条件下没有中奖记录' : '暂无中奖记录'}}
+      </view>
       <view class="rv-add" wx:if="{{draws.length < drawsTotal}}" bind:tap="loadMoreDraws">
         <text>{{drawsLoading ? '加载中…' : '加载更多'}}</text>
       </view>
       <view class="rv-fnote">
         抽奖流水是概率公示与学生对账的唯一凭据，因此这里只读。
         要给学生补偿请走「人工发徽章」等独立链路，不要改动这张表 —— 改了就说不清发放与公示是否一致。
+        <!-- 口径整句由服务端下发（order 随 SOURCE_ORDER 变），页面不硬编码优先级 -->
+        <text class="rv-fnote-warn" wx:if="{{sourceNote}}">{{sourceNote}}</text>
       </view>
     </block>
   </view>

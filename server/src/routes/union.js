@@ -100,22 +100,11 @@ const str = (v, max = 120) => String(v === undefined || v === null ? '' : v).tri
  * 主席 / 副主席不在这个序列里 —— 它们属于主席团（另一个维度），
  * 由 assertRoleFitsDept 单独拦截（主席团只能有主席/副主席）。
  */
-const ROLE_RANK = { member: 0, vice_minister: 1, minister: 2 };
-function roleRank(role) {
-  return Object.prototype.hasOwnProperty.call(ROLE_RANK, role) ? ROLE_RANK[role] : -1;
-}
-
-/**
- * 该干部在某部门能授予的最高职务等级。
- * 主席团 = 2（可授予任何业务部门职务）；其余取他在该部门的职务等级。
- */
-function maxRoleRank(identity, deptKey) {
-  if (unionSvc.isPresidiumIdentity(identity)) return 2;
-  const mine = (identity.members || []).filter(
-    (m) => m && m.status === 'active' && m.deptKey === deptKey
-  );
-  return mine.reduce((max, m) => Math.max(max, roleRank(m.role)), -1);
-}
+// 职务等级与「可授予上限」**唯一实现**在 services/union.js（管理端 / 用户端 / 扫码加人共用）。
+// 这里只做别名，禁止再在路由里写一份（两份必然漂移：一边能授予部长、另一边不能）。
+const ROLE_RANK = unionSvc.ROLE_RANK;
+const roleRank = unionSvc.roleRank;
+const maxRoleRank = unionSvc.maxRoleRank;
 
 // 部门必须存在（保留 presidium 用于主席团）。返回含 schoolId/scope 的完整关键字段 ——
 // 调用方要用它做校区归属校验，只返回 key/name 就没法判。
@@ -571,7 +560,7 @@ router.post(
   '/invite/:token/accept',
   wrap(async (req, res) => {
     const identity = await unionSvc.resolveIdentity(req.user);
-    await assertMemberManager(req, identity);
+    const steward = await assertMemberManager(req, identity);
     const token = str(req.params.token, 64);
     const body = req.body || {};
     if (!token) throw new ApiError(400, 400, '缺少凭证');
@@ -654,9 +643,22 @@ router.post(
       throw new ApiError(400, 400, '主席团不是可加入的部门，请选择具体业务部门');
     }
 
+    // 成员管理范围（用户 2026-11-12）：
+    //   主席团 = 本校（校级则全校）任意部门；部长 / 副部长 = 仅本部门、且不越出本院校。
+    // 旧实现只校验「部门存在 + 部门 scope 与层级匹配」——共用部门（生活部）在两个校区各有一条
+    // 展示项，分院干部选到别的校区时也能通过，等于把成员加进了外校区分会。
+    if (!steward && !unionSvc.canManageMemberSlot(identity, {
+      level,
+      schoolId,
+      schoolName: deptSchoolName,
+      deptKey: dept.key,
+    })) {
+      throw new ApiError(403, 403002, '只能把成员加进本校 / 本院 / 本部门的范围');
+    }
+
     // 职务（用户 2026-10-28「只能加入部门，成为部员或副部长、部长等」）：
     // 扫码默认加入为「部员」，干部可按住职位直接把 TA 加成副部长 / 部长。
-    // 只允许业务部门内的三种职务；主席 / 副主席必须挂主席团（由 assertRoleFitsDept 兜住），
+    // 只允许业务部门内的三种职务；主席 / 副主席必须挂主席团（由 roleFitsDept 兜住），
     // 这里显式限定白名单，避免绕过前端传个 'president' 进来造出矛盾记录。
     const role = str(body.role, 24) || 'member';
     if (!['member', 'vice_minister', 'minister'].includes(role)) {
@@ -664,11 +666,8 @@ router.post(
     }
     // 只能授予**不高于自己**的职务（副部长不能把人加成部长，部长不能凭空造出同级以上的管理权）。
     // 主席团不受此限（它是全校最高层，可指定任何职务）。
-    if (!isPresidium) {
-      const myMax = maxRoleRank(identity, dept.key);
-      if (roleRank(role) > myMax) {
-        throw new ApiError(403, 403002, '不能授予高于你自己的职务');
-      }
+    if (!steward && !unionSvc.canGrantRole(identity, dept.key, role)) {
+      throw new ApiError(403, 403002, '不能授予高于你自己的职务');
     }
 
     // 层级 / 校区 / 校区名已在上面按「部门归属 → 前端指定校区 → 干部记录」的优先级算好，
@@ -735,110 +734,141 @@ router.get(
   '/manage/join-options',
   wrap(async (req, res) => {
     const identity = await unionSvc.resolveIdentity(req.user);
-    await assertMemberManager(req, identity);
+    const steward = await assertMemberManager(req, identity);
     const isPresidium = unionSvc.isPresidiumIdentity(identity);
+    // 扫码加人只要业务部门（主席 / 副主席由管理端单独设置）；
+    // 成员管理页的「添加」需要连主席团一起列（用户 2026-11-12「正副主席可以管理…成员」）。
+    const forManage = String(req.query.manage || '') === '1';
+
+    // 管理范围快照：总管 = 全校；主席团 / 部长按服务端唯一口径（services/union.js::managerScopeOf）
+    const scope =
+      steward || !identity
+        ? { isPresidium: true, schoolWide: true, schoolIds: [], schoolNames: [], deptKeys: [] }
+        : unionSvc.managerScopeOf(identity);
+    if (!scope) throw new ApiError(403, 403002, NO_ACCESS);
 
     const all = await UnionDepartment.find({ enabled: true }).sort({ sort: 1, name: 1 }).lean();
-    // 主席团永远不可加入（业务部门才有人可加）
-    const joinable = all.filter((d) => d.key !== unionSvc.PRESIDIUM_KEY);
-
-    const ownKeys = new Set(
-      (identity.members || [])
-        .filter((m) => m && m.status === 'active' && m.deptKey && m.deptKey !== unionSvc.PRESIDIUM_KEY)
-        .map((m) => m.deptKey)
-    );
-    const visible = isPresidium ? joinable : joinable.filter((d) => ownKeys.has(d.key));
+    const presidiumDept = all.find((d) => d.key === unionSvc.PRESIDIUM_KEY) || null;
+    const business = all.filter((d) => d.key !== unionSvc.PRESIDIUM_KEY);
+    // 部长只能看到自己的部门；主席团 / 总管看到全部
+    const visible = scope.isPresidium
+      ? business
+      : business.filter((d) => scope.deptKeys.includes(d.key));
 
     // 部门所属校区的名称（用户 2026-10-28「为什么全是校学生会啊」）：
     //   部门有 schoolId → 它是**该校区**的分会部门，必须把校区名带上。
-    // 一次性把用到的 Organization 查出来（不逐个 await，避免 N+1）。
-    //
-    // 用户 2026-10-28 追加：「生活部 / 学习部 / 纪检部 这些都不是校级，要分开显示，两个校区的」
-    //   → scope='both' 且无 schoolId 的部门是**各校区共有**的，不是"校级"。
-    //     数据上仍是一条记录（用户明确选择「保留一条记录，界面按两个校区分组显示」），
-    //     但**展示时按每个校区各展开一条**，让干部能选到"北校区·生活部"或"洋河校区·生活部"。
-    //   主席团例外：保持全局唯一（用户确认），它本来就不在 joinable 里。
     const Organization = require('../models/organization');
-    // 全部校区（type='school'）—— 共用部门要在每个校区各出现一次
     const campuses = await Organization.find({ type: 'school' })
       .sort({ name: 1 })
       .select('name')
       .lean();
-    const campusList = campuses.map((o) => ({ id: String(o._id), name: o.name || '' }));
+    const allCampuses = campuses.map((o) => ({ id: String(o._id), name: o.name || '' }));
+    const schoolNameById = new Map(allCampuses.map((c) => [c.id, c.name]));
 
-    const explicitSchoolIds = [
-      ...new Set(visible.map((d) => (d.schoolId ? String(d.schoolId) : '')).filter(Boolean)),
-    ];
-    const schoolNameById = new Map(campusList.map((c) => [c.id, c.name]));
-    const missingIds = explicitSchoolIds.filter((id) => !schoolNameById.has(id));
-    if (missingIds.length) {
-      const orgs = await Organization.find({ _id: { $in: missingIds } }).select('name').lean();
-      for (const o of orgs) schoolNameById.set(String(o._id), o.name || '');
+    // 院级身份只能在本院校（校区）范围内选：campusList 直接收敛到本人院校，
+    // 这样共用部门（生活部 / 学习部）不会在别的校区再展开一条 —— 否则分院主席
+    // 选了「洋河校区 · 生活部」，服务端若只校验部门存在就会把成员加进外校区。
+    let campusList = allCampuses;
+    if (!scope.schoolWide) {
+      let ids = scope.schoolIds.slice();
+      if (!ids.length && scope.schoolNames.length) {
+        ids = allCampuses.filter((c) => scope.schoolNames.includes(c.name)).map((c) => c.id);
+      }
+      campusList = allCampuses.filter((c) => ids.includes(c.id));
     }
 
-    // 展开成"可选条目"：一条部门记录可能展开成多条（共用部门 × 校区）
-    const departments = [];
+    // 可选职务：主席团内部按 主席 > 副主席；业务部门按 部长 > 副部长 > 部员。
+    // 主席团可授予任何业务部门职务；非主席团不得越过自己在该部门的等级。
+    const basicRoleText = (r) => UnionMember.ROLE_TEXT[r] || r;
     const rolesFor = (deptKey) => {
-      const maxRank = isPresidium ? 2 : maxRoleRank(identity, deptKey);
+      if (deptKey === unionSvc.PRESIDIUM_KEY) {
+        const cap = steward ? 2 : unionSvc.presidiumRankOf(identity);
+        return Object.keys(unionSvc.PRESIDIUM_RANK)
+          .filter((r) => unionSvc.PRESIDIUM_RANK[r] <= cap)
+          .sort((a, b) => unionSvc.PRESIDIUM_RANK[a] - unionSvc.PRESIDIUM_RANK[b])
+          .map((r) => ({ key: r, text: basicRoleText(r) }));
+      }
+      const maxRank = steward ? 2 : scope.isPresidium ? 2 : maxRoleRank(identity, deptKey);
       return Object.keys(ROLE_RANK)
         .filter((r) => roleRank(r) <= maxRank)
         .sort((a, b) => roleRank(a) - roleRank(b))
-        .map((r) => ({ key: r, text: UnionMember.ROLE_TEXT[r] || r }));
+        .map((r) => ({ key: r, text: basicRoleText(r) }));
     };
 
-    for (const d of visible) {
-      const roles = rolesFor(d.key);
-      const scope = d.scope || 'both';
-      // ① 明确挂了校区 → 就是那一家的部门（每条一条）
-      if (d.schoolId) {
-        const sid = String(d.schoolId);
-        const sname = schoolNameById.get(sid) || '';
-        departments.push({
-          key: d.key,
-          name: d.name,
-          scope,
-          schoolId: sid,
-          schoolName: sname,
-          levelText: sname ? `${sname}学生会` : '分院学生会',
-          roles,
-        });
-        continue;
-      }
-      // ② 共用部门（scope='both'，无 schoolId）→ **每个校区各展开一条**
-      //    这样「生活部」会在北校区、洋河校区下各出现一次，干部能明确选到校区。
-      //    纯校级部门（scope='school'）不展开，仍显示为「校学生会」。
-      if (scope === 'both' || scope === 'branch') {
-        for (const c of campusList) {
-          departments.push({
-            key: d.key,
-            name: d.name,
-            scope,
-            schoolId: c.id,
-            schoolName: c.name,
-            levelText: c.name ? `${c.name}学生会` : '分院学生会',
-            roles,
-          });
-        }
-        continue;
-      }
-      // ③ 纯校级（scope='school'）
+    // 展开成「可选条目」：一条部门记录可能展开成多条（共用部门 × 校区）
+    const departments = [];
+    const push = (d, level, schoolId, schoolName, levelText) => {
+      const dup = departments.some(
+        (x) => x.key === d.key && x.level === level && String(x.schoolId || '') === String(schoolId || '')
+      );
+      if (dup) return;
       departments.push({
         key: d.key,
         name: d.name,
-        scope,
-        schoolId: '',
-        schoolName: '',
-        levelText: '校学生会',
-        roles,
+        scope: d.scope || 'both',
+        level,
+        schoolId: schoolId || '',
+        schoolName: schoolName || '',
+        levelText,
+        roles: rolesFor(d.key),
       });
+    };
+
+    // ① 主席团（仅成员管理页）：校级身份 = 校学生会 + 各校区；分院身份 = 本院校
+    if (forManage && presidiumDept) {
+      if (scope.schoolWide) {
+        push(presidiumDept, 'school', '', '', '校学生会');
+        for (const c of campusList) {
+          push(presidiumDept, 'branch', c.id, c.name, c.name ? `${c.name}学生会` : '分院学生会');
+        }
+      } else {
+        for (const c of campusList) {
+          push(presidiumDept, 'branch', c.id, c.name, c.name ? `${c.name}学生会` : '分院学生会');
+        }
+      }
+    }
+
+    // ② 业务部门
+    for (const d of visible) {
+      const deptScope = d.scope || 'both';
+      // 明确挂了校区 → 只属于那一家的部门
+      if (d.schoolId) {
+        const sid = String(d.schoolId);
+        if (scope.schoolWide || campusList.some((c) => c.id === sid)) {
+          const sname = schoolNameById.get(sid) || '';
+          push(d, 'branch', sid, sname, sname ? `${sname}学生会` : '分院学生会');
+        }
+        continue;
+      }
+      // 纯校级部门：只能在「校学生会」层使用
+      if (deptScope === 'school') {
+        if (scope.schoolWide) push(d, 'school', '', '', '校学生会');
+        continue;
+      }
+      // 共用 / 院级部门：只按校区各展开一条。
+      // ⚠️ 不在「校学生会」层再给一条：用户 2026-10-21 明确「全校仅有主席团没有其他部门了」，
+      //    校级层放业务部门会造出 level=school + deptKey=life 这种历史上不该存在的成员记录。
+      for (const c of campusList) {
+        push(d, 'branch', c.id, c.name, c.name ? `${c.name}学生会` : '分院学生会');
+      }
     }
 
     ok(res, {
       // 主席团 → 全校所有业务部门；其它干部 → 只能选自己的部门
       presidium: isPresidium,
+      forManage,
+      // 范围快照（前端据此隐藏「校学生会」等超出范围的选项，服务端仍会再校验）
+      scope: {
+        isPresidium: scope.isPresidium,
+        schoolWide: scope.schoolWide,
+        schoolIds: scope.schoolIds,
+        schoolNames: scope.schoolNames,
+      },
       // 校区分组：前端按这个顺序分组展示（「北校区学生会」「洋河校区学生会」…）
       campuses: campusList,
       departments,
+      // 分院身份但院校没配上（组织架构 / 成员记录缺院校）：前端要明确提示，不能只给空列表
+      scopeMissing: !scope.schoolWide && !campusList.length,
     });
   })
 );
@@ -864,9 +894,26 @@ router.get(
         item.termLabel = term.termLabel || item.termName;
         return item;
       });
-    const depts = await UnionDepartment.find({ enabled: true, key: { $ne: 'presidium' } })
+    // 部门筛选选项也按管理范围收敛：分院干部不该在筛选里看到外校区的部门
+    //（列表本身已按 memberManageAllowed 过滤，但「能选到却永远 0 条」等于假入口）
+    const scope = steward ? null : unionSvc.managerScopeOf(identity);
+    let depts = await UnionDepartment.find({ enabled: true, key: { $ne: 'presidium' } })
       .sort({ sort: 1 })
       .lean();
+    if (scope) {
+      if (!scope.isPresidium) depts = depts.filter((d) => scope.deptKeys.includes(d.key));
+      if (!scope.schoolWide) {
+        depts = depts.filter((d) => !d.schoolId || scope.schoolIds.includes(String(d.schoolId)));
+      }
+    }
+    // 部门所属校区名：前端用 schoolId + schoolName 做「校区前缀 / 调部门候选过滤」，
+    // 只给 key 会让 `deptFitsCampus` 把「某校区的部门」当成全校共用（调部门时选到外校区的部门）。
+    const deptSchoolIds = [...new Set(depts.map((d) => (d.schoolId ? String(d.schoolId) : '')).filter(Boolean))];
+    const deptSchoolNames = new Map();
+    if (deptSchoolIds.length) {
+      const schools = await Organization.find({ _id: { $in: deptSchoolIds } }).select('name').lean();
+      for (const s of schools) deptSchoolNames.set(String(s._id), s.name || '');
+    }
     ok(res, {
       total: list.length,
       list,
@@ -878,8 +925,247 @@ router.get(
       // 转移部门：校级主席团 / 总管可跨部门；分院主席团与部长仍限自己范围
       canTransfer: steward || !!identity.isPresidium,
       isSteward: !!steward,
-      departments: depts.map((d) => ({ key: d.key, name: d.name, scope: d.scope })),
+      departments: depts.map((d) => ({
+        key: d.key,
+        name: d.name,
+        scope: d.scope,
+        schoolId: d.schoolId ? String(d.schoolId) : '',
+        schoolName: d.schoolId ? deptSchoolNames.get(String(d.schoolId)) || '' : '',
+      })),
     });
+  })
+);
+
+/**
+ * 成员管理页「添加成员」的候选学生（**用户端，干部身份**）。
+ *
+ * 与管理端 /api/admin/union/members/candidates 同一套搜索口径（姓名同音字 + 学号 / 账号 / 班级），
+ * 区别只在**范围**：分院干部只能搜到本院校学生 —— 否则搜索框会把外校区学生列出来，
+ * 选中后才被服务端拒绝（用户 2026-11-12「可以增加本院校相应部门成员」）。
+ */
+router.get(
+  '/manage/members/candidates',
+  wrap(async (req, res) => {
+    const identity = await unionSvc.resolveIdentity(req.user);
+    const steward = await assertMemberManager(req, identity);
+    const { page, limit, skip } = parsePagination(req.query, { page: 1, limit: 20 });
+    const cap = Math.min(limit, 50);
+    const filter = { role: { $ne: 'teacher' }, status: { $ne: 'banned' } };
+    const and = [];
+
+    const keyword = str(req.query.keyword, 40);
+    if (keyword) {
+      and.push({
+        $or: nameSearch.keywordOr(keyword, {
+          nameFields: ['realName'],
+          textFields: ['studentId', 'account', 'className'],
+        }),
+      });
+    }
+    if (req.query.className) filter.className = str(req.query.className, 60);
+    if (req.query.departmentId && mongoose.isValidObjectId(req.query.departmentId)) {
+      filter.departmentId = req.query.departmentId;
+    }
+
+    if (!steward) {
+      const scope = unionSvc.managerScopeOf(identity);
+      if (!scope) throw new ApiError(403, 403002, NO_ACCESS);
+      if (!scope.schoolWide) {
+        // 本院校 = 成员记录绑定的校区下展开出的全部院系（identity.departmentIds）
+        const ids = (identity.departmentIds || []).filter(Boolean);
+        const or = [];
+        if (ids.length) or.push({ departmentId: { $in: ids } });
+        if (scope.schoolNames.length) or.push({ schoolName: { $in: scope.schoolNames } });
+        if (!or.length) {
+          throw new ApiError(403, 403002, '你的成员记录还没有绑定院校，无法搜索本院校学生，请联系管理员补全');
+        }
+        and.push({ $or: or });
+      }
+    }
+    // ⚠️ 关键词与院校范围都是 $or：必须合并进 $and，直接给 filter.$or 会静默覆盖掉前者
+    if (and.length) filter.$and = and;
+
+    const [total, rows] = await Promise.all([
+      User.countDocuments(filter),
+      User.find(filter)
+        .select('realName nickname account studentId className departmentName specialty isClassOfficer homeroomClasses')
+        .sort({ studentId: 1, realName: 1 })
+        .skip(keyword ? 0 : skip)
+        .limit(cap)
+        .lean(),
+    ]);
+
+    // 已是学生会成员的人标记出来（按 userId，见管理端同名接口的注释）
+    const userIds = rows.map((r) => r._id).filter(Boolean);
+    const existing = userIds.length
+      ? await UnionMember.find({ userId: { $in: userIds }, status: 'active' })
+          .select('userId deptName level')
+          .lean()
+      : [];
+    const existBy = new Map();
+    for (const m of existing) {
+      const key = String(m.userId || '');
+      if (!key) continue;
+      const list = existBy.get(key) || [];
+      list.push(`${m.level === 'school' ? '校' : '分院'}${m.deptName || ''}`);
+      existBy.set(key, list);
+    }
+
+    ok(res, {
+      page,
+      limit: cap,
+      total,
+      hasMore: skip + rows.length < total,
+      list: rows.map((u) => ({
+        userId: String(u._id),
+        name: u.realName || u.nickname || u.account || '未命名',
+        studentId: u.studentId || '',
+        className: u.className || '',
+        departmentName: u.departmentName || '',
+        specialty: u.specialty || '',
+        isClassOfficer: !!u.isClassOfficer,
+        isHomeroom: (u.homeroomClasses || []).length > 0,
+        unionTags: existBy.get(String(u._id)) || [],
+        subText: [u.className, u.departmentName, u.specialty].filter(Boolean).join(' · '),
+      })),
+    });
+  })
+);
+
+/**
+ * 新增学生会成员（用户端，干部身份；用户 2026-11-12）。
+ *
+ * 与管理端 POST /api/admin/union/members(+ /bulk) 的区别只在**鉴权与范围**：
+ *   · 管理端：union.manage，全校；
+ *   · 这里：学生会身份（主席团 / 部长 / 副部长 / 总管），范围由
+ *     services/union.js::canManageMemberSlot + canGrantRole 唯一判定。
+ * 写入字段与去重口径与管理端保持一致（同一张表、同一套唯一索引）。
+ */
+router.post(
+  '/manage/members',
+  wrap(async (req, res) => {
+    const identity = await unionSvc.resolveIdentity(req.user);
+    const steward = await assertMemberManager(req, identity);
+    const body = req.body || {};
+
+    const rawIds = Array.isArray(body.userIds) ? body.userIds : body.userId ? [body.userId] : [];
+    const userIds = [...new Set(rawIds.map((v) => String(v || '')).filter((id) => mongoose.isValidObjectId(id)))];
+    if (!userIds.length) throw new ApiError(400, 400, '请先选择要添加的学生');
+    if (userIds.length > 100) throw new ApiError(400, 400, '单次最多添加 100 人');
+
+    const role = str(body.role, 24) || 'member';
+    let deptKeyInput = str(body.deptKey, 32);
+    // 主席 / 副主席未选部门时自动落到主席团（与管理端 create 同口径）
+    if (!deptKeyInput && unionSvc.PRESIDIUM_ROLES.includes(role)) deptKeyInput = unionSvc.PRESIDIUM_KEY;
+    if (!unionSvc.roleFitsDept(role, deptKeyInput)) {
+      throw new ApiError(
+        400,
+        400,
+        '部门与职务不匹配：主席团只能设主席 / 副主席，业务部门只能设部长 / 副部长 / 部员'
+      );
+    }
+    const dept = await assertDept(deptKeyInput, { allowEmpty: false });
+
+    // 层级 / 校区：部门自带校区优先（部门只属于那一个校区），否则按前端显式 level + schoolId
+    const Organization = require('../models/organization');
+    let level = body.level === 'branch' ? 'branch' : 'school';
+    let schoolId = null;
+    let schoolName = '';
+    if (dept.schoolId) {
+      level = 'branch';
+      schoolId = String(dept.schoolId);
+      // 部门自带校区时也要把校区名带上（否则成员列表只显示「分院学生会」，看不出是哪个校区）
+      const org = await Organization.findById(schoolId).select('name').lean();
+      schoolName = (org && org.name) || '';
+    }
+    if (level === 'branch') {
+      const sid = schoolId || str(body.schoolId, 40);
+      if (!sid) throw new ApiError(400, 400, '请选择院校（校区）');
+      const org = await Organization.findOne({ _id: sid, type: 'school' }).select('name').lean();
+      if (!org) throw new ApiError(400, 400, '所选校区不存在，请重新选择');
+      schoolId = String(org._id);
+      schoolName = org.name || '';
+    }
+    // 部门归属校区校验（与管理端同一份守卫）
+    assertDeptFitsCampus(dept, level, schoolId);
+
+    if (!steward) {
+      if (
+        !unionSvc.canManageMemberSlot(identity, {
+          level,
+          schoolId,
+          schoolName,
+          deptKey: dept.key,
+        })
+      ) {
+        throw new ApiError(403, 403002, '只能添加本校 / 本院 / 本部门的成员');
+      }
+      if (!unionSvc.canGrantRole(identity, dept.key, role)) {
+        throw new ApiError(403, 403002, '不能授予高于你自己的职务');
+      }
+    }
+
+    const terms = unionSvc.academicTerms();
+    const currentTerm = terms.list[0] || {};
+    const termId = str(body.termId, 40) || currentTerm.termId || '';
+    const termName =
+      str(body.termName, 60) ||
+      (terms.list.find((t) => t.termId === termId) || currentTerm).termName ||
+      '';
+
+    let created = 0;
+    let skipped = 0;
+    const failed = [];
+    for (const uid of userIds) {
+      const student = await User.findById(uid).lean();
+      if (!student) {
+        failed.push({ userId: uid, reason: '学生账号不存在' });
+        continue;
+      }
+      if (student.role === 'teacher') {
+        failed.push({ userId: uid, name: student.realName || '', reason: '教师账号不能加入学生会' });
+        continue;
+      }
+      // 去重口径与「扫码加人」一致：**同院校 + 同部门只允许一条 active**，不按届次放宽。
+      // 用户端加人发生在当前届次内，若同一人已有 active 记录（哪怕 termId 为空），
+      // 再加一条只会让身份解析把它算两遍（权限看起来「变重了」），应直接跳过。
+      const dupFilter = { userId: student._id, level, deptKey: dept.key, status: 'active' };
+      if (level === 'branch' && schoolId) dupFilter.schoolId = schoolId;
+      const exists = await UnionMember.findOne(dupFilter).lean();
+      if (exists) {
+        skipped += 1;
+        continue;
+      }
+      try {
+        await UnionMember.create({
+          userId: student._id,
+          openid: student.openid || '',
+          realName: student.realName || student.nickname || student.account || '',
+          studentId: student.studentId || '',
+          className: student.className || '',
+          level,
+          schoolId,
+          schoolName,
+          deptKey: dept.key,
+          deptName: dept.name,
+          role,
+          termId,
+          termName,
+          status: 'active',
+          createdBy: req.user.openid || '',
+        });
+        created += 1;
+        unionSvc.clearIdentityCache(student.openid);
+      } catch (e) {
+        if (e && e.code === 11000) {
+          skipped += 1;
+          continue;
+        }
+        failed.push({ userId: uid, name: student.realName || '', reason: '写入失败，请重试' });
+      }
+    }
+
+    ok(res, { created, skipped, failed });
   })
 );
 
@@ -898,7 +1184,27 @@ router.put(
     const role = String(body.role || '').trim();
     const deptKey = String(body.deptKey || '').trim();
     if (!role && !deptKey) throw new ApiError(400, 400, '缺少要调整的职务或部门');
-    if (role && !MANAGE_ROLES.includes(role)) throw new ApiError(400, 400, '职务只支持部员 / 副部长 / 部长');
+    // 主席团成员的职务是 主席 / 副主席；业务部门才是 部长 / 副部长 / 部员。
+    // 用户 2026-11-12：正副主席管理本院校成员时，也包括本院校主席团的职务调整。
+    // 老数据可能有「role=president 但 deptKey 为空」，所以两个字段任一命中都按主席团处理。
+    const isPresidiumMember =
+      member.deptKey === unionSvc.PRESIDIUM_KEY || unionSvc.PRESIDIUM_ROLES.includes(member.role);
+    const allowedRoles = isPresidiumMember ? Object.keys(unionSvc.PRESIDIUM_RANK) : MANAGE_ROLES;
+    if (role && !allowedRoles.includes(role)) {
+      throw new ApiError(
+        400,
+        400,
+        isPresidiumMember ? '主席团成员的职务只支持主席 / 副主席' : '职务只支持部员 / 副部长 / 部长'
+      );
+    }
+    // 不能授予高于自己的职务（副部长不能把人提成部长，副主席不能把人提成主席）
+    if (
+      role &&
+      !steward &&
+      !unionSvc.canGrantRole(identity, isPresidiumMember ? unionSvc.PRESIDIUM_KEY : member.deptKey, role)
+    ) {
+      throw new ApiError(403, 403002, '不能授予高于你自己的职务');
+    }
 
     if (deptKey) {
       // 转移部门：校级主席团或总管可以（分院主席团 / 部长不行）
@@ -907,6 +1213,19 @@ router.put(
       if (!dept || dept.key === 'presidium') throw new ApiError(400, 400, '目标部门不存在');
       if (dept.scope !== 'both' && dept.scope !== member.level) {
         throw new ApiError(400, 400, '该部门不适用于该成员的层级');
+      }
+      // 校 / 院范围：分院主席团只能在本院校内调部门，不能把成员调到外校区分会
+      assertDeptFitsCampus(dept, member.level, member.schoolId);
+      if (
+        !steward &&
+        !unionSvc.canManageMemberSlot(identity, {
+          level: member.level,
+          schoolId: member.schoolId,
+          schoolName: member.schoolName,
+          deptKey: dept.key,
+        })
+      ) {
+        throw new ApiError(403, 403002, '只能调整本校 / 本院 / 本部门的成员');
       }
       member.deptKey = dept.key;
       member.deptName = dept.name;
@@ -1465,7 +1784,11 @@ router.post(
     // 多班共管（混宿房??/ 共管卫生区）??**每个归属班级各存一??*，各自的扣分已经按权重分摊好??
     // 只存第一条的话，其余班级的分摊扣分会被静默丢掉（曾经的真??bug）??
     const inspectorName = req.user.realName || req.user.nickname || req.user.account || '';
-    const photos = Array.isArray(body.photos) ? body.photos.slice(0, 9).map((p) => String(p).slice(0, 300)) : [];
+    // 留证照片：**不限制张数、不截断 URL**（用户 2026-11-12「解除所有上传照片的限制」）。
+    // 以前 slice(0,9) 会让前端传 12 张时静默丢 3 张 —— 丢图不可恢复，比拒收更糟。
+    const photos = Array.isArray(body.photos)
+      ? body.photos.map((p) => String(p).trim()).filter(Boolean)
+      : [];
     const docs = [];
     for (const part of split) {
       if (!part.className) continue;
@@ -1566,7 +1889,7 @@ router.put(
       record.remark = String(body.remark || '').slice(0, 300);
     }
     if (Array.isArray(body.photos)) {
-      const photos = body.photos.slice(0, 9).map((p) => String(p).slice(0, 300));
+      const photos = body.photos.map((p) => String(p).trim()).filter(Boolean);
       if (JSON.stringify(photos) !== JSON.stringify(record.photos || [])) {
         changes.photos = { from: (record.photos || []).length, to: photos.length };
         record.photos = photos;

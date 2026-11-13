@@ -79,6 +79,36 @@
     </view>
   </view>
 
+  <!-- ===== 阶段性自升级开关（用户 2026-11-12「请增加阶段性自升级」）=====
+       两个开关只控制**定时评估能不能自动动阶段**：
+       关掉后评估照跑、指标照更新、「已达闸门」照样显示，只是不自动改阶段
+       （管理员可在「步数异常记录」页手动指定阶段）。
+       必须把这句话写在界面上，否则会被理解成「关掉就不评估了」。 -->
+  <view class="tt-section">
+    <text>阶段性自升级</text>
+    <text class="tt-section-extra">无监督 → 影子辅助 → 有监督主判</text>
+  </view>
+  <view class="tt-card cfg-card">
+    <view class="cfg-fitem cfg-fitem-switch">
+      <view class="cfg-flabel-col">
+        <text class="cfg-switch-label">自动升级阶段</text>
+        <text class="cfg-fdesc">标注与验证指标达到闸门时，自动把模型推进到下一阶段（影子辅助不封号，只进待研判）</text>
+      </view>
+      <t-switch disabled="{{!canManage}}" value="{{config.anticheat.autoUpgrade}}" bind:change="onAnticheat" data-field="autoUpgrade" />
+    </view>
+    <view class="cfg-fitem cfg-fitem-switch">
+      <view class="cfg-flabel-col">
+        <text class="cfg-switch-label">自动降级阶段</text>
+        <text class="cfg-fdesc">线上实测精度掉到阈值以下时自动退一级（只会升级不会降级的模型是单向棘轮，只会越来越松）</text>
+      </view>
+      <t-switch disabled="{{!canManage}}" value="{{config.anticheat.autoDemote}}" bind:change="onAnticheat" data-field="autoDemote" />
+    </view>
+    <text class="cfg-hint">
+      关掉开关后评估仍会定时跑并更新指标，「已达闸门」照样显示，只是不自动改阶段。
+      阶段的阶梯进度与「还差什么」在「步数异常记录」页顶部查看，那里也能立即评估或手动指定阶段。
+    </text>
+  </view>
+
   <view class="cfg-save-bar" wx:if="{{canManage}}">
     <t-button theme="primary" block loading="{{saving}}" bind:tap="save">保存配置</t-button>
   </view>

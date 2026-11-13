@@ -14,6 +14,12 @@
 // 组件内部把它拆成 pickBuilding + roomNo 两段来渲染，改动时再拼回去 ——
 // 这样两处父页面（class-manage/dorms 与 user-detail）不需要跟着改。
 //
+// ⚠️ 楼号胶囊 = `buildings`（服务端下发的白名单口径，见 services/student-dorm.js::buildingOptions）
+//   ∪ 「该生当前住的楼」（只在清单里没有时补一条）。补这一条不是为了放宽白名单，
+//   而是防止住在旧写法楼里的人（实测库里 739 人住「洋河」，标准清单已改成「洋河-男宿/女宿」）
+//   打开抽屉时没有选中态、点保存被「请先选择楼号」挡住，只能改选另一栋 ——
+//   想调个床位却把人换到别的楼。补的那条带 `legacy` 标记，界面单独提示、不会扩散给别人。
+//
 // 用法（父页面）：
 //  1) 页面 json 注册： "usingComponents": { "dorm-sheet": "/components/dorm-sheet/dorm-sheet" }
 //  2) wxml：
@@ -51,6 +57,10 @@ Component({
     pickBuilding: '',
     // 门号（唯一的自由输入，纯数字）
     roomNo: '',
+    // 实际渲染的楼号胶囊：白名单 ∪（只在清单外时）该生当前住的楼，见文件头 ⚠️
+    chips: [],
+    // 当前选中的是「清单外的旧写法楼名」时非空，界面据此给单独提示
+    legacyBuilding: '',
     // 床位号固定 1~8（用户 2026-10-22「床号只能是1至8」）
     bedOptions: [1, 2, 3, 4, 5, 6, 7, 8],
   },
@@ -61,18 +71,20 @@ Component({
       const raw = String(roomText || '');
       // 与服务端 services/dorms.js::parseRoomLabel 同一套分隔符，避免「1号楼 201」拆不出来
       const parts = raw.split(/[·・\-—/、,\s]+/).filter(Boolean);
-      const all = (buildings || []).map((b) => b && b.name).filter(Boolean);
+      const list = (buildings || [])
+        .map((b) => (typeof b === 'string' ? b : (b && b.name) || ''))
+        .filter(Boolean);
       let pick = '';
       let no = '';
-      if (parts.length >= 2 && all.includes(parts[0])) {
+      if (parts.length >= 2 && list.includes(parts[0])) {
         pick = parts[0];
         no = parts.slice(1).join('');
-      } else if (parts.length === 1 && all.includes(parts[0])) {
+      } else if (parts.length === 1 && list.includes(parts[0])) {
         // 只有楼名、还没填门号
         pick = parts[0];
-      } else if (all.length) {
+      } else if (list.length) {
         // 拆不出来但首段与某个楼名高度相似（历史数据）→ 尽力匹配，匹配不到就留空让人重选
-        const hit = all.find((name) => raw.startsWith(name));
+        const hit = list.find((name) => raw.startsWith(name));
         if (hit) {
           pick = hit;
           no = raw.slice(hit.length).replace(/^[·・\-—/、,\s]+/, '');
@@ -82,9 +94,41 @@ Component({
       } else {
         no = parts.length >= 2 ? parts.slice(1).join('') : raw;
       }
-      if (pick !== this.data.pickBuilding || no !== this.data.roomNo) {
-        this.setData({ pickBuilding: pick, roomNo: no });
+
+      // 楼名白名单收窄后（脏楼名不再下发），住在旧写法楼里的人会走到这里：
+      // 把「最后一个分隔符之前」那段当楼名补成一条胶囊（门号 = 最后一段）。
+      // 只补**该生自己当前这一条**，别的学生的胶囊仍是干净的白名单。
+      let legacy = '';
+      if (!pick && parts.length >= 2) {
+        // 非全局 + 负向先行：命中的是**最后一个**分隔符串
+        const lastSep = raw.match(/[·・\-—/、,\s]+(?!.*[·・\-—/、,\s])/);
+        if (lastSep) {
+          const cut = lastSep.index;
+          const cand = raw.slice(0, cut).trim();
+          no = raw.slice(cut + lastSep[0].length).trim();
+          if (cand && !list.includes(cand)) {
+            pick = cand;
+            legacy = cand;
+          } else {
+            no = parts[parts.length - 1];
+          }
+        }
       }
+
+      const chips = (buildings || [])
+        .map((b) => (typeof b === 'string' ? { name: b } : b))
+        .filter((b) => b && b.name);
+      if (legacy) chips.push({ name: legacy, rooms: 0, legacy: true });
+
+      const patch = {};
+      if (pick !== this.data.pickBuilding) patch.pickBuilding = pick;
+      if (no !== this.data.roomNo) patch.roomNo = no;
+      if (legacy !== this.data.legacyBuilding) patch.legacyBuilding = legacy;
+      if (chips.length !== this.data.chips.length || chips.some((c, i) => {
+        const o = this.data.chips[i];
+        return !o || o.name !== c.name || !!o.legacy !== !!c.legacy;
+      })) patch.chips = chips;
+      if (Object.keys(patch).length) this.setData(patch);
     },
   },
 
@@ -101,7 +145,14 @@ Component({
     tapBuilding(e) {
       const name = e.currentTarget.dataset.name;
       if (!name) return;
-      this.setData({ pickBuilding: name });
+      const patch = { pickBuilding: name };
+      // 一旦改选标准清单里的楼，就把补出来的「旧写法」胶囊与提示撤掉：
+      // 那是为「沿现住楼只调床位」补的入口，人已经主动换楼了就不该继续挂在那儿。
+      if (name !== this.data.legacyBuilding) {
+        patch.legacyBuilding = '';
+        patch.chips = (this.data.chips || []).filter((c) => c && !c.legacy);
+      }
+      this.setData(patch);
       this.emitRoom(name, this.data.roomNo);
     },
 

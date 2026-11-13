@@ -25,13 +25,35 @@ const beidouDrawSchema = new mongoose.Schema(
     roll: { type: Number, default: 0 }, // 本次随机数（0~1），留证
     index: { type: Number, default: 0 }, // 命中扇区下标（前端动画用，服务端下发）
     capped: { type: Boolean, default: false }, // 本次是否因封顶被降级（true 时 type 必为 none）
+
+    /**
+     * 本次抽奖**消耗的那一次机会来自哪里**（用户 2026-11-12「抽奖来源筛选(签到、分享、视频)」）。
+     *
+     * ⚠️ 这个字段不是「用户从哪里点进来的」，而是**账本归属**：
+     *    次数是一个合并池（draw.total），抽奖时按固定优先级从各来源的余额里扣一笔，
+     *    扣到谁就记谁。详见 services/beidou.js::pickSource 的注释。
+     *
+     * 取值：video / share / checkin / prize（再来一次）/ unknown（老数据或余额异常）
+     */
+    source: {
+      type: String,
+      enum: ['video', 'share', 'checkin', 'prize', 'unknown'],
+      default: 'unknown',
+    },
   },
   { timestamps: true }
 );
 
 beidouDrawSchema.index({ openid: 1, date: 1 });
-beidouDrawSchema.index({ drawId: 1 }, { unique: true });
+// ⚠️ 幂等凭据的唯一性必须**按人隔离**（openid + drawId），不能全局唯一：
+//    客户端的 drawId 是「时间戳36进制-随机8位」，理论上会撞（同一毫秒两台手机各掷出同一随机串）。
+//    全局唯一时后来者会撞上别人的记录 → 被判成「重复提交」→ 拿到**别人的奖品与 index**，
+//    自己既不扣次数也不发步数，而接口还返回 success:true，日志里完全看不出来。
+//    幂等本来就是「同一个人同一笔」的语义，跨用户去重没有任何业务含义。
+beidouDrawSchema.index({ openid: 1, drawId: 1 }, { unique: true });
 // 管理端「中奖记录」按奖品筛选 + 倒序翻页
 beidouDrawSchema.index({ date: -1, prizeKey: 1 });
+// 管理端按来源筛选 + 日期范围（两个维度常一起用，复合索引避免全表扫）
+beidouDrawSchema.index({ source: 1, date: -1 });
 
 module.exports = mongoose.model('BeidouDraw', beidouDrawSchema, 'beidou_draws');

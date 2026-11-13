@@ -278,6 +278,7 @@ function renderDash(d) {
 
   renderMatrix(q.matrix);
   renderUpgrade(d.upgrade || {});
+  renderStages(d.stages || null);
   renderRecent(d.recentBans || []);
 
   // 服务运行指标（登录后才给，含请求数与内存）
@@ -345,8 +346,171 @@ function renderUpgrade(up) {
   ub.appendChild(st);
 }
 
+/* ==================== 阶段性自升级（用户 2026-11-12） ====================
+ *
+ * 服务端已经把「阶梯 / 当前阶段 / 下一阶段缺什么 / 指标文案 / 历史」全部算好
+ * （services/anticheat-upgrade.js::snapshot），这里**只做渲染 + 发动作**。
+ * 为什么坚持这个分工：同一份判断要在 Web 与小程序管理端同时显示，
+ * 两边各算一次必然漂移出「Web 说已达闸门、小程序说还差 3 条」这种无法解释的分歧。
+ */
+var lastStages = null;
+
+function renderStages(st) {
+  lastStages = st;
+  var box = $('stageBox');
+  if (!box) return;
+  clear(box);
+  var tag = $('stageTag');
+  if (tag) {
+    clear(tag);
+    if (st) {
+      var off = [];
+      if (!st.autoUpgrade) off.push('自动升级已关');
+      if (!st.autoDemote) off.push('自动降级已关');
+      tag.appendChild(el('span', 'pill ' + (off.length ? 'warn' : 'ok'), off.length ? off.join(' · ') : '自动评估开启'));
+    }
+  }
+  if (!st) { box.appendChild(el('div', 'note', '模型阶段数据加载失败（不影响判定，判定退回无监督）')); return; }
+
+  box.appendChild(el('div', 'note', st.ruleText || ''));
+
+  var srcs = st.sources || {};
+  ['werun', 'gps'].forEach(function (key) {
+    var s = srcs[key];
+    if (!s) return;
+    box.appendChild(renderStageSource(key, s, st));
+  });
+}
+
+function renderStageSource(key, s, st) {
+  var wrap = el('div', 'stage-src');
+
+  // ---- 标题行：来源 · 当前阶段 · 模式 · 动作按钮 ----
+  var head = el('div', 'stage-head');
+  head.appendChild(el('b', 'stage-src-name', s.sourceText));
+  head.appendChild(el('span', 'pill ' + (s.stage >= 2 ? 'bad' : s.stage === 1 ? 'warn' : 'mute'), s.stageText));
+  if (s.mode === 'manual') head.appendChild(el('span', 'pill warn', '手动锁定'));
+  head.appendChild(el('span', 'spacer'));
+  if (caps.manage) {
+    var btnEval = el('button', 'btn sm pri', '立即评估');
+    btnEval.addEventListener('click', function () { evaluateStages(key, btnEval); });
+    head.appendChild(btnEval);
+    // 手动指定阶段 = 人工兜底（自动评估只写建议、绝不动手动锁定的阶段）
+    var btnStage = el('button', 'btn sm', s.mode === 'manual' ? '恢复自动' : '手动指定');
+    btnStage.addEventListener('click', function () { toggleManual(key, s, btnStage); });
+    head.appendChild(btnStage);
+  }
+  wrap.appendChild(head);
+
+  // ---- 三级阶梯 ----
+  var ladder = el('div', 'stage-ladder');
+  var list = s.ladder || [];
+  for (var i = 0; i < list.length; i++) {
+    var l = list[i];
+    var node = el('div', 'stage-step' + (l.current ? ' current' : '') + (l.done ? ' done' : ''));
+    node.appendChild(el('b', 'stage-step-t', (l.done ? '✓ ' : '') + l.text));
+    node.appendChild(el('div', 'stage-step-d', l.desc));
+    if (l.current) node.appendChild(el('span', 'pill ' + (s.stage >= 2 ? 'bad' : 'warn'), '当前阶段'));
+    ladder.appendChild(node);
+  }
+  wrap.appendChild(ladder);
+
+  // ---- 关键数字 ----
+  var kvBox = el('div', 'kv-grid stage-kv');
+  kvBox.appendChild(kv('可训练标注', fmt(s.sampleCount) + ' 条'));
+  kvBox.appendChild(kv('生效阈值', Number(s.threshold.suspicious).toFixed(2) + ' / ' + Number(s.threshold.autoBan).toFixed(2)));
+  if (s.metrics) {
+    kvBox.appendChild(kv('交叉验证 AUC', s.metrics.aucText + (s.metrics.aucStd != null ? ' ± ' + Number(s.metrics.aucStd).toFixed(2) : '')));
+    kvBox.appendChild(kv('可疑线精度', s.metrics.precisionSuspiciousText));
+    kvBox.appendChild(kv('封禁线精度', s.metrics.precisionAutoBanText));
+    kvBox.appendChild(kv('封禁线召回', s.metrics.recallAutoBanText));
+  }
+  kvBox.appendChild(kv('影子证据', fmt(s.shadow.samples) + ' 条 / 判可疑 ' + fmt(s.shadow.flaggedSuspicious) +
+    ' 条' + (s.shadow.precisionSuspicious == null ? '' : ' · 实测精度 ' + Math.round(s.shadow.precisionSuspicious * 100) + '%')));
+  if (s.model) {
+    kvBox.appendChild(kv('模型特征', s.model.featureCount + ' 维（' + (s.model.features || []).join('/') + '）'));
+  }
+  wrap.appendChild(kvBox);
+
+  // ---- 下一阶段：缺什么 / 已达闸门 ----
+  if (s.next) {
+    var nx = el('div', 'stage-next ' + (s.next.ok ? 'is-ok' : ''));
+    nx.appendChild(el('div', 'stage-next-t',
+      s.next.ok ? ('已达「' + s.next.targetText + '」闸门' + (st.autoUpgrade ? '——下一轮定时评估会自动升级（也可点「立即评估」）' : '——自动升级已关闭，可手动指定'))
+        : ('距「' + s.next.targetText + '」还差：')));
+    if (!s.next.ok) {
+      for (var m = 0; m < s.next.missing.length; m++) nx.appendChild(el('div', 'stage-miss', '· ' + s.next.missing[m]));
+    }
+    wrap.appendChild(nx);
+  } else {
+    wrap.appendChild(el('div', 'stage-next is-ok', '已是最高阶段：有监督模型主判（仍受自动处置总开关约束）'));
+  }
+
+  // ---- 降级风险 ----
+  if (s.demotion && s.demotion.willDemote) {
+    wrap.appendChild(el('div', 'stage-warn', '⚠ 自动降级条件已满足：' + s.demotion.reason));
+  } else if (s.demotion && s.demotion.missing && s.demotion.missing.length) {
+    wrap.appendChild(el('div', 'note', '降级评估：' + s.demotion.missing.join('；')));
+  }
+
+  // ---- 最近一次评估与历史 ----
+  if (s.lastEvaluatedAt) {
+    wrap.appendChild(el('div', 'note', '上次评估 ' + ago(s.lastEvaluatedAt) + '：' + (s.lastReason || '—')));
+  }
+  if (s.history && s.history.length) {
+    var his = el('div', 'stage-hist');
+    his.appendChild(el('div', 'act-t', '阶段变更历史'));
+    for (var h = 0; h < s.history.length; h++) {
+      var row = s.history[h];
+      his.appendChild(el('div', 'stage-hist-row',
+        timeText(row.at) + ' · ' + row.fromText + ' → ' + row.toText + ' · ' + (row.operator || 'system') + ' · ' + (row.reason || '')));
+    }
+    wrap.appendChild(his);
+  }
+  return wrap;
+}
+
+function evaluateStages(key, btn) {
+  btn.disabled = true;
+  api('/model-evaluate', { method: 'POST', body: { source: key } })
+    .then(function (r) {
+      btn.disabled = false;
+      var res = (r.results && r.results[0]) || {};
+      var text = res.action === 'promote' ? ('已升级为「' + (res.nextStage === 2 ? '有监督主判' : '影子辅助') + '」')
+        : res.action === 'demote' ? '已自动降级'
+        : res.action === 'error' ? ('评估失败：' + res.reason)
+        : '维持当前阶段';
+      toast(text + (res.reason ? '（' + res.reason + '）' : ''));
+      renderStages(r.snapshot);
+    })
+    .catch(function (e) { btn.disabled = false; toast(e.message || '评估失败', true); });
+}
+
+function toggleManual(key, s, btn) {
+  if (s.mode === 'manual') {
+    btn.disabled = true;
+    api('/model-stage', { method: 'PUT', body: { source: key, mode: 'auto' } })
+      .then(function (r) { btn.disabled = false; toast('已恢复自动评估'); renderStages(r.snapshot); })
+      .catch(function (e) { btn.disabled = false; toast(e.message || '操作失败', true); });
+    return;
+  }
+  // 手动指定：用 confirm 说明「锁定后自动评估只写建议」，避免管理员以为自动还在动它
+  var cur = s.stage;
+  var plan = prompt(
+    '手动指定「' + s.sourceText + '」的阶段（0 无监督 / 1 影子辅助 / 2 有监督主判）。\n' +
+    '注意：手动指定后自动评估只给建议、不再改阶段，可随时点「恢复自动」。',
+    String(cur)
+  );
+  if (plan === null) return;
+  var stage = Number(plan);
+  if (!(stage === 0 || stage === 1 || stage === 2)) { toast('阶段只能是 0 / 1 / 2', true); return; }
+  btn.disabled = true;
+  api('/model-stage', { method: 'PUT', body: { source: key, stage: stage } })
+    .then(function (r) { btn.disabled = false; toast('已手动指定并锁定阶段'); renderStages(r.snapshot); })
+    .catch(function (e) { btn.disabled = false; toast(e.message || '操作失败', true); });
+}
+
 function renderRecent(bans) {
-  var rb = $('recentBox');
   clear(rb);
   if (!bans.length) { rb.appendChild(el('div', 'note', '近期没有封禁处置')); return; }
   var tb = el('table');
@@ -934,6 +1098,23 @@ function renderCfg(d) {
   btn2.addEventListener('click', function () { saveCfg({ enabled: !d.enabled }); });
   en.appendChild(btn2);
   eb.appendChild(en);
+
+  // ===== 阶段性自升级开关（用户 2026-11-12）=====
+  // 关掉 autoUpgrade/autoDemote 后：定时评估照跑、指标照更新，只是不改阶段。
+  // 文案必须写清这一点，否则管理员会以为「关掉就不评估了」。
+  var ub = $('autoUpgradeBox');
+  clear(ub);
+  var au = el('div', 'row-item');
+  au.appendChild(el('div', 'ri-head', '自动升降级：' + (d.autoUpgrade ? '升级开' : '升级关') + ' · ' + (d.autoDemote ? '降级开' : '降级关')));
+  au.appendChild(el('div', 'note', '关掉后评估仍会定时跑并更新指标，"已达闸门"照样显示，只是不自动改阶段（可到状态台手动指定）。'));
+  var row2 = el('div', 'acts');
+  var bUp = el('button', 'btn sm' + (d.autoUpgrade ? '' : ' pri'), d.autoUpgrade ? '关闭自动升级' : '开启自动升级');
+  bUp.addEventListener('click', function () { saveCfg({ autoUpgrade: !d.autoUpgrade }); });
+  var bDown = el('button', 'btn sm' + (d.autoDemote ? '' : ' pri'), d.autoDemote ? '关闭自动降级' : '开启自动降级');
+  bDown.addEventListener('click', function () { saveCfg({ autoDemote: !d.autoDemote }); });
+  row2.appendChild(bUp); row2.appendChild(bDown);
+  au.appendChild(row2);
+  ub.appendChild(au);
 }
 
 function saveCfg(patch) {
@@ -942,6 +1123,8 @@ function saveCfg(patch) {
       var keys = Object.keys((r && r.changed) || {});
       toast('已保存：' + (keys.length ? keys.join(' / ') : '无变化'));
       loadCfg();
+      // 自升级开关变了 → 状态台的阶段卡片也要跟着刷新（它展示开关状态）
+      if (lastStages) loadDash();
     })
     .catch(function (e) { toast(e.message || '保存失败', true); });
 }

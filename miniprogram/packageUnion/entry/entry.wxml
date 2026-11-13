@@ -420,7 +420,7 @@
                 <view class="en-field-hint" wx:elif="{{!current.className && !pickerQuery.roomId && !pickerQuery.scope}}">该受检对象没有绑定班级，无法拉取名单</view>
               </block>
 
-              <!-- 留证照片（type='photo'）：网格缩略图 + 「+ 拍照/相册」，最多 9 张 -->
+              <!-- 留证照片（type='photo'）：网格缩略图 + 「+ 拍照/相册」，张数不限（用户 2026-11-12） -->
               <block wx:elif="{{f.type === 'photo' || f.type === 'photos' || f.type === 'image'}}">
                 <view class="en-photos">
                   <view class="en-photo" wx:for="{{photos}}" wx:for-item="p" wx:for-index="pi" wx:key="path">
@@ -456,18 +456,13 @@
                     <text class="en-photo-err-t">{{p.error}}</text>
                   </view>
 
-                  <view
-                    class="en-photo-add"
-                    wx:if="{{photos.length < maxPhotos}}"
-                    data-field="{{f.key}}"
-                    bind:tap="onChoosePhoto"
-                  >
+                  <view class="en-photo-add" data-field="{{f.key}}" bind:tap="onChoosePhoto">
                     <t-icon name="camera" size="40rpx" color="var(--tt-text-3)" />
                     <text class="en-photo-add-t">拍照 / 相册</text>
                   </view>
                 </view>
                 <view class="en-photo-tip">
-                  选填，最多 {{maxPhotos}} 张；已上传 {{photos.length}} 张
+                  选填，张数不限；已添加 {{photos.length}} 张
                   <text class="en-photo-fail-n" wx:if="{{photosFailedCount}}">（{{photosFailedCount}} 张失败可点图重试）</text>
                 </view>
               </block>

@@ -1174,7 +1174,11 @@ router.get(
   wrap(async (req, res) => {
     const board = require('../../services/class-status-board');
     const str = (v) => String(v ?? '').trim();
-    const full = await board.classStatusBoard({ today: str(req.query.today) || undefined, days: req.query.days });
+    // 考勤统计窗口：本日 / 本周 / 本月（用户 2026-11-12「要本日、本周、本月，而不是3天7天这样」）。
+    // 白名单外（含旧的 days=7 之类）一律交给服务层回退「本周」—— 不在这里再判一次默认值，
+    // 否则两处默认迟早不同（页面显示本周、数据算的是别的窗口）。
+    const attRange = ['day', 'week', 'month'].includes(str(req.query.attRange)) ? str(req.query.attRange) : undefined;
+    const full = await board.classStatusBoard({ today: str(req.query.today) || undefined, attRange });
     // 年级多选：逗号分隔 → 去空去重，只留 4 位数字年份（'20xx'）；解析不出任何合法值 = 未指定
     const grades = [...new Set(String(req.query.grades || '').split(',').map((g) => g.trim()))].filter((g) =>
       /^(19|20)\d{2}$/.test(g)

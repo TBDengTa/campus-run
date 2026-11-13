@@ -80,6 +80,9 @@ Page({
       this._deptAll = depts.map((d) => ({
         key: d.key,
         name: d.name,
+        // 服务端下发的最终归属（school / branch）：选择器按它精确分组，
+        // 不再靠「有没有 schoolId」猜（纯校级部门同样没有 schoolId）
+        level: d.level || '',
         levelText: d.levelText || (d.schoolName ? `${d.schoolName}学生会` : '校学生会'),
         schoolId: d.schoolId || '',
         schoolName: d.schoolName || '',
@@ -106,8 +109,9 @@ Page({
   },
 
   // 按院校过滤可选部门（与服务端 join-options 的展开结果对齐）：
-  //   ① 部门明确挂了校区 → 只在那个校区出现
-  //   ② 共用部门（无 schoolId）→ 在**每个**校区各出现一次，但不出现在「校学生会」层
+  //   ① 服务端已下发 level：school 只在「校学生会」层，branch 只在对应校区（推荐口径）
+  //   ② 兼容旧字段：部门明确挂了校区 → 只在那个校区出现；无 schoolId → 各校区共用
+  //   ③ 共用部门（无 schoolId）不出现在「校学生会」层
   //      （与 utils/union-dept.js::deptFitsCampus 的既有约定一致：
   //       全校层除主席团外不再有别的部门 —— 用户 2026-10-21）
   buildDeptOptions(campusId) {
@@ -115,6 +119,12 @@ Page({
     const isSchoolLevel = !campusId || campusId === 'school';
     return all
       .filter((d) => {
+        // 新口径：服务端条目的 level 已经是最终归属，直接用
+        if (d.level === 'school') return isSchoolLevel;
+        if (d.level === 'branch') {
+          return !isSchoolLevel && String(d.schoolId || '') === String(campusId);
+        }
+        // 兼容没有 level 的旧响应
         if (d.schoolId) return !isSchoolLevel && String(d.schoolId) === String(campusId);
         return !isSchoolLevel; // 共用部门：各校区共用
       })

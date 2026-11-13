@@ -74,11 +74,10 @@ function availableScopes(me) {
 }
 
 // 姓名隐私遮蔽：张三 → 张**，单字名 → 张*
-function maskName(name) {
-  if (!name) return '匿名同学';
-  if (name.length === 1) return name + '*';
-  return name.slice(0, 1) + '**';
-}
+//
+// ⚠️ 实现已抽到 services/name-mask.js（北斗播报与本文件共用同一份）。
+//    不要在这里再写一份 —— 两处各写会导致同一 App 里出现两种脱敏格式而无人察觉。
+const { maskName } = require('../services/name-mask');
 
 // 公共 $lookup users + 范围/隐私过滤 + 展示字段投影
 // isMeMark 占位符会被替换为我的 openid

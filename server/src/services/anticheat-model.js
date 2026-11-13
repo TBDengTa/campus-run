@@ -566,6 +566,17 @@ async function recordFeedback(isCheat, score, meta = {}) {
       modelScore: safeScore,
       ruleScore: Number(meta.ruleScore) || 0,
       features: meta.features || null,
+      // 有监督模型的影子证据（用户 2026-11-12「阶段性自升级」）：
+      // 这三个字段记录「标注发生时」有监督模型处在哪一阶段、给出了什么概率。
+      // 升级到主判（可封号）之前必须证明它真实跑过且被人工复核过 —— 数据就来自这里。
+      // 缺省 0 / null = 当时没有有监督模型参与（旧标注天然如此，不能算作证据）。
+      modelStage: Math.max(0, Math.min(2, Number(meta.modelStage) || 0)),
+      supervisedProb: Number.isFinite(Number(meta.supervisedProb)) && meta.supervisedProb != null
+        ? Math.max(0, Math.min(1, Number(meta.supervisedProb)))
+        : null,
+      supervisedScore: Number.isFinite(Number(meta.supervisedScore)) && meta.supervisedScore != null
+        ? Math.max(0, Math.min(1, Number(meta.supervisedScore)))
+        : null,
       operator: meta.operator || '',
       note: meta.note || '',
     };
@@ -908,9 +919,30 @@ async function evaluate(source, record, history = {}) {
   //   · 物理约束擅长：抓「绝对不可能」（配速快于世界纪录、步数超生理上限）
   // 两者并列，取较大值；任一命中都要给管理员看到理由。
   const hardScore = physicalScore(source, feat);
-  const score = Math.max(modelScore, hardScore.score);
-
   const th = currentThreshold();
+
+  // ===== 有监督层（用户 2026-11-12「阶段性自升级」）=====
+  //
+  // 第三路输入：人工标注训出来的有监督模型。它**不是**独立通道 —— 分数同样并入
+  // 这一个分数里取 max，理由由 dedupeReasons 统一归类，谁判的都说得清。
+  // 阶段语义（见 services/anticheat-upgrade.js 文件头）：
+  //   · 影子辅助（stage 1）时 scoreFor 已经把风险分**封顶在自动封禁线以下**，
+  //     所以哪怕它 100% 确信作弊，也只能把记录推进待研判，不会单独封号；
+  //   · 主判（stage 2）时风险分可越过自动封禁线，但仍由调用方过「自动处置总开关」。
+  // 模型不存在（阶段 0 / 未训练 / 状态表读失败）时完全不影响原判定 ——
+  // 这里刻意吞掉异常，反作弊不能因为一个有监督模型故障而整体失灵。
+  let supervised = null;
+  try {
+    // 惰性 require：anticheat-upgrade 也 require 本文件（要特征顺序与阈值），
+    // 顶层互相 require 会成环。
+    const upgradeSvc = require('./anticheat-upgrade');
+    supervised = await upgradeSvc.scoreFor(source, feat, th);
+  } catch (e) {
+    supervised = null;
+  }
+
+  const score = supervised ? Math.max(modelScore, hardScore.score, supervised.risk) : Math.max(modelScore, hardScore.score);
+
   let level = 'ok';
   if (score >= th.autoBan) level = 'autoBan';
   else if (score >= th.suspicious) level = 'suspicious';
@@ -918,9 +950,46 @@ async function evaluate(source, record, history = {}) {
   // 可解释性：把「最偏离」的特征挑出来，管理员才知道为什么判异常。
   // 物理约束命中的理由优先展示（它比模型分更硬、更容易说服人）。
   // 合并后必须**语义去重**（否则「同步增速 50 步/秒」会以 3 种写法出现 3 次）
-  const reasons = dedupeReasons([...hardScore.reasons, ...explain(source, feat, score)]).slice(0, 4);
+  const supReasons = supervised ? supervisedReasons(supervised) : [];
+  const reasons = dedupeReasons([...hardScore.reasons, ...explain(source, feat, score), ...supReasons]).slice(0, 4);
   // features 一并返回：调用方要把它存进异常记录，供将来训练有监督模型用
-  return { score, level, reasons, threshold: th, modelRows: model ? model.rows : 0, modelScore, hardScore: hardScore.score, features: feat };
+  return {
+    score,
+    level,
+    reasons,
+    threshold: th,
+    modelRows: model ? model.rows : 0,
+    modelScore,
+    hardScore: hardScore.score,
+    features: feat,
+    // 有监督意见（判定当时）：调用方要把它落进异常记录与标注 ——
+    // 影子阶段「实测精度」就是靠这批「当时概率 + 后来的人工结论」算出来的。
+    supervised: supervised
+      ? {
+          stage: supervised.stage,
+          stageKey: supervised.stageKey,
+          prob: Number(supervised.prob.toFixed(6)),
+          risk: supervised.risk,
+          capped: !!supervised.capped,
+        }
+      : null,
+    modelStage: supervised ? supervised.stage : 0,
+  };
+}
+
+/**
+ * 有监督模型命中的理由（给人看的）。
+ *
+ * 措辞刻意区分阶段：
+ *   · 影子辅助 → 说「影子模型」（管理员据此知道它还不能封号，只是线索）；
+ *   · 主判     → 说「有监督模型」，并带上概率，可解释性对反作弊是硬要求。
+ * 概率取整数百分比：给「82.4%」这种精度会让人误以为它比无监督分更准。
+ */
+function supervisedReasons(sup) {
+  if (!sup) return [];
+  const p = Math.round((Number(sup.prob) || 0) * 100);
+  if (sup.stage >= 2) return [`有监督模型判定作弊概率 ${p}%`];
+  return [`影子模型判定作弊概率 ${p}%（辅助判据，不单独封禁）`];
 }
 
 /**

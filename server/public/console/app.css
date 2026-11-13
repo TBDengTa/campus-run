@@ -461,6 +461,60 @@ tbody tr:last-child td { border-bottom: none; }
   border-radius: var(--radius-sm);
 }
 
+/* ==================== 阶段性自升级（用户 2026-11-12） ====================
+ *
+ * 三级阶梯的视觉目标是「一眼看出现在在哪一级、下一级缺什么」：
+ *   · 当前级：橙色左边框 + 高亮底；已达级：✓ 前缀 + 绿色左边框；
+ *   · 未达级：灰底，不抢注意力；
+ *   · 「下一阶段缺什么」用红色列表（这是管理员唯一需要行动的地方）。
+ */
+.stage-src {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  margin-top: 10px;
+}
+.stage-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.stage-src-name { font-size: 13px; }
+.stage .spacer, .stage-head .spacer { flex: 1; }
+
+.stage-ladder { display: flex; gap: 8px; flex-wrap: wrap; }
+.stage-step {
+  flex: 1;
+  min-width: 180px;
+  background: var(--bg);
+  border-left: 3px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}
+.stage-step.done { border-left-color: var(--ok); background: var(--ok-soft); }
+.stage-step.current { border-left-color: var(--brand); background: var(--brand-soft); }
+.stage-step-t { display: block; font-size: 12px; font-weight: 600; }
+.stage-step-d { color: var(--text-3); font-size: 11px; line-height: 1.55; margin-top: 2px; }
+.stage-step .pill { margin-top: 4px; }
+
+.stage-kv { margin-top: 10px; }
+.stage-next {
+  margin-top: 10px;
+  border: 1px dashed var(--line-2);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-size: 12px;
+}
+.stage-next.is-ok { border-color: var(--ok); background: var(--ok-soft); border-style: solid; }
+.stage-next-t { font-weight: 600; }
+.stage-miss { color: var(--bad); font-size: 11px; line-height: 1.7; }
+.stage-warn {
+  margin-top: 8px;
+  color: var(--bad);
+  background: var(--bad-soft);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  font-size: 11px;
+}
+.stage-hist { margin-top: 10px; }
+.stage-hist-row { color: var(--text-3); font-size: 11px; line-height: 1.8; }
+
 /* ==================== 弹层 / Toast ==================== */
 
 .mask {

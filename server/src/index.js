@@ -117,6 +117,19 @@ async function bootstrap() {
   } catch (e) {
     console.warn('[union] 成员唯一索引迁移失败（不影响启动，但第二个校区的同名部门成员可能仍被拒收）:', e.message);
   }
+  // ③c 北斗抽奖流水的幂等索引迁移（同类陷阱）：
+  //     drawId 原先是**全局唯一**，但幂等的语义是「同一个人同一笔」。全局唯一时两个用户
+  //     撞出同一个 drawId，第二条插入被旧索引拒掉 → 被当成「重复提交」返回别人的奖品。
+  //     换成 (openid, drawId) 按人唯一，并显式删掉旧索引。
+  try {
+    const { migrateDrawIdIndex } = require('./services/beidou');
+    const m = await migrateDrawIdIndex();
+    if (m && m.dropped && m.dropped.length) {
+      console.log(`[beidou] 抽奖流水索引已迁移：新建 (openid, drawId) 按人唯一，删除冗余 ${m.dropped.join(', ')}`);
+    }
+  } catch (e) {
+    console.warn('[beidou] 幂等索引迁移失败（不影响启动，但跨用户撞 drawId 会串号）:', e.message);
+  }
   // ④ 班级台账（class_profiles）：**仅在整表为空时**首次生成，之后由管理端「从学籍同步」按钮触发，
   //    避免每次启动都全表扫描 users（参考 AGENTS.md 关于启动期迁移必须只在首次生效的约定）
   const ClassProfile = require('./models/class-profile');
@@ -137,6 +150,19 @@ async function listen() {
     console.log(`[server] 校园跑 2.0 后端已启动: http://${host}:${config.port}`);
   });
 
+  // ===== 唐跑AI数据模型 · 阶段性自升级（用户 2026-11-12「请增加阶段性自升级」）=====
+  // 为什么放在 listen() 之后而不是 bootstrap()：
+  //   ① 它会训练模型（几十毫秒~几秒）并查库，不该拖慢启动；
+  //   ② 检查器/演示脚本只 createApp 起临时服务，不该被顺带拉起训练（见 startScheduler 的 test 判断）。
+  // 定时器带 unref()，不会阻止优雅退出。
+  try {
+    const { startScheduler } = require('./services/anticheat-upgrade');
+    startScheduler();
+  } catch (e) {
+    // 自升级启动失败绝不能影响服务可用性（判定链路在无状态时会退回阶段 0 无监督）
+    console.warn('[anticheat-upgrade] 定时评估启动失败（不影响服务）:', e.message);
+  }
+
   // 优雅退出：systemd stop / 手动 kill 时先停止接收新连接，再关 Mongo 连接，
   // 避免请求处理到一半被强杀导致 502 或半写状态。
   let closing = false;
@@ -144,6 +170,12 @@ async function listen() {
     if (closing) return;
     closing = true;
     console.log(`[server] 收到 ${signal}，正在优雅退出…`);
+    // 先停掉自升级定时器：否则关库之后还在跑的评估会刷「connection closed」日志
+    try {
+      require('./services/anticheat-upgrade').stopScheduler();
+    } catch (e) {
+      /* 忽略 */
+    }
     server.close(() => {
       mongoose.connection.close(false).finally(() => {
         console.log('[server] 已退出');

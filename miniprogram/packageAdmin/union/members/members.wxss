@@ -300,6 +300,12 @@
   line-height: 1.5;
 }
 
+/* 范围缺失（分院干部没绑院校）：这是会挡住添加的硬条件，用警示色而不是品牌色 */
+.um-tip-warn {
+  background: var(--td-warning-color-1);
+  color: var(--td-warning-color-7);
+}
+
 /* 两列表单：院校 / 部门 / 职务 / 学年一屏放得下 */
 .um-form-grid {
   display: flex;

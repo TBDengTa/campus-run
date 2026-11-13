@@ -527,7 +527,23 @@ ok(
 {
   const dormSvc = require('fs').readFileSync(path.join(SERVER, 'services/student-dorm.js'), 'utf8');
   ok('楼名清单由 service 统一取（configuredBuildings）', /function configuredBuildings/.test(dormSvc));
-  ok('宿舍面板自带楼名（配置 ∪ 历史）', /configuredDormBuildings|cfgBuildings/.test(dormSvc) && /buildings/.test(dormSvc));
+  ok('宿舍面板自带楼名（不另开接口）', /configuredDormBuildings|cfgBuildings/.test(dormSvc) && /buildings/.test(dormSvc));
+  // 用户 2026-11-12「班级宿舍管理与用户详情的弹窗多出来 1号楼 与 洋河，正常的只有我的班级→宿舍管理」：
+  // 房间是按自由文本「楼名·门号」自动建档的，历史楼名里必然掺着手打的旧写法 / 错写法
+  // （实测「洋河」160 间 739 人在住、「1号楼」1 间房号 999 无人住）。
+  // 所以楼号候选**以配置清单为准**，只有「一条都没配」才退回历史聚合。
+  const boptSeg = (dormSvc.match(/function buildingOptions[\s\S]*?\n\}/) || [''])[0];
+  ok('楼号候选唯一实现在 service（buildingOptions）', !!boptSeg);
+  ok('楼号候选以配置清单为准', /for \(const name of cfg\)/.test(boptSeg));
+  ok('只在清单为空时才退回历史楼名', /if \(!cfg\.length\)/.test(boptSeg));
+  ok('buildDormPayload 走 buildingOptions（不再自己拼两份）', /buildingOptions\(/.test(dormSvc) && !/seenB/.test(dormSvc));
+  // 「现住楼不在清单里」由展示层补一条 legacy 胶囊兜住（否则住在旧写法楼里的人改床位被「请先选择楼号」堵死）
+  const dormSheetJs = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'components', 'dorm-sheet', 'dorm-sheet.js'), 'utf8');
+  ok('宿舍抽屉补「现住旧楼名」胶囊（legacy 标记）', /legacyBuilding/.test(dormSheetJs) && /legacy: true/.test(dormSheetJs));
+  ok('改选标准楼名后撤掉 legacy 胶囊', /filter\(\(c\) => c && !c\.legacy\)/.test(dormSheetJs));
+  // 管理端「班级管理 → 宿舍」页同样不许把全校历史楼名并进胶囊（图1 比 图3 多两块的根因）
+  const dormsPage = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'class-manage', 'dorms', 'dorms.js'), 'utf8');
+  ok('宿舍绑定页楼号胶囊只认配置清单', !/concat\(\(data\.buildings/.test(dormsPage) && /cfgBuildings\.length/.test(dormsPage));
   ok('班级域有只读楼名接口', classRoutes.includes("'/buildings'"));
   ok('班级域的楼名接口不挂 requirePermission', classRoutesNoComment.includes("'/buildings'"));
   // 前端不允许再为了填表去读「管理端配置接口」（只有楼名管理页与 config/* 子页可以）
@@ -850,7 +866,10 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   const memPage = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'members', 'members.js'), 'utf8');
   ok('配置页用共享判定', /require\('\.\.\/\.\.\/\.\.\/utils\/union-dept'\)/.test(cfgPage) && /deptFitsCampus\(dept, root\.isAll/.test(cfgPage));
   ok('成员页用共享判定', /require\('\.\.\/\.\.\/\.\.\/utils\/union-dept'\)/.test(memPage) && /deptFitsCampus\(d, campusOfMember\)/.test(memPage));
-  ok('成员页换校区时重算部门选项', /onAddCampus[\s\S]{0,400}buildAddDeptOptions/.test(memPage));
+  ok(
+    '成员页换校区时重算部门选项',
+    /onAddCampus[\s\S]{0,700}(buildAddDeptOptions|applyLeaderCampus)/.test(memPage)
+  );
   ok('可选部门从原始全量重算（不被已过滤列表污染）', /this\._deptAll \|\| \[\]\)\.filter\(\(d\) => deptFitsCampus/.test(memPage));
   // 录入部门在抽屉内按层级分组勾选（不套第二层弹窗）
   ok('模块录入部门按层级分组', /moduleDeptGroups/.test(cfgPage) && !/buildModuleCascader/.test(cfgPage));
@@ -924,16 +943,16 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   })();
   const envEx = require('fs').readFileSync(path.join(__dirname, '..', 'server', '.env.example'), 'utf8');
 
-  // 根因：相册原图 6~12MB，而检查照片上限 5MB —— 拍照经微信压缩能过，相册不能
-  ok('检查照片上传前压缩', /compressForUpload\(src\)/.test(entrySrc4) && /compressForUpload\(item\.path\)/.test(entrySrc4));
-  ok('压缩用 wx.compressImage', /wx\.compressImage\(/.test(entrySrc4));
-  ok('压缩后传给上传接口', /uploadCheckPhoto\(src,/.test(entrySrc4));
-  ok('压缩失败退回原图/继续用当前文件', /fail: \(\) => resolve\(''\)/.test(entrySrc4));
-  // 2026-10-28 用户要求「不限制或 100MB」→ 上限从 20 提到 100
-  ok('检查照片上限 100MB（可配）', /CHECK_PHOTO_MAX_MB = Number\(process\.env\.CHECK_PHOTO_MAX_MB \|\| 100\)/.test(routeUpSrc2));
-  ok('.env.example 有 CHECK_PHOTO_MAX_MB（100）', /CHECK_PHOTO_MAX_MB=100/.test(envEx));
-  // nginx 必须放得下（否则 Nginx 先回 413，Node 根本收不到）
-  ok('nginx client_max_body_size 足够', (() => { const m = nginxSrc.match(/client_max_body_size\s+(\d+)m/); return !!m && Number(m[1]) >= 10; })());
+  // 2026-11-12 用户「解除所有上传照片的限制」：原图直传，不再压缩 / 不再限张数 / 不再限体积。
+  // 反向断言同样重要：任何一条限制被"顺手"加回来，这里都会 FAIL。
+  ok('原图直传（上传前不再强制压缩）', /uploadCheckPhoto\(item\.path,/.test(entrySrc4) && !/compressForUpload/.test(entrySrc4));
+  // 平台上传通道可能有自己的上限：只允许「失败后压缩重试一次」，不允许上传前预压缩
+  ok('压缩仅作失败兜底（retryWithCompressed）', /retryWithCompressed/.test(entrySrc4) && /compressImage/.test(entrySrc4));
+  ok('前端不再有 9 张上限', !/MAX_PHOTOS|maxPhotos/.test(entrySrc4));
+  ok('检查照片不设体积上限（0=不限）', /CHECK_PHOTO_MAX_MB = Number\(process\.env\.CHECK_PHOTO_MAX_MB \|\| 0\) \|\| 0/.test(routeUpSrc2));
+  ok('.env.example 上限 0（不限制）', /CHECK_PHOTO_MAX_MB=0/.test(envEx));
+  // nginx 必须同步放开（否则 Nginx 先回 413，Node 根本收不到）
+  ok('nginx client_max_body_size 0（不限制）', /client_max_body_size\s+0;/.test(nginxSrc));
 // ===== 后台定位接口必须声明（用户 2026-10-28 发布受阻）=====
 {
   const appJsonRaw = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'app.json'), 'utf8');
@@ -1178,9 +1197,14 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   const sjJs2 = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'scan-join', 'scan-join.js'), 'utf8');
 
   // 服务端 join-options 必须按部门 schoolId 算层级，不能一律校学生会
-  ok('join-options 带校区名', /schoolNameById/.test(uSrc2) && /const schoolNameById = new Map\(campusList/.test(uSrc2));
+  ok('join-options 带校区名', /schoolNameById/.test(uSrc2) && /new Map\(allCampuses\.map/.test(uSrc2));
   // 共用部门（无 schoolId）在每个校区各展开一条：levelText =「<校区>学生会」
-  ok('共用部门按校区展开', /if \(scope === 'both' \|\| scope === 'branch'\)/.test(uSrc2) && /levelText: c\.name \? `\$\{c\.name\}学生会`/.test(uSrc2));
+  ok(
+    '共用部门按校区展开（不放到校级层）',
+    /for \(const c of campusList\)/.test(uSrc2) &&
+      /分院学生会/.test(uSrc2) &&
+      !/scope\.schoolWide && deptScope === 'both'/.test(uSrc2)
+  );
   ok('join-options 下发校区分组', /campuses: campusList/.test(uSrc2));
   // 前端直接展示服务端给的 levelText，不再自己按 isPresidium 猜
   ok('前端不再按身份猜层级', !/isPresidium \? '校学生会'/.test(sjJs2));
@@ -1197,7 +1221,7 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('成员展示层级带校区名', /levelText: m\.level === 'school' \? '校学生会' : m\.schoolName/.test(uSrc2));
 }
 
-// ===== 照片上限 100MB + 失败必提示原因（用户 2026-10-28）=====
+// ===== 照片解除全部上传限制 + 失败必提示原因（用户 2026-11-12，沿用 2026-10-28 的提示要求）=====
 {
   const upRoute = require('fs').readFileSync(path.join(SERVER, 'routes/upload.js'), 'utf8');
   const errMw = require('fs').readFileSync(path.join(SERVER, 'middlewares/error.js'), 'utf8');
@@ -1212,14 +1236,15 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
     } catch (e) { return ''; }
   })();
 
-  // ① 上限 100MB，三层必须对齐（缺一层就会撞在中间那层且收不到可读报错）
-  ok('照片上限 100MB', /CHECK_PHOTO_MAX_MB || 100/.test(upRoute));
-  ok('.env.example 上限 100', /CHECK_PHOTO_MAX_MB=100/.test(require('fs').readFileSync(path.join(__dirname, '..', 'server', '.env.example'), 'utf8')));
-  ok('前端安全线 ≥ 95MB（大图原样传）', /PHOTO_SAFE_BYTES = 95 \* 1024 \* 1024/.test(entryJs));
-  ok('nginx 上限 128m（> 100MB + multipart 余量）', (() => { const m = nginxConf.match(/client_max_body_size\s+(\d+)m/); return !!m && Number(m[1]) >= 128; })());
+  // ① 用户 2026-11-12：**不再限制体积**，三层必须同时放开
+  //（缺一层就会撞在中间那层且收不到可读报错；反向断言防止有人把上限加回来）
+  ok('照片不限制体积（0 = 不限）', /CHECK_PHOTO_MAX_MB \|\| 0\) \|\| 0/.test(upRoute));
+  ok('.env.example 上限 0', /CHECK_PHOTO_MAX_MB=0/.test(require('fs').readFileSync(path.join(__dirname, '..', 'server', '.env.example'), 'utf8')));
+  ok('前端不再有压缩安全线', !/PHOTO_SAFE_BYTES/.test(entryJs));
+  ok('nginx 不限制请求体（0）', /client_max_body_size\s+0;/.test(nginxConf));
 
   // ② 失败必须说明原因
-  ok('multer 超限报出真实上限', /单张最多 \$\{limitMb\} MB/.test(errMw));
+  ok('multer 超限报出真实上限', /该入口单张上限约 \$\{limitMb\} MB/.test(errMw));
   ok('413 按状态码返回', /res\.status\(413\)/.test(errMw));
   ok('前端区分网关 413', /client_max_body_size/.test(reqJs));
   ok('前端区分超时 / 取消 / 网络', /上传超时/.test(reqJs) && /已取消上传/.test(reqJs) && /请检查网络后重试/.test(reqJs));
@@ -1240,17 +1265,26 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('扫码页改走 join-options 接口', /\/api\/union\/manage\/join-options/.test(sjJs));
   ok('join-options 路由存在', /'\/manage\/join-options'/.test(uSrc));
   ok('主席团标记 presidium 下发给前端', /presidium:\s*isPresidium/.test(uSrc));
-  ok('主席团可加载全部业务部门', /const visible = isPresidium \? joinable/.test(uSrc));
+  ok('主席团可加载全部业务部门', /const visible = scope\.isPresidium[\s\S]{0,40}business/.test(uSrc));
 
-  // ② 主席团不可作为可加入部门
-  ok('主席团从可选部门中排除', /joinable = all\.filter\(\(d\) => d\.key !== unionSvc\.PRESIDIUM_KEY\)/.test(uSrc));
+  // ② 主席团不可作为「扫码加入」的可选部门（成员管理页的「添加」可通过 ?manage=1 引入）
+  ok('主席团从扫码可选部门中排除', /const business = all\.filter\(\(d\) => d\.key !== unionSvc\.PRESIDIUM_KEY\)/.test(uSrc));
   ok('服务端拒绝加入主席团', /主席团不是可加入的部门/.test(uSrc));
 
   // ③ 职务：部员 / 副部长 / 部长，且不能高于自己
   ok('职务白名单三种', /\['member', 'vice_minister', 'minister'\]\.includes\(role\)/.test(uSrc));
   ok('写入 role 而非固定 member', /^\s+role,\s*$/m.test(uSrc) && !/role: 'member',\s*\n\s*status: 'active'/.test(uSrc));
   ok('不能授予高于自己的职务', /不能授予高于你自己的职务/.test(uSrc));
-  ok('roleRank / maxRoleRank 存在', /function roleRank/.test(uSrc) && /function maxRoleRank/.test(uSrc));
+  // 等级判定唯一实现在 services/union.js；路由只做别名
+  {
+    const svcSrc = require('fs').readFileSync(path.join(SERVER, 'services/union.js'), 'utf8');
+    ok(
+      'roleRank / maxRoleRank 存在（service 唯一实现）',
+      /function roleRank\(/.test(svcSrc) &&
+        /function maxRoleRank\(/.test(svcSrc) &&
+        /const roleRank = unionSvc\.roleRank/.test(uSrc)
+    );
+  }
 
   // ④ 部门可用性按 scope 判（旧规则「校级只允许主席团」与 11 个校级部门冲突）
   ok('部门可用性按 scope 判定', /const scope = String\(dept\.scope \|\| 'both'\)/.test(uSrc));
@@ -1522,18 +1556,23 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   })();
   const routeUpSrc3 = require('fs').readFileSync(path.join(SERVER, 'routes/upload.js'), 'utf8');
 
-  // 2026-10-28：安全线从 8MB 提到 95MB（上限 100MB，留 5MB 给 multipart）
-  ok('自适应压缩：小图原样传（≤95MB）', /const PHOTO_SAFE_BYTES = 95 \* 1024 \* 1024/.test(entrySrc5) && /size <= PHOTO_SAFE_BYTES\) return src/.test(entrySrc5));
-  ok('自适应压缩：先读原图大小', /getFileInfo\(/.test(entrySrc5) && /getFileSize\(src\)/.test(entrySrc5));
-  ok('逐级降质量 85→70→55', /\[85, 70, 55\]/.test(entrySrc5));
-  ok('越清晰越好：长边 2560（不是 1280）', /const PHOTO_MAX_EDGE = 2560/.test(entrySrc5));
-  ok('够小就停止继续压', /if \(s > 0 && s <= PHOTO_SAFE_BYTES\) return current/.test(entrySrc5));
-  ok('检查照片上限 100MB（上限已放开）', /CHECK_PHOTO_MAX_MB \|\| 100/.test(routeUpSrc3));
-  ok('nginx 体积上限 > 20MB', (() => { const m = nginxSrc2.match(/client_max_body_size\s+(\d+)m/); return !!m && Number(m[1]) > 20; })());
+  // 2026-11-12「解除所有上传照片的限制」：不压缩、不限张数、不限体积
+  const checkModsSrc = require('fs').readFileSync(path.join(SERVER, 'services/check-modules.js'), 'utf8');
+  ok('前端不再自适应预压缩', !/compressForUpload/.test(entrySrc5) && !/PHOTO_SAFE_BYTES/.test(entrySrc5) && !/PHOTO_MAX_EDGE/.test(entrySrc5));
+  ok('失败兜底压缩只重试一次', /retryWithCompressed/.test(entrySrc5) && /const retried = await this\.retryWithCompressed/.test(entrySrc5));
+  ok('前端不再限制总张数', !/MAX_PHOTOS|maxPhotos/.test(entrySrc5) && /PHOTO_PICK_COUNT = 9/.test(entrySrc5));
+  ok('前端不按 9 张裁剪已存照片', !/photos\.slice\(0, MAX_PHOTOS\)/.test(entrySrc5));
+  ok('服务端不限张数（normalizeDetails 不再 slice）', !/PHOTO_LIMIT/.test(checkModsSrc) && !/\.slice\(0, PHOTO_LIMIT\)/.test(checkModsSrc));
+  ok('检查照片不限制体积（0 = 不限）', /CHECK_PHOTO_MAX_MB \|\| 0\) \|\| 0/.test(routeUpSrc3));
+  ok('nginx 请求体不限制（0）', /client_max_body_size\s+0;/.test(nginxSrc2));
 }
 
   // 旧实现把服务端文案覆盖成笼统的「照片太大」；现在保留服务端原文（含真实上限）
-  ok('超限时保留服务端可操作原因', !/照片太大（压缩后仍超限）/.test(entrySrc4) && /单张最多/.test(require('fs').readFileSync(path.join(SERVER, 'middlewares/error.js'), 'utf8')));
+  ok(
+    '超限时保留服务端可操作原因',
+    !/照片太大（压缩后仍超限）/.test(entrySrc4) &&
+      /该入口单张上限约/.test(require('fs').readFileSync(path.join(SERVER, 'middlewares/error.js'), 'utf8'))
+  );
 }
 
 // ===== 图库上传失败：mimetype 不可靠 + 头像 2MB 太小（用户 2026-10-26 第四轮）=====
@@ -1757,13 +1796,16 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
         this.code = code;
       }
     }
+    // unionSvc 传**真实 service**：assertRoleFitsDept 现在委托 roleFitsDept（唯一实现），
+    // 用一个只有 PRESIDIUM_KEY 的桩会让所有合法组合都抛 TypeError。
+    const svcForGuard = require(path.join(SERVER, 'services/union'));
     // eslint-disable-next-line no-new-func
     const guard = new Function(
       'unionSvc',
       'PRESIDIUM_ROLES',
       'ApiError',
       `${roleFn}; return assertRoleFitsDept;`
-    )({ PRESIDIUM_KEY: 'presidium' }, ['president', 'vice_president'], ContractApiError);
+    )(svcForGuard, ['president', 'vice_president'], ContractApiError);
 
     const mustPass = [
       ['president', 'presidium'],
@@ -2264,10 +2306,74 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
 
   const csJs = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'class-status', 'class-status.js'), 'utf8');
   const csWxml = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'class-status', 'class-status.wxml'), 'utf8');
+  // 路由源码：本块内多处要断言（窗口白名单），下面 [第三轮] 段也读一次同名变量，
+  // 这里用独立名字避免重复 require 时的作用域冲突。
+  const csRoute2 = require('fs').readFileSync(path.join(SERVER, 'routes/admin/class-profile.js'), 'utf8');
   ok('前端有日期选择器（mode=date 且不许选未来）', /mode="date"[^>]*end="\{\{todayKeyText\}\}"/.test(csWxml));
   ok('选了非今天才传 today（缓存友好）', /if \(d\.selectedDate\) q\.today = d\.selectedDate;/.test(csJs));
   ok('快捷 chip 文案随日期联动（今日→当日）', /chipsFor/.test(csJs) && /'当日未达标'/.test(csJs));
-  ok('考勤区间随所选日期展示（没有周语义）', /attRangeText/.test(csJs) && /attRangeText/.test(csWxml));
+  // ===== 考勤统计窗口：本日 / 本周 / 本月（用户 2026-11-12「要本日、本周、本月，
+  // 而不是3天7天这样」）。旧口径「往前回看 N 天、永远没有周语义」已被明确否掉。=====
+  ok('窗口只有本日/本周/本月三档（不再有 3/7/14/30 天）',
+    /ATT_RANGES = \{[\s\S]{0,200}day:[\s\S]{0,80}week:[\s\S]{0,80}month:/.test(boardSrc)
+      && !/DEFAULT_DAYS|MAX_DAYS/.test(boardSrc)
+      && !/DAY_OPTIONS = \[3, 7, 14, 30\]/.test(csJs), boardSrc.match(/DEFAULT_DAYS/) ? '服务层还留着天数窗口' : csJs.match(/DAY_OPTIONS[^;]*/) || '');
+  ok('窗口起止一律锚定所选日期（不是「今天」）',
+    /function attWindow\(rangeKey, day\)/.test(boardSrc)
+      && /monthRange\(day\.slice\(0, 7\)\)/.test(boardSrc)
+      && /weekRange\(day\)/.test(boardSrc));
+  ok('周窗口用 ISO 周一起（与校园跑周达标同一真源，不引 band-chao 的当月第N周）',
+    /dates\.weekRange\(day\)/.test(boardSrc) && !/monthWeekRange/.test(boardSrc));
+  ok('非法窗口回退本周（不能让拼错的参数悄悄统计出空区间）',
+    /ATT_RANGES\[rangeKey\] \? rangeKey : DEFAULT_RANGE/.test(boardSrc) && /DEFAULT_RANGE = 'week'/.test(boardSrc));
+  ok('缓存 key 含窗口维度（否则切窗口拿到上一个窗口的数据）',
+    /const cacheKey = `\$\{day\}\|\$\{from\}\|\$\{weekStart\}\|\$\{attRangeKey\}`/.test(boardSrc),
+    (boardSrc.match(/const cacheKey = .*/) || [''])[0]);
+  ok('路由只认 day/week/month 白名单',
+    /\['day', 'week', 'month'\]\.includes\(str\(req\.query\.attRange\)\)/.test(csRoute2));
+  ok('前端传 attRange 不传 days', /attRange: d\.attRange/.test(csJs) && !/q\.days|days: d\.days/.test(csJs));
+  ok('前端窗口切换走 onAttRange（旧 onDays 已移除）', /onAttRange\(e\)/.test(csJs) && !/onDays\(/.test(csJs) && /bind:tap="onAttRange"/.test(csWxml));
+
+  // ===== 考勤计算规则文案（用户 2026-11-12「要在图片下面标注考勤计算规则，如迟到缺勤等逻辑」）=====
+  // 规则句子必须**服务端生成**：图片、页面脚注、复制文案三处共用一份。
+  // 前端自己写一份的结局是改了 PERSON_DEDUCT 忘了改说明 —— 老师照着过时说明质疑正确分数。
+  ok('规则文案在服务端生成（buildAttRuleLines）', /function buildAttRuleLines\(\)/.test(boardSrc));
+  ok('规则里的数字取自真源（不写死单价）', (() => {
+    // match 可能为 null（函数被改名/删除）—— 直接 [0] 会把检查器本身炸掉，
+    // 检查器崩了比断言失败更糟：所有断言都不会跑完，看起来像「检查通过」。
+    const seg = (boardSrc.match(/function buildAttRuleLines[\s\S]*?\n\}/) || [''])[0];
+    return seg.length > 0 && /PERSON_DEDUCT/.test(seg) && /scoreScale\.FULL_SCORE/.test(seg);
+  })(), (boardSrc.match(/function buildAttRuleLines[\s\S]{0,400}/) || [''])[0]);
+  ok('规则写明迟到与缺勤两类逻辑（用户点名的两项）',
+    /迟到/.test(boardSrc) && /缺勤/.test(boardSrc) && /未归/.test(boardSrc));
+  ok('规则随响应下发（attRuleLines）', /attRuleLines: buildAttRuleLines\(\)/.test(boardSrc));
+  ok('copy=all 的复制文案附规则（收窄到只看日达标时不附，避免噪音）',
+    /if \(scope === 'all'\)[\s\S]{0,200}考勤计算规则/.test(boardSrc));
+  // 图片：规则画在表格下面（用户明确「在图片下面标注」）。
+  // 底部布局**只算一次**（planShareFooter 同时给 footH 和每行 y），绘制按它给的坐标画 ——
+  // 高度与绘制分两处各算，改动时漏一处就是内容重叠或被切，而画布溢出是静默的
+  //（图片生成成功、发出去才发现规则少了半行，而这图是要进工作群的）。
+  ok('图片底部布局单点计算（planShareFooter 同时产出 footH 与每行 y）',
+    /planShareFooter\(\{ omitted, wrapped \}\)/.test(csJs)
+      && /return \{ lines: placed, footH: Math\.max\(RULE_BRAND_H, y \+ 26\) \}/.test(csJs)
+      && /const footH = foot\.footH;/.test(csJs)
+      && /for \(const ln of foot\.lines\)/.test(csJs));
+  ok('规则块画在表格下方（标题品牌色 + 条目灰字）',
+    /kind === 'ruleTitle'/.test(csJs) && /考勤计算规则/.test(csJs));
+  ok('画布折行用字符预算（高度要先于 ctx 算出，所以不能用 measureText）',
+    /RULE_LINE_CHARS = 34/.test(csJs)
+      // 断言的是「没有调用」而不是「没提到」：注释里解释为什么不用 measureText 是必要的，
+      // 按 /measureText/ 一刀切会把注释也算成失败。
+      && !/ctx\.measureText\s*\(/.test(csJs));
+  // 后端没给规则（老服务）时不前端编造一份过时说明
+  ok('后端没给规则时不前端编造（wrapped 为空则不画规则块）',
+    /wrapped = ruleLines\.length \? \[ruleTitle, \.\.\./.test(csJs)
+      && /if \(wrapped && wrapped\.length\)/.test(csJs));
+  // 失败路径必须清掉规则文案：留着上一次的会被当成最新数据发进群里
+  ok('加载失败清空 attRuleLines/attRuleText', /attRuleLines: \[\],\s*\n\s*attRuleText: ''/.test(csJs));
+  ok('页面脚注用服务端规则（不再硬编码 0.05 分）',
+    /d\.attRuleLines\[0\]/.test(csJs) && !/早八每迟到 1 人扣 0\.05 分/.test(csJs),
+    (csJs.match(/考勤为 10 分制[^\n]*/) || ['已无硬编码'])[0]);
 
   // ===== 班级状态第二轮增强（2026-11-03：年级多选 / below95 / 排序 / 生成图片）=====
   ok('档位有 below95 且不再有 belowHalf', /below95:\s*\{ label: '低于95%'/.test(boardSrc) && !/belowHalf/.test(boardSrc));

@@ -28,6 +28,12 @@ const mongoose = require('mongoose');
 
 // 主席团部门 key（复核权与「主席团」身份的判定基准）
 const PRESIDIUM_KEY = 'presidium';
+const PRESIDIUM_ROLES = ['president', 'vice_president'];
+// 业务部门内的职务等级（用户 2026-10-28「只能加入部门，成为部员或副部长、部长等」）：
+//   部员(0) < 副部长(1) < 部长(2)
+// 主席 / 副主席不在这个序列里 —— 它们属于主席团（另一个维度），由 PRESIDIUM_RANK 单独算。
+const ROLE_RANK = { member: 0, vice_minister: 1, minister: 2 };
+const PRESIDIUM_RANK = { vice_president: 1, president: 2 };
 const ROLE_TEXT = memberModel.ROLE_TEXT;
 
 // ===== 播种 =====
@@ -465,8 +471,15 @@ function canReview(identity, targetDepartmentId, inspectorDeptKey, moduleDeptKey
 }
 
 // ===== 学生会成员管理范围 =====
-// 主席团：校级全校；分院限本院校（且只管理分院成员）。
-// 部长/副部长：本部门 deptKey 成员，校级部长全校，分院部长限本院校。
+//
+// 用户 2026-11-12 口径（本文件是**唯一实现**，路由只做鉴权与取参）：
+//   · 校学生会正副主席：全校的院校 / 部门 / 层级都能管、能加；
+//   · 分院正副主席：只能管 / 加**本院（校区）**的成员（校级成员不在范围内）；
+//   · 正副部长：只能管 / 加**本部门**的成员；校级部长可跨校区，分院部长限本校区；
+//   · 普通部员：没有成员管理权。
+//
+// 判定顺序固定为「层级/校区 → 部门」，任一层不放行即越权。
+// **fail-closed**：双方任一侧拿不到院校归属时一律拒绝（不能因为「无法判断」就放行）。
 function managerDeptKeys(identity) {
   return new Set(
     (identity.roles || [])
@@ -478,11 +491,22 @@ function managerDeptKeys(identity) {
 function sameCampus(identity, member) {
   const schoolIds = new Set((identity.schoolIds || []).map(String));
   const schoolNames = new Set((identity.schoolNames || []).filter(Boolean));
-  return (
+  if (
     (member.schoolId && schoolIds.has(String(member.schoolId))) ||
-    (member.schoolName && schoolNames.has(member.schoolName)) ||
-    false
-  );
+    (member.schoolName && schoolNames.has(member.schoolName))
+  ) {
+    return true;
+  }
+  // 老数据兜底：branch 记录可能只有 departmentId（无 schoolId / schoolName）。
+  // identity.departmentIds 已把「本人院校展开出的全部院系 + 老口径 departmentId」并在一起，
+  // 因此目标成员只要落在其中任一院系，就说明与本人同院校。
+  // 没有这层兜底时，存量成员会在列表里「看得见但一条都管不了」（静默 403）。
+  const deptId = member.departmentId ? String(member.departmentId) : '';
+  if (deptId) {
+    const myDeptIds = (identity.departmentIds || []).map(String);
+    if (myDeptIds.includes(deptId)) return true;
+  }
+  return false;
 }
 
 function canManageMembers(identity) {
@@ -500,6 +524,106 @@ function memberInManageScope(identity, member) {
   if (!keys.has(member.deptKey)) return false;
   if (identity.level === 'school') return true;
   return member.level === 'branch' && sameCampus(identity, member);
+}
+
+// 业务部门职务等级；不认识的职务返回 -1（调用方据此判「不可授予」）
+function roleRank(role) {
+  const r = String(role || '');
+  return Object.prototype.hasOwnProperty.call(ROLE_RANK, r) ? ROLE_RANK[r] : -1;
+}
+
+// 某身份在指定业务部门能授予的最高职务等级（主席团 = 2，可授予任何业务部门职务）
+function maxRoleRank(identity, deptKey) {
+  if (!identity) return -1;
+  if (isPresidiumIdentity(identity)) return 2;
+  const key = String(deptKey || '');
+  return (identity.roles || [])
+    .filter((r) => r && r.deptKey === key && ['minister', 'vice_minister'].includes(r.role))
+    .reduce((max, r) => Math.max(max, roleRank(r.role)), -1);
+}
+
+// 主席团内部等级：主席(2) > 副主席(1) > 其它(0)
+function presidiumRankOf(identity) {
+  if (!identity) return 0;
+  return (identity.roles || [])
+    .filter((r) => r && (r.deptKey === PRESIDIUM_KEY || PRESIDIUM_ROLES.includes(r.role)))
+    .reduce((max, r) => Math.max(max, PRESIDIUM_RANK[r.role] || 0), 0);
+}
+
+/**
+ * 成员的「管理范围快照」（纯函数，供列表过滤 / 新增校验 / 前端下发的选项共用）。
+ * 返回 null = 没有成员管理权。
+ */
+function managerScopeOf(identity) {
+  if (!identity || !identity.isMember || !canManageMembers(identity)) return null;
+  return {
+    isPresidium: isPresidiumIdentity(identity),
+    schoolWide: identity.level === 'school',
+    schoolIds: (identity.schoolIds || []).map(String),
+    schoolNames: (identity.schoolNames || []).filter(Boolean),
+    deptKeys: [...managerDeptKeys(identity)],
+  };
+}
+
+// 目标层级 / 校区是否在管辖范围内（校级 = 全校；分院 = 仅本院校展开出的校区）
+function campusAllowed(scope, slot) {
+  if (!scope) return false;
+  if (scope.schoolWide) return true;
+  if (!slot || slot.level !== 'branch') return false;
+  const schoolId = slot.schoolId ? String(slot.schoolId) : '';
+  if (schoolId && scope.schoolIds.includes(schoolId)) return true;
+  const schoolName = slot.schoolName ? String(slot.schoolName) : '';
+  if (schoolName && scope.schoolNames.includes(schoolName)) return true;
+  return false;
+}
+
+/**
+ * 能否在「目标层级 + 校区 + 部门」新增成员（成员管理页的「添加」/ 扫码加人共用）。
+ * @param {Object} identity
+ * @param {{level:'school'|'branch', schoolId?:string, schoolName?:string, deptKey:string}} slot
+ */
+function canManageMemberSlot(identity, slot) {
+  const scope = managerScopeOf(identity);
+  if (!scope) return false;
+  if (!campusAllowed(scope, slot)) return false;
+  if (scope.isPresidium) return true;
+  return scope.deptKeys.includes(String((slot && slot.deptKey) || ''));
+}
+
+/**
+ * 能否把某人授予某个职务（不能授予高于自己的职务）。
+ *
+ * 双向口径：
+ *   · 主席 / 副主席 ⇄ 主席团（业务部门不能出现主席，主席团不能出现部长）；
+ *   · 非主席团只能授予业务职务，且不高于自己在该部门的职务等级。
+ * 主席团可授予任何业务部门职务；主席团内部按主席 > 副主席封顶。
+ */
+function canGrantRole(identity, deptKey, role) {
+  if (!identity || !identity.isMember || !canManageMembers(identity)) return false;
+  const d = String(deptKey || '');
+  const r = String(role || '');
+  const isPresidiumDept = d === PRESIDIUM_KEY;
+  const isPresidiumRole = PRESIDIUM_ROLES.includes(r);
+  if (isPresidiumDept || isPresidiumRole) {
+    if (!isPresidiumDept || !isPresidiumRole) return false;
+    if (!isPresidiumIdentity(identity)) return false;
+    return presidiumRankOf(identity) >= (PRESIDIUM_RANK[r] || 0);
+  }
+  if (isPresidiumIdentity(identity)) return roleRank(r) >= 0;
+  if (!managerDeptKeys(identity).has(d)) return false;
+  return roleRank(r) >= 0 && roleRank(r) <= maxRoleRank(identity, d);
+}
+
+// 部门 ↔ 职务是否匹配（双向）：主席团只有主席/副主席；主席/副主席只能挂主席团。
+// 管理端与用户端都走这一份，禁止各写一套（否则绕过 UI 直接 POST 就能造出矛盾记录）。
+function roleFitsDept(role, deptKey) {
+  const d = String(deptKey || '');
+  const r = String(role || '');
+  const isPresidiumDept = d === PRESIDIUM_KEY;
+  const isPresidiumRole = PRESIDIUM_ROLES.includes(r);
+  if (isPresidiumDept) return isPresidiumRole;
+  if (isPresidiumRole) return false;
+  return roleRank(r) >= 0;
 }
 
 // ===== 学年（届次）=====
@@ -711,7 +835,14 @@ function cropPhotos(record, opts = {}) {
 
 module.exports = {
   PRESIDIUM_KEY,
+  PRESIDIUM_ROLES,
+  ROLE_RANK,
+  PRESIDIUM_RANK,
   ROLE_TEXT,
+  roleRank,
+  maxRoleRank,
+  presidiumRankOf,
+  roleFitsDept,
   seedUnionDepartments,
   migrateMemberUniqueIndex,
   resolveIdentity,
@@ -727,6 +858,10 @@ module.exports = {
   canReviewAny,
   canManageMembers,
   memberInManageScope,
+  managerScopeOf,
+  campusAllowed,
+  canManageMemberSlot,
+  canGrantRole,
   academicYearStart,
   termOf,
   academicTerms,

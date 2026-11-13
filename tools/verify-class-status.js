@@ -457,14 +457,32 @@ function assert(cond, label, extra) {
   const fMix = board.applyBoardFilter(r, { quick: 'zeroToday', level: 'zero', metric: 'daily' });
   assert(fMix.rows.length > 0, 'chip 与档位同时传入时不筛成空', fMix.rows.length);
 
-  // ---- [9] 缓存不返回过期数据 ----
-  console.log('\n[9] 缓存一致性');
-  const r2 = await board.classStatusBoard();
-  assert(
-    JSON.stringify(r2.totals) === JSON.stringify(r.totals),
-    '缓存命中的总量与冷查询一致',
-    { cold: r.totals, warm: r2.totals }
-  );
+  // ---- [9] 缓存：命中必须返回同一份计算结果，且**不同窗口不得共用缓存** ----
+  //
+  // 旧断言写的是「缓存命中的总量 == 脚本开头那次冷查询的总量」，这在生产库上是**假失败**：
+  // 冷聚合本身要 14 秒，脚本从 [1] 跑到 [9] 早超过 60 秒 TTL，期间学生还在同步步数
+  // （实测 achievedToday 756 → 759），拿几分钟前的快照比数字当然比不上。
+  // 缓存真正要保证的是两件事，都跟数据变化无关：
+  //   ① 60 秒内重复请求**不重算**（返回同一个对象引用）；
+  //   ② 窗口换了（本日/本周/本月）必须重算 —— 2026-11-12 把缓存 key 从
+  //      `day|from|weekStart|span` 改成 `day|from|weekStart|attRangeKey`，
+  //      key 里少了这一维的话，切窗口会拿到上一个窗口的数据（数字看着正常但区间是错的，
+  //      正是这页最要命的一类静默 bug）。
+  console.log('\n[9] 缓存一致性与 key 维度');
+  {
+    const c1 = await board.classStatusBoard({ force: true });
+    const c2 = await board.classStatusBoard();
+    assert(c1 === c2, '60 秒内重复请求命中缓存（同一对象引用，未重算）', { same: c1 === c2 });
+    // 不同窗口必须是不同的缓存项
+    const cDay = await board.classStatusBoard({ attRange: 'day' });
+    const cMonth = await board.classStatusBoard({ attRange: 'month' });
+    assert(cDay !== c2 && cMonth !== c2, '切换窗口不会命中上一个窗口的缓存', {
+      dayHit: cDay === c2, monthHit: cMonth === c2,
+    });
+    assert(cDay.attRange === 'day' && cMonth.attRange === 'month', '缓存项各自记住自己的窗口', [cDay.attRange, cMonth.attRange]);
+    // 再取一次同窗口 → 应命中（证明 key 稳定，不是每次都重算）
+    assert(await board.classStatusBoard({ attRange: 'month' }) === cMonth, '同窗口二次请求命中缓存');
+  }
 
   // ---- [10] 考勤字段路径（2026-11-03 修复「考勤一直是 —」的回归锚）----
   //
@@ -573,14 +591,101 @@ function assert(cond, label, extra) {
     }
   }
 
-  // ---- [11] today 参数（2026-11-03 前端日期选择接入的口径锚）----
-  console.log('\n[11] 日期选择（today 参数）');
+  // ---- [11] today 参数 + 考勤窗口（本日/本周/本月，用户 2026-11-12）----
+  console.log('\n[11] 日期选择（today）与考勤统计窗口');
   {
+    // 独立算「该日所在 ISO 周的周一」：不复用被测的 dates.weekRange，
+    // 否则实现写错时断言会跟着一起错（本文件的存在意义就是交叉核对）。
+    const mondayOf = (key) => {
+      const d = new Date(`${key}T00:00:00`);
+      const shift = (d.getDay() + 6) % 7; // 0=周一
+      d.setDate(d.getDate() - shift);
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      return `${d.getFullYear()}-${m}-${String(d.getDate()).padStart(2, '0')}`;
+    };
+    const firstOfMonth = (key) => `${key.slice(0, 7)}-01`;
+
     const pastDay = dates.addDays(day, -20); // 必然落在本周之前，周起点应早于本周
     const rp = await board.classStatusBoard({ today: pastDay, force: true });
     assert(rp.today === pastDay, 'today 覆盖生效（日列 = 所选日期）', rp.today);
     assert(rp.weekStart === dates.weekRange(pastDay).startKey, '周起点随所选日期重算', rp.weekStart);
-    assert(rp.from === dates.addDays(pastDay, -6), '考勤区间锚定所选日期（默认 7 天）', rp.from);
+    // 缺省窗口 = 本周（旧「回看 7 天」已被用户否掉）
+    assert(rp.attRange === 'week', '缺省考勤窗口 = 本周', rp.attRange);
+    assert(rp.from === mondayOf(pastDay), `本周窗口从周一开始（独立算的周一 = ${mondayOf(pastDay)}）`, rp.from);
+    assert(rp.from !== dates.addDays(pastDay, -6), '不再是旧的「回看 7 天」', rp.from);
+
+    // 三个窗口逐个验起止
+    const rd = await board.classStatusBoard({ today: pastDay, attRange: 'day', force: true });
+    assert(rd.from === pastDay && rd.today === pastDay, '本日窗口 = 所选日当天', [rd.from, rd.today]);
+    assert(rd.attRangeLabel === '本日', '本日窗口回显中文标签', rd.attRangeLabel);
+    const rm = await board.classStatusBoard({ today: pastDay, attRange: 'month', force: true });
+    assert(rm.from === firstOfMonth(pastDay), `本月窗口从 1 号开始（期望 ${firstOfMonth(pastDay)}）`, rm.from);
+    assert(rm.attRangeLabel === '本月', '本月窗口回显中文标签', rm.attRangeLabel);
+
+    // 窗口必须真的影响数据，不只是改个 from：造一个临时班，把记录分别落在
+    // 「所选日 / 所选日所在周一 / 所选日所在月 1 号」三个位置上，
+    // 于是 本日 ⊆ 本周 ⊆ 本月 应当**逐级变多**。
+    // 不造数的话历史日期本来就一条记录都没有，0 ≤ 0 ≤ 0 恒成立 —— 那是假绿。
+    // TS 是 [10] 块的局部变量，这里必须自己造一个（临时班名不能与别的节撞）
+    const TS2 = String(Date.now());
+    const CLSW = `verify窗口_${TS2}班`;
+    const monday = mondayOf(pastDay);
+    const monthFirst = firstOfMonth(pastDay);
+    const winDates = [...new Set([pastDay, monday, monthFirst])];
+    await ClassProfile.create({ className: CLSW, status: 'normal' });
+    await CheckRecord.insertMany(
+      winDates.map((dk, i) => ({
+        moduleKey: 'morning_exercise',
+        date: dk,
+        period: '',
+        targetType: 'class',
+        targetId: CLSW,
+        targetName: CLSW,
+        className: CLSW,
+        details: { shouldCount: 40, actualCount: 40 - i, absentCount: i },
+        metrics: { ratios: { rate: (40 - i) / 40 } },
+        status: 'submitted',
+      }))
+    );
+    try {
+      const countFor = async (range) => {
+        const one = await board.classStatusBoard({ today: pastDay, attRange: range, force: true });
+        const row = (one.rows || []).find((x) => x.className === CLSW);
+        const recs = row && row.attendance && row.attendance.modules && row.attendance.modules.morning_exercise;
+        return recs ? recs.records : 0;
+      };
+      const [nDay, nWeek, nMonth] = await Promise.all([countFor('day'), countFor('week'), countFor('month')]);
+      assert(nDay === 1, `本日窗口只命中所选日那 1 条（造了 ${winDates.length} 个日期）`, nDay);
+      assert(nWeek >= nDay && nMonth >= nWeek, `窗口越大命中记录越多（本日 ${nDay} ≤ 本周 ${nWeek} ≤ 本月 ${nMonth}）`, { nDay, nWeek, nMonth });
+      // 三个日期不重合时，必须真的逐级扩大（否则「本月」只是个换了名字的本周）
+      if (winDates.length === 3) {
+        assert(nWeek >= 2, `本周窗口含周一那条（≥2，实际 ${nWeek}）`, nWeek);
+        assert(nMonth === 3, `本月窗口含全部 3 条（实际 ${nMonth}）`, nMonth);
+      }
+    } finally {
+      await CheckRecord.deleteMany({ className: CLSW });
+      await ClassProfile.deleteOne({ className: CLSW });
+    }
+
+    // 非法窗口 = 回退本周（不能让拼错的参数悄悄统计出一个空区间）
+    const rBadRange = await board.classStatusBoard({ today: pastDay, attRange: 'quarter', force: true });
+    assert(rBadRange.attRange === 'week' && rBadRange.from === mondayOf(pastDay), '非法窗口回退本周', [rBadRange.attRange, rBadRange.from]);
+    // 旧的 days 参数不再参与计算（两套窗口并存迟早「脚注说本周、数据是回看 7 天」）
+    const rLegacyDays = await board.classStatusBoard({ today: pastDay, days: 30, force: true });
+    assert(rLegacyDays.attRange === 'week' && rLegacyDays.from === mondayOf(pastDay), '旧 days 参数不再改变窗口', [rLegacyDays.attRange, rLegacyDays.from]);
+
+    // 考勤计算规则文案（用户 2026-11-12「要标注考勤计算规则，如迟到缺勤等逻辑」）
+    assert(Array.isArray(rp.attRuleLines) && rp.attRuleLines.length >= 3, '下发考勤规则（≥3 条）', rp.attRuleLines && rp.attRuleLines.length);
+    const ruleText = (rp.attRuleLines || []).join(' ');
+    assert(/迟到/.test(ruleText) && /缺勤/.test(ruleText), '规则里写明迟到与缺勤逻辑', ruleText.slice(0, 80));
+    assert(/未归/.test(ruleText), '规则里写明查宿未归', ruleText.slice(0, 120));
+    assert(/10/.test(ruleText), '规则里写明满分刻度', ruleText.slice(0, 60));
+    // 数字必须与真源一致，不能是写死的旧单价
+    const cmSvc = require(path.join(serverDir, 'src', 'services', 'check-modules'));
+    assert(ruleText.includes(String(cmSvc.PERSON_DEDUCT.late)), `规则里的迟到单价跟随 PERSON_DEDUCT（${cmSvc.PERSON_DEDUCT.late}）`, ruleText.slice(0, 90));
+    // 复制文案（copy=all）也要带规则
+    assert(/考勤计算规则/.test(rp.copyText), 'copy=all 的复制文案含规则段', rp.copyText.split('\n').slice(-2)[0]);
+
     // 非法日期 = 当未指定（不能让拼错的参数统计出空日期）
     const rBad = await board.classStatusBoard({ today: 'not-a-date', force: true });
     assert(rBad.today === day, '非法 today 回退服务器今天', rBad.today);

@@ -42,7 +42,7 @@
 | ② 五个表单新字段 | `server/src/services/check-modules.js` | 见下表。**存量库必须生效**（seedCheckModules 的更新策略是关键：不处理等于没改）；`FIELD_LIMIT` 仍在 DEFAULT_MODULES 之前（TDZ）；**不改公式引擎** |
 | ③ 宿舍照片隐私 | `routes/union.js`、`services/union.js` | 宿舍照片仅**检查人 / 主席团 / 所属部门部长 / 教师账号**可见，其余人**不下发原图 URL**（`photos: []` + `photosBlurred` + `photoCount`）—— ⚠️ **"模糊"必须是不给原图 URL**，CSS 模糊一个真 URL 等于没做（抓包即得）。只在**宿舍**场景生效（`targetType='dorm_room'`）；教室/卫生区照片不受限 |
 | ④ 主席团可录任意考勤 | `services/union.js::canEnterModule` | 主席团**短路部门归属检查**；校级全校、**分会限本校区展开范围**（不放开成全校）。其它角色行为逐字不变 |
-| ⑤ 录入台渲染 + 照片上传 | `packageUnion/entry/**`、`routes/upload.js` | 新增 `type:'photo'`（≤9 张、选填）；新增成员可用的 `POST /api/upload/check-photo`（≤5MB，检查照片**不清理旧文件**，要留证）；`grade='网课'` 时隐藏并清空后续字段 |
+| ⑤ 录入台渲染 + 照片上传 | `packageUnion/entry/**`、`routes/upload.js` | 新增 `type:'photo'`（选填；**张数 / 体积限制已于 2026-11-12 全部解除**，原图直传）；新增成员可用的 `POST /api/upload/check-photo`（检查照片**不清理旧文件**，要留证）；`grade='网课'` 时隐藏并清空后续字段 |
 
 **新字段契约**（`services/check-modules.js`，其它智能体据此实现）：
 

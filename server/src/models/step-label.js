@@ -47,6 +47,17 @@ const stepLabelSchema = new mongoose.Schema(
     modelScore: { type: Number, default: null },
     ruleScore: { type: Number, default: 0 },
 
+    // ===== 有监督模型的影子证据（用户 2026-11-12「阶段性自升级」）=====
+    // 标注发生**当时**的有监督模型阶段与概率。
+    // 这三项是「影子阶段实测精度」的唯一数据源 —— 升级到主判（可封号）之前，
+    // 必须证明模型真实跑过、并且它的判断被人工复核后确实对得上：
+    //   影子阶段标注数 ≥ minShadowSamples、被模型判为可疑的 ≥ minShadowFlagged、
+    //   其中人工确认作弊的比例 ≥ minShadowPrecision（见 services/anticheat-upgrade.js::GATES）。
+    // 旧标注没有这三个字段 → 一律视为「没在有监督模型下跑过」，不计入影子证据（不猜）。
+    modelStage: { type: Number, default: 0 },
+    supervisedProb: { type: Number, default: null }, // 判定当时的作弊概率（0~1）
+    supervisedScore: { type: Number, default: null }, // 映射后的风险分（与无监督同一量纲）
+
     // 训练用的特征快照：**必须存**，否则将来模型改结构、或者原始记录被删，
     // 这批标注就再也无法用来训练（这是做 ML 数据集最常踩的坑）。
     features: { type: mongoose.Schema.Types.Mixed, default: null },

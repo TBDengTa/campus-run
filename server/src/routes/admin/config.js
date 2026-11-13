@@ -190,49 +190,153 @@ router.put(
   })
 );
 
-// ===== 北斗运动 2.0 中奖记录（只读）=====
+// ===== 北斗运动 2.0 中奖记录（只读 + 筛选）=====
 //
 // 为什么只读：抽奖流水是概率公示与学生对账的唯一凭据。
 // 允许后台补发/撤销会让「公示概率」与实际发放对不上 —— 那是这类活动最容易被投诉的点，
 // 也是审计时说不清的地方。真要补偿学生，走「人工发徽章」那套独立链路，别动这张表。
+//
+// 三个筛选维度（用户 2026-11-12「日期筛选、抽奖来源筛选(签到、分享、视频)」）：
+//   · dateFrom / dateTo —— 日历键范围（YYYY-MM-DD，闭区间）；
+//   · source —— 本次消耗的机会来源（video/share/checkin/prize/unknown）；
+//   · prizeKey / type —— 奖品与结果类型。
+// 口径注意：`source` 是**账本归属**（这次扣的是谁给的次数），不是「用户从哪个页面点进来的」。
 router.get(
   '/beidou-draws',
   requirePermission('config.view'),
   wrap(async (req, res) => {
     const BeidouDraw = require('../../models/beidou-draw');
     const { parsePagination } = require('../../utils/response');
+    const { isValidDateKey } = require('../../utils/dates');
     const { page, limit, skip } = parsePagination(req.query, { page: 1, limit: 20 });
+
     const cond = {};
-    if (req.query.date) cond.date = String(req.query.date);
+    // 日期范围：非法值一律忽略（不能骗管理员「筛了但其实没筛」），且自动纠正倒序
+    let from = isValidDateKey(req.query.dateFrom) ? String(req.query.dateFrom) : '';
+    let to = isValidDateKey(req.query.dateTo) ? String(req.query.dateTo) : '';
+    if (from && to && from > to) [from, to] = [to, from];
+    if (from || to) {
+      cond.date = {};
+      if (from) cond.date.$gte = from;
+      if (to) cond.date.$lte = to;
+    }
+    if (req.query.source) {
+      const s = String(req.query.source);
+      if (['video', 'share', 'checkin', 'prize', 'unknown'].includes(s)) cond.source = s;
+    }
     if (req.query.prizeKey) cond.prizeKey = String(req.query.prizeKey);
     if (req.query.type && ['steps', 'none', 'draw'].includes(req.query.type)) cond.type = req.query.type;
-    const [rows, total] = await Promise.all([
+
+    const [rows, total, bySource, byType] = await Promise.all([
       BeidouDraw.find(cond).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
       BeidouDraw.countDocuments(cond),
+      // 分面计数：让管理端在下拉里直接看到「各来源各多少条」，而不是选完才知道空
+      BeidouDraw.aggregate([
+        { $match: Object.assign({}, cond, { source: { $exists: true } }) },
+        { $group: { _id: '$source', n: { $sum: 1 } } },
+      ]),
+      BeidouDraw.aggregate([{ $match: cond }, { $group: { _id: '$type', n: { $sum: 1 } } }]),
     ]);
-    // 名单只回必要字段（openid 不下发到管理端页面：页面按 userId 展示即可）
+    // 分面必须按「除了 source 以外的条件」统计，否则选了视频就只有视频一项有数
+    const facetBase = Object.assign({}, cond);
+    delete facetBase.source;
+    const sourceFacet = await BeidouDraw.aggregate([
+      { $match: facetBase },
+      { $group: { _id: '$source', n: { $sum: 1 } } },
+    ]);
+
+    const sourceCount = {};
+    for (const s of sourceFacet) sourceCount[s._id || 'unknown'] = s.n;
+    const typeCount = {};
+    for (const t of byType) typeCount[t._id || 'none'] = t.n;
+
     const userIds = [...new Set(rows.map((r) => r.openid).filter(Boolean))];
     const User = require('../../models/user');
     const users = userIds.length
       ? await User.find({ openid: { $in: userIds } }).select('openid realName studentId className').lean()
       : [];
     const nameOf = new Map(users.map((u) => [u.openid, u]));
+    // 奖品名：从奖池配置里取（流水只存 key，label 可能被管理员改过，这里取**当前**配置，
+    // 但历史记录的 amount 仍是落库时的值 —— 两者不一致时以 amount 为准，label 只作展示）
+    const cfgSvc = require('../../services/beidou');
+    const cfg = await cfgSvc.loadConfig();
+    const prizeOf = new Map((cfg.prizes || []).map((p) => [p.key, p]));
+
+    // ⚠️ 来源文案**不在路由里另写一份**：它是唯一定义在 services/beidou.js::SOURCE_TEXT，
+    //    与扣减优先级 SOURCE_ORDER 同源。路由/页面各存一份，改了顺序就会「说明与实际相反」。
+    const { SOURCE_TEXT } = cfgSvc;
+    const TYPE_TEXT = { steps: '步数', none: '谢谢参与', draw: '再来一次' };
+
     const list = rows.map((r) => {
       const u = nameOf.get(r.openid) || {};
+      const p = prizeOf.get(r.prizeKey) || {};
+      const src = r.source || 'unknown';
       return {
         _id: r._id,
         date: r.date,
+        createdAt: r.createdAt,
         realName: u.realName || '',
         studentId: u.studentId || '',
         className: u.className || '',
         prizeKey: r.prizeKey,
+        prizeLabel: p.label || (r.type === 'steps' ? `${r.amount} 步` : TYPE_TEXT[r.type] || ''),
         type: r.type,
+        typeText: TYPE_TEXT[r.type] || r.type,
         amount: r.amount,
         capped: r.capped,
-        createdAt: r.createdAt,
+        // 来源（账本归属）+ 中文文案由**服务端**下发，前端不再自己映射一份
+        source: src,
+        sourceText: SOURCE_TEXT[src] || '未记录',
+        // 留证字段：随机数与命中扇区（对账时能证明「不是后台改的」）
+        roll: r.roll,
+        index: r.index,
       };
     });
-    ok(res, { list, total, page, limit });
+
+    ok(res, {
+      list,
+      total,
+      page,
+      limit,
+      // 来源口径说明整句由**服务端**拼好下发（含扣减优先级，顺序随 SOURCE_ORDER 自动变）。
+      // 早先这句写死在 WXML 里，而优先级 SOURCE_ORDER 在 services/beidou.js ——
+      // 两处各写一份，改了代码页面还在说老规矩（本仓库反复踩过这个坑）。
+      sourceNote: cfgSvc.sourceNote(),
+      filters: { dateFrom: from, dateTo: to, source: req.query.source || '', prizeKey: req.query.prizeKey || '', type: req.query.type || '' },
+      facets: {
+        source: [
+          { key: 'video', label: SOURCE_TEXT.video, count: sourceCount.video || 0 },
+          { key: 'share', label: SOURCE_TEXT.share, count: sourceCount.share || 0 },
+          { key: 'checkin', label: SOURCE_TEXT.checkin, count: sourceCount.checkin || 0 },
+          { key: 'prize', label: SOURCE_TEXT.prize, count: sourceCount.prize || 0 },
+          { key: 'unknown', label: SOURCE_TEXT.unknown, count: sourceCount.unknown || 0 },
+        ],
+        type: [
+          { key: 'steps', label: TYPE_TEXT.steps, count: typeCount.steps || 0 },
+          { key: 'none', label: TYPE_TEXT.none, count: typeCount.none || 0 },
+          { key: 'draw', label: TYPE_TEXT.draw, count: typeCount.draw || 0 },
+        ],
+        // 奖池候选（给奖品下拉用）
+        prizes: (cfg.prizes || []).map((p) => ({ key: p.key, label: p.label })),
+      },
+    });
+  })
+);
+
+// 来源口径说明（只读，给管理端页面显示「什么是抽奖来源」）
+router.get(
+  '/beidou-draws/sources',
+  requirePermission('config.view'),
+  wrap(async (req, res) => {
+    const svc = require('../../services/beidou');
+    ok(res, {
+      // 扣减优先级：管理端要能解释「为什么签到来源的记录这么少」
+      order: svc.SOURCE_ORDER,
+      // 短文案（列表标签）与长文案（解释口径）都来自 service 的唯一定义
+      text: svc.SOURCE_TEXT,
+      textLong: svc.SOURCE_TEXT_LONG,
+      note: svc.sourceNote(),
+    });
   })
 );
 

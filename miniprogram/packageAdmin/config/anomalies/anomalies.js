@@ -59,6 +59,11 @@ Page({
     engine: null,
     // 升级为有监督模型的进度（标注够不够），见 loadUpgrade()
     upgrade: null,
+    // ===== 阶段性自升级（用户 2026-11-12「请增加阶段性自升级」）=====
+    // 服务端 snapshot 已经算好阶梯/缺失项/文案，这里只搬运（见 loadStages）。
+    stages: null,
+    // 能否评估/改阶段：与后端 MANAGE 中间件同口径（anticheat.manage，不兼容 user.manage）
+    canModel: false,
     keyword: '',
     // 封禁弹层：选天数 + 备注
     banSheetVisible: false,
@@ -84,6 +89,159 @@ Page({
     this.reload();
     this.loadEngine();
     this.loadUpgrade();
+    this.loadStages();
+  },
+
+  /**
+   * 加载「阶段性自升级」快照（用户 2026-11-12）。
+   *
+   * 为什么这个卡片必须和小程序里其它展示一样，只搬服务端字段：
+   *   阶梯状态、缺失项文案、指标格式化全由 services/anticheat-upgrade.js::snapshot 算好。
+   *   前端自己再拼一套，就会出现「Web 控制台说已达闸门、小程序说还差 3 条」——
+   *   两个界面看同一份数据却给出不同结论，管理员只会怀疑系统坏了。
+   */
+  async loadStages() {
+    try {
+      const r = await auth.get('/api/admin/step-anomalies/model-stages');
+      // 先算写权限（它会 setData canManage/canModel），再写快照 ——
+      // 顺序反了会把 canModel 覆盖回 false（applyManage 先 setData 一次）
+      await this.checkCanModel();
+      this.setData({ stages: this.decorateStages(r) });
+    } catch (e) {
+      /* 自升级卡片失败不影响主列表与研判 */
+    }
+  },
+
+  // 写权限：与后端 MANAGE 中间件同口径（anticheat.manage）。
+  // 复用 admin-perm（fail-closed：取不到权限按只读渲染）——
+  // 单独判 user.manage 是错的：那是封人的权力，不是改模型阶段的权力。
+  async checkCanModel() {
+    const r = await adminPerm.applyManage(this, 'anticheat.manage', { extra: ['canModel'] });
+    return !!r.canManage;
+  },
+
+  // 把服务端快照整成模板可直接渲染的形状（列表文案都在这里拼好，WXML 不写三元）
+  decorateStages(r) {
+    if (!r) return null;
+    const srcs = r.sources || {};
+    const list = ['werun', 'gps']
+      .map((k) => srcs[k])
+      .filter(Boolean)
+      .map((s) => {
+        const ladder = (s.ladder || []).map((l) => ({
+          key: l.key,
+          text: l.text,
+          desc: l.desc,
+          mark: l.done ? '✓' : l.current ? '●' : '○',
+          current: !!l.current,
+          done: !!l.done,
+        }));
+        const metrics = s.metrics
+          ? [
+              { k: '交叉验证 AUC', v: s.metrics.aucText + (s.metrics.aucStd != null ? ' ± ' + Number(s.metrics.aucStd).toFixed(2) : '') },
+              { k: '可疑线精度', v: s.metrics.precisionSuspiciousText },
+              { k: '封禁线精度', v: s.metrics.precisionAutoBanText },
+            ]
+          : [];
+        return {
+          source: s.source,
+          sourceText: s.sourceText,
+          stage: s.stage,
+          stageText: s.stageText,
+          stageDesc: s.stageDesc,
+          mode: s.mode,
+          modeText: s.modeText,
+          isManual: s.mode === 'manual',
+          ladder,
+          sampleText: `可训练标注 ${s.sampleCount} 条`,
+          metrics,
+          shadowText:
+            `影子证据 ${s.shadow.samples} 条 / 判可疑 ${s.shadow.flaggedSuspicious} 条` +
+            (s.shadow.precisionSuspicious == null ? '' : ` · 实测精度 ${Math.round(s.shadow.precisionSuspicious * 100)}%`),
+          // 下一阶段：整句文案在这里拼（缺什么逐条列出），模板只管循环
+          nextTitle: s.next
+            ? s.next.ok
+              ? `已达「${s.next.targetText}」闸门`
+              : `距「${s.next.targetText}」还差：`
+            : '已是最高阶段',
+          nextOk: s.next ? !!s.next.ok : true,
+          nextMissing: s.next && !s.next.ok ? s.next.missing || [] : [],
+          nextTip: s.next && s.next.ok
+            ? r.autoUpgrade
+              ? '下一轮定时评估会自动升级，也可点「立即评估」'
+              : '自动升级已关闭，可点「手动指定」'
+            : '',
+          demoteWarn: s.demotion && s.demotion.willDemote ? s.demotion.reason : '',
+          lastEvalText: s.lastEvaluatedAt ? `上次评估：${s.lastReason || '—'}` : '',
+          history: (s.history || []).map((h) => ({
+            text: `${h.fromText} → ${h.toText} · ${h.operator} · ${h.reason || ''}`,
+          })),
+        };
+      });
+    return {
+      autoUpgrade: r.autoUpgrade,
+      autoDemote: r.autoDemote,
+      ruleText: r.ruleText,
+      switchText: `自动升级${r.autoUpgrade ? '开' : '关'} · 自动降级${r.autoDemote ? '开' : '关'}`,
+      list,
+    };
+  },
+
+  // ===== 立即评估（训练 + 判闸门 + 必要时升降级）=====
+  async evaluateModel(e) {
+    if (!this.data.canModel) return;
+    const source = (e.currentTarget.dataset || {}).source || 'all';
+    wx.showLoading({ title: '评估中…', mask: true });
+    try {
+      const r = await auth.post('/api/admin/step-anomalies/model-evaluate', { source });
+      wx.hideLoading();
+      const res = (r.results && r.results[0]) || {};
+      const act =
+        res.action === 'promote'
+          ? `已升级为「${res.nextStage === 2 ? '有监督主判' : '影子辅助'}」`
+          : res.action === 'demote'
+            ? '已自动降级'
+            : res.action === 'error'
+              ? `评估失败：${res.reason}`
+              : '维持当前阶段';
+      wx.showModal({ title: '评估完成', content: `${act}\n${res.reason || ''}`, showCancel: false });
+      this.setData({ stages: this.decorateStages(r.snapshot) });
+    } catch (err) {
+      wx.hideLoading();
+      wx.showToast({ title: err.message || '评估失败', icon: 'none' });
+    }
+  },
+
+  // ===== 手动指定阶段 / 恢复自动 =====
+  // 手动锁定后自动评估只写建议、不再改阶段 —— 否则「刚按下去，半夜又被升上来」。
+  manualStage(e) {
+    if (!this.data.canModel) return;
+    const { source, mode } = e.currentTarget.dataset || {};
+    if (mode === 'auto') {
+      auth
+        .put('/api/admin/step-anomalies/model-stage', { source, mode: 'auto' })
+        .then((r) => {
+          wx.showToast({ title: '已恢复自动评估', icon: 'none' });
+          this.setData({ stages: this.decorateStages(r.snapshot) });
+        })
+        .catch((err) => wx.showToast({ title: err.message || '操作失败', icon: 'none' }));
+      return;
+    }
+    const that = this;
+    wx.showActionSheet({
+      itemList: ['0 无监督', '1 影子辅助（只进待研判）', '2 有监督主判（可封号）'],
+      success(res) {
+        const stage = Number(res.tapIndex);
+        if (!(stage === 0 || stage === 1 || stage === 2)) return;
+        auth
+          .put('/api/admin/step-anomalies/model-stage', { source, stage })
+          .then((r) => {
+            wx.showToast({ title: '已手动指定并锁定', icon: 'none' });
+            that.setData({ stages: that.decorateStages(r.snapshot) });
+          })
+          .catch((err) => wx.showToast({ title: err.message || '操作失败', icon: 'none' }));
+      },
+    });
   },
 
   /**

@@ -179,6 +179,90 @@
   cursor: pointer;
 }
 
+/* ----- 筛选区（日期范围 / 抽奖来源 / 奖品）----- */
+.rv-filter {
+  padding: 18rpx 0 6rpx;
+  border-top: 2rpx solid var(--tt-line);
+}
+
+.rv-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  padding: 10rpx 0;
+}
+
+.rv-filter-label {
+  flex-shrink: 0;
+  width: 72rpx;
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+.rv-filter-pick {
+  flex: 1;
+  min-width: 0;
+}
+
+.rv-filter-val {
+  padding: 10rpx 16rpx;
+  border-radius: 12rpx;
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+  background: var(--td-bg-color-component);
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 已选值：用品牌色区分「这是筛选条件」而不是占位符 */
+.rv-filter-val.is-set {
+  color: var(--tt-brand-deep);
+  background: var(--tt-brand-soft);
+  font-weight: 600;
+}
+
+.rv-filter-tilde {
+  flex-shrink: 0;
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+}
+
+.rv-filter-chips {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10rpx;
+}
+
+.rv-chip {
+  padding: 8rpx 18rpx;
+  border-radius: 999rpx;
+  font-size: 21rpx;
+  color: var(--tt-text-2);
+  background: var(--td-bg-color-component);
+}
+
+.rv-chip.is-on {
+  color: #fff;
+  background: var(--tt-brand);
+  font-weight: 600;
+}
+
+.rv-filter-clear {
+  flex-shrink: 0;
+  padding: 8rpx 16rpx;
+  font-size: 21rpx;
+  color: var(--tt-brand);
+}
+
+.rv-filter-meta {
+  padding: 6rpx 0 12rpx;
+  font-size: 21rpx;
+  color: var(--tt-text-3);
+}
+
 .rv-draw {
   display: flex;
   align-items: center;
@@ -200,9 +284,51 @@
   color: var(--tt-text-1);
 }
 
-.rv-draw-cls {
+/* 学号 · 班级（同名学生靠学号定位，不能只给姓名） */
+.rv-draw-sub {
   font-size: 20rpx;
   color: var(--tt-text-3);
+}
+
+/* 来源 + 奖品 + 封顶 一组，靠右 */
+.rv-draw-tags {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+}
+
+/* 来源标签：不同来源不同底色，一眼分得出 */
+.rv-draw-src {
+  padding: 2rpx 12rpx;
+  border-radius: 8rpx;
+  font-size: 19rpx;
+  white-space: nowrap;
+}
+
+.rv-src-video {
+  color: #1a6fd4;
+  background: #e8f1fd;
+}
+
+.rv-src-share {
+  color: #7b4bd4;
+  background: #f0e9fd;
+}
+
+.rv-src-checkin {
+  color: var(--td-success-color-6);
+  background: var(--td-success-color-1);
+}
+
+.rv-src-prize {
+  color: var(--tt-brand-deep);
+  background: var(--tt-brand-soft);
+}
+
+.rv-src-unknown {
+  color: var(--tt-text-3);
+  background: var(--td-bg-color-component);
 }
 
 .rv-draw-prize {
@@ -225,6 +351,13 @@
   flex-shrink: 0;
   font-size: 20rpx;
   color: var(--tt-text-3);
+}
+
+/* 来源口径说明：这句必须显眼，否则管理员会把「来源」误解成入口 */
+.rv-fnote-warn {
+  display: block;
+  margin-top: 8rpx;
+  color: var(--td-warning-color-7);
 }
 
 .rv-draw-empty {

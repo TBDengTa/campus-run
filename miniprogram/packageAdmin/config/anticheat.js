@@ -79,8 +79,12 @@ Page({
   onAnticheat(e) {
     const { field } = e.currentTarget.dataset;
     const value = e.detail.value;
+    // 阶段性自升级的两个开关是**布尔**（用户 2026-11-12）：不能走 Number() 分支 ——
+    // Number(false) => 0 会把 autoUpgrade 写成 0，服务端 applyAnticheatInput 里
+    // `input.autoUpgrade !== false` 判为 true，于是「关掉自动升级」静默无效。
+    const isBool = field === 'enabled' || field === 'autoUpgrade' || field === 'autoDemote';
     this.setData(
-      { [`config.anticheat.${field}`]: typeof value === 'boolean' ? value : Number(value) || 0 },
+      { [`config.anticheat.${field}`]: isBool ? !!value : Number(value) || 0 },
       () => this.refreshAiPreview()
     );
   },

@@ -156,6 +156,12 @@ async function recordStepAnomaly(user, { dateKey, cumulativeSteps, deltaSteps, e
             // 记录判定来源，便于事后复核「这条是模型判的还是规则判的」
             modelScore: modelResult ? Number(modelResult.score) : null,
             modelLevel: modelResult ? modelResult.level : '',
+            // 有监督模型的阶段与概率（用户 2026-11-12 阶段性自升级）：
+            // 与 modelScore 一起**同一次更新**写入 —— 影子精度评估读的就是这两个字段，
+            // 只更新分数不更新阶段会出现「按新阶段算的分数挂在上一条阶段的记录上」。
+            modelStage: modelResult ? Number(modelResult.modelStage) || 0 : 0,
+            supervisedProb: modelResult && modelResult.supervised ? Number(modelResult.supervised.prob) : null,
+            supervisedScore: modelResult && modelResult.supervised ? Number(modelResult.supervised.risk) : null,
           },
         }
       );
@@ -177,6 +183,10 @@ async function recordStepAnomaly(user, { dateKey, cumulativeSteps, deltaSteps, e
     status: 'open',
     modelScore: modelResult ? Number(modelResult.score) : null,
     modelLevel: modelResult ? modelResult.level : '',
+    // 有监督模型的阶段与概率（见上方 updateOne 的同名字段注释）
+    modelStage: modelResult ? Number(modelResult.modelStage) || 0 : 0,
+    supervisedProb: modelResult && modelResult.supervised ? Number(modelResult.supervised.prob) : null,
+    supervisedScore: modelResult && modelResult.supervised ? Number(modelResult.supervised.risk) : null,
     // 特征快照：管理员处置后这条记录会连同特征进入 step_labels 训练集，
     // 所以特征必须在**判定当下**存下来（原始数据将来可能被清理）
     features: modelResult && modelResult.features ? modelResult.features : null,
@@ -222,6 +232,11 @@ function mergeAnomaly(rule, model) {
     autoBan: level === 'autoBan',
     shouldRecord: level === 'suspicious' || level === 'autoBan',
     modelScore: model.score,
+    // 有监督模型的阶段与概率一并带出去（写线索 / 写标注都要用，见 recordStepAnomaly）：
+    // ⚠️ 不能只留 modelScore —— 影子阶段精度评估要的是「当时是第几阶段 + 当时的概率」，
+    //    而 modelScore 是无监督分，拿它算影子精度等于用错模型的成绩单。
+    modelStage: Number(model.modelStage) || 0,
+    supervised: model.supervised || null,
     // 判定来源标注：管理端列表据此显示「AI 判定」徽标（fallback 时显示「规则判定」）
     judgedBy: 'ai',
   };
@@ -397,6 +412,10 @@ async function saveGpsRun(user, { date, distance, durationSeconds, calories, ste
           source: 'gps', // 来源分流：列表里可区分是哪种跑步被判定
           modelScore: Number(modelResult.score),
           modelLevel: modelResult.level,
+          // 有监督模型的阶段与概率（用户 2026-11-12 阶段性自升级）：影子精度评估的唯一数据源
+          modelStage: Number(modelResult.modelStage) || 0,
+          supervisedProb: modelResult.supervised ? Number(modelResult.supervised.prob) : null,
+          supervisedScore: modelResult.supervised ? Number(modelResult.supervised.risk) : null,
           features: modelResult.features || null,
           route: routeSnapshot,
         });

@@ -37,9 +37,12 @@
   onShow 每次全量刷 6 GET + 1 POST 是 EO 请求数最大单一来源。节流**只挂 onShow 入口**
   （下拉刷新、werun 同步触发的 `refresh()` 不受限）；时间戳 `_lastFullRefreshAt` 记在 `refresh()`
   **成功路径末尾**（失败不占坑）。节流跳过时仍要 `syncTabBar()`（选中态不能丢）。
-- **上传保持现状**：`CHECK_PHOTO_MAX_MB=100` 是用户 2026-10-28 明确要求（三层对齐见 `routes/upload.js` 文件头）；
-  上传接口**不加**每用户限频（用户 2026-11-09「不加」）。
-  回归：`tools/check-traffic-headers.js`（五处接线逐项盯）。
+- **上传限制已解除**（用户 2026-11-12「检查录入中的照片依然存在录入失败的问题，解除所有上传照片的限制」）：
+  检查照片**不限制体积 / 张数 / 不做上传前压缩**——`CHECK_PHOTO_MAX_MB=0`（multer 不设 fileSize）、
+  nginx `client_max_body_size 0`、前端原图直传（只有上传失败才压缩重试一次；
+  `PHOTO_PICK_COUNT` 只是 `wx.chooseMedia` 单次平台上限）。
+  头像链路不受影响（仍保留自己的 5MB 上限）。上传接口**不加**每用户限频（用户 2026-11-09「不加」）。
+  任何一层把上限加回来都会让大图传不上去，回归：`tools/check-traffic-headers.js` + `tools/verify-check-photo-unlimited.js`。
 
 ## UI 约定（白橙设计系统）
 - 配色/圆角/间距一律使用 `app.wxss` 中的 `--tt-*` 令牌与 `.tt-*` 公共类，禁止在页面里硬编码品牌色或旧蓝色（`#0052d9`）。
@@ -315,6 +318,49 @@
   首页与中枢共用 `utils/nav-groups.js::navCtx(user)` 生成上下文（含 `canUnionScanJoin`），
   **不要在 hub.js / home.js 各写一份 ctx** —— 新增身份维度时只改 navCtx。回归：`tools/check-nav-groups.js` 的角色矩阵。
 
+## 唐跑AI数据模型 · 阶段性自升级（用户 2026-11-12「后端中的已经有很多数据了，请增加阶段性自升级」）
+- **三级阶梯**（唯一口径在 `services/anticheat-upgrade.js::STAGES / STAGE_TEXT / STAGE_DESC`）：
+  `0 unsupervised` 无监督（Isolation Forest 独立判定，历史行为）→
+  `1 assist` **影子辅助**（有监督模型参与打分，但**分数封顶在自动封禁线以下**，只能进待研判）→
+  `2 primary` **有监督主判**（风险分可越过自动封禁线，仍受「自动处置」总开关约束）。
+  阶段持久化在 `anticheat_model_states`（每来源一份，`stateVersion` 做 CAS）。
+- **上一版只有一个「可以升级」的提示、没有升级动作** —— 现网标注已达 248 条（2026-11-12 实测），
+  提示一直挂着但没人会升。本轮把它做成自动过程；旧提示（`checkUpgradeReadiness` / `upgrade-status`）**保留并存**，不要删。
+- **影子阶段绝不封号**：`scoreFor()` 把 risk 压到 `max(0.3, 当前 autoBan − 0.02)`。
+  ⚠️ 封顶值必须取**当前生效的自动封禁线**，不能写死 0.78 —— 管理员切到 strict（0.68）就漏了。
+  这是「新模型第一次上线只给辅助权力」的护栏，与「涨幅速度」封顶同一思路（误封只能靠申诉发现）。
+- **闸门必须量化**（`GATES`）：样本量 / 类别平衡 / **交叉验证 AUC** / 精度 / 特征数；
+  升级主判还要求**影子阶段驻留 ≥ 3 天 + 影子实测精度 ≥ 80%（≥10 条被判可疑）**——离线指标说不了线上表现。
+- **AUC 要看均值 + 折间波动**（`minAuc` + `maxAucStd`）：实测 werun 各折 AUC 在 0.41~0.98 之间跳（均值 0.63），
+  只卡均值会「碰巧压线就升级」。当前 werun **正因此不升级**，GPS 已升到影子辅助 —— 这是正确行为，不要为了让页面好看去调松闸门。
+- **升级判断用分层 K 折交叉验证，不是训练集也不是单次留出**：单次 70/30 留出实测两次跑出 0.65 / 0.46，
+  留出集只有 8 条作弊样本，一条翻转就掉 0.06 —— 拿它当「要不要开始封人」的判据等于掷骰子。
+  折数按类别分层（`buckets[idx % folds]`），保证每折两类都有；随机种子固定 → 多进程切出同一份折。
+- **训练与推理必须共用同一份特征清单**：训练时按覆盖率（默认 80%）挑特征并写进 `model.features`，
+  推理只按它取维度。旧标注缺 `ruleHits/ruleMax`（2026-10-29 才加的特征），若当 0 喂进去
+  等于教模型「命中规则的人反作弊」——实测 werun 167 条标注里只有 15 条带这两个字段，所以它们被自动剔除。
+- **降级必须能自动发生**（`DEMOTE`，`autoDemote` 默认开）：线上实测精度 < 60%（≥10 条被判可疑）或 AUC < 0.6 → 退一级；
+  刚升级 24 小时内不降（新模型需要真实流量才形成证据）。「只会升级不会降级」的模型是单向棘轮，只会越来越松。
+- **影子证据的数据通路**：判定时的阶段与概率落 `step_anomalies`（`modelStage/supervisedProb/supervisedScore`），
+  人工标注时再带进 `step_labels`（`services/anomaly-disposal.js::recordFeedback`）。
+  旧标注没有 `modelStage` → **一律不算影子证据**（不猜）。少写一层就永远升不到主判。
+- **手动锁定**（`mode='manual'`）后自动评估**只写建议、绝不动阶段** ——
+  否则「刚把手动按回去，半夜又被自动升上来」。解除锁定走 `PUT .../model-stage {mode:'auto'}`，全程写 history（可追责）。
+- **开关**：`goal_config.anticheat.autoUpgrade / autoDemote`（默认都开）。关掉后评估照跑、指标照更新、
+  「已达闸门」照样显示，**只是不改阶段** —— 文案在 Web 配置页与小程序都写清了，别改成「关掉就不评估」。
+- **定时评估 6 小时一次，只在 `index.js::listen()` 之后启动**（不在 `createApp`）：
+  检查器/演示脚本 createApp 起临时服务，不该被顺带拉起训练；`NODE_ENV=test` 直接不启动，定时器带 `unref()`。
+- **接口**：`GET /console/api/model-stages`（view）、`POST /model-evaluate`、`PUT /model-stage`（**均需 anticheat.manage，
+  不兼容 user.manage** —— 那是封人的权力，不是改模型的权力）；管理端同款挂在 `/api/admin/step-anomalies/*`。
+  训练/闸门/快照**只在 upgrade + supervised 两个服务里**，两端路由只鉴权取参；
+  快照字段（阶梯/缺失项/指标文案）全由服务端算好，前端只渲染 —— 两处各算一份必然出现「Web 说已达闸门、小程序说还差 3 条」。
+- **前端入口**：Web 状态台「阶段性自升级」卡片（三级阶梯 + 立即评估 + 手动指定 + 变更历史）、
+  Web 模型配置页「自升级开关」；小程序 `packageAdmin/config/anomalies` 顶部同款卡片、
+  `packageAdmin/config/anticheat` 两个开关。小程序开关**必须走布尔分支**（`Number(false)` = 0 会让「关掉」静默失效）。
+- 回归：`tools/check-anticheat-upgrade.js`（静态：封顶随阈值走 / 闸门齐全 / K 折与可复现 / 特征同源 / 影子证据通路 /
+  两端只鉴权 / 开关语义 / 前端接线）+ `tools/verify-anticheat-upgrade.js`（真连库 12 节：含
+  **「标注够但模型没区分力→不升级」**、影子封顶实测、精度掉线自动降级、手动锁定、关开关不动阶段、清理核对）。
+
 ## 北斗运动 2.0（签到 + 转盘抽步数 + 看视频/分享得次数）
 - **方案与口径唯一说明：`docs/beidou-lottery-plan.md`**（改这块之前必读）。用户 2026-11-11 定稿：
   看视频只给次数不发步数 / 没有免费次数 / 奖池只有步数·空奖·再来一次 / 点分享即计次 / 签到 7 天阶梯 / 改造现有页面。
@@ -332,8 +378,21 @@
   `remaining <= 0`。写成 `if (!unlimited && remaining <= 0)` 会让默认配置（`maxPerDay=0`）变成无限抽奖 = 直接刷步。
 - **`$inc` 只能用于数值字段**：`draw.capped` 这类布尔标记必须走 `$set`（混进 `$inc` 会让抽奖接口 500，
   而且是在步数算好之后才炸）。这条已由 `tools/verify-beidou-lottery.js` 覆盖。
-- **幂等**：`beidou_draws.drawId` 唯一索引（弱网重试/连点只入账一次，重放返回**上次的 index**，前端停位不错位）；
+- **幂等**：`beidou_draws` 唯一索引是 `(openid, drawId)` **按人唯一**，不是 drawId 全局唯一 ——
+  全局唯一时跨用户撞 drawId 会走幂等分支返回**别人的奖品**（自己次数不扣、步数不发、还回 success:true）。
+  幂等查询也必须带 openid。旧索引由启动迁移 `beidou.js::migrateDrawIdIndex()` 显式删除
+  （Mongoose 不替换已存在索引，同 `dorms.js::migrateSlotIndex` 陷阱）。重放返回**上次的 index**，前端停位不错位；
   看视频 `watchId` 同理。CAS 用 `beidou_day.draw.used` 做版本号，抢输不重试不补发。
+- **抽奖来源账本**（管理端按来源筛选的依据）：`beidou_draws.source` = 本笔机会扣自哪里
+  （优先级写死 `prize → checkin → video → share`，不进配置），余额配对在
+  `beidou_day.draw.usedVideo/usedShare/usedCheckin/usedPrize`，不变量 **∑used\* == used**；
+  老文档缺 used\* 字段时抽奖前由 `alignLegacyUsage` 一次性对齐（不对齐会把新抽奖错归到某个来源，统计整片失真且无报错）。
+  ⚠️ 对齐时找「已用最多」的起点必须是 `best = 0` 而非 `-1`：`-1` 会让「全都为 0」时的第一项（prize）
+  满足 `0 > -1`，差额被压到优先级最高的 prize 上（注释说 video、代码记 prize），
+  之后真实「再来一次」次数被这笔虚构欠款一直压着。线上实测 73/80 是老形态文档，改这块前先看回归 [13b]。
+- **来源文案单点**：中文名与口径整句唯一定义在 `beidou.js::SOURCE_TEXT / sourceNote()`（整句由 `SOURCE_ORDER`
+  生成），管理端列表、分面、说明句、来源说明接口全读它；**路由与 WXML 都不许再写一份**——
+  顺序一改，硬编码那句就在骗管理员（`check-beidou-lottery` 第 [8b] 节有反向断言）。
 - **断签必须重置**：`streak` 按「昨天是否签到」推（昨天签 → +1；昨天没签 → 1），
   **不能**用累计签到天数 —— 否则断签的人也能一路领到第 7 天大奖。
 - **教师四处（抽奖/看视频/分享/签到）全部 `200 + success:false`**（不用 403003，客户端会当未登录跳登录页）；
@@ -344,21 +403,40 @@
   幂等 / 教师拦截 / 断签重置 / 纯函数行为）+ `tools/verify-beidou-lottery.js`（真连库，含流水与步数对账、
   封顶降级、断签、最小间隔、教师拦截、旧接口降级、清理核对）+ **`tools/check-page-runtime.js`**（见下条）。
 
-### 页面运行时自检（`tools/check-page-runtime.js`，2026-11-12 线上事故后新增）
-- **事故**：北斗运动页把 `const earned` 改名成 `const e` 时，`setData` 里还留着简写 `earned,`
-  → 运行时 `ReferenceError: earned is not defined` → **整页转盘空白、只弹一个 toast**。
-- **为什么三道既有检查都放过它**（这说明这类检查器必须补，不是可选）：
-  ① `node --check` / `check-miniprogram` 的 `vm.Script` 只查**语法**，而这是**运行时**错误，语法完全合法；
-  ② `check-page-data-keys` 只验「WXML 引用的键在 JS 里有没有出现过」——`earned` 在 `data:` 块里声明过，
-     所以它判为正常；它**看不到 setData 里那个变量的值是不是 undefined**；
-  ③ 静态 grep 找「未声明的简写属性」会被函数参数大量误报，不可靠。
-- **做法**：用 `vm` 在桩环境（`wx` / `getApp` / `require` 全打桩）里**真实执行页面 JS**，
-  拿到 `Page({...})` 定义，构造假实例（`setData` 合并 data），再用**真实接口形态**的 payload 调关键方法。
-- **必须覆盖的三类断言**：① 首屏 `applyState` 不抛（含**最小 payload**：新用户首日字段大量缺失）；
-  ② 抽奖结果落盘后已入账数字真的变了；③ **转盘停位角度精确等于 `(360 − (index*45 + 22.5))°`**
-  —— 差半格就会「停在 A 却发 B」。
-- 扩展方式：在 `TARGETS` 里加一条页面 + 用例即可；桩缺的全局变量补进 `BASE_SANDBOX`。
-- **新增/改写页面时，改完先跑它**：它抓的是「能编译、能通过键名检查，但一进页面就白屏」的那一类。
+### 抽奖页 UI（紧凑 + 播报 + 动效 + 音效，2026-11-12）
+方案 `docs/beidou-lottery-ui-plan.md`；玩法口径不变，纯展示层。
+- **转盘用 `clip-path` 8 楔形，不要 `conic-gradient`**：安卓部分机型不支持后者，会渲染成纯色
+  （用户看到的就是「转盘没格子」）。楔形每格独立，停位格才能单独高亮（`.bd-sector.is-hit`）。
+- **稀有度由服务端算**（`beidou.js::rarityOf`）：`rarest` = 该奖池 percent 最小**且 ≤10%**。
+  只取最小不够 —— 奖池平时（最小 25%）人人「最稀有」就失去意义。门槛是常量 `RARE_PERCENT`，**不进配置**。
+- **播报 `GET /api/beidou/winners`**：① 姓名走 `services/name-mask.js::maskName`（唯一实现，
+  `ranking.js` 也用它），完整姓名**永不出服务端**；② `privacy.exitRanking` 的学生**不进播报**；
+  ③ 封禁/教师不进；④ 同一人最多 2 条；谢谢参与不播报。
+- **音效是运行时合成 WAV，不放 mp3**（主包已超 2MB）。① 失败一律静默，绝不影响入账；
+  ② `prewarm()` 必须在**点抽奖的同一手势栈**（iOS 非手势创建的音频可能永久静音且无报错）；
+  ③ `obeyMuteSwitch=true`；页面喇叭开关 + 管理端总开关 `beidou.sfxEnabled`。
+- **动效按稀有度分三档**（全都中奖=全都平淡）；空奖不做成惩罚；全用 CSS `transform/opacity`，
+  **不用 canvas 粒子**（低端机正卡在最需要炫的时刻）。
+- ⚠️ `recent.atText` 曾是恒空 bug（服务端只给 `at`，WXML 渲染 `atText`）；现由服务端拼好下发。
+- 回归：`check-page-runtime`（三档动效/播报空态/音效不可用时仍落盘）+ `check-beidou-lottery`
+  （脱敏/稀有度边界）+ `verify-beidou-lottery` 第 12 节（真连库：响应体反向断言不含完整姓名、
+  `exitRanking` 双向验证）。
+
+### ⚠️ 写文件的编码红线（2026-11-12 事故）
+- **不要用 PowerShell 的 `Get-Content -Raw` + `Set-Content` / `[System.IO.File]::WriteAllText` 改源码**：
+  Windows 按 GBK 解码 UTF-8，中文变乱码、`</text>` 被吃成 `text>` → 标签不配平、整页白屏，
+  而大小与行数看着正常，极难定位（我做变异测试时就这么写坏了 `reward.wxml`）。
+- 改文件一律用 edit / write；要在 shell 里变异测试，用 `node -e` 配 `readFileSync(f,'utf8')`/`writeFileSync(f,s,'utf8')`。
+
+### 页面运行时自检（`tools/check-page-runtime.js`，起因：`earned is not defined` 白屏）
+- **事故**：`const earned` 改名 `const e` 时 setData 里还留着简写 `earned,` → 运行时 ReferenceError → 整页白屏。
+- **三道检查为何都放过**：`vm.Script` 只查语法（运行时错误语法合法）；`check-page-data-keys` 只验键是否
+  出现过（`earned` 在 `data:` 声明过，看不到「值是 undefined」）；静态 grep 被函数参数大量误报。
+- **做法**：用 `vm` 在桩环境真实执行页面 JS → 拿 `Page({...})` → 假实例（setData 合并 data）
+  → 用真实接口形态 payload 调关键方法。
+- **必覆盖**：① 首屏不抛（含最小 payload）；② 抽奖后已入账真的变了；
+  ③ 停位角度精确 `(360 − (index*45 + 22.5))°`（差半格就「停在 A 却发 B」）。
+- 扩展：`TARGETS` 加页面 + 用例；桩缺的全局补进 `BASE_SANDBOX`。**改完页面先跑它**。
 
 ## 登录态与退出登录（小程序）
 - 登录态 = `utils/request.js` 的 `isBound()`：**有 token 且已绑定名单账号**（游客 token 不算登录），且未被主动退出。
@@ -450,8 +528,14 @@
   `building.view|building.manage|config.view` 下 —— 那是**宿管维护楼名清单**的权限，
   发给所有教师就等于让他们能改全校配置。所以：
   ① 只读楼名走 `GET /api/class/buildings`（登录即可读，只回 `{teaching,dorm}` 字符串）；
-  ② 宿舍面板（`/student/:id/manage` 与 `/student/:id/dorm`）**自带楼名**（配置 ∪ 历史），
-     前端不再单独请求 `/api/admin/config/buildings`；
+  ② 宿舍面板（`/student/:id/manage` 与 `/student/:id/dorm`）**自带楼名**，前端不再单独请求
+     `/api/admin/config/buildings`；候选口径唯一在 `services/student-dorm.js::buildingOptions`
+     —— **以系统设置清单为准，只有「一条都没配」才退回历史聚合**（用户 2026-11-12「班级宿舍管理
+     与用户详情的弹窗多出来 1号楼 与 洋河」：房间按自由文本「楼名·门号」自动建档，历史楼名必然
+     掺手打的旧写法/错写法 —— 实测「洋河」160 间 739 人在住；无条件并入 = 白名单失效，
+     且两个入口（全校聚合 vs 本班聚合）出现两套楼名）；
+     「某生现住楼不在清单里」由 `components/dorm-sheet` 补一条 `legacy` 胶囊兜住，
+     否则住在旧写法楼里的人改床位被「请先选择楼号」永久堵死（回归 `tools/check-dorm-sheet.js`）；
   ③ 楼名的增删改仍然只走 `PUT /api/admin/config` + `building.manage`，两者刻意分开。
   这条规律适用于所有「参考数据」：**读取（填表要用）与维护（改全校配置）必须拆成两条路径**。
 - `/api/auth/me` 必须暴露 `homeroomClasses` 与 `isClassOfficer`：自定义 tabBar 依赖它决定教师中间导航项
@@ -514,7 +598,7 @@
        没有它就是「今日未达标筛出全部 43 个班」——今日全校达标率个位数，
        没有任何班到 100%，那个 chip 等于没筛（用户截图里就是这个）。
        档位与快捷 chip **互斥**（前端选一个清另一个），服务端同时收到时 quick 优先。
-    ③ **「考勤统计 N 天」只在真有考勤数据时出现**（`rows` 任一 `attendance.hasData`）。
+    ③ **「考勤统计」那一行只在真有考勤数据时出现**（窗口 2026-11-12 起为本日/本周/本月，旧「N 天回看」已废弃）（`rows` 任一 `attendance.hasData`）。
        实测 `check_records` 全库仅 4 条且 `moduleKey` 只有 `hygiene`（卫生区），
        而考勤统计的是早操/早八/晚自习/查宿——**一条都不匹配**，那列永远是「—」。
        一个永远为空的控件摆在筛选区最显眼处，是这页"难看"的主要来源。
@@ -542,13 +626,25 @@
   （`metrics.ratios.rate` 是记录级比率）。看板聚合曾读成 metrics 层的 shouldCount →
   应到恒 0 → ratePercent 恒 null → 考勤列恒「—」。`tools/check-server-contract.js` 钉死
   「不再出现 metrics 层的 shouldCount/actualCount/shouldStay」。
-- **日期选择多级联动（用户 2026-11-03「增加日期选择，考勤应该没有周的选择」）**：
-  前端 `selectedDate`（空=今天，picker 上界=今天）一次联动三处：日达标列=所选当天、
-  周达标列=所选日所在 ISO 周（周一至该日）、**考勤窗口=所选日往前 N 天**（N 由
-  「考勤统计」chips 控制——考勤按天回看，**永远没有「周」语义**，不随指标日/周切换）。
-  选了非今天的日期：快捷 chip 文案 今日→当日 / 本周→当周（`chipsFor()`），指标条同理；
-  非今天才传 `today` 参数（缓存友好），服务端 `isValidDateKey` 校验非法值回退今天。
-  回归：`verify-class-status.js` 第 11 节（today 覆盖/周起点重算/考勤区间锚定/非法回退）。
+- **日期选择 + 考勤统计窗口（用户 2026-11-12 修订，覆盖 11-03 的旧口径）**：
+  前端 `selectedDate`（空=今天，picker 上界=今天）联动日达标列=所选当天、周达标列=所选日所在 ISO 周。
+  ⚠️ **考勤窗口不再是「往前回看 N 天」**（旧文档写的「考勤按天回看、永远没有周语义」已被用户
+  明确否掉：「要本日、本周、本月，而不是3天7天这样」）。现口径 = `attRange: day|week|month`，
+  起止由**服务端** `attWindow(rangeKey, day)` 按所选日锚定算（本日=当天；本周=ISO 周一起至该日；
+  本月=1 号起至该日），前端只传 key、**不许自己算周/月起点**（迟早和班超的 ISO 周对不上）。
+  · 周起点用 `dates.weekRange`（与校园跑周达标同源），**不用** band-chao 的「当月第 N 周」；
+  · 非法窗口与旧的 `days=` 参数一律回退本周，`days` 不再参与计算（两套窗口并存迟早
+    「脚注说本周、数据是回看 7 天」）；
+  · **缓存 key 必须含窗口**（`day|from|weekStart|attRangeKey`），漏这一维=切窗口拿到上一个
+    窗口的结果，数字看着正常但区间是错的，属静默 bug；
+  · 考勤计算规则文案由服务端 `buildAttRuleLines()` 生成（单价取自 PERSON_DEDUCT 真源，
+    不写死），页面脚注 / 生成图片 / copy=all 的复制文案**三处共用**；
+  · 图片底部布局走 `planShareFooter()` 单点算 footH 与每行 y —— 画布高度要先于 ctx 算出，
+    所以折行用字符预算而非 measureText；高度与绘制分两处算必出现内容重叠/被切，
+    而画布溢出是静默的（图能发出去，只是规则少了半行）。
+  回归：`verify-class-status.js` 第 9/11 节（缓存 key 维度、三窗口起止、造数验窗口真的影响数据、
+  规则文案随单价变动）+ `check-page-runtime.js` 班级状态用例（脚注取服务端规则、
+  footH 装得下最后一行、失败清空规则）+ `check-server-contract.js`（窗口/规则接线）。
 - **第三轮（用户 2026-11-03「多选年级筛选 / 生成图片转发 / 低于95% / 按年级与名称排序」）**：
   ① **年级多选**走服务端 `filterBoard` 的 `grades` 参数（与复制文案同源，标签按选中升序拼
   「2023+2024级」自动进 copyText 标题）；行的年级口径 = `class_profiles.grade` 优先、

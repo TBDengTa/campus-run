@@ -305,6 +305,11 @@ router.get(
     }
 
     const upgrade = await acModel.checkUpgradeReadiness(false);
+    // 阶段性自升级快照（用户 2026-11-12）：状态台的「唐跑AI数据模型」卡片直接渲染它。
+    // 与 /model-stages 同一份实现（services/anticheat-upgrade.js::snapshot）——
+    // 两处各算一份必然出现「状态台说影子辅助、配置页说无监督」。
+    const upgradeSvc = require('../services/anticheat-upgrade');
+    const stages = await upgradeSvc.snapshot().catch(() => null);
 
     // 运行指标：登录页那份 public-status 只有「够部署自检」的量，
     // 这里（已登录）才给累计请求数、内存等运维细节。
@@ -330,6 +335,8 @@ router.get(
       queue: { open: openCount, bannedToday, unlabeledToday, matrix },
       activeRestricted,
       upgrade,
+      // 阶段性自升级（用户 2026-11-12）：卡片里画三级阶梯 + 当前阶段 + 下一阶段缺什么
+      stages,
       recentBans: recentBans.map((b) => ({
         at: b.createdAt,
         scope: b.banType || 'login',
@@ -569,6 +576,63 @@ router.post(
   })
 );
 
+// ===== 唐跑AI数据模型 · 阶段性自升级（用户 2026-11-12）=====
+//
+// 三个接口，权限口径与其它反作弊动作一致：
+//   GET  /model-stages      阶段快照（view）—— 状态台直接渲染
+//   POST /model-evaluate    立即评估（manage）—— 训练 + 判闸门 + 必要时升降级
+//   PUT  /model-stage       手动指定阶段（manage）—— 人工兜底，会记审计
+//
+// ⚠️ 业务实现全部在 services/anticheat-upgrade.js（Web 与小程序管理端共用）：
+//   这里只做鉴权与取参。两边各写一套训练/闸门逻辑，必然漂移出
+//   「Web 说已达闸门、小程序说不达标」这种最难解释的分歧。
+router.get(
+  '/model-stages',
+  requireConsole('anticheat.view'),
+  wrap(async (req, res) => {
+    const upgradeSvc = require('../services/anticheat-upgrade');
+    ok(res, await upgradeSvc.snapshot());
+  })
+);
+
+router.post(
+  '/model-evaluate',
+  requireConsole('anticheat.manage'),
+  wrap(async (req, res) => {
+    const upgradeSvc = require('../services/anticheat-upgrade');
+    const source = String((req.body || {}).source || 'all');
+    const operator = req.console.account || 'console';
+    const results =
+      source === 'all'
+        ? await upgradeSvc.evaluateAll({ operator })
+        : [await upgradeSvc.evaluateSource(source, { operator })];
+    // 评估完回完整快照：前端不用再拉一次，也避免「评估结果」与「阶梯展示」两份数据打架
+    ok(res, { results, snapshot: await upgradeSvc.snapshot() });
+  })
+);
+
+router.put(
+  '/model-stage',
+  requireConsole('anticheat.manage'),
+  wrap(async (req, res) => {
+    const upgradeSvc = require('../services/anticheat-upgrade');
+    const body = req.body || {};
+    const source = String(body.source || '');
+    const operator = req.console.account || 'console';
+    if (!['werun', 'gps'].includes(source)) throw new ApiError(400, 400, 'source 只能是 werun / gps');
+    // 手动锁定的两种用法：指定阶段 / 解除锁定（回到自动）
+    if (body.mode === 'auto') {
+      const r = await upgradeSvc.releaseManual(source, { operator, note: body.note });
+      return ok(res, { ...r, snapshot: await upgradeSvc.snapshot() });
+    }
+    const stage = Number(body.stage);
+    if (!Number.isFinite(stage) || stage < 0 || stage > 2) throw new ApiError(400, 400, 'stage 只能是 0 / 1 / 2');
+    const r = await upgradeSvc.manualSetStage(source, stage, { operator, note: body.note });
+    console.log(`[console] ${operator} 手动设定反作弊模型阶段：${source} ${r.from} → ${r.to}`);
+    ok(res, { ...r, snapshot: await upgradeSvc.snapshot() });
+  })
+);
+
 // 模型配置与生效阈值（读 anticheat.view，改需 anticheat.manage）
 router.get(
   '/model-status',
@@ -616,6 +680,9 @@ router.get(
       aiStrictness: ac.aiStrictness || 'balanced',
       aiSuspiciousThreshold: ac.aiSuspiciousThreshold == null ? null : Number(ac.aiSuspiciousThreshold),
       aiAutoBanThreshold: ac.aiAutoBanThreshold == null ? null : Number(ac.aiAutoBanThreshold),
+      // 阶段性自升级开关（用户 2026-11-12）：模型配置页要能直接看到并切换
+      autoUpgrade: ac.autoUpgrade !== false,
+      autoDemote: ac.autoDemote !== false,
       maxStepJumpPerSync: ac.maxStepJumpPerSync,
       minPaceSecondsPerKm: ac.minPaceSecondsPerKm,
       banDays: ac.banDays,
