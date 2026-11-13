@@ -480,6 +480,9 @@ function uploadCheckPhoto(filePath, options = {}) {
       url: `${env.BASE_URL}/api/upload/check-photo`,
       filePath,
       name: 'file',
+      // 显式 120s（默认 60s 偏紧）：留证照片常在检查现场弱网上传，水印成片 1.5~3MB
+      // 也要给足余量；真机大文件超时是「拍照后上传失败」的表现层之一（2026-11-13）。
+      timeout: 120000,
       header: { Authorization: getToken() ? `Bearer ${getToken()}` : '' },
       success: (res) => {
         const status = Number(res.statusCode) || 0;

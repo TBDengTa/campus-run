@@ -20,7 +20,8 @@ function toDate(v) {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-// 按北京时区取 {y, m, d, h, min}
+// 按北京时区取 {y, m, d, h, min, sec}
+// sec 只有 formatWatermarkTime（水印相机）用；其余调用方忽略即可
 function partsInTz(v) {
   const date = toDate(v);
   if (!date) return null;
@@ -29,6 +30,7 @@ function partsInTz(v) {
   let d;
   let h;
   let min;
+  let sec;
   try {
     const p = new Intl.DateTimeFormat('en-CA', {
       timeZone: TZ,
@@ -37,6 +39,7 @@ function partsInTz(v) {
       day: '2-digit',
       hour: '2-digit',
       minute: '2-digit',
+      second: '2-digit',
       hour12: false,
     }).formatToParts(date);
     const get = (t) => (p.find((x) => x.type === t) || {}).value;
@@ -45,6 +48,7 @@ function partsInTz(v) {
     d = Number(get('day'));
     h = Number(get('hour'));
     min = Number(get('minute'));
+    sec = Number(get('second'));
     if (h === 24) h = 0; // 部分实现会给 24:00
   } catch (e) {
     // 极老基础库没有 Intl 时区支持 → 退回本地时间（中国用户本地即 +08:00）
@@ -53,8 +57,9 @@ function partsInTz(v) {
     d = date.getDate();
     h = date.getHours();
     min = date.getMinutes();
+    sec = date.getSeconds();
   }
-  return { y, m, d, h, min };
+  return { y, m, d, h, min, sec };
 }
 
 function formatNumber(n) {
@@ -106,6 +111,17 @@ function formatDateTime(v) {
   const p = partsInTz(v);
   if (!p) return '';
   return `${p.y}-${String(p.m).padStart(2, '0')}-${String(p.d).padStart(2, '0')} ${formatClock(v)}`;
+}
+
+// 水印相机专用：YYYY-MM-DD 周X HH:mm:ss（北京时区，含秒含周几）
+// 唯一实现（docs/watermark-camera-plan.md §4）：页面禁止从 ISO 串切片拼时间。
+// 周几按北京时区日历日期算（用 UTC 构造避免依赖设备时区——y/m/d 已是北京日期）。
+function formatWatermarkTime(v) {
+  const p = partsInTz(v);
+  if (!p) return '';
+  const week = '日一二三四五六'[new Date(Date.UTC(p.y, p.m - 1, p.d)).getUTCDay()];
+  const pad = (x) => String(x).padStart(2, '0');
+  return `${p.y}-${pad(p.m)}-${pad(p.d)} 周${week} ${pad(p.h)}:${pad(p.min)}:${pad(p.sec)}`;
 }
 
 // dateKey → {y, m, d, week}
@@ -180,6 +196,7 @@ module.exports = {
   todayKey,
   formatClock,
   formatDateTime,
+  formatWatermarkTime,
   parseDateKey,
   sourceOf,
   SOURCE_MAP,

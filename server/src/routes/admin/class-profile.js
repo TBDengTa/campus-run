@@ -466,6 +466,10 @@ function treeNode(key, label, level) {
     count: 0,
     configured: false, // organizations 里配置过（count=0 就是「配了但还没有班」，仍要能选）
     synced: false, // 学籍里出现过（与平铺 facets 的 synced 同义）
+    // 「写了系部名、但在组织架构里对不上」的班数（count 的子集）：管理员据此判断
+    // 「院校对了、系部还没归位」。⚠️ 必须挂在**节点**上：曾写在 tree 索引条目（{node,depts}）上，
+    // 那个对象不会进响应体，等于这个字段从来没下发过。
+    unmappedDeptCount: 0,
     departments: [], // 院校节点的系部（按 organizations.parentId 挂）
     specialties: [], // 系部节点的专业；「有院校没系部」的班直接挂在该院校节点下
   };
@@ -587,8 +591,12 @@ function buildFacetTree({ allProfiles, schoolUsers, deptUsers, schoolOrgs, deptO
     }
     const dept = deptName ? school.depts.get(deptName) : null;
     if (dept) {
-      // 院校与系部都在组织架构里（parentId 层级确认）：系部 count 记该系的班数，专业挂系部下
+      // 院校与系部都在组织架构里（parentId 层级确认）：系部 count 记该系的班数，
+      // **院校 count 也必须 +1** —— 节点的 count 语义是「按该节点筛选能筛出的班数」，
+      // 少这一行就会让「北校区（37个班）」显示成「北校区（暂无班级）」，
+      // 而选下去又能筛出班级（用户 2026-11-13 截图报障的正是这个）。
       dept.count += 1;
+      school.node.count += 1;
       if (spec) specialtyNodeOf(dept, spec, false).count += 1;
       continue;
     }
@@ -597,7 +605,7 @@ function buildFacetTree({ allProfiles, schoolUsers, deptUsers, schoolOrgs, deptO
     // unmappedDeptCount 记录其中「写了系部名但对不上组织架构」的班数：管理员能看出
     // 「这些班的院校是对的、系部还没归位」，去组织架构里补父级即可自动归位。
     school.node.count += 1;
-    if (deptName) school.unmappedDeptCount = (school.unmappedDeptCount || 0) + 1;
+    if (deptName) school.node.unmappedDeptCount = (school.node.unmappedDeptCount || 0) + 1;
     if (spec) specialtyNodeOf(school.node, spec, false).count += 1;
   }
 
@@ -667,10 +675,17 @@ router.get(
     if (req.query.noMorningRun === '1') filter.hasMorningRun = false;
     // 班级状态筛选（正常 / 实习 / 毕业）：缺省字段视为正常
     const statusQ = str(req.query.status, 20);
+    // facets 的台账范围：**只带班级状态**，不带其它维度（关键词 / 院校 / 系部 / 专业 / 年级）。
+    // 「各维度自身不带」是下拉选项的常规口径；而状态必须带 —— 否则下拉数字与「点进去的班数」
+    // 对不上（全量含实习班），用户会第二次报「筛选坏了」。见下方 ClassProfile.find(facetScope)。
+    const facetScope = {};
     if (statusQ === 'normal') {
-      filter.$and = (filter.$and || []).concat([{ $or: [{ status: 'normal' }, { status: null }, { status: { $exists: false } }] }]);
+      const cond = { $or: [{ status: 'normal' }, { status: null }, { status: { $exists: false } }] };
+      filter.$and = (filter.$and || []).concat([cond]);
+      facetScope.$and = (facetScope.$and || []).concat([cond]);
     } else if (statusQ === 'intern' || statusQ === 'graduated') {
       filter.status = statusQ;
+      facetScope.status = statusQ;
     }
     // 系部：与院校同一口径 —— **名字为主、ObjectId 兼容**。
     // 为什么不能只按 departmentId 筛：名单导入（services/roster.js）只写 schoolName/departmentName，
@@ -758,7 +773,12 @@ router.get(
     // 筛选条件、前端筛选取值一致）；count 只统计台账班级数（源 A / C 命中但没有班的项 count=0，照样可选）。
     const [allProfiles, schoolOrgs, deptOrgs, specialtyOrgs, schoolUsers, deptUsers] = await Promise.all([
       // specialty 必须一起取：facets.tree 的第三级（专业）就是按台账实际值建的
-      ClassProfile.find({})
+      //
+      // ⚠️ 只带**班级状态**条件（不带关键词 / 院校 / 系部 / 专业 / 年级）：
+      //   ① 不带其它维度 → 选了一个院校别的院校不会从下拉里消失（维度互不影响）；
+      //   ② 必须带状态 → 否则「下拉写 37 个班、点进去只有 28 个」（全量含 9 个实习班），
+      //      这是第二类「看着像筛选坏了」的报障（用户 2026-11-13 之前就报过「暂无班级」）。
+      ClassProfile.find(facetScope)
         .select('className schoolId schoolName departmentId departmentName grade specialty')
         .lean(),
       // parentId 是树的层级来源（院校 → 系部 → 专业），少取它树就挂不起来

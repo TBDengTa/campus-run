@@ -41,6 +41,11 @@ const PHOTO_PICK_COUNT = 9;
 // 平台上传通道对超大文件可能直接 fail（服务端已不限制，但客户端不受我们控制）：
 // **原图优先**，只有 uploadFile 失败后才压缩重试一次（不是上传前的预压缩，不影响正常画质）。
 const PHOTO_RETRY_EDGE = 2560;
+// 单张上传的**硬超时**：`wx.uploadFile` 在极少数情况（弱网 / 大包被中间层吞掉）
+// 会「既不 success 也不 fail」。没有超时，`uploading` 就会一直为 true，
+// 之后每张照片都会在 `uploadPending` 入口静默 return —— 照片不出现、控制台也没有报错，
+// 正是用户 2026-11-13「连报错都没有」的形态。超时后正常走失败分支（可重试、有文案）。
+const PHOTO_UPLOAD_TIMEOUT_MS = 150000;
 // 照片字段的 type。后端已把 check-module 的 type enum 定为 'photo'，
 // 这里同时容忍 'photos' / 'image' 两种写法（契约演进期的保守兼容，**不改字段名**）。
 const PHOTO_TYPES = ['photo', 'photos', 'image'];
@@ -50,6 +55,32 @@ function isPhotoField(f) {
   if (PHOTO_TYPES.indexOf(String(f.type || '')) >= 0) return true;
   // 兜底：字段定义只给了 key='photos' 而 type 缺省（后端契约落地过程中的中间态）
   return !f.type && f.key === 'photos';
+}
+
+// 给「可能永不回调」的异步操作套一层硬超时（见 PHOTO_UPLOAD_TIMEOUT_MS 的说明）。
+function withHardTimeout(promise, ms, label) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(new Error(label || '操作超时'));
+    }, ms);
+    Promise.resolve(promise).then(
+      (v) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(e);
+      }
+    );
+  });
 }
 
 // select 字段的值在表单里是**数组**（多选口径，见 onSelectTap）；这里统一成字符串数组再判值
@@ -224,6 +255,8 @@ Page({
     targetIndex: -1,
     current: null,
     keyword: '',
+    // 水印相机第三行的部门名（load 时从 /api/union/mine 的 roles[].deptName 取，服务端单点）
+    wmDeptName: '',
     // 申诉改判模式（从「申诉成立 → 更正记录内容」进来）：提交时带 settleAppeal 一并结案
     appealReview: false,
     // 「提交修改」带过来的定位信息（recordId / targetId / date / period）：
@@ -374,6 +407,9 @@ Page({
       const batchSelects = fieldsAll
         .filter((f) => f && !f.derived && f.type === 'select' && (f.options || []).length)
         .map((f) => ({ key: f.key, label: f.label || f.key, options: f.options, value: f.options[0] }));
+      // 水印相机第三行「部门 · 姓名」的部门名：单点取 /mine 下发的 roles[].deptName
+      // （服务端 buildIdentity 已拼好，主席团恒为「主席团」）；前端不自算，缺失时相机页只写姓名。
+      const wmDeptName = ((mine.roles || []).map((r) => r && r.deptName).find(Boolean)) || '';
       this.setData({
         module,
         modules: list,
@@ -388,6 +424,7 @@ Page({
         personsLimit: tpl.studentFieldLimit || 200,
         canBatch: fieldsAll.some((f) => f && f.type === 'students') && !module.optionalWhenMissing,
         batchSelects,
+        wmDeptName,
       });
       await this.loadTargets();
     } catch (e) {
@@ -1383,19 +1420,122 @@ Page({
     this.setData({ 'form.score': Math.round((total / max) * fullScore * 100) / 100 });
   },
 
-  // ===== 留证照片（type='photo'）=====
+  // ===== 留证照片（type='photo'）—— 双入口（docs/watermark-camera-plan.md）=====
   //
-  // 链路：wx.chooseMedia（拍照 / 相册，compressed）→ **逐张**上传 /api/upload/check-photo
-  //       → 每张成功即把 url 收进 this.data.photos → 提交时统一把 URL 数组写进 form[照片字段]
+  // 「水印拍照」：packageUnion/wcamera 拍 → canvas 把「模块·对象 / 日期时间 / 部门·检查人」
+  //               烙进照片文件 → EventChannel 带回 → 走下面同一条上传管线。
+  // 「相册（无水印）」：wx.chooseMedia album-only（D1 定稿：补录说明图仍可用，
+  //               按钮文案显式标注无水印，复核员看水印有无即可分辨拍摄通道）。
   //
-  // 三个刻意的设计（改动前先读）：
+  // 上传管线三个刻意的设计（改动前先读）：
   //   ① **逐张上传而不是 Promise.all**：现场网络差时并发上传会互相抢带宽、整体都变慢；
   //      逐张还能让每张独立显示进度与失败原因。
   //   ② **单张失败不丢整组**：失败的只标记 status='failed' 并保留本地临时图，用户点一次就只重传这一张。
   //      用 Promise.all 的话一个失败整组回滚，用户得重新拍 9 张。
   //   ③ **本地图与远程 URL 分开存**：pending/uploading/failed 的项只有本地 path，提交时这些一律不算数
   //      （否则会把本地临时路径当 URL 发到服务端，记录里就存了一串 wxfile:// 死链）。
-  onChoosePhoto(e) {
+  onWatermarkCamera(e) {
+    const field = (e && e.currentTarget && e.currentTarget.dataset.field) || this.photoFieldKey();
+    if (this.data.uploading) return;
+    const current = this.data.current || {};
+    const that = this;
+    wx.navigateTo({
+      url: '/packageUnion/wcamera/wcamera',
+      events: {
+        // 相机页「完成」/ 系统相机回退统一走 done；只回传临时路径（size 在 append 时补齐）
+        done(res) {
+          const shots = (res && res.photos) || [];
+          if (!shots.length) return;
+          that.appendWatermarkPhotos(shots, field);
+        },
+      },
+      success(res) {
+        // D9：相机页零网络请求 —— 水印文案全部从这里传入。
+        // 行1 与抽屉标题同源（current.targetName），保证「记录标题」与「照片水印」一致。
+        res.eventChannel.emit('init', {
+          moduleName: (that.data.module && that.data.module.name) || '',
+          targetName: current.targetName || '',
+          deptName: that.data.wmDeptName || '',
+        });
+      },
+    });
+  },
+
+  // 相机页带回的图入列：合成产物只有临时路径没有 size，必须用 getFileInfo 补齐 ——
+  // 否则失败兜底 retryWithCompressed 里「size < 2MB 跳过压缩」的判断会把 size=0 全跳过，
+  // 压缩重试通道静默失效（plan §5.3）。
+  //
+  // ⚠️ 2026-11-13「超过 250KB 就传不上去、调试连报错都没有」：
+  //   相机页会同时给「用户目录副本」与「临时路径副本」，这里**逐一验证哪份真的还能读**，
+  //   并给 getFileInfo 加超时 —— 它一旦既不 success 也不 fail，整条入列链会**静默卡死**
+  //   （照片不出现、也没有任何报错，正是「连报错都没有」的成因）。
+  //   两份都读不到时明确报错到界面，绝不静默丢弃。
+  async appendWatermarkPhotos(shots, field) {
+    const fieldKey = field || this.photoFieldKey();
+    const probes = (shots || []).map((s) => this.resolvePhotoSource(s));
+    const withSize = await Promise.all(probes);
+    const picked = withSize.filter((f) => f && f.path);
+    const lost = withSize.length - picked.length;
+    if (lost > 0) {
+      // 有图读不到：必须让用户/开发者看见，否则就是「拍照了但什么都没发生」
+      console.error('[entry] 水印照片文件不可读，已跳过', withSize.filter((f) => !f || !f.path));
+      wx.showToast({ title: `有 ${lost} 张照片文件已失效，请重拍`, icon: 'none' });
+    }
+    const added = picked.map((f) => ({
+      path: f.path,
+      size: f.size,
+      url: '',
+      status: 'pending',
+      progress: 0,
+      error: '',
+    }));
+    if (!added.length) return;
+    this.setPhotos(this.data.photos.concat(added));
+    this.uploadPending(fieldKey);
+  },
+
+  // 在「稳定副本 / 临时副本」里挑一份真的存在、能读到 size 的图。
+  // 返回 { path, size } 或 null（两份都读不到）。
+  // getFileInfo 在个别机型上会挂死（既不 success 也不 fail）→ 用超时兜住，绝不让入列链卡住。
+  resolvePhotoSource(shot) {
+    const path = (shot && shot.path) || '';
+    const backup = (shot && shot.backupPath) || '';
+    const candidates = [path, backup].filter(Boolean);
+    if (!candidates.length) return Promise.resolve(null);
+    const probe = (p) =>
+      new Promise((resolve) => {
+        let settled = false;
+        const done = (v) => {
+          if (settled) return;
+          settled = true;
+          resolve(v);
+        };
+        // 1.5s：正常 10ms 级返回；挂死时必须继续往下走，不能把整条链拖住
+        const timer = setTimeout(() => done(null), 1500);
+        wx.getFileSystemManager().getFileInfo({
+          filePath: p,
+          success: (r) => {
+            clearTimeout(timer);
+            const size = Number(r && r.size) || 0;
+            done(size > 0 ? { path: p, size } : null);
+          },
+          fail: () => {
+            clearTimeout(timer);
+            done(null);
+          },
+        });
+      });
+    return (async () => {
+      for (let i = 0; i < candidates.length; i += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        const hit = await probe(candidates[i]);
+        if (hit) return hit;
+      }
+      return null;
+    })();
+  },
+
+  onAlbumPick(e) {
     const field = (e && e.currentTarget && e.currentTarget.dataset.field) || this.photoFieldKey();
     if (this.data.uploading) return;
     const that = this;
@@ -1403,7 +1543,8 @@ Page({
       // 平台单次上限 9 张；不限制总张数，用户可以反复添加（服务端也已不限张数）
       count: PHOTO_PICK_COUNT,
       mediaType: ['image'],
-      sourceType: ['album', 'camera'],
+      // D1 定稿：相册只管相册，拍照一律走水印相机（入口拆分，按钮文案标注无水印）
+      sourceType: ['album'],
       // 原图直传：解除所有上传限制后不再压画质（用户 2026-11-12）
       sizeType: ['original'],
       success(res) {
@@ -1444,6 +1585,9 @@ Page({
         await this.uploadOne(i, fieldKey);
       }
     } finally {
+      // ⚠️ uploading 必须**无条件**复位：它一旦被卡住（比如某次上传既不回调也不报错），
+      // 之后每次上传都会在入口 `if (this.data.uploading) return;` 里静默返回 ——
+      // 照片不出现、控制台也没动静，正是用户 2026-11-13「连报错都没有」的形态。
       this.setData({ uploading: false });
     }
     this.syncPhotoForm(fieldKey);
@@ -1458,14 +1602,29 @@ Page({
       // 原图直传（用户 2026-11-12「解除所有上传照片的限制」）：
       // 服务端与 nginx 都已取消体积上限，不再为了「压到上限内」损失画质。
       // 逐张上传、进度与失败原因仍按单张显示。
-      const data = await auth.uploadCheckPhoto(item.path, {
-        onProgress: (percent) => this.patchPhoto(index, { progress: Number(percent) || 0 }),
-      });
+      // 套硬超时：`wx.uploadFile` 偶发「既不 success 也不 fail」，否则 uploading 卡死 →
+      // 之后所有照片静默不上传（用户 2026-11-13「连报错都没有」）。
+      const data = await withHardTimeout(
+        auth.uploadCheckPhoto(item.path, {
+          onProgress: (percent) => this.patchPhoto(index, { progress: Number(percent) || 0 }),
+        }),
+        PHOTO_UPLOAD_TIMEOUT_MS,
+        '上传超时（照片较大或网络较慢），请检查网络后重试'
+      );
       this.patchPhoto(index, { status: 'done', progress: 100, url: (data && data.url) || '' });
     } catch (err) {
       // 把**真实原因**显示出来（用户 2026-10-26「检查录入上传照片依旧失败」，
       // 但界面上只有一句「上传失败」，无法判断是 403 / 超时 / 域名白名单）。
       const code = err && err.code;
+      // ⚠️ 2026-11-13「调试连报错都没有」：必须先把它打到控制台。
+      // 之前只有界面上一行小字，真机/开发者工具里捞不到原始 errMsg，排查全靠猜。
+      console.error('[entry] 检查照片上传失败', {
+        path: item.path,
+        size: item.size,
+        code,
+        message: (err && err.message) || '',
+        raw: (err && err.errMsg) || '',
+      });
       // 身份 / 登录问题压缩也没用，不重试；其它失败先尝试「压缩后重传一次」——
       // 服务端已不限制体积，但小程序 uploadFile 通道对超大原图仍可能直接 fail。
       if (code !== 401 && code !== 403002) {
@@ -1476,40 +1635,55 @@ Page({
       if (code === 403002) msg = '上传被拒：你还不是学生会成员（请确认已在成员名单中）';
       else if (code === 401) msg = '登录已过期，请重新登录后再传';
       // 服务端 / 网络层有可读 message 就原样展示（含超时、网关 413 等真实原因）
+      // ⚠️ 附带**这张图的真实体积**（2026-11-13「水印照片又传不上去」排查代价太大）：
+      // 「几十 MB」= 合成侧规格没生效（水印相机重编码把图放大了），「1~3MB」= 网络/服务端问题。
+      // 没有这个数字，现场只能靠猜，两种根因的修法完全相反。
+      if (item.size > 0 && !/MB|KB/.test(msg)) msg += `（照片 ${fmt.formatSize(item.size)}）`;
       this.patchPhoto(index, { status: 'failed', error: msg });
     }
   },
 
   // 失败兜底：把原图压缩到平台更容易接收的体积后重传**一次**。
   // 只在 uploadOne 的 catch 里调用（原图优先），成功返回 true。
+  //
+  // ⚠️ 2026-11-13「超过 250KB 就传不上去」：旧版对 <2MB 的图**直接跳过压缩**，
+  // 于是一张 600KB 的成片失败后没有任何补救（用户看到的就是「怎么都传不上去」）。
+  // 现在改成**按体积阶梯逐级缩小**（先 2560，再 1600），只要能传上去就比丢照片好；
+  // 原图仍然优先直传（这里只在直传失败后才跑）。
   async retryWithCompressed(item, index) {
     if (!wx.compressImage || !item || !item.path) return false;
-    // 小于 2MB 的图压缩也不会改变「上传通道拒绝」的结论，省一次等待
-    if (item.size && item.size < 2 * 1024 * 1024) return false;
-    let small = '';
-    for (const quality of [80, 60]) {
-      small = await this.tryCompress(item.path, quality);
-      if (small && small !== item.path) break;
+    // 小于 100KB 的图再压也不会改变「通道拒绝」的结论，省一次等待
+    if (item.size && item.size < 100 * 1024) return false;
+    const ladder = [
+      { quality: 80, width: PHOTO_RETRY_EDGE },
+      { quality: 70, width: 1600 },
+    ];
+    for (let i = 0; i < ladder.length; i += 1) {
+      const step = ladder[i];
+      // eslint-disable-next-line no-await-in-loop
+      const small = await this.tryCompress(item.path, step.quality, step.width);
+      if (!small || small === item.path) continue;
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const data = await auth.uploadCheckPhoto(small, {
+          onProgress: (percent) => this.patchPhoto(index, { progress: Number(percent) || 0 }),
+        });
+        this.patchPhoto(index, { status: 'done', progress: 100, url: (data && data.url) || '' });
+        return true;
+      } catch (e) {
+        console.warn('[entry] 压缩重传仍失败', { step, message: (e && e.message) || '', raw: (e && e.errMsg) || '' });
+      }
     }
-    if (!small || small === item.path) return false;
-    try {
-      const data = await auth.uploadCheckPhoto(small, {
-        onProgress: (percent) => this.patchPhoto(index, { progress: Number(percent) || 0 }),
-      });
-      this.patchPhoto(index, { status: 'done', progress: 100, url: (data && data.url) || '' });
-      return true;
-    } catch (e) {
-      return false;
-    }
+    return false;
   },
 
-  // 单次压缩（只给失败兜底用）：quality 越高越清晰、体积越大
-  tryCompress(src, quality) {
+  // 单次压缩（只给失败兜底用）：quality 越高越清晰、体积越大；width = 目标宽度上限
+  tryCompress(src, quality, width) {
     return new Promise((resolve) => {
       wx.compressImage({
         src,
         quality,
-        compressedWidth: PHOTO_RETRY_EDGE,
+        compressedWidth: width || PHOTO_RETRY_EDGE,
         success: (r) => resolve((r && r.tempFilePath) || ''),
         fail: () => resolve(''),
       });

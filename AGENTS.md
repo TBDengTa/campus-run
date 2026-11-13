@@ -52,6 +52,33 @@
 - 详细规范见 `docs/ui-design.md`（新增页面必须遵守）。
 - 大数字用 `.num-font`，格式化统一走 `utils/format.js`。
 
+## 组织归属（院校 → 系部）解析：`services/org-resolve.js`
+- **唯一实现**：`orgResolve.resolveDepartment()/resolveDepartmentSync()`。录入台对象列表、写入/名单的
+  `resolveClassInfo`、宿舍/卫生区 `resolveTarget`、名单导入（`roster.importRows`）、台账同步
+  （`classProfiles.syncClassProfiles`）**全部走它**，禁止各路由再自拼 `deptByName` 反查
+  （仓库里曾有 4 份同类实现，口径漂移正是 2026-11-13 报障的间接成因）。
+- **id 优先、名字兜底**：有 `departmentId` 就只认 id —— **绝不**在 id 存在但越界时用名字「救回来」
+  （同名系部在两个校区各有一个「计财系」，名字兜底会把跨校区越权洗成合法）；
+  只有 id 为空（名单只写名字的形态）才按名字反查，且要求**唯一命中**；同名歧义且无院校消歧时
+  返回 `ambiguous` 由调用方 fail-closed，**不要**退回「取第一个」（旧 `resolveOrg` 的 `list[0]`
+  实测把 2 间洋河宿舍、1 个洋河卫生区判成北校区）。
+- **名单导入必须落 id**（用户 2026-11-13「部员检查录入提示目标班级没有归属院系」的根因）：
+  `roster.importRows` 新建/更新都写 `schoolId/departmentId`；`syncClassProfiles` 在学籍缺 id 时
+  按名字补（只补不覆盖）；历史数据用 `server/scripts/backfill-org-ids.js`（默认 dry-run，
+  `--apply` 才写，幂等、只补空）修复。
+- **范围判定的名字兜底只在 id 缺失时生效**（`services/union.js::inDepartmentScope` /
+  `scopeFilter` / `canReview` 共用）；`identity.departmentNames` 只含「本校区展开出的系部名」，
+  所以名字兜底不会跨校区放行。`check_records` 同时落 `departmentName`，旧记录（id 为空）才判得出来。
+- **分院展示必须带真实校区名**：`buildIdentity` 的 `levelText = '<校区名>学生会'`（拿不到校区名才退回
+  「分院学生会」），`/api/union/mine` 另下发 `campusName`。用户 2026-11-13「控制台显示分院学生会，
+  这里显示真实的院校名称」。成员记录没绑校区时用**本人学籍院校**兜底（否则范围为空、连自己校区的班都录不了）。
+- **facets.tree 的 count 是「按该节点能筛出的班数」**：系部命中时**院校也要 +1**
+  （漏了这一行 → 「北校区（暂无班级）」，但选下去又能筛出班级；用户 2026-11-13 截图报障）；
+  `unmappedDeptCount` 必须挂在**节点**上（写在 tree 索引条目上永远下发给不了前端）；
+  facets 的台账范围要跟列表的 `status` 口径一致（否则「下拉 37 个班、点进去 28 个」）。
+- 回归：`tools/check-org-resolve.js`（静态：单一实现 / id 优先 / 展示文案 / 计数 / 回填脚本）
+  + `tools/verify-org-scope.js`（真连库：本校放行 + 跨校区仍拦 + facets 计数守恒 + 回填幂等）。
+
 ## 学籍字段约定
 - **年级 = 学号前 4 位（入学年份）**，如 `20230101 → "2023"`（展示为 `2023级`）。
   统一走 `server/src/services/roster.js::gradeFromStudentId()`（前端展示副本在 `account-edit.js`）：
@@ -194,6 +221,73 @@
      不藏在底部提交条里（用户 2026-11-04「批量录入可以选择批量的评价」）。只允许选
      「未录/已取消/被退回」的对象（已提交/已复核会撞 409），单次上限 100，409 计「跳过」
      并逐条汇总结果。
+
+- **检查录入水印相机（用户 2026-11-13「考勤录入的相机中增加水印，实现水印相机的效果」）**：
+  口径与边界唯一说明 `docs/watermark-camera-plan.md`（D1~D10 已定稿），改这块前必读。五条硬约束：
+  ① **水印在拍照瞬间烙进照片文件**（`packageUnion/wcamera` camera 组件 + canvas 2d 合成）——
+     上传、服务端、复审台零改动。**成片规格预算**（第二轮定稿，`docs/watermark-camera-round2-plan.md` A）：
+     `utils/watermark.js::OUT_ATTEMPTS` 三档阶梯（**2560/0.92 → 2048/0.85 → 2048/0.75**），
+     画布失败**或成片实际体积超 8MB**（`OUT_MAX_BYTES`，闭环只看 `getFileInfo` 真实大小）都降下一档重出，
+     解码只做一次、降档复用。为什么必须有：q1.0 满分辨率 canvas 重编码会把 3~6MB 的硬件 JPEG
+     放大成 10~20MB（软编码高 quality 段效率远差于相机硬件编码器）→ 撞真机 `wx.uploadFile`
+     通道上限 / 60s 默认超时 —— 正是 2026-11-13「拍照后上传显示失败」的根因；
+     `uploadCheckPhoto` 已显式 `timeout: 120000`。这**不是**「解除上传限制」的回潮：
+     红线保护的是**用户原图**（相册路径 original 原样直传、服务端不限体积均一行不动），
+     成片规格是水印相机的产品定义；`tools/verify-check-photo-unlimited.js` 必须原样通过。
+     ⚠️ **规格必须钉到导出像素数**（2026-11-13 第三轮「水印照片又传不上去」）：`canvasToTempFilePath`
+     的 `destWidth/destHeight` **默认 = 区域尺寸 × devicePixelRatio**，不传就在画布 2560 上再乘 3 倍
+     → 实际输出 7680 宽（44MP）几十 MB；而且**每一档都被同样放大**，闭环降到最后一档「无条件接受」
+     照样几十 MB = 「明明在降档、还是传不上去」。现 `destWidth/destHeight` 显式取 `canvas.width/height`。
+     ⚠️ **反向：不要传 `x/y/width/height`**（区域默认就是整块画布，`class-status` 同样不传；
+     部分机型按 canvas 的 **CSS 尺寸**解释这几个参数，本页离屏 CSS 只有 320×240 → 只导出左上角）。
+     同轮另两处：闭环**不再 fail-open**（`getFileInfo` 失败旧版当通过放行超大档）；降档途中抛错
+     用**已产出的那张**（`lastProduced`）而不是退回无水印原图。`uploadOne` 失败文案带**图片真实体积**
+     （几十 MB=合成侧规格失效 / 1~3MB=网络服务端，两种修法相反）。
+     ⚠️ **合成产物必须落盘到用户目录**（第四轮「拍照上传就失败、而**相册正常**」的根因）：
+     `canvasToTempFilePath` 给的是**临时文件**，微信明确「随时可能被系统清理」；而上传发生在
+     相机页 `navigateBack` **销毁之后**（连拍每张还多一份 3~6MB 原图临时文件）→ 临时区触顶后
+     最早的合成图被回收，entry 去传时文件已不存在。现合成完立刻 `saveFile` 到
+     `wx.env.USER_DATA_PATH`（托盘/上传都用稳定路径），失败回退临时路径；`onLoad` 清 24h 前 `wm-*`。
+     另：**「是不是体积问题」必须界面可答** —— 确认界面显示「将上传 · x MB」、失败文案带真实体积。
+  ② **文案与版式单点在 `utils/watermark.js`**（buildLines/computeLayout/wrapText/withTimeout）：
+     实时浮层与 canvas 烙图共用一份，两处各拼一份必然「预览写着 A、照片烙着 B」；
+     时间走 `utils/format.js::formatWatermarkTime`（含秒含周X，北京时区），**绝不从 ISO 串切片**；
+     部门名单点取 `/api/union/mine` 下发的 `roles[].deptName`（entry 存 `wmDeptName` 传入），前端不自算。
+     三行：`模块 · 对象` / `日期 周X 时:分:秒`（大字）/ `部门 · 检查人`（部门缺失只写姓名）。
+  ③ **相机页零网络请求**（D9 弱网/离线可拍）：文案全部由 entry 经 EventChannel `init` 传入，
+     检查人姓名读本地登录态缓存。授权失败（PC / 极旧基础库）走 D8 回退：引导面板 → openSetting
+     或系统相机（无水印），照片照常入库。
+  ④ **乐观预览：拍完必有确认界面**（2026-11-13 真机反馈「拍完没有返回/没有确认」的根治）：
+     快门成功**原图立即进确认界面**（重拍/用照片马上可用），水印在后台合成，完成后换带水印图；
+     读图/解码/输出每步 `withTimeout` 6s（真机大图会「既不 success 也不 fail」地挂死）；
+     两档合成全失败 → 保留原图 + toast「已保留原图」，确认流程照常可用（用照片 = 交无水印原图）。
+     **绝不**「等合成完才出预览」、**绝不**整屏 showLoading 遮罩 —— 那正是「拍完卡死」的成因。
+     合成中「用照片」暂不生效（防止把无水印图当成功交上去而不自知）；重拍随时可用（seq 作废在途合成）。
+  ⑤ **自动横屏 + 横屏专属布局**（2026-11-13 真机反馈「没法自动转成横屏」+ 截图裁决）：`wcamera.json` 配
+     `pageOrientation:"auto"` + `navigationStyle:"custom"`（**iOS 的 auto 只在 custom 导航下生效**，
+     缺一条就是「横过来页面不转」）。⚠️ 依赖手机系统的「竖屏锁定」关闭，这是系统行为，代码只能提供旋转能力。
+     横屏布局（round2 文档 B + **B6 第三轮修订**）**不是竖屏硬转**：全屏取景、导航退化成左上浮层圆钮（标题隐藏）、
+     **快门右下**（右手拇指）、完成/用照片在其上方右列（`wm-land-right`）、**托盘左下横排**（左手）、
+     预览态重拍左下/用照片右下、`safe-area-inset-left/right` 让出横屏刘海侧。
+     实现双轨：纯样式走 WXSS `@media (orientation: landscape)`，结构分支走 `isLandscape`
+     （首帧 `wx.getWindowInfo` + 转屏 `onWindowResize`，onUnload off 不泄漏）；竖屏 `wm-bar` 一行不动。
+     ⚠️ 横屏「占比太大、还挡画面」（用户 2026-11-13 截图）四个静默成因，回退任一条就复发：
+     ① 横屏媒体查询块内**尺寸一律 px、不许 rpx**（rpx 横屏按**长边**换算，1rpx≈1.08px：
+        42rpx 大字变 ≈45px、128rpx 快门变 ≈138px）；② **成片水印**按 `computeLayout(outW, outH)`
+        横屏基准取**图高**（只按图宽 → 底条占画面 42%，半张照片是黑条；竖屏规格逐字不变）；
+     ③ **不做「4:3 居中卡片」**（`landCardW/computeLandLayout` 已删：内联宽高与 WXSS 全屏
+        `.wm-viewfinder{position:absolute}` 打架）；④ WXML 的 `wm-land-*` 类必须在 WXSS 有定义
+        （上一版写 `wm-land-pill`、样式挂在没人用的 `wm-land-btn` → 控件全裸排，不报错不白屏）。
+     ⚠️ 本页**固定暗色底**：文字/描边不能用 `--tt-text-1/2/3`、`--tt-line`（亮色深灰压黑底=隐形）；
+     透明全屏控制层必须 `pointer-events:none` + 真控件 `auto`（否则吃掉点屏对焦）。
+  ⑥ **entry 双入口**（D1）：「水印拍照」+「相册（无水印）」（相册图没有可信拍摄时刻，不打时间水印；
+     相册 album-only，拍照一律走水印相机）。⚠️ 合成产物只有临时路径**没有 size**，入列前必须
+     `getFileSystemManager().getFileInfo` 补齐 —— 否则 `retryWithCompressed` 的「<2MB 跳过压缩」
+     会把 size=0 全跳过，压缩重试通道静默失效。⚠️ EXIF 姿态：`getImageInfo().orientation ≠ 'up'`
+     必须先 `drawNormalized` 校正再画（少数安卓机 takePhoto 带旋转标记，不校正水印就横着，真机验收必测）。
+  回归：`tools/check-watermark-camera.js`（静态）+ `check-page-runtime.js` 的
+  「水印相机」与「检查录入台（水印相机接线）」两个 target（乐观预览/挂死不卡确认/降档重试/
+  两档失败保留原图、拍→合成→确认→托盘→完成全链路、orientation 互换、size 补齐、双入口接线）。
 
 - **「涨幅速度」的误封边界（用户 2026-10-29「同步增速这个有点假很容易误封锁」，必读）**：
   这个指标 = 本次新增步数 ÷ 距上次同步时长，**分母是用户点同步的时机，不是运动时长** ——
@@ -418,6 +512,37 @@
 - **动效按稀有度分三档**（全都中奖=全都平淡）；空奖不做成惩罚；全用 CSS `transform/opacity`，
   **不用 canvas 粒子**（低端机正卡在最需要炫的时刻）。
 - ⚠️ `recent.atText` 曾是恒空 bug（服务端只给 `at`，WXML 渲染 `atText`）；现由服务端拼好下发。
+- **版式红线（2026-11-13 用户截图）**：① 次数条 `.bd-stat` 必须走**正常文档流**，
+  早先 `position:absolute; top:-52rpx` 把它压在转盘上方，正好叠在播报条上 →
+  「陈** 刚抽中 100步」与「0 次可抽」两行字重在一起（它本来就在盘上方，绝对定位零收益）；
+  ② **楔形顶点必须是圆心 (50%,50%)**（`clipOf` 首点）：曾写成 `50% 0%`（盘顶）配绕圆心的弧，
+     8 格尖端全汇聚到 12 点、整盘从顶部散开，分隔线（从圆心发）与颜色边界（从顶发）两套线错位
+     —— 用户说的「背景分层错位」就是这个。这类几何错**不报错、不白屏、颜色也都在**，
+     静态检查看不出，只能算顶点。回归：`check-page-runtime` 顶点=50%50% + 弧点距恒=半径。
+  ③ 转盘文字要正，必须同时满足三条（缺一条就是用户说的「乱」）：
+     **文字独立成层**（`.bd-label`，放进被 `clip-path` 裁开的扇形会被楔形边缘切掉一截）、
+     **径向单行**（`textDeg` 恒为 ±90；切向排布 = 8 个不同角度的一堆歪字）、
+     **指针固定在 12 点、盘面旋转**（`rotateDeg` 只绑 `.bd-wheel`；指针歪着停会被当成坏了）。
+     径向的唯一判据：**绝对旋转 `midDeg + textDeg` 不能落在 90°~270°**（倒着读），
+     故 `midDeg ∈ (180,360)` 取 +90、其余取 −90。停位角 = `360 − (i*45+22.5)`；
+     改半径/字号前先按 `docs/beidou-lottery-ui-plan.md` §12 的几何口径重算；
+  ④ 中心按钮文案由 `buildCenterState()` 预计算三态，**没次数时是「赚次数 / 去做任务」并滚到任务区**，
+  不要退回灰色「没次数」死按钮（点了没反应，用户只能退出）；
+  ⑤ 抽奖失败/异常路径必须调 `restoreCenter()` —— 只写 `spinning:false` 会让按钮永远停在「抽奖中」。
+- **背景必须整页同色系**（用户 2026-11-13「背景颜色不对」）：北斗是暖橙活动页，页面底**不能**
+  用全局 `--tt-bg-page`(#f6f7f9 冷灰) —— 上半暖下半冷的拼接最刺眼；`.bd-page` 走 `--bd-page-grad`
+  暖调渐晕，**停靠点用固定 rpx**（本页超一屏，百分比会把暖光拉长成整页渐变）。
+  本页专属色集中成 `--bd-*` 令牌（手法同 `pages/water/water.wxss`），规则内不写裸色值；
+  且必须有 `@media (prefers-color-scheme: dark)` 的 `--bd-*` 重写块 —— 直接套用亮色值会整页蒙雾。
+  「谢谢参与」格底用**暖灰**（原冷蓝灰 #dfe3ea 与橙盘不是一系），奖项文字对比度 ≥3:1。
+  回归：`check-dark-mode` 第 [6] 节（裸色值反向断言 + 暗色块必须存在 + 收尾不回落冷灰）。
+- **中奖弹层停留时长**：`FX_MS` 最低档不得短于 ~2s（曾 420ms，用户「什么都没看见」），
+  且任何一档都要能点遮罩/按钮立刻关（`closeFx` 同时清自动收起的计时器）。
+- **音效必须真的响**（用户 2026-11-13「没有音效」）：① 管理端总开关 `sfxEnabled` **必须真的拦播放**
+  （早先只进了 data、从没被读过 = 假开关）；② iOS 上 `InnerAudioContext` 必须在**用户手势同一 tick** 发声过，
+  否则 3.2 秒后转盘停下再 `play()` 会被静默拦掉 —— 所以点抽奖时先播一声极短的 `spin`「哒」，
+  它既是即时反馈也是解锁音频的唯一可靠时机；③ 失败一次就把 `disabled` 置位的策略保留，
+  但用户手动开音效时 `sfx.reset()` 给一次重试机会。
 - 回归：`check-page-runtime`（三档动效/播报空态/音效不可用时仍落盘）+ `check-beidou-lottery`
   （脱敏/稀有度边界）+ `verify-beidou-lottery` 第 12 节（真连库：响应体反向断言不含完整姓名、
   `exitRanking` 双向验证）。
@@ -435,7 +560,8 @@
 - **做法**：用 `vm` 在桩环境真实执行页面 JS → 拿 `Page({...})` → 假实例（setData 合并 data）
   → 用真实接口形态 payload 调关键方法。
 - **必覆盖**：① 首屏不抛（含最小 payload）；② 抽奖后已入账真的变了；
-  ③ 停位角度精确 `(360 − (index*45 + 22.5))°`（差半格就「停在 A 却发 B」）。
+  ③ 停位角度精确 `(360 − (index*45 + 22.5))°`（盘面把该格中线转到 12 点指针下；差半格就「停在 A 却发 B」）。
+     中途试过「指针转、盘面固定」，但指针歪着停会被当成坏了，已回退 —— 别按那版公式写断言。
 - 扩展：`TARGETS` 加页面 + 用例；桩缺的全局补进 `BASE_SANDBOX`。**改完页面先跑它**。
 
 ## 登录态与退出登录（小程序）

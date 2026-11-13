@@ -100,18 +100,21 @@ async function campusDepartmentIndex(schoolIds) {
   if (!ids.length) return { deptIds: [], counts, names: new Map() };
 
   const depts = await Organization.find({ type: 'department', parentId: { $in: ids } })
-    .select('_id parentId')
+    .select('_id name parentId')
     .lean();
   const deptIdSet = new Set();
+  // deptId → 系部名：`departmentNames` 的兜底判定要用它（只有名字、没有 id 的目标按名字比对范围）
+  const names = new Map();
   for (const d of depts || []) {
     if (!d || !d._id) continue;
     const did = String(d._id);
     deptIdSet.add(did);
+    if (d.name) names.set(did, String(d.name));
     const pid = d.parentId ? String(d.parentId) : '';
     if (counts.has(pid)) counts.set(pid, counts.get(pid) + 1);
     else counts.set(pid, 1);
   }
-  return { deptIds: [...deptIdSet], counts, names: new Map() };
+  return { deptIds: [...deptIdSet], counts, names };
 }
 
 /**
@@ -151,7 +154,7 @@ function clearIdentityCache(openid) {
  *   isPresidium: boolean, reviewLevel: ''|'school'|'branch', roles: Array, roleText: string
  * }}
  */
-function buildIdentity(memberRecords, modules, campusDepts = {}) {
+function buildIdentity(memberRecords, modules, campusDepts = {}, fallbackCampus = null) {
   const members = memberRecords || [];
   const isMember = members.length > 0;
   const schoolRecords = members.filter((m) => m.level === 'school');
@@ -172,6 +175,16 @@ function buildIdentity(memberRecords, modules, campusDepts = {}) {
       const sid = String(m.schoolId);
       schoolIdSet.add(sid);
       if (m.schoolName) schoolNames.set(sid, m.schoolName);
+    }
+  }
+  // 老成员记录没绑校区（建档时还没选院校）：用**本人学籍的院校**兜底。
+  // 没有这一层时 `identity.departmentIds` 恒为空 → 分会成员被判「你所在的院校下还没有系部」，
+  // 连自己校区的班都录不了（用户 2026-11-13「北校区纪检部成员被跨校区拦截」的一类成因）。
+  // 只在「所有分院记录都没校区」时兜底，绝不与显式指定的校区并集 —— 那会放宽管理员的选择。
+  if (branchRecords.length && !schoolIdSet.size && fallbackCampus && (fallbackCampus.id || fallbackCampus.name)) {
+    if (fallbackCampus.id) {
+      schoolIdSet.add(String(fallbackCampus.id));
+      if (fallbackCampus.name) schoolNames.set(String(fallbackCampus.id), fallbackCampus.name);
     }
   }
   for (const id of campusDepts.deptIds || []) if (id) deptIdSet.add(String(id));
@@ -209,37 +222,51 @@ function buildIdentity(memberRecords, modules, campusDepts = {}) {
       ? 'branch'
       : '';
 
-  const roles = members.map((m) => ({
-    id: String(m._id || ''),
-    level: m.level,
-    levelText: m.level === 'school' ? '校学生会' : '分院学生会',
-    // 新口径：院校（校区）—— 前端展示优先用它
-    schoolId: m.schoolId ? String(m.schoolId) : '',
-    schoolName: m.schoolName || '',
-    // 老口径：院系 —— 保留，前端可能仍在消费
-    departmentId: m.departmentId ? String(m.departmentId) : '',
-    departmentName: m.departmentName || '',
-    deptKey: m.deptKey || '',
-    deptName: m.deptName || (m.deptKey === PRESIDIUM_KEY ? '主席团' : ''),
-    role: m.role,
-    roleText: ROLE_TEXT[m.role] || m.role,
-    termId: m.termId || '',
-    termName: m.termName || '',
-  }));
+  // 校区展示名（成员记录缺失时用兜底校区的名字）
+  const fallbackName = fallbackCampus && fallbackCampus.name ? String(fallbackCampus.name) : '';
+  const roles = members.map((m) => {
+    const schoolName = m.schoolName || (m.level === 'branch' ? fallbackName : '');
+    return {
+      id: String(m._id || ''),
+      level: m.level,
+      // 用户 2026-11-13「学生会控制台显示的是分院学生会，这里显示真实的院校名称」：
+      // 分院一律显示真实校区（「北校区学生会」），只有拿不到校区名时才退回「分院学生会」。
+      levelText: m.level === 'school' ? '校学生会' : schoolName ? `${schoolName}学生会` : '分院学生会',
+      // 新口径：院校（校区）—— 前端展示优先用它
+      schoolId: m.schoolId ? String(m.schoolId) : '',
+      schoolName,
+      // 老口径：院系 —— 保留，前端可能仍在消费
+      departmentId: m.departmentId ? String(m.departmentId) : '',
+      departmentName: m.departmentName || '',
+      deptKey: m.deptKey || '',
+      deptName: m.deptName || (m.deptKey === PRESIDIUM_KEY ? '主席团' : ''),
+      role: m.role,
+      roleText: ROLE_TEXT[m.role] || m.role,
+      termId: m.termId || '',
+      termName: m.termName || '',
+    };
+  });
 
-  // 展示文案：如「校学生会 · 生活部 · 部员」，多职务时取第一条并在前端提示条数
+  // 展示文案：如「北校区学生会 · 纪检部 · 部长」，多职务时取第一条并在前端提示条数
   const first = roles[0];
   const roleText = first ? [first.levelText, first.deptName, first.roleText].filter(Boolean).join(' · ') : '';
 
   const deptIds = [...deptIdSet];
+  // 系部名（与 departmentIds 同序）：目标只有名字、没有 id 时按它兜底判范围。
+  // 只取「本院校展开出的系部名」，同名系部在别的校区的不会进来 —— 名字兜底不会跨校区放行。
+  const deptNames = campusDepts.names instanceof Map ? campusDepts.names : new Map();
+  const departmentNames = [...new Set(deptIds.map((id) => deptNames.get(id)).filter(Boolean))];
+  const campusName = (schoolNames.size ? [...schoolNames.values()][0] : '') || fallbackName;
   return {
     isMember,
     members: members.map((m) => ({ ...m, _id: String(m._id) })),
     level,
     departmentIds: deptIds,
+    departmentNames,
     departments: deptIds, // 兼容字段：与 departmentIds 同值（历史出口，勿删）
     schoolIds: [...schoolIdSet],
     schoolNames: [...schoolNames.values()],
+    campusName,
     campusesMissingDepartments,
     canEnterDeptKeys,
     modules: canEnter,
@@ -295,9 +322,21 @@ async function resolveIdentity(user, { force = false } = {}) {
     CheckModule.find({ enabled: true }).sort({ sort: 1 }).lean(),
   ]);
   // 校区 → 院系展开：**一次** Organization.find 批量处理全部 schoolId（records 已到手，不重复查成员）
-  const schoolIds = [...new Set((records || []).filter((m) => m.level === 'branch' && m.schoolId).map((m) => String(m.schoolId)))];
+  const recordSchoolIds = [...new Set((records || []).filter((m) => m.level === 'branch' && m.schoolId).map((m) => String(m.schoolId)))];
+  // 成员记录全都没绑校区时，用**本人学籍的院校**兜底（见 buildIdentity 注释）：
+  // 只在分校记录存在且一条都没校区时生效，绝不与已指定的校区并集。
+  const hasBranch = (records || []).some((m) => m.level === 'branch');
+  const fallbackCampus =
+    hasBranch && !recordSchoolIds.length && user && (user.schoolId || user.schoolName)
+      ? { id: user.schoolId ? String(user.schoolId) : '', name: user.schoolName || '' }
+      : null;
+  const schoolIds = recordSchoolIds.length
+    ? recordSchoolIds
+    : fallbackCampus && fallbackCampus.id
+      ? [fallbackCampus.id]
+      : [];
   const campusDepts = await campusDepartmentIndex(schoolIds);
-  const identity = buildIdentity(records, modules, campusDepts);
+  const identity = buildIdentity(records, modules, campusDepts, fallbackCampus);
   if (openid) identityCache.set(openid, { at: Date.now(), identity });
   return identity;
 }
@@ -366,22 +405,29 @@ function canSelfReview(identity) {
  * （identity.departmentIds 已并入「校区展开 + 老口径 departmentId」，见 buildIdentity）。
  * 主席团录入短路、录入目标列表、宿舍照片可见者判定全部复用这一份，禁止各处各写一套。
  *
- * ⚠️ **fail-closed**：目标院系为空（如 record.departmentId 缺失）时返回 false ——
- * 宁可判成越权，也不能因为「拿不到归属」就放行（那正是越权的典型入口）。
+ * ⚠️ **fail-closed**：目标院系为空时返回 false —— 宁可判成越权，也不能因为「拿不到归属」就放行。
  * 副作用：`/entry/targets` 用 `canEnterModule(identity, mod, null)` 只做「模块归属」预检；
  * 传 null 时**跳过**院系范围判定（否则分院连录入台都打不开），目标列表本身按
  * identity.departmentIds / schoolIds 收敛（见 services/band-chao.js::entryTargets），写入时再按真实目标校验。
  *
+ * id 与名字的分工（2026-11-13 用户报障后补）：
+ *   · 目标**有 id** → 只认 id。绝不因为「名字恰好对上」就放行 ——
+ *     同名系部在两个校区各有一个（计财系），名字兜底会把跨校区越权洗成合法；
+ *   · 目标**只有名字**（26 级整届台账缺 departmentId 的形态）→ 按名字兜底，
+ *     但比对的是 `identity.departmentNames`（只含本校区展开出的系部名），同样不会跨校区放行。
+ *
  * @param {Object} identity
- * @param {string|ObjectId|null} targetDepartmentId 目标班级归属院系
+ * @param {string|ObjectId|null} targetDepartmentId 目标班级归属院系 id
+ * @param {string} [targetDepartmentName] 目标班级归属院系名（仅在 id 缺失时使用）
  */
-function inDepartmentScope(identity, targetDepartmentId) {
+function inDepartmentScope(identity, targetDepartmentId, targetDepartmentName) {
   if (!identity) return false;
   if (identity.level === 'school') return true;
   const want = targetDepartmentId === undefined || targetDepartmentId === null ? '' : String(targetDepartmentId);
-  if (!want) return false;
-  const ids = (identity.departmentIds || []).filter(Boolean);
-  return ids.includes(want);
+  if (want) return (identity.departmentIds || []).filter(Boolean).includes(want);
+  const name = targetDepartmentName === undefined || targetDepartmentName === null ? '' : String(targetDepartmentName).trim();
+  if (!name) return false;
+  return (identity.departmentNames || []).includes(name);
 }
 
 /**
@@ -393,8 +439,11 @@ function inDepartmentScope(identity, targetDepartmentId) {
  * 主席团范围：校级（level='school'）全校任意班；分会（level='branch'）限本校区展开出的院系
  * （**不放开成全校** —— 分会主席团越权是安全问题）。
  * 边界：其它角色行为与本轮改造前**逐字一致**（部长录别部门的模块仍被拒：reason='你所在的部门不负责这项检查'）。
+ *
+ * 提示文案必须说清「哪个校区 / 哪个系部」，否则用户只会看到「不能录」而无法判断是**权限**还是**数据缺归属**
+ * （用户 2026-11-13 把「目标班级没有归属院系」读成了跨校区拦截，正是文案没带上校区名的后果）。
  */
-function canEnterModule(identity, moduleDef, targetDepartmentId) {
+function canEnterModule(identity, moduleDef, targetDepartmentId, targetDepartmentName) {
   if (!identity || !identity.isMember) return { ok: false, reason: '你还不是学生会成员' };
   const isPresidium = isPresidiumIdentity(identity);
   if (!isPresidium) {
@@ -405,12 +454,20 @@ function canEnterModule(identity, moduleDef, targetDepartmentId) {
   // 不能在这里对 null 走 inDepartmentScope：分院身份会被判成「目标班级没有归属院系」，
   // 连录入台都打不开；真正的越权由 entryTargets 按 identity.departmentIds 收敛 + 写入时再次校验。
   if (targetDepartmentId === null || targetDepartmentId === undefined) return { ok: true };
-  if (inDepartmentScope(identity, targetDepartmentId)) return { ok: true };
-  // 范围判定不通过（此时 identity.level 必为 'branch'）→ 按原因分别给出可读提示，
-  // 对外语义与原实现逐字一致
-  const want = targetDepartmentId === undefined || targetDepartmentId === null ? '' : String(targetDepartmentId);
-  if (!want) return { ok: false, reason: '目标班级没有归属院系，无法确认范围' };
+  if (inDepartmentScope(identity, targetDepartmentId, targetDepartmentName)) return { ok: true };
+  // 范围判定不通过（此时 identity.level 必为 'branch'）→ 按原因分别给出可读提示
+  const want = String(targetDepartmentId || '');
+  const wantName = String(targetDepartmentName || '').trim();
   const ids = (identity.departmentIds || []).filter(Boolean);
+  const campusName = (identity.campusName || (identity.schoolNames || [])[0] || '').trim();
+  const campusText = campusName ? `${campusName}本院校` : '本院校';
+  // 目标连「系部名」都没有：这**不是权限问题**，是台账/学籍缺归属（26 级整届整届缺 id 的形态）。
+  if (!want && !wantName) {
+    return {
+      ok: false,
+      reason: `${campusText}内该受检对象的系部归属尚未补齐（台账里只有班级名、没有系部），请联系管理员在「班级管理 → 从学籍同步」后重试`,
+    };
+  }
   if (!ids.length) {
     // 校区下没有系部（组织架构还没配子级）：给出可读原因，别让人以为权限坏了
     const missing = (identity.campusesMissingDepartments || []).map((c) => c.name || c.id).filter(Boolean);
@@ -421,7 +478,12 @@ function canEnterModule(identity, moduleDef, targetDepartmentId) {
         : '你还未绑定院校（校区），请让管理员在「学生会成员」里补选院校',
     };
   }
-  return { ok: false, reason: '只能录入本院系的检查' };
+  // 真的越界：把校区与系部名都写出来，用户一眼能判断是「该录别的校区」还是「我的成员记录绑错校区了」
+  const deptText = wantName ? `（${wantName}）` : '';
+  return {
+    ok: false,
+    reason: `只能录入${campusText}内系部的检查；该受检对象的归属系部${deptText}不在你的范围（如确认是同校区，请让管理员核对你的「学生会成员」院校）`,
+  };
 }
 
 /**
@@ -450,7 +512,8 @@ function canReviewAny(identity) {
 //   · 分院主席团：本院校展开出的院系；
 //   · 部长/副部长：record.inspectorDeptKey 或模块 entryDeptKeys 与自己部门 key 一致，
 //     再按范围校验（校级部长全校，分院部长限本院校院系）。
-function canReview(identity, targetDepartmentId, inspectorDeptKey, moduleDeptKeys = []) {
+// 目标部门：id 优先（越界时不因名字相同而放行），id 缺失时按系部名兜底 —— 与 inDepartmentScope 同口径。
+function canReview(identity, targetDepartmentId, inspectorDeptKey, moduleDeptKeys = [], targetDepartmentName = '') {
   if (!identity || !identity.isMember) return false;
   // 部门部长：既可以是「录入这条记录的人所属部门」，也可以是「这个检查模块的归属部门」。
   // 例如主席团代录了一条卫生检查，生活部部长仍应能复核（模块 entryDeptKeys 含 life）。
@@ -460,14 +523,11 @@ function canReview(identity, targetDepartmentId, inspectorDeptKey, moduleDeptKey
   );
   if (isDeptMinister) {
     if (identity.level === 'school') return true;
-    const want = targetDepartmentId ? String(targetDepartmentId) : '';
-    return !!want && (identity.departmentIds || []).includes(want);
+    return inDepartmentScope(identity, targetDepartmentId, targetDepartmentName);
   }
   if (!identity.reviewLevel) return false;
   if (identity.reviewLevel === 'school') return true;
-  const want = targetDepartmentId ? String(targetDepartmentId) : '';
-  const ids = identity.departmentIds || [];
-  return !!want && ids.includes(want);
+  return inDepartmentScope(identity, targetDepartmentId, targetDepartmentName);
 }
 
 // ===== 学生会成员管理范围 =====
@@ -689,12 +749,23 @@ function todayKey() {
 // 可见范围过滤条件：校级看全校，分院只能看本院校（展开出的院系），非成员看不到任何记录
 // 注意：校区下没有系部时 departmentIds 为空 → 返回 null（= 什么都看不到），
 // 这是**正确**的安全默认（宁可看不到，也不能越权看到全校）；管理端会提示运营去配组织架构。
+//
+// id 之外还带「系部名」分支（2026-11-13）：历史记录里有一批 departmentId 为空的
+// （26 级整届缺 id 时写进去的），只按 id 过滤会让分院成员**看不到自己录过的记录、也复核不了**。
+// 名字分支必须与 id 分支是 `$or`，且只在 departmentId 缺失时命中 —— 有 id 的记录仍按 id 判，
+// 跨校区同名系部不会因为名字相同被放进来。
 function scopeFilter(identity) {
   if (!identity || !identity.isMember) return null;
   if (identity.level === 'school') return {};
   const ids = (identity.departmentIds || []).filter(Boolean);
-  if (!ids.length) return null;
-  return { departmentId: { $in: ids } };
+  const names = (identity.departmentNames || []).filter(Boolean);
+  if (!ids.length && !names.length) return null;
+  const or = [];
+  if (ids.length) or.push({ departmentId: { $in: ids } });
+  if (names.length) {
+    or.push({ departmentName: { $in: names }, departmentId: null });
+  }
+  return or.length === 1 ? or[0] : { $or: or };
 }
 
 // 启动期幂等迁移：把「成员唯一索引」换成含 schoolId 的版本。

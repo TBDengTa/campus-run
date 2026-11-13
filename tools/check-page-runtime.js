@@ -63,15 +63,32 @@ function makeRequire(state = { get: async () => ({}) }) {
   return function stubRequire(p) {
     if (p.includes('utils/request')) {
       return {
-        getUser: () => ({ role: 'student' }),
+        getUser: () => ({ role: 'student', name: '张三' }),
         // state.get 可被用例替换：让页面走「真实接口形态」的 payload，而不是空对象
         get: (url, params) => state.get(url, params),
         post: async () => ({}),
         put: async () => ({}),
         isBound: () => true,
+        // 水印相机链路（packageUnion/entry）：成功回 URL 并记录调用，
+        // entry 的 appendWatermarkPhotos → uploadPending 用例靠它走通「pending → done」
+        uploadCheckPhoto: async (filePath, opts) => {
+          state.uploads = state.uploads || [];
+          state.uploads.push(filePath);
+          // 用例注入失败：断言「失败原因真的到了界面上」
+          if (state.uploadFailMsg) {
+            const e = new Error(state.uploadFailMsg);
+            if (state.uploadFailCode) e.code = state.uploadFailCode;
+            throw e;
+          }
+          if (opts && opts.onProgress) opts.onProgress(100);
+          return { url: `https://files.test/${state.uploads.length}.jpg` };
+        },
       };
     }
     if (p.includes('utils/format')) return require(path.join(M, 'utils/format.js'));
+    // utils/watermark 是纯函数（只依赖 utils/format），必须加载真实模块：
+    // 桩成 {} 会让 wcamera 的 buildLines/computeLayout 全部 TypeError（「桩缺函数」误报成页面 bug）
+    if (p.includes('utils/watermark')) return require(path.join(M, 'utils/watermark.js'));
     // utils/period 同样是纯函数（日期区间文案），class.js 的 loadBanchao 会调它 ——
     // 桩成 {} 会让「period.dateRangeText is not a function」变成用例里的假失败。
     if (p.includes('utils/period')) return require(path.join(M, 'utils/period.js'));
@@ -98,20 +115,107 @@ function makeRequire(state = { get: async () => ({}) }) {
 // 最近一次 toast：用例要断言「提示文案是服务端下发的」就必须看到它
 let lastToast = null;
 
+// 相机 / 导航 / 文件系统桩（水印相机用例）：默认 no-op，用例临时替换
+// （WX_STUB 是全部 target 共享的单例，不能整体换掉 —— 换成 hook 委托互不干扰）
+let navigateToImpl = () => {};
+let chooseMediaImpl = () => {};
+let openSettingImpl = () => {};
+let cameraContextImpl = () => null;
+let getImageInfoImpl = (o) => o && o.fail && o.fail({ errMsg: 'getImageInfo:fail 桩未配置' });
+let canvasToTempFilePathImpl = (o) => o && o.fail && o.fail({ errMsg: 'canvasToTempFilePath:fail 桩未配置' });
+let selectorQueryImpl = () => ({ in: () => ({ select: () => ({ fields: () => ({ exec: (cb) => cb([]) }) }) }) });
+// 窗口信息 / 转屏（wcamera 横屏接线）与成片体积（体积闭环用例）的桩；
+// 用例临时替换，结束必须复位（后面的 entry 用例依赖默认 size 12345）
+let winInfoStub = { statusBarHeight: 44, windowWidth: 375, windowHeight: 812 };
+const resizeHandlers = [];
+let fileInfoSize = 12345;
+// getFileInfo 失败桩：体积闭环的「读不到体积不许当通过」（fail-open 回归）
+let fileInfoFails = false;
+// 最近一次 canvasToTempFilePath 的完整参数（断言 destWidth/destHeight 显式给了画布像素）
+let lastCanvasExportOpts = null;
+// 合成产物落盘（copyFile → 用户目录）桩：默认成功；可注入失败验证回退
+let copyFileFails = false;
+let copyFileCalls = 0;
+
 const WX_STUB = {
   showToast(o) {
     lastToast = o || null;
   },
-  showModal() {},
+  // showModal 必须回调 success：wcamera 合成失败走「弹窗确认 → 退回原图入托盘」，
+  // 桩不回调 success 这条降级路径就永远测不到（上面 2026-11-12 事故同类：桩缺行为 = 假绿灯）
+  showModal(o) {
+    if (o && o.success) o.success({ confirm: true });
+  },
   showLoading() {},
   hideLoading() {},
   navigateBack() {},
-  navigateTo() {},
+  navigateTo(o) {
+    navigateToImpl(o);
+  },
   reLaunch() {},
   switchTab() {},
   pageScrollTo() {},
   vibrateShort() {},
   setClipboardData() {},
+  chooseMedia(o) {
+    chooseMediaImpl(o);
+  },
+  openSetting(o) {
+    openSettingImpl(o);
+  },
+  createCameraContext() {
+    return cameraContextImpl();
+  },
+  getImageInfo(o) {
+    getImageInfoImpl(o);
+  },
+  canvasToTempFilePath(o) {
+    lastCanvasExportOpts = o;
+    canvasToTempFilePathImpl(o);
+  },
+  createSelectorQuery() {
+    return selectorQueryImpl();
+  },
+  getFileSystemManager() {
+    return {
+      // 桩回可配置 size：entry.appendWatermarkPhotos 靠它补 size，wcamera 体积闭环靠它判档
+      // 路径里含 gone/missing 的一律 fail：模拟「临时文件已被系统清理」
+      getFileInfo: (o) => {
+        const p = String((o && o.filePath) || '');
+        if (fileInfoFails || /gone|missing/.test(p)) {
+          if (o && o.fail) o.fail({ errMsg: 'getFileInfo:fail 文件不存在' });
+          return;
+        }
+        if (o && o.success) o.success({ size: fileInfoSize });
+      },
+      // 合成产物落盘（canvas 临时文件 →copy→ 用户目录）：
+      // 微信明确「临时文件随时可能被系统清理」，而上传发生在相机页销毁之后，
+      // 所以必须留一份稳定副本；但**用 copyFile 不用 saveFile**（saveFile 是移动，
+      // 副本读不到时就没有退路）。两条路径一起回传，上传前由 entry 验证哪份还在。
+      copyFile: (o) => {
+        copyFileCalls += 1;
+        if (copyFileFails) {
+          if (o && o.fail) o.fail({ errMsg: 'copyFile:fail 桩制造落盘失败' });
+          return;
+        }
+        if (o && o.success) o.success({});
+      },
+      // 过期清理：默认空目录（用例只验证「调了、不抛」）
+      readdir: (o) => o && o.success && o.success({ files: [] }),
+      stat: (o) => o && o.success && o.success({ lastModifiedTime: Math.floor(Date.now() / 1000) }),
+      unlink: (o) => o && o.success && o.success({}),
+    };
+  },
+  // 用户目录（saveFile 的目标目录；真实环境由微信注入）
+  env: { USER_DATA_PATH: 'wxfile://usr' },
+  getWindowInfo: () => ({ ...winInfoStub }),
+  onWindowResize: (cb) => {
+    if (typeof cb === 'function') resizeHandlers.push(cb);
+  },
+  offWindowResize: (cb) => {
+    const i = resizeHandlers.indexOf(cb);
+    if (i >= 0) resizeHandlers.splice(i, 1);
+  },
   createRewardedVideoAd: () => ({
     onLoad() {}, onError() {}, onClose() {}, show: () => Promise.resolve(), load: () => Promise.resolve(),
   }),
@@ -195,7 +299,8 @@ const TARGETS = [
   {
     file: 'pages/reward/reward.js',
     name: '北斗运动页',
-    run(def) {
+    // async：中奖弹层「停留时长」那条用例要真等 800ms 才能验证「没被提前关掉」
+    async run(def) {
       // ---- ① 首屏 applyState：真实接口形态 ----
       const page = makePage(def);
       const payload = {
@@ -254,11 +359,30 @@ const TARGETS = [
         page.data.checkin.cells.filter((c) => c.signed).length
       );
       ok(page.data.checkin.cells.some((c) => c.isToday), '有「今天」高亮格');
-      // 第 3/7 天（有步数的那两档）必须被标大，否则用户看不出哪天是大奖
+      // 第 3/7 天（有步数的那两档）必须被标出来，否则用户看不出哪天是大奖
       ok(
         page.data.checkin.cells.filter((c) => c.big).length === 2,
-        '第 3/7 天标为「大」（有步数奖励）',
+        '第 3/7 天被标记（有步数奖励）',
         page.data.checkin.cells.filter((c) => c.big).length
+      );
+      // 用户 2026-11-13「签到没有显示获得奖品，只有大字」：
+      // 每个格子必须写清「给几次 / 给多少步」，不能只有一个「大」字。
+      const c3 = page.data.checkin.cells[2];
+      ok(c3.rewardDrawText === '+2次' && c3.rewardStepsText === '+200步', '第 3 天写清「+2次 / +200步」', c3);
+      const c1 = page.data.checkin.cells[0];
+      ok(c1.rewardDrawText === '+1次' && c1.rewardStepsText === '', '第 1 天只有次数（无步数时该行不出现）', c1);
+      ok(
+        page.data.checkin.cells.every((c) => c.rewardDrawText || c.rewardStepsText),
+        '每个格子都至少写了一个奖励（不会有空白的「大」）',
+        page.data.checkin.cells.map((c) => [c.rewardDrawText, c.rewardStepsText])
+      );
+      ok(
+        // 反向断言：格子里不许再出现那个占位大字
+        !/'大' : ''/.test(require('fs').readFileSync(
+          require('path').join(__dirname, '..', 'miniprogram', 'pages', 'reward', 'reward.wxml'), 'utf8'
+        )),
+        '格子不再用「大」字占位',
+        true
       );
 
       // ---- ①b 播报 ----
@@ -313,7 +437,8 @@ const TARGETS = [
       // 音效模块在 node 下必然不可用 —— 关键断言是「不可用时抽奖仍然成功落盘」
       ok(!!page.data.lastPrize, '音效不可用时抽奖仍正常落盘（音效绝不阻塞入账）');
 
-      // ---- ③ 转盘停位（差半格就会「停在 A 却发 B」）----
+      // ---- ③ 盘面停位（差半格就会「停在 A 却发 B」）----
+      // 指针固定在 12 点、盘面转：要停的角度 = 360 − 扇区中线 = 360 − (idx*45+22.5)。
       for (const idx of [0, 1, 3, 7]) {
         try {
           page.spinTo(idx, () => {});
@@ -328,6 +453,134 @@ const TARGETS = [
           ok(false, `spinTo(${idx}) 执行无异常`, e.message);
         }
       }
+
+      // ---- ③b 转盘文字（用户两次反馈「转盘还是乱的」）----
+      // 三层事故叠在一起：
+      //   ① 文字放在**被 clip-path 裁开的扇形**里 → 被楔形边缘切掉；
+      //   ② 文字用切向排布 → 8 格落在 8 个不同角度上，再加左右翻转 = 一片歪字；
+      //   ③ 盘面停下角度是 360−(i*45+22.5)，水平文字会被整体带歪 22.5°~90°。
+      // 现方案：文字独立成层（不裁剪）+ **径向**排布（textDeg=±90，旋转对称，任何角度都整齐）。
+      ok(
+        page.data.sectors.every((s) => s.textDeg === -90 || s.textDeg === 90),
+        '文字是径向的（textDeg 恒为 ±90，旋转对称）',
+        page.data.sectors.map((s) => ({ mid: s.midDeg, text: s.textDeg }))
+      );
+      // 判据：绝对旋转 = midDeg + textDeg 绝不能落在 (90,270)（那是倒着读）
+      const badRot = page.data.sectors.filter((s) => {
+        const r = ((s.midDeg + s.textDeg) % 360 + 360) % 360;
+        return r > 90 && r < 270;
+      });
+      ok(badRot.length === 0, '没有一格是倒着读的（绝对角避开 90°~270°）', badRot.map((s) => s.midDeg));
+      // 左半边（midDeg∈(180,360)）必须翻成 +90，其余 −90 —— 只查「有 textDeg」抓不到这个
+      const flipped = page.data.sectors.filter((s) => s.midDeg > 180 && s.midDeg < 360);
+      ok(flipped.length > 0 && flipped.every((s) => s.textDeg === 90), '下半圈翻 180°（改朝中心读）', flipped.map((s) => s.midDeg));
+      ok(
+        page.data.sectors.filter((s) => s.midDeg < 180).every((s) => s.textDeg === -90),
+        '上半圈朝外读（不翻）',
+        page.data.sectors.filter((s) => s.midDeg < 180).map((s) => s.midDeg)
+      );
+      // 文字层必须与扇形分开：放在 clip-path 里就会被切
+      const rewardWxml = require('fs').readFileSync(
+        require('path').join(__dirname, '..', 'miniprogram', 'pages', 'reward', 'reward.wxml'), 'utf8'
+      );
+      ok(
+        /class="bd-label[^"]*"/.test(rewardWxml) && /class="bd-sector bd-sector-\{\{item\.tint\}\}[^"]*"[^>]*>\s*<\/view>/.test(rewardWxml),
+        '文字层独立于 clip-path 扇形（不会被楔形边缘切掉）',
+        /class="bd-sector bd-sector-\{\{item\.tint\}\}[^"]*"[^>]*>\s*<\/view>/.test(rewardWxml)
+      );
+
+      // ---- ③b2 楔形顶点必须是圆心（用户 2026-11-13「背景的分层不对…背景错位了」）----
+      // 事故形态：clipOf 的首点写成 '50% 0%'（盘子**正上方**），而弧点绕 50% 50% 画。
+      // 于是 8 格尖端全部汇聚到 12 点，整盘从顶部往下散开：中心白环与格子对不上、
+      // 白色分隔线（从圆心发出）与颜色边界（从顶部发出）互相错位。
+      // 这类几何错误不抛异常、不白屏、颜色也都在，静态检查看不出来 —— 只能算顶点。
+      const pairsOf = (clip) => (clip.match(/([\d.]+)% ([\d.]+)%/g) || [])
+        .map((p) => p.match(/([\d.]+)% ([\d.]+)%/).slice(1, 3).map(Number));
+      const apexes = page.data.sectors.map((s) => pairsOf(s.clip)[0]);
+      ok(
+        apexes.length === 8 && apexes.every((a) => a && a[0] === 50 && a[1] === 50),
+        '每个楔形的顶点都是圆心（扇形从中心散开，不是从盘顶）',
+        apexes
+      );
+      // 顶点到弧点的距离必须等于半径 50%（否则扇形不是圆扇形，边缘会切出直边）
+      const radiiOk = page.data.sectors.every((s) => {
+        const nums = pairsOf(s.clip);
+        const [ax, ay] = nums[0];
+        return nums.slice(1).every(([x, y]) => Math.abs(Math.hypot(x - ax, y - ay) - 50) < 0.6);
+      });
+      ok(radiiOk, '弧点到顶点距离恒为 50%（真圆弧，边缘不会切出直边）', radiiOk);
+      // 分隔线也必须从圆心发出（与扇形边界重合，否则就是截图里那种两套线）
+      ok(
+        /\.bd-wedge\s*\{[\s\S]{0,300}top:\s*0;[\s\S]{0,120}height:\s*50%;[\s\S]{0,120}transform-origin:\s*50% 100%/.test(
+          require('fs').readFileSync(require('path').join(__dirname, '..', 'miniprogram', 'pages', 'reward', 'reward.wxss'), 'utf8')
+        ),
+        '分隔线以圆心为旋转原点（与扇形边界同一套几何）',
+        true
+      );
+      // 位置由 midDeg 决定，翻的只是文字块自身 —— 两者一旦被写成同一个值，停位就会错半格
+      ok(
+        page.data.sectors.every((s) => s.centerDeg === s.midDeg),
+        '停位角度仍按 midDeg（反翻不影响「停在 A 却发 B」）',
+        page.data.sectors.map((s) => s.centerDeg)
+      );
+
+      // ---- ③c 中心按钮三态 + 没次数时点它是「去赚次数」而不是死按钮 ----
+      ok(page.data.centerMain === '抽奖' && /剩/.test(page.data.centerSub), '有次数：中心显示「抽奖 + 剩 N 次」', {
+        main: page.data.centerMain, sub: page.data.centerSub,
+      });
+      page.applyCounters({ remaining: 0 });
+      ok(page.data.centerMain === '赚次数', '没次数：中心变成「赚次数」（不是灰色「没次数」死按钮）', page.data.centerMain);
+      ok(page.data.centerSub === '去做任务', '没次数：副文案直接指向下一步', page.data.centerSub);
+      // 点中心在没有次数时必须滚到任务区，**绝不能**发抽奖请求
+      let scrolled = 0;
+      page.scrollToTasks = () => { scrolled += 1; };
+      let drew = 0;
+      page.draw = () => { drew += 1; };
+      page.tapCenter();
+      ok(scrolled === 1 && drew === 0, '没次数时点中心 = 滚到任务区（不发抽奖请求）', { scrolled, drew });
+      page.applyCounters({ remaining: 2 });
+      page.tapCenter();
+      ok(drew === 1, '有次数时点中心 = 抽奖', drew);
+
+      // ---- ③c2 失败路径必须把「抽奖中」还原 ----
+      // 事故形态：接口失败只写 spinning:false，中心文案是独立 data → 转盘没动、
+      // 按钮却永远停在「抽奖中」，用户只能杀进程重进。
+      page.setData({ spinning: true, centerMain: '抽奖中', centerSub: '' });
+      page.restoreCenter();
+      ok(page.data.spinning === false, 'restoreCenter 复位 spinning', page.data.spinning);
+      ok(page.data.centerMain === '抽奖', '失败后中心从「抽奖中」还原成可点态', page.data.centerMain);
+
+      // ---- ③d 我的最近中奖：服务端下发什么就渲染什么 ----
+      ok(
+        Array.isArray(page.data.recent) && page.data.recent.length === 1 && page.data.recent[0].atText === '09:12',
+        '最近中奖写进 data（含服务端拼好的时间文案）',
+        page.data.recent
+      );
+      ok(!!page.data.recent[0].prizeLabel, '最近中奖有奖品名（不是只给 key）', page.data.recent[0]);
+
+      // ---- ③d2 中奖弹层必须停够久（用户 2026-11-13「特效就显示了1秒不到我什么都没看见」）----
+      // 回归点：FX_MS.normal 曾只有 420ms —— 还没看清就自动关了。
+      await new Promise((r) => setTimeout(r, 800));
+      page.playFx('normal', { type: 'steps', amount: 100 }, false);
+      await new Promise((r) => setTimeout(r, 800));
+      ok(page.data.fx === 'normal', '普通档弹层 800ms 后仍然在（不会一闪就没）', page.data.fx);
+      page.closeFx();
+
+      // ---- ③e 手动收起弹层（自动收起会再闪一下）----
+      page.playFx('rarest', { type: 'steps', amount: 1500 }, false);
+      ok(page.data.fx === 'rarest', '先有弹层', page.data.fx);
+      page.closeFx();
+      ok(page.data.fx === '' && page.data.confetti.length === 0, 'closeFx 立刻收起并清彩带', {
+        fx: page.data.fx, confetti: page.data.confetti.length,
+      });
+
+      // ---- ③f 管理端音效总开关必须真的生效（早先只进 data、从没被读）----
+      // 关掉后抽奖仍要正常落盘、动效照给 —— 音效只是锦上添花，不能成为阻塞点。
+      const muted = makePage(def);
+      muted.applyState({ enabled: true, sfxEnabled: false, draw: { remaining: 1, prizes: [], sectors: [] } });
+      ok(muted.data.sfxEnabled === false, 'sfxEnabled=false 已进 data', muted.data.sfxEnabled);
+      muted.playFx('rare', { type: 'steps', amount: 800 }, false);
+      ok(muted.data.fx === 'rare', '音效关闭时动效照常（不是一起关掉）', muted.data.fx);
 
       // ---- ④ 最小 payload：新用户首日字段大量缺失时也不能崩 ----
       const page2 = makePage(def);
@@ -567,6 +820,504 @@ const TARGETS = [
         }
         ok(got === expect, `${key} 名单范围 = ${expect}`, got);
       }
+    },
+  },
+  {
+    file: 'packageUnion/wcamera/wcamera.js',
+    name: '水印相机（docs/watermark-camera-plan.md）',
+    async run(def) {
+      const flush = () => new Promise((r) => setTimeout(r, 30));
+      // 合成产物的路径断言：canvas 导出在临时区，落盘后进用户目录（wxfile://usr/wm-*.jpg）。
+      // 两种情况都算「带水印成片」，但**绝不能**是相机原图（shot.jpg）——
+      // 断言比具体文件名更重要的是「拿到的不是原图」。
+      const isComposed = (p) => p === 'wxfile://composed.jpg' || /^wxfile:\/\/usr\/wm-/.test(String(p || ''));
+      // ===== 画布 / 图片 / 相机的桩 =====
+      const ctx = {
+        font: '',
+        fillStyle: '',
+        globalAlpha: 1,
+        textBaseline: '',
+        save() {}, restore() {}, translate() {}, rotate() {},
+        drawImage() {}, fillRect() {}, fillText() {},
+        createLinearGradient: () => ({ addColorStop() {} }),
+        // measureText 用字数 × 12 估宽：够 wrapText 走真实折行逻辑
+        measureText: (t) => ({ width: String(t).length * 12 }),
+      };
+      const canvasNode = { width: 0, height: 0, getContext: () => ctx };
+      canvasNode.createImage = () => {
+        const img = { onload: null, onerror: null };
+        Object.defineProperty(img, 'src', {
+          set(v) {
+            img._src = v;
+            Promise.resolve().then(() => {
+              if (typeof img.onload === 'function') img.onload();
+            });
+          },
+          get() {
+            return img._src;
+          },
+        });
+        return img;
+      };
+      selectorQueryImpl = () => ({
+        in: () => ({
+          select: () => ({
+            fields: () => ({
+              exec: (cb) => cb([{ node: canvasNode }]),
+            }),
+          }),
+        }),
+      });
+      cameraContextImpl = () => ({
+        takePhoto: ({ success }) => success({ tempImagePath: 'wxfile://shot.jpg' }),
+      });
+      // 记录每次输出的 quality：体积闭环用例靠它断言「降档后真的用了第二档质量」
+      const outQualities = [];
+      canvasToTempFilePathImpl = (o) => {
+        outQualities.push(o.quality);
+        o.success({ tempFilePath: 'wxfile://composed.jpg' });
+      };
+
+      const makeWcam = () => {
+        const p = makePage(def);
+        const emitted = [];
+        let initHandler = null;
+        p.getOpenerEventChannel = () => ({
+          on: (evt, cb) => {
+            if (evt === 'init') initHandler = cb;
+          },
+          emit: (evt, payload) => emitted.push([evt, payload]),
+        });
+        p.__emitInit = (payload) => initHandler && initHandler(payload);
+        p.__emitted = emitted;
+        return p;
+      };
+
+      // ---- ① init 文案 → 实时浮层（预览与烙图同源）----
+      const page = makeWcam();
+      page.onLoad();
+      page.__emitInit({ moduleName: '晚自习检查', targetName: '1号教学楼201', deptName: '生活部' });
+      page.onShow();
+      ok(page.data.live.line1 === '晚自习检查 · 1号教学楼201', '浮层行1 = 模块 · 对象', page.data.live);
+      ok(page.data.live.line3 === '生活部 · 张三', '浮层行3 = 部门 · 检查人（本地缓存姓名）', page.data.live.line3);
+      ok(/^\d{4}-\d{2}-\d{2} 周[一二三四五六日] \d{2}:\d{2}:\d{2}$/.test(page.data.live.line2), '浮层行2 含秒含周X（format 单点口径）', page.data.live.line2);
+      // init 迟到（EventChannel 异步）也不崩：无 init 时浮层走缺省文案
+      const pNoInit = makeWcam();
+      try {
+        pNoInit.onLoad();
+        pNoInit.onShow();
+        ok(pNoInit.data.live.line1 === '检查留证', '无 init 时行1 缺省「检查留证」（不空白）', pNoInit.data.live.line1);
+      } catch (e) {
+        ok(false, '无 init 时不崩', e.message);
+      }
+
+      // ---- ② 乐观预览（2026-11-13 真机反馈「拍完没有确认」的根治）----
+      // 桩成 getImageInfo 永不回调（模拟真机大图解码挂死）：快门后确认界面也必须立刻出现
+      getImageInfoImpl = () => {};
+      page.onShutter();
+      await flush();
+      ok(page.data.previewing === true && page.data.previewPath === 'wxfile://shot.jpg', '拍完立即进确认界面（乐观预览原图）', {
+        previewing: page.data.previewing,
+        path: page.data.previewPath,
+      });
+      ok(page.data.composing === true, '合成在后台追赶（composing 提示可见）', page.data.composing);
+      const trayDuringCompose = page.data.tray.length;
+      page.onUsePhoto();
+      ok(page.data.tray.length === trayDuringCompose, '合成中「用照片」不生效（不把无水印图当成功交上去）', page.data.tray.length);
+      page.onRetake();
+      ok(page.data.previewing === false && page.data.composing === false, '重拍随时可用（合成中被作废）', {
+        previewing: page.data.previewing,
+        composing: page.data.composing,
+      });
+
+      // ---- ③ 全链路：拍 → 合成 → 预览换图 → 托盘 → 完成 ----
+      getImageInfoImpl = (o) => o.success({ width: 800, height: 600, orientation: 'up' });
+      page.onShutter();
+      await flush();
+      ok(page.data.previewing === true && isComposed(page.data.previewPath), '合成完成预览换成带水印图', page.data.previewPath);
+      ok(page.data.composing === false, '合成收尾 composing=false（确认按钮恢复）', page.data.composing);
+      ok(canvasNode.width === 800 && canvasNode.height === 600, '画布按原图尺寸（orientation up 不交换；2560 档内不缩放）', {
+        w: canvasNode.width,
+        h: canvasNode.height,
+      });
+      ok(outQualities[outQualities.length - 1] === 0.92, '首档输出质量 = 0.92（成片规格，2026-11-13 定稿）', outQualities.slice(-1));
+      page.onUsePhoto();
+      ok(page.data.tray.length === 1 && page.data.previewing === false, '「用照片」进托盘并退出预览', page.data.tray);
+      page.onFinish();
+      const doneEvt = page.__emitted.find(([evt]) => evt === 'done');
+      ok(!!doneEvt && doneEvt[1].photos.length === 1 && isComposed(doneEvt[1].photos[0].path), '「完成」带托盘全部照片回 entry', doneEvt && doneEvt[1]);
+      page.__emitted.length = 0;
+      page.onFinish();
+      ok(page.__emitted.length === 0, '完成防重（连点不重复回传）', page.__emitted.length);
+      // 自定义导航：托盘有照片时返回等同「完成」（带照片回录入台）
+      const pBack = makeWcam();
+      pBack.onLoad();
+      pBack.data.tray = [{ path: 'wxfile://t.jpg' }];
+      pBack.onBack();
+      ok(pBack.__emitted.some(([evt]) => evt === 'done'), '自定义导航返回：托盘有照片时带照片回传', pBack.__emitted);
+
+      // ---- ④ EXIF 姿态：orientation right → 输出宽高互换（§7.2 安卓旋转标记）----
+      const p2 = makeWcam();
+      p2.onLoad();
+      getImageInfoImpl = (o) => o.success({ width: 600, height: 800, orientation: 'right' });
+      p2.onShutter();
+      await flush();
+      ok(canvasNode.width === 800 && canvasNode.height === 600, 'orientation=right 输出宽高互换（水印不横着）', {
+        w: canvasNode.width,
+        h: canvasNode.height,
+      });
+
+      // ---- ⑤ 画布失败自动降档（首档失败 → 2048/0.85 档重试成功）----
+      const p3 = makeWcam();
+      p3.onLoad();
+      getImageInfoImpl = (o) => o.success({ width: 3000, height: 2000, orientation: 'up' });
+      let outCalls = 0;
+      canvasToTempFilePathImpl = (o) => {
+        outCalls += 1;
+        outQualities.push(o.quality);
+        if (outCalls === 1) o.fail({ errMsg: 'canvasToTempFilePath:fail 桩制造首档失败' });
+        else o.success({ tempFilePath: 'wxfile://composed.jpg' });
+      };
+      p3.onShutter();
+      await flush();
+      ok(canvasNode.width === 2048 && canvasNode.height === 1365, '首档画布失败后降到 2048 档重试（3000×2000 → 2048×1365）', {
+        w: canvasNode.width,
+        h: canvasNode.height,
+      });
+      ok(outQualities[outQualities.length - 1] === 0.85, '降档后的输出质量 = 0.85（阶梯第二档）', outQualities.slice(-1));
+      ok(isComposed(p3.data.previewPath) && p3.data.composing === false, '降档重试成功后正常进入可确认态', {
+        path: p3.data.previewPath,
+        composing: p3.data.composing,
+      });
+
+      // ---- ⑤b 体积闭环（round2 A2）：首档成片超 8MB → 自动降到第二档重出 ----
+      const p5 = makeWcam();
+      p5.onLoad();
+      getImageInfoImpl = (o) => o.success({ width: 3000, height: 2000, orientation: 'up' });
+      // 桩按 quality 决定成片体积：首档 0.92 → 9MB（超预算），第二档 0.85 → 2MB（通过）
+      canvasToTempFilePathImpl = (o) => {
+        outQualities.push(o.quality);
+        fileInfoSize = o.quality >= 0.9 ? 9 * 1024 * 1024 : 2 * 1024 * 1024;
+        o.success({ tempFilePath: 'wxfile://composed.jpg' });
+      };
+      p5.onShutter();
+      await flush();
+      ok(canvasNode.width === 2048 && canvasNode.height === 1365, '成片 9MB 超 8MB 预算 → 自动降到 2048 档（闭环只看实际文件大小）', {
+        w: canvasNode.width,
+        h: canvasNode.height,
+      });
+      ok(outQualities[outQualities.length - 1] === 0.85 && outQualities[outQualities.length - 2] === 0.92, '体积闭环走了 0.92 → 0.85 两档', outQualities.slice(-2));
+      ok(isComposed(p5.data.previewPath) && p5.data.composing === false, '降档重出后进入可确认态', {
+        path: p5.data.previewPath,
+        composing: p5.data.composing,
+      });
+      fileInfoSize = 12345; // 复位：后面的 entry 用例依赖默认 size
+      canvasToTempFilePathImpl = (o) => {
+        outQualities.push(o.quality);
+        o.success({ tempFilePath: 'wxfile://composed.jpg' });
+      };
+
+      // ---- ⑤c 成片像素必须 1:1 钉死（2026-11-13「水印照片又传不上去」的真根因）----
+      // canvasToTempFilePath 的 destWidth/destHeight **默认是「区域尺寸 × 屏幕像素密度」**，
+      // 不传就是在画布尺寸上再乘一次 DPR（常见 3 倍）：2560 宽 → 实际输出 7680 宽（44MP），
+      // q0.92 成片几十 MB → wx.uploadFile 直接失败。而且**每一档都超预算**，
+      // 闭环一路降到最后一档被无条件接受 → 照样几十 MB（「明明在降档还是传不上去」）。
+      const pDpr = makeWcam();
+      pDpr.onLoad();
+      getImageInfoImpl = (o) => o.success({ width: 3000, height: 2000, orientation: 'up' });
+      lastCanvasExportOpts = null;
+      pDpr.onShutter();
+      await flush();
+      ok(!!lastCanvasExportOpts, '合成确实走了 canvasToTempFilePath', lastCanvasExportOpts);
+      ok(
+        lastCanvasExportOpts && lastCanvasExportOpts.destWidth === canvasNode.width && lastCanvasExportOpts.destHeight === canvasNode.height,
+        'destWidth/destHeight = 画布像素（1:1，不再被 DPR 放大 3 倍）',
+        lastCanvasExportOpts && { dest: [lastCanvasExportOpts.destWidth, lastCanvasExportOpts.destHeight], canvas: [canvasNode.width, canvasNode.height] }
+      );
+      // 反向：不许传 x/y/width/height 区域参数（部分机型按 canvas 的 CSS 尺寸解释这几个值，
+      // 本页离屏画布 CSS 只有 320×240 → 可能只导出左上角一小块）。
+      // 区域默认就是整块画布：packageAdmin/class-status 的分享图同样不传区域，现网已验证。
+      ok(
+        lastCanvasExportOpts && lastCanvasExportOpts.x === undefined && lastCanvasExportOpts.y === undefined && lastCanvasExportOpts.width === undefined && lastCanvasExportOpts.height === undefined,
+        '不传区域参数（防机型按 CSS 尺寸解释 → 只导出左上角）',
+        lastCanvasExportOpts && { x: lastCanvasExportOpts.x, y: lastCanvasExportOpts.y, w: lastCanvasExportOpts.width, h: lastCanvasExportOpts.height }
+      );
+
+      // ---- ⑤d 体积读不到时不许当通过（fail-open 回归）----
+      // 旧实现 `!size → 接受`：getFileInfo 一失败就放行第一档超大成片。
+      const pNoSize = makeWcam();
+      pNoSize.onLoad();
+      getImageInfoImpl = (o) => o.success({ width: 3000, height: 2000, orientation: 'up' });
+      const qBefore = outQualities.length;
+      fileInfoFails = true;
+      pNoSize.onShutter();
+      await flush();
+      fileInfoFails = false;
+      const qAfter = outQualities.slice(qBefore);
+      // ⑧ 的 `const wm` 在本作用域更靠后（TDZ），这里用独立别名取阶梯长度
+      const OUT_N = require(path.join(M, 'utils', 'watermark.js')).OUT_ATTEMPTS.length;
+      ok(qAfter.length === OUT_N, '体积读不到 → 逐档降到底（不是第一档就放行）', qAfter);
+      ok(qAfter[qAfter.length - 1] === 0.75, '最后一档无条件接受（还有上传侧压缩重试兜底）', qAfter.slice(-1));
+      ok(isComposed(pNoSize.data.previewPath) && pNoSize.data.composing === false, '体积未知仍进入可确认态（不卡住录入）', {
+        path: pNoSize.data.previewPath,
+        composing: pNoSize.data.composing,
+      });
+
+      // ---- ⑤e 中途某档抛错但前面已出图：用带水印那张，不退回无水印原图 ----
+      const pHalf = makeWcam();
+      pHalf.onLoad();
+      getImageInfoImpl = (o) => o.success({ width: 3000, height: 2000, orientation: 'up' });
+      let halfCalls = 0;
+      canvasToTempFilePathImpl = (o) => {
+        halfCalls += 1;
+        outQualities.push(o.quality);
+        if (halfCalls === 1) o.success({ tempFilePath: 'wxfile://composed.jpg' });
+        else o.fail({ errMsg: 'canvasToTempFilePath:fail 桩制造后续档失败' });
+      };
+      fileInfoSize = 9 * 1024 * 1024; // 第一档超预算 → 继续降档 → 降档全失败
+      pHalf.onShutter();
+      await flush();
+      ok(isComposed(pHalf.data.previewPath) && pHalf.data.composing === false, '降档途中失败仍保留已产出的带水印成片', {
+        path: pHalf.data.previewPath,
+      });
+      fileInfoSize = 12345; // 复位
+      canvasToTempFilePathImpl = (o) => {
+        outQualities.push(o.quality);
+        o.success({ tempFilePath: 'wxfile://composed.jpg' });
+      };
+
+      // ---- ⑤f 合成产物必须落盘到用户目录（2026-11-13「拍照上传就失败」的真根因）----
+      // canvasToTempFilePath 产出的是**临时文件**，微信明确「临时文件随时可能被系统清理」；
+      // 而上传发生在相机页 navigateBack 销毁之后 → 连拍几张后最早的合成图可能已被回收，
+      // entry 上传时文件不存在 → uploadFile 直接 fail。相册只挑 1~2 张、不产生额外临时文件，
+      // 所以「相册能传、拍照不行」。
+      const pSave = makeWcam();
+      pSave.onLoad();
+      getImageInfoImpl = (o) => o.success({ width: 3000, height: 2000, orientation: 'up' });
+      copyFileCalls = 0;
+      pSave.onShutter();
+      await flush();
+      ok(copyFileCalls >= 1, '合成完成后 copyFile 落盘（不赌临时文件活到上传那一刻）', copyFileCalls);
+      ok(
+        pSave.data.previewPath === 'wxfile://usr/wm-1.jpg' || /^wxfile:\/\/usr\//.test(pSave.data.previewPath),
+        '预览/托盘用**落盘后的稳定路径**（不是 canvas 临时路径）',
+        pSave.data.previewPath
+      );
+      // 落盘失败要退回临时路径（上传仍尽力而为，不能因此丢照片）
+      const pSaveFail = makeWcam();
+      pSaveFail.onLoad();
+      copyFileFails = true;
+      pSaveFail.onShutter();
+      await flush();
+      copyFileFails = false;
+      ok(pSaveFail.data.previewPath === 'wxfile://composed.jpg', '落盘失败退回临时路径（不丢照片）', pSaveFail.data.previewPath);
+      ok(pSaveFail.data.composing === false, '落盘失败也进入可确认态（不卡住录入）', pSaveFail.data.composing);
+
+      // ---- ⑥ 两档都失败：保留原图、toast 知情、确认流程照常可用 ----
+      const p6 = makeWcam();
+      p6.onLoad();
+      canvasToTempFilePathImpl = (o) => o.fail({ errMsg: 'canvasToTempFilePath:fail 桩全部失败' });
+      lastToast = null;
+      p6.onShutter();
+      await flush();
+      ok(p6.data.composing === false, '合成失败解除 composing（确认不被卡住）', p6.data.composing);
+      ok(p6.data.previewing === true && p6.data.previewPath === 'wxfile://shot.jpg', '失败保留乐观预览的原图', p6.data.previewPath);
+      ok(lastToast && /已保留原图/.test(lastToast.title), '失败有 toast 知情（不是静默）', lastToast && lastToast.title);
+      p6.onUsePhoto();
+      ok(p6.data.tray.length === 1 && p6.data.tray[0].path === 'wxfile://shot.jpg', '失败后「用照片」= 交无水印原图（录入不停摆）', p6.data.tray);
+
+      // ---- ⑦ 授权失败：引导面板 + 系统相机回退 ----
+      const p4 = makeWcam();
+      p4.onLoad();
+      p4.onCameraError();
+      ok(p4.data.cameraError === true, 'binderror 进引导面板态', p4.data.cameraError);
+      chooseMediaImpl = (o) => o.success({ tempFiles: [{ tempFilePath: 'wxfile://sys1.jpg' }, { tempFilePath: 'wxfile://sys2.jpg' }] });
+      p4.onSystemCamera();
+      await flush();
+      const sysEvt = p4.__emitted.find(([evt]) => evt === 'done');
+      ok(!!sysEvt && sysEvt[1].photos.length === 2, '回退系统相机：多张照片统一走 done 回传', sysEvt && sysEvt[1]);
+      openSettingImpl = (o) => o.success({ authSetting: { 'scope.camera': true } });
+      p4.onOpenSetting();
+      ok(p4.data.cameraError === false, '授权打开后恢复相机态', p4.data.cameraError);
+
+      // ---- ⑧ wrapText / withTimeout（canvas 无自动换行、合成超时的唯一实现）----
+      const wm = require(path.join(M, 'utils', 'watermark.js'));
+      const measureCtx = { font: '', measureText: (t) => ({ width: String(t).length * 10 }) };
+      const one = wm.wrapText(measureCtx, '短文本', 20, 200, 2);
+      ok(one.length === 1 && one[0] === '短文本', '不超宽不折行', one);
+      const wrapped = wm.wrapText(measureCtx, '字'.repeat(45), 20, 200, 2);
+      ok(wrapped.length === 2, '超宽折成 ≤2 行（plan §4 上限）', wrapped.length);
+      ok(wrapped[1].endsWith('…'), '截断补省略号', wrapped[1]);
+      const rows = wm.wrapText(measureCtx, '字'.repeat(21), 20, 200, 2);
+      ok(rows.length === 2 && !rows[1].endsWith('…'), '恰好装下时不加省略号（21 字折成 20+1）', rows);
+      // 成片规格阶梯（round2 A2 定稿；这是规格常量，不是「压缩回潮」）
+      ok(
+        wm.OUT_ATTEMPTS.length === 3 && wm.OUT_ATTEMPTS[0].longEdge === 2560 && wm.OUT_ATTEMPTS[0].quality === 0.92,
+        'OUT_ATTEMPTS 三档阶梯（首档 2560/0.92）',
+        wm.OUT_ATTEMPTS
+      );
+      ok(wm.OUT_MAX_BYTES === 8 * 1024 * 1024, 'OUT_MAX_BYTES = 8MB 预算红线', wm.OUT_MAX_BYTES);
+      // 横屏成片版式（round2 B6）：字号基准从图宽换成图高，底条从 42% 压到 ~25%
+      const land = wm.computeLayout(4032, 3024);
+      ok(land.landscape === true && land.bandH / 3024 <= 0.3, '横屏底条 ≤30% 画面高（不再半张照片是黑条）', {
+        landscape: land.landscape,
+        bandRatio: +(land.bandH / 3024).toFixed(3),
+      });
+      ok(land.f2 / 3024 <= 0.08, '横屏时间大字 ≤8% 画面高', +(land.f2 / 3024).toFixed(3));
+      ok(land.maxW < 4032 * 0.7, '横屏行1 折行宽度限到 ≤70% 画面宽（长对象名不铺满）', land.maxW);
+      const port = wm.computeLayout(3024, 4032);
+      ok(
+        port.landscape === false && port.f1 === 126 && port.f2 === 202 && port.f3 === 108 && port.maxW === 2722,
+        '竖屏规格逐字不变（第一轮验收过的口径，防顺手改小）',
+        port
+      );
+      // withTimeout：正常透传 + 超时按 label 拒绝（「拍完卡死」的根治）
+      const passed = await wm.withTimeout(Promise.resolve(7), 50, '不该超时');
+      ok(passed === 7, 'withTimeout 正常透传 resolve 值', passed);
+      const timeoutErr = await wm.withTimeout(new Promise(() => {}), 20, '自定义超时文案').then(
+        () => null,
+        (e) => e.message
+      );
+      ok(timeoutErr === '自定义超时文案', 'withTimeout 超时按 label 拒绝', timeoutErr);
+
+      // ---- ⑨ 横屏接线（round2 B4）：首帧方向 + 转屏跟随 + 卸载清理 ----
+      resizeHandlers.length = 0;
+      winInfoStub = { statusBarHeight: 44, windowWidth: 812, windowHeight: 375 };
+      const pL = makeWcam();
+      pL.onLoad();
+      ok(pL.data.isLandscape === true, '进页即横屏：首帧按窗口尺寸判方向（WXML 分支不闪竖屏布局）', pL.data.isLandscape);
+      pL.onShow();
+      resizeHandlers.forEach((h) => h({ size: { windowWidth: 375, windowHeight: 812 } }));
+      ok(pL.data.isLandscape === false, '转回竖屏：onWindowResize 跟随切换布局', pL.data.isLandscape);
+      resizeHandlers.forEach((h) => h({ size: { windowWidth: 812, windowHeight: 375 } }));
+      ok(pL.data.isLandscape === true, '再转横屏：方向状态往返不丢', pL.data.isLandscape);
+      const handlerCount = resizeHandlers.length;
+      pL.onUnload();
+      ok(resizeHandlers.length === handlerCount - 1, 'onUnload 解除转屏监听（不泄漏）', resizeHandlers.length);
+      winInfoStub = { statusBarHeight: 44, windowWidth: 375, windowHeight: 812 }; // 复位竖屏
+
+      navigateToImpl = () => {};
+      chooseMediaImpl = () => {};
+      openSettingImpl = () => {};
+      cameraContextImpl = () => null;
+      canvasToTempFilePathImpl = (o) => o.success({ tempFilePath: 'wxfile://composed.jpg' });
+    },
+  },
+  {
+    file: 'packageUnion/entry/entry.js',
+    name: '检查录入台（水印相机接线）',
+    async run(def, state) {
+      const page = makePage(def);
+      page.data.module = { name: '晚自习检查', fields: [{ key: 'photos', type: 'photo', label: '留证照片' }] };
+      page.data.current = { targetName: '1号教学楼201' };
+      page.data.wmDeptName = '生活部';
+      page.data.photos = [];
+
+      // ---- ① init 文案来自页面 data（相机页零网络请求的供给方）----
+      let initPayload = null;
+      navigateToImpl = (o) => {
+        o.success({ eventChannel: { emit: (evt, payload) => { if (evt === 'init') initPayload = payload; } } });
+      };
+      page.onWatermarkCamera({ currentTarget: { dataset: { field: 'photos' } } });
+      ok(!!initPayload, 'onWatermarkCamera 发起 init', initPayload);
+      ok(initPayload.moduleName === '晚自习检查' && initPayload.targetName === '1号教学楼201', 'init 带模块与对象（行1 与抽屉标题同源）', initPayload);
+      ok(initPayload.deptName === '生活部', 'init 带部门名（/api/union/mine 的 roles[].deptName 下发值）', initPayload);
+
+      // ---- ② done 回传：size 补齐 + 走既有上传管线（pending → done）----
+      chooseMediaImpl = () => {};
+      const doneShots = [{ path: 'wxfile://w1.jpg' }, { path: 'wxfile://w2.jpg' }, { path: '' }];
+      await page.appendWatermarkPhotos(doneShots, 'photos');
+      // appendWatermarkPhotos 对 uploadPending 是 fire-and-forget（与相册入口同形态）：
+      // 断言上传结果前必须让微任务队列跑完，否则读到的是「正在传」的中间态
+      await new Promise((r) => setTimeout(r, 20));
+      const photos = page.data.photos;
+      ok(photos.length === 2, '空路径被过滤（不入列）', photos.length);
+      ok(photos.every((p) => p.size === 12345), '合成产物 size 已补齐（getFileInfo）——失败兜底的 <2MB 判断才不会误跳', photos.map((p) => p.size));
+      ok(photos.every((p) => p.status === 'done' && /files\.test/.test(p.url)), '回传照片直接走既有逐张上传管线并成功落 URL', photos.map((p) => [p.status, p.url]));
+      ok((state.uploads || []).length === 2, '逐张上传各调了一次 check-photo（Promise.all 并发没有回潮）', state.uploads);
+      ok(page.data.form.photos.length === 2, 'syncPhotoForm 已把 URL 写进表单字段', page.data.form.photos);
+
+      // ---- ③ 相册入口：album-only + 带 size ----
+      let albumOpts = null;
+      chooseMediaImpl = (o) => {
+        albumOpts = o;
+        o.success({ tempFiles: [{ tempFilePath: 'wxfile://a.jpg', size: 555 }] });
+      };
+      page.onAlbumPick({ currentTarget: { dataset: { field: 'photos' } } });
+      await new Promise((r) => setTimeout(r, 20));
+      ok(albumOpts && albumOpts.sourceType.length === 1 && albumOpts.sourceType[0] === 'album', '相册入口 album-only（拍照一律走水印相机）', albumOpts && albumOpts.sourceType);
+      ok(page.data.photos.length === 3, '相册照片入列（相册自带 size）', page.data.photos.length);
+
+      // ---- ④ 上传中被挡：按钮不发起选图（与旧单入口同口径）----
+      page.data.uploading = true;
+      const before = page.data.photos.length;
+      page.onWatermarkCamera({ currentTarget: { dataset: { field: 'photos' } } });
+      page.onAlbumPick({ currentTarget: { dataset: { field: 'photos' } } });
+      ok(page.data.photos.length === before, 'uploading 中双入口都被挡（不会叠出双批次并发上传）', page.data.photos.length);
+      page.data.uploading = false;
+
+      // ---- ⑤ 失败原因带真实体积（2026-11-13「水印照片又传不上去」的排查抓手）----
+      // 「几十 MB」= 合成侧规格没生效；「1~3MB」= 网络/服务端问题。两种根因修法完全相反，
+      // 现场没有这个数字就只能靠猜 —— 所以断言它真的出现在界面文案里（而不只是拼在 JS 里）。
+      page.data.photos = [];
+      state.uploadFailMsg = '上传超时（照片较大或网络较慢），请检查网络后重试';
+      await page.appendWatermarkPhotos([{ path: 'wxfile://big.jpg' }], 'photos');
+      await new Promise((r) => setTimeout(r, 20));
+      const failedOne = page.data.photos[0] || {};
+      ok(failedOne.status === 'failed', '单张失败只标记这一张（不丢整组）', failedOne.status);
+      ok(/照片 [\d.]+ (MB|KB)/.test(failedOne.error || ''), '失败文案带这张图的真实体积（现场可自证根因）', failedOne.error);
+      state.uploadFailMsg = null;
+      // 服务端已给出体积信息时不重复追加
+      page.data.photos = [];
+      state.uploadFailMsg = '照片超过 12.34 MB 上限';
+      await page.appendWatermarkPhotos([{ path: 'wxfile://big2.jpg' }], 'photos');
+      await new Promise((r) => setTimeout(r, 20));
+      ok(!/（照片 /.test(page.data.photos[0].error || ''), '文案已含体积就不再追加（不出现「MB（照片 MB）」）', page.data.photos[0].error);
+      state.uploadFailMsg = null;
+
+      // ---- ⑥ 双路径兜底 + 不静默（2026-11-13「超过 250KB 就传不上去、调试连报错都没有」）----
+      // 相机页同时给「用户目录副本」与「临时路径副本」；上传前必须验证哪份真的能读。
+      // 旧实现直接信 path，读不到时 getFileInfo 既不 success 也不 fail → 入列链**静默卡死**
+      // （照片不出现、没有任何报错），正是用户说的「连报错都没有」。
+      page.data.photos = [];
+      await page.appendWatermarkPhotos([{ path: 'wxfile://usr/gone.jpg', backupPath: 'wxfile://tmp_alive.jpg' }], 'photos');
+      await new Promise((r) => setTimeout(r, 30));
+      ok(
+        page.data.photos.length === 1 && page.data.photos[0].path === 'wxfile://tmp_alive.jpg',
+        '主路径读不到时自动改用备份路径（不再直接丢图）',
+        page.data.photos
+      );
+
+      // 两份都读不到：必须有可见反馈（toast + console.error），不能静默
+      lastToast = null;
+      page.data.photos = [];
+      const missing = await page.resolvePhotoSource({ path: '', backupPath: '' });
+      ok(missing === null, '空路径解析为 null（不抛）', missing);
+      const oldGetFileInfo = null;
+      // 让所有 getFileInfo 都失败，模拟「文件已被系统清理」
+      fileInfoFails = true;
+      await page.appendWatermarkPhotos([{ path: 'wxfile://gone-1.jpg', backupPath: 'wxfile://gone-2.jpg' }], 'photos');
+      fileInfoFails = false;
+      await new Promise((r) => setTimeout(r, 30));
+      ok(page.data.photos.length === 0, '两份都失效时不入列（避免传一个不存在的路径）', page.data.photos.length);
+      ok(!!lastToast && /失效/.test(lastToast.title || ''), '两份都失效时有可见提示（不静默）', lastToast && lastToast.title);
+
+      // ---- ⑦ 一次失败不许把后续上传卡死（uploading 闸门必须松开）----
+      // 旧风险：某张上传「既不成功也不报错」→ uploading 恒 true → 之后每张都静默 return。
+      page.data.photos = [];
+      state.uploadFailMsg = '上传失败：网络异常';
+      await page.appendWatermarkPhotos([{ path: 'wxfile://f1.jpg' }], 'photos');
+      await new Promise((r) => setTimeout(r, 30));
+      ok(page.data.uploading === false, '失败后 uploading 已复位（不卡死后续上传）', page.data.uploading);
+      state.uploadFailMsg = null;
+      const beforeSecond = (state.uploads || []).length;
+      await page.appendWatermarkPhotos([{ path: 'wxfile://f2.jpg' }], 'photos');
+      await new Promise((r) => setTimeout(r, 30));
+      ok((state.uploads || []).length >= beforeSecond + 1, '失败一张之后，下一张仍然会正常发起上传', (state.uploads || []).length);
+      ok(page.data.photos.some((p) => p.status === 'done'), '第二张上传成功后状态为 done', page.data.photos.map((p) => p.status));
+
+      navigateToImpl = () => {};
+      chooseMediaImpl = () => {};
     },
   },
   {

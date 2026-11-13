@@ -360,6 +360,11 @@ async function orgMaps() {
 
 // 台账行 / 宿舍房 / 卫生区 → { schoolId, schoolName, departmentId, departmentName }
 // departmentId 优先；缺失时按 departmentName 反查（同名系部跨校区时优先匹配 schoolId）
+//
+// ⚠️ 名字反查**不允许猜**（2026-11-13 实测修正）：旧写法 `candidates[0] || list[0]` 在
+// 「同名系部、又没有院校信息」时按插入顺序随便取一个 —— 实测把 2 间洋河宿舍、1 个洋河卫生区
+// 判成了北校区（记录会被记到别的校区/系部）。现在：消歧后必须**唯一**才认，否则返回空，
+// 由调用方补院校信息（宿舍/卫生区从归属班级推，见 entryTargets 里的 campusOf）。
 function resolveOrg(row, maps) {
   const r = row || {};
   const name = String(r.departmentName || '').trim();
@@ -373,7 +378,7 @@ function resolveOrg(row, maps) {
       const sid = maps.schoolIdByName.get(String(r.schoolName));
       if (sid) candidates = list.filter((d) => String(d.parentId) === sid);
     }
-    dept = candidates[0] || list[0] || null;
+    dept = candidates.length === 1 ? candidates[0] : null;
   }
   const schoolId = r.schoolId ? String(r.schoolId) : dept && dept.parentId ? String(dept.parentId) : '';
   const schoolName = r.schoolName || (schoolId && maps.schoolById.get(schoolId)) || (dept && dept.parentName) || '';
@@ -382,7 +387,24 @@ function resolveOrg(row, maps) {
     departmentName: name || (dept && dept.name) || '',
     schoolId,
     schoolName,
+    // 归属未能确定（系部名不在组织架构 / 同名歧义且没有院校消歧）：录入台据此标「归属待确认」
+    ambiguous: !dept && !!name,
   };
+}
+
+/**
+ * 从「归属班级」推出院校（宿舍房 / 卫生区自身没有 schoolName 字段）。
+ * 这不是猜：房间的 className / 卫生区的 classNames 是它们的责任班级，台账里一定有院校。
+ */
+async function classCampusMap(classNames) {
+  const names = [...new Set((classNames || []).map((n) => String(n || '').trim()).filter(Boolean))];
+  const map = new Map();
+  if (!names.length) return map;
+  const rows = await ClassProfile.find({ className: { $in: names } })
+    .select('className schoolId schoolName')
+    .lean();
+  for (const p of rows) map.set(p.className, { schoolId: p.schoolId ? String(p.schoolId) : '', schoolName: p.schoolName || '' });
+  return map;
 }
 
 /**
@@ -511,8 +533,11 @@ async function entryTargets({ moduleDef, date, period, scopeDepartmentIds = null
       ]);
       for (const a of agg) liveResidents.set(String(a._id), a.n);
     }
+    // 房间自身没有院校字段：用**归属班级的院校**消歧（同名系部跨校区时不猜，见 resolveOrg 注释）
+    const roomCampus = await classCampusMap(rooms.map((r) => r.className));
     for (const r of rooms) {
-      const org = resolveOrg(r, maps);
+      const campus = roomCampus.get(String(r.className || '')) || null;
+      const org = resolveOrg({ ...r, schoolId: campus ? campus.schoolId : '', schoolName: campus ? campus.schoolName : '' }, maps);
       if (!inScope(org)) continue;
       const residentCount = liveResidents.has(String(r._id))
         ? liveResidents.get(String(r._id))
@@ -530,6 +555,8 @@ async function entryTargets({ moduleDef, date, period, scopeDepartmentIds = null
         schoolName: org.schoolName,
         departmentId: org.departmentId,
         departmentName: org.departmentName,
+        // 归属未能确定（系部名对不上组织架构）：录入台标「归属待确认」，写入时按 fail-closed 拒
+        orgAmbiguous: !!org.ambiguous,
         residents: residentCount,
         // ⚠️ 别名 residentCount：routes/union.js::shouldCountCtx 读的是这个字段名，
         //   而这里历史上只给了 `residents` —— 两个名字对不上，查宿的「应住人数」永远
@@ -547,8 +574,11 @@ async function entryTargets({ moduleDef, date, period, scopeDepartmentIds = null
       .sort({ areaType: 1, name: 1 })
       .limit(limit)
       .lean();
+    // 卫生区同样没有院校字段：用第一个责任班的院校消歧
+    const areaCampus = await classCampusMap(areas.map((a) => (a.classNames || [])[0]));
     for (const a of areas) {
-      const org = resolveOrg(a, maps);
+      const campus = areaCampus.get(String((a.classNames || [])[0] || '')) || null;
+      const org = resolveOrg({ ...a, schoolId: campus ? campus.schoolId : '', schoolName: campus ? campus.schoolName : '' }, maps);
       if (!inScope(org)) continue;
       targets.push({
         targetType: 'area',
@@ -564,6 +594,7 @@ async function entryTargets({ moduleDef, date, period, scopeDepartmentIds = null
         schoolName: org.schoolName,
         departmentId: org.departmentId,
         departmentName: org.departmentName,
+        orgAmbiguous: !!org.ambiguous,
       });
     }
   }

@@ -38,6 +38,8 @@ const dayModel = readS('models/beidou-day.js');
 const drawModel = readS('models/beidou-draw.js');
 const pageJs = readM('pages/reward/reward.js');
 const pageWxml = readM('pages/reward/reward.wxml');
+const pageWxss = readM('pages/reward/reward.wxss');
+const pageSfx = readM('utils/sfx.js');
 const adminWxml = readM('packageAdmin/config/reward-video.wxml');
 const appSrc = readS('app.js');
 // server/src/index.js：启动期迁移都挂在这里（score-scale / dorms / union / beidou）
@@ -55,6 +57,41 @@ ok('前端展示的是服务端下发的 prize（不是停位数组项）',
   /const p = result\.prize \|\| \{\}/.test(pageJs));
 ok('前端有 transitionend 收口 + 兜底定时器（低端机不卡死）',
   /bind:transitionend="onSpinEnd"/.test(pageWxml) && /_spinTimer = setTimeout\(finish/.test(pageJs));
+
+// ===== ①b 抽奖页版式与音效的几个易回退点 =====
+// 次数条早先是 `position:absolute; top:-52rpx` 压在转盘上方，正好叠在播报条上
+// （用户截图里「刚抽中 100步」与「0 次可抽」两行字重在一起）。它本来就在盘上方，
+// 绝对定位零收益高代价 —— 这里反向断言，防止有人再「顺手」改回去。
+ok('次数条走正常文档流（不绝对定位压在播报条上）',
+  /class="bd-stat"/.test(pageWxml) && !/class="bd-count"/.test(pageWxml) && !/\.bd-count\s*\{/.test(pageWxss));
+// 转盘文字要正，必须同时满足三条（缺一条就是用户说的「乱」）：
+//   ① 文字独立成层（放进 clip-path 扇形会被楔形边缘切掉一截）；
+//   ② 径向排布 textDeg=±90（旋转对称 → 盘面停在任何角度都整齐）；
+//   ③ 盘面转、指针固定（指针歪着停会让人以为坏了）
+ok('扇区文字独立成层（不被 clip-path 楔形切掉）',
+  /class="bd-label/.test(pageWxml) && /\.bd-label\s*\{/.test(pageWxss));
+ok('文字单行径向（labelText + textDeg=±90）',
+  /labelText/.test(pageJs) && /rotate\(\{\{item\.midDeg\}\}deg\)[^"]*rotate\(\{\{item\.textDeg\}\}deg\)/.test(pageWxml) &&
+    /textDeg:\s*midDeg > 180 && midDeg < 360 \? 90 : -90/.test(pageJs));
+ok('盘面旋转（rotateDeg 绑在 .bd-wheel 上）',
+  /class="bd-wheel[^"]*"\s+style="transform: rotate\(\{\{rotateDeg\}\}deg\)/.test(pageWxml));
+ok('指针固定不旋转（反向断言：指针上没有 rotate 内联样式）',
+  /class="bd-pointer[^"]*"/.test(pageWxml) &&
+    !/class="bd-pointer[^"]*"\s+style="transform:\s*rotate/.test(pageWxml));
+// 签到格子必须写清「给什么」（早先只有一个「大」字）
+ok('签到格子显示每日奖励（不是「大」字占位）',
+  /rewardDrawText/.test(pageWxml) && /rewardStepsText/.test(pageJs) && !/item\.big \? '大'/.test(pageWxml));
+// 中心按钮三态由 JS 预计算；「没次数」必须变成可点的下一步动作
+ok('中心按钮文案由 JS 预计算（模板不写三元）', /centerMain/.test(pageWxml) && /function buildCenterState/.test(pageJs));
+ok('没次数时中心是「赚次数」而不是死按钮',
+  /main: '赚次数', sub: '去做任务'/.test(pageJs) && /bind:tap="tapCenter"/.test(pageWxml));
+// 音效：管理端总开关必须真的拦播放（早先只进 data、从没被读过 = 假开关）
+ok('sfxEnabled 真的拦住播放（不是只存进 data）',
+  /const audio = this\.data\.sfxEnabled !== false;/.test(pageJs) && /if \(audio\) sfx\.play/.test(pageJs));
+// iOS 上 3.2 秒后再 play 会被静默拦掉 —— 必须在点抽奖那一 tick 先响一声
+ok('点抽奖时在手势栈里先发一声（解锁 iOS 音频）',
+  /sfx\.play\('spin'\)/.test(pageJs) && /spin: 'bd_spin\.wav'/.test(pageSfx));
+ok('音效失败后用户手动开音效可以重试一次', /function reset\(\)/.test(pageSfx) && /sfx\.reset && sfx\.reset\(\)/.test(pageJs));
 
 // ===== ② 概率公示由服务端算 =====
 console.log('\n[2] 概率公示');

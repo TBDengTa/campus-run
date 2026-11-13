@@ -32,6 +32,9 @@ const bandChao = require('../services/band-chao');
 // 口径与理由见 services/name-search.js 文件头（用户 2026-11-12）。
 const nameSearch = require('../services/name-search');
 const roster = require('../services/roster');
+// 组织归属解析（id 优先、名字兜底）：班级 / 宿舍 / 卫生区的院系归属唯一实现，
+// 见 services/org-resolve.js 文件头（26 级缺 id 的报障就出在这里）
+const orgResolve = require('../services/org-resolve');
 const { liveCount } = require('../services/class-counts');
 
 const router = express.Router();
@@ -188,6 +191,11 @@ function assertDateWithinBackfill(dateKey, { isUpdate = false } = {}) {
 }
 
 // 班级归属信息（优??class_profiles，缺失时回退 users 聚合）——分院范围校验的基准
+//
+// ⚠️ 必须走 orgResolve（id 优先、名字兜底）：名单导入只写 schoolName / departmentName，
+// 26 级整届台账的 departmentId 都是空的 —— 直接读字段会让分院成员录自己校区的班都被 403
+// （用户 2026-11-13「北校区纪检部成员被跨校区拦截 / 目标班级没有归属院系」的根因）。
+// 解析结果同时供写入使用（check_records.departmentId 因此不再产生 null）。
 async function resolveClassInfo(className) {
   const name = String(className || '').trim();
   if (!name) return null;
@@ -195,10 +203,19 @@ async function resolveClassInfo(className) {
   const live = await liveCount(name);
   const profile = await ClassProfile.findOne({ className: name }).lean();
   if (profile) {
+    const org = await orgResolve.resolveDepartment({
+      departmentId: profile.departmentId,
+      departmentName: profile.departmentName,
+      schoolId: profile.schoolId,
+      schoolName: profile.schoolName,
+    });
     return {
       className: name,
-      departmentId: profile.departmentId ? String(profile.departmentId) : '',
-      departmentName: profile.departmentName || '',
+      departmentId: org.departmentId,
+      departmentName: org.departmentName || profile.departmentName || '',
+      schoolId: org.schoolId || '',
+      schoolName: org.schoolName || profile.schoolName || '',
+      departmentResolved: !!org.resolved,
       grade: profile.grade || '',
       studentCount: live.studentCount,
       dormCount: live.dormCount,
@@ -209,13 +226,22 @@ async function resolveClassInfo(className) {
     };
   }
   const student = await User.findOne({ className: name, role: { $ne: 'teacher' } })
-    .select('departmentId departmentName grade')
+    .select('departmentId departmentName schoolId schoolName grade')
     .lean();
   if (!student) return null;
+  const org = await orgResolve.resolveDepartment({
+    departmentId: student.departmentId,
+    departmentName: student.departmentName,
+    schoolId: student.schoolId,
+    schoolName: student.schoolName,
+  });
   return {
     className: name,
-    departmentId: student.departmentId ? String(student.departmentId) : '',
-    departmentName: student.departmentName || '',
+    departmentId: org.departmentId,
+    departmentName: org.departmentName || student.departmentName || '',
+    schoolId: org.schoolId || '',
+    schoolName: org.schoolName || student.schoolName || '',
+    departmentResolved: !!org.resolved,
     grade: student.grade || '',
     studentCount: live.studentCount,
     dormCount: live.dormCount,
@@ -269,10 +295,21 @@ async function resolveTarget(moduleDef, { targetType, targetId }) {
 
     const primaryClass = owners[0] ? owners[0].className : room.className || '';
     const info = primaryClass ? await resolveClassInfo(primaryClass) : null;
+    // 房间自身的 departmentId 优先，但它经常为空（153/335）或指向别的校区（实测 1 间）；
+    // 因此必须再过一遍 orgResolve：用「归属班级的院校」消歧，同名系部跨校区时才不会判错。
+    const roomOrg = await orgResolve.resolveDepartment({
+      departmentId: room.departmentId,
+      departmentName: room.departmentName || (info && info.departmentName) || '',
+      schoolId: (info && info.schoolId) || '',
+      schoolName: (info && info.schoolName) || '',
+    });
     return {
       className: primaryClass,
-      departmentId: room.departmentId ? String(room.departmentId) : (info && info.departmentId) || '',
-      departmentName: room.departmentName || (info && info.departmentName) || '',
+      departmentId: roomOrg.departmentId || (info && info.departmentId) || '',
+      departmentName: roomOrg.departmentName || (info && info.departmentName) || '',
+      schoolId: roomOrg.schoolId || (info && info.schoolId) || '',
+      schoolName: roomOrg.schoolName || (info && info.schoolName) || '',
+      departmentResolved: !!(roomOrg.resolved || (info && info.departmentResolved)),
       grade: (info && info.grade) || '',
       studentCount: info ? info.studentCount : 0,
       dormCount: info ? info.dormCount : 0,
@@ -298,11 +335,22 @@ async function resolveTarget(moduleDef, { targetType, targetId }) {
   const owners = classNames.map((cn) => ({ className: cn, weight: area.weights && area.weights[cn] ? Number(area.weights[cn]) : 1 }));
   let info = null;
   if (classNames.length) info = await resolveClassInfo(classNames[0]);
+  // 与宿舍同一口径：区域自身的 departmentId 常为空（21/37）或指错校区（实测 1 个），
+  // 用「责任班的院校」消歧后再判范围。
+  const areaOrg = await orgResolve.resolveDepartment({
+    departmentId: area.departmentId,
+    departmentName: area.departmentName || (info && info.departmentName) || '',
+    schoolId: (info && info.schoolId) || '',
+    schoolName: (info && info.schoolName) || '',
+  });
   return {
     className: classNames[0] || '',
     classNames,
-    departmentId: area.departmentId ? String(area.departmentId) : (info && info.departmentId) || '',
-    departmentName: area.departmentName || (info && info.departmentName) || '',
+    departmentId: areaOrg.departmentId || (info && info.departmentId) || '',
+    departmentName: areaOrg.departmentName || (info && info.departmentName) || '',
+    schoolId: areaOrg.schoolId || (info && info.schoolId) || '',
+    schoolName: areaOrg.schoolName || (info && info.schoolName) || '',
+    departmentResolved: !!(areaOrg.resolved || (info && info.departmentResolved)),
     grade: (info && info.grade) || '',
     studentCount: info ? info.studentCount : 0,
     hasMorningExercise: true,
@@ -329,6 +377,10 @@ router.get(
       roleText: identity.roleText,
       roleCount: identity.roleCount,
       level: identity.level,
+      // 分院身份在页面上要显示**真实校区名**（「北校区学生会」），不再只说「分院学生会」；
+      // 与 roles[].levelText / roleText 同源（services/union.js::buildIdentity）。
+      campusName: identity.campusName || '',
+      campusId: (identity.schoolIds || [])[0] || '',
       reviewLevel: identity.reviewLevel,
       isPresidium: identity.isPresidium,
       canEnter: identity.modules, // 可录入的模块 key
@@ -391,7 +443,8 @@ router.get(
         realName: m.realName || '',
         className: m.className || '',
         level: m.level,
-        levelText: m.level === 'school' ? '校学生会' : '分院学生会',
+        // 与 /mine 同口径：分院一律显示真实校区名（「北校区学生会」），拿不到校区名才退回「分院学生会」
+        levelText: m.level === 'school' ? '校学生会' : m.schoolName ? `${m.schoolName}学生会` : '分院学生会',
         orgTitle: m.level === 'school' ? '校学生会' : `${m.schoolName || '未设院校'}学生会`,
         schoolName: m.schoolName || '',
         departmentName: m.departmentName || '',
@@ -1332,7 +1385,7 @@ router.get(
       if (!mongoose.isValidObjectId(roomId)) throw new ApiError(400, 400, '房间不存在');
       // 权限：受检对象是宿舍房间时，走与提交记录完全相同的判定（含混宿分摊出的院系??
       const target = await resolveTarget(moduleDef, { targetType: 'dorm_room', targetId: roomId });
-      const perm = unionSvc.canEnterModule(identity, moduleDef, target.departmentId);
+      const perm = unionSvc.canEnterModule(identity, moduleDef, target.departmentId, target.departmentName);
       if (!perm.ok) throw new ApiError(403, 403002, perm.reason);
 
       // 在住学生（含借住 guest）→ 反查 users。混宿房间会带出多个班的学生，这??*正确**的：
@@ -1429,7 +1482,7 @@ router.get(
     // 认 class 的模块（早操 / 早八）仍走 class；只认 classroom 的（晚自习 / 卫生）走 classroom。
     const classLikeType = (moduleDef.targetTypes || []).includes('class') ? 'class' : 'classroom';
     const target = await resolveTarget(moduleDef, { targetType: classLikeType, targetId: className });
-    const perm = unionSvc.canEnterModule(identity, moduleDef, target.departmentId);
+    const perm = unionSvc.canEnterModule(identity, moduleDef, target.departmentId, target.departmentName);
     if (!perm.ok) throw new ApiError(403, 403002, perm.reason);
 
     // 班内名单：关键字同样生效（含同音字）。以前这里完全不读 keyword ——
@@ -1734,7 +1787,7 @@ router.post(
     const moduleDef = await requireModule(body.moduleKey);
 
     const target = await resolveTarget(moduleDef, body);
-    const perm = unionSvc.canEnterModule(identity, moduleDef, target.departmentId);
+    const perm = unionSvc.canEnterModule(identity, moduleDef, target.departmentId, target.departmentName);
     if (!perm.ok) throw new ApiError(403, 403002, perm.reason);
 
     const date = String(body.date || dates.todayKey()).slice(0, 10);
@@ -1802,6 +1855,8 @@ router.post(
           targetName: target.targetName,
           className: part.className,
           departmentId: target.departmentId && mongoose.isValidObjectId(target.departmentId) ? target.departmentId : null,
+          // 系部名一并落库：id 为空的历史数据靠它做范围兜底 / 展示（见 models/check-record.js 注释）
+          departmentName: target.departmentName || '',
           grade: target.grade || '',
           inspectorOpenid: req.user.openid || '',
           inspectorName,
@@ -1847,7 +1902,7 @@ router.put(
     if (!record || record.voided) throw new ApiError(404, 404, '记录不存在');
 
     const moduleDef = await requireModule(record.moduleKey);
-    const perm = unionSvc.canEnterModule(identity, moduleDef, record.departmentId ? String(record.departmentId) : '');
+    const perm = unionSvc.canEnterModule(identity, moduleDef, record.departmentId ? String(record.departmentId) : '', record.departmentName || '');
     if (!perm.ok) throw new ApiError(403, 403002, perm.reason);
 
     const mine = record.inspectorOpenid && record.inspectorOpenid === req.user.openid;
@@ -1978,7 +2033,7 @@ router.post(
     const record = await CheckRecord.findById(req.params.id);
     if (!record || record.voided) throw new ApiError(404, 404, '记录不存在');
     const moduleDef = await requireModule(record.moduleKey);
-    const perm = unionSvc.canEnterModule(identity, moduleDef, record.departmentId ? String(record.departmentId) : '');
+    const perm = unionSvc.canEnterModule(identity, moduleDef, record.departmentId ? String(record.departmentId) : '', record.departmentName || '');
     if (!perm.ok) throw new ApiError(403, 403002, perm.reason);
 
     const mine = record.inspectorOpenid && record.inspectorOpenid === req.user.openid;
@@ -2096,7 +2151,9 @@ router.get(
     //    「你还不是学生会成员」拦掉（用户截图：「记录不存在或你没有查看权限」），
     //    于是下面 sameClass / isHomeroom 的放行**永远执行不到** —— 等于形同虚设。
     const inScope =
-      !!identity.isMember && (identity.level === 'school' || (scope && dep && (identity.departmentIds || []).includes(dep)));
+      !!identity.isMember &&
+      (identity.level === 'school' ||
+        (scope && unionSvc.inDepartmentScope(identity, dep, record.departmentName || '')));
     const sameClass = !!record.className && record.className === req.user.className;
     const isHomeroom = (req.user.homeroomClasses || []).includes(record.className);
     const isInspector = record.inspectorOpenid && record.inspectorOpenid === req.user.openid;
@@ -2113,8 +2170,13 @@ router.get(
     // 总管：union.steward 的语义就是「管理学生会全部事务，含记录与复核」（见 models/permission.js PERM_IMPLS），
     // 所以给全校复核权；自审限制仍生效（不因为是总管就允许自己录自己审）。
     const reviewPerm =
-      unionSvc.canReview(identity, dep, record.inspectorDeptKey, (moduleDef && moduleDef.entryDeptKeys) || []) ||
-      isStewardViewer;
+      unionSvc.canReview(
+        identity,
+        dep,
+        record.inspectorDeptKey,
+        (moduleDef && moduleDef.entryDeptKeys) || [],
+        record.departmentName || ''
+      ) || isStewardViewer;
     const selfReviewOk = !isInspector || unionSvc.canSelfReview(identity);
     const canReview = reviewPerm && selfReviewOk;
     ok(res, {

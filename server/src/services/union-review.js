@@ -113,7 +113,9 @@ function reviewableOf(record, { identity, openid, moduleDef } = {}) {
     identity,
     dep,
     record.inspectorDeptKey,
-    (moduleDef && moduleDef.entryDeptKeys) || []
+    (moduleDef && moduleDef.entryDeptKeys) || [],
+    // id 缺失的历史记录（26 级整届缺 id 时写入）按系部名兜底，与 scopeFilter 同口径
+    record.departmentName || ''
   );
   if (!okPerm) return { ok: false, reason: '只有部门部长或主席团可以复核记录' };
   // 禁止自审：**仅对非主席团**生效（与单条复核逐字同一口径，见 services/union.js::canSelfReview）

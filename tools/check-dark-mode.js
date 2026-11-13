@@ -96,5 +96,39 @@ const chipDark = darkRule(RUN_WXSS, '.state-chip');
 ok('顶部状态 chip 有暗色深玻璃覆盖', /rgba\(28,\s*28,\s*30/.test(chipDark));
 ok('底部面板 .sheet 有暗色投影覆盖', darkRule(RUN_WXSS, '.sheet').length > 0);
 
-console.log(failed ? `\n失败 ${failed} 项` : '\n夜间模式校验通过');
-process.exit(failed ? 1 : 0);
+// ===== 6) 北斗运动抽奖页（用户 2026-11-13「背景颜色不对啊请你再优化一下」）=====
+// 这个页面原先有 35 处硬编码色值：亮色下「谢谢参与」格是冷蓝灰、页面底是全局冷灰，
+// 跟暖橙主题混在一起最刺眼；暗色下更糟 —— 硬编码不随主题变，白卡片直接漏白。
+// 所以断言两件事：① 规则内不许出现裸色值（只能 var(--bd-*)）；② --bd-* 必须有暗色重写块。
+console.log('\n[6] 北斗运动抽奖页');
+const BD_WXSS = read('miniprogram', 'pages', 'reward', 'reward.wxss');
+// 去掉两个令牌定义块与所有块注释后，剩下的规则里不应再有裸 hex。
+// （注释里会举例写 #f6f7f9 这类值说明「原来是什么」，那不是声明 —— 不剥注释会误报。）
+const bdNoTokens = BD_WXSS
+  .replace(/page\s*\{[^}]*--bd-page-grad[\s\S]*?\n\}/g, '')
+  .replace(/\/\*[\s\S]*?\*\//g, '');
+const bareHex = bdNoTokens.match(/#[0-9a-fA-F]{3,8}\b/g) || [];
+ok('规则内无裸色值（全部走 --bd-* 令牌）', bareHex.length === 0, bareHex.slice(0, 3));
+ok('有 --bd-* 令牌定义块', /--bd-page-grad:/.test(BD_WXSS));
+ok('页面底是暖光渐晕（不再直接铺全局冷灰）', /\.bd-page\s*\{[^}]*var\(--bd-page-grad\)/.test(BD_WXSS));
+// 收尾色也必须是暖的：上半暖下半冷（用 --tt-bg-page #f6f7f9 收尾）是这次投诉的直接原因。
+// 只看**亮色块**：暗色下回落到全局深底是对的，不能一起判。
+const bdLightBlock = BD_WXSS.slice(0, BD_WXSS.indexOf('@media (prefers-color-scheme: dark)'));
+ok('渐晕整页暖调（亮色收尾不回落全局冷灰）',
+  /--bd-page-grad:[^;]*#fffbf6/.test(bdLightBlock) && !/--bd-page-grad:[^;]*var\(--tt-bg-page\)/.test(bdLightBlock));
+ok('渐晕停靠点用固定 rpx（超过一屏不会被拉长成整页渐变）',
+  /--bd-page-grad:[^;]*\d+rpx/.test(BD_WXSS) && !/--bd-page-grad:[^;]*30%/.test(BD_WXSS));
+const bdDarkBlock = BD_WXSS.slice(BD_WXSS.indexOf('@media (prefers-color-scheme: dark)'));
+ok('--bd-* 有暗色重写块', /@media \(prefers-color-scheme: dark\)[\s\S]*--bd-page-grad:/.test(BD_WXSS));
+ok('暗色下盘面/格子被压暗（不是套用亮色暖橙）',
+  /--bd-sector-steps-grad:\s*linear-gradient\(180deg,\s*#4a3320/.test(bdDarkBlock));
+ok('暗色下禁用态灰渐变也重写（否则是一块刺眼浅灰板）',
+  /--bd-center-off-grad:/.test(bdDarkBlock));
+// 「谢谢参与」格底：亮色下必须是暖灰（原来的 #dfe3ea 是冷蓝，跟橙盘不是一系）
+ok('「谢谢参与」格底改暖灰（不再冷蓝）',
+  /--bd-sector-none-grad:[^;]*#e8dfd6/.test(BD_WXSS) && !/--bd-sector-none-grad:[^;]*#dfe3ea/.test(BD_WXSS));
+// 奖项文字对比度：浅灰字在浅暖灰底上读不清（截图里「谢谢」几乎看不见）
+ok('空奖文字对比度压深（≥3:1，不再用浅灰）',
+  /--bd-val-none:\s*#6b5f54/.test(BD_WXSS) && !/--bd-val-none:\s*#a3968a/.test(BD_WXSS));
+
+console.log(failed ? `\n失败 ${failed} 项` : '\n夜间模式校验通过');process.exit(failed ? 1 : 0);

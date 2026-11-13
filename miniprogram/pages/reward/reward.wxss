@@ -1,8 +1,98 @@
 /* ===== 北斗运动 · 紧凑版（转盘 520 + 播报 + 三档动效）=====
-   配色只用 --tt-* 令牌与品牌橙；动效一律动 transform/opacity（走合成层，不掉帧）。 */
+   配色：全局走 --tt-* 令牌，本页专属色集中在 --bd-*（见文件头定义块），
+   规则内不写裸色值；动效一律动 transform/opacity（走合成层，不掉帧）。 */
+
+/* ===== 本页配色令牌（色值集中定义，规则内只引用变量）=====
+   为什么要集中：北斗是暖橙活动页，但页面底走的是全局**冷灰** --tt-bg-page(#f6f7f9)、
+   「谢谢参与」格走冷蓝灰 —— 一屏里冷暖混着用最刺眼（用户 2026-11-13「背景颜色不对」）。
+   集中定义顺带解决第二件事：原先 35 处硬编码色在夜间模式下全部漏白。
+   手法与 pages/water/water.wxss 一致（本页变量 + 规则内只引用）。 */
+page {
+  /* 页面底：整页暖调（顶部暖光最浓，向下收敛到米白）。
+     为什么不用全局 --tt-bg-page(#f6f7f9) 收尾：那是**冷灰**，本页是暖橙活动页，
+     上半暖下半冷的拼接最刺眼（用户 2026-11-13「背景颜色不对」）。
+     停靠点用固定 rpx 而不是百分比：本页超过一屏，百分比会把暖光按比例拉长成整页渐变。 */
+  --bd-page-grad: linear-gradient(180deg, #fff1e2 0rpx, #fff6ee 320rpx, #fffaf5 900rpx, #fffbf6 100%);
+
+  /* 品牌渐变 + 品牌底上的文字色 */
+  --bd-brand-grad: linear-gradient(135deg, #ff9a3d, #ff6b00);
+  --bd-brand-grad-90: linear-gradient(90deg, #ff9a3d, #ff4d00);
+  --bd-hot-grad: linear-gradient(90deg, #ff8a00, #ff3d00);
+  --bd-on-brand: #fff;
+
+  /* 播报条 */
+  --bd-feed-grad: linear-gradient(90deg, #fff4e8, #ffeada);
+
+  /* 盘面 */
+  --bd-wheel-face: var(--tt-card);
+  --bd-wheel-rim: #ffd9b8;
+  --bd-wheel-shadow: rgba(255, 107, 0, 0.22);
+  --bd-wheel-glow: rgba(255, 107, 0, 0.42);
+  --bd-sector-steps-grad: linear-gradient(180deg, #ffe8d2 0%, #ffc897 100%);
+  --bd-sector-draw-grad: linear-gradient(180deg, #fff2c9 0%, #ffd766 100%);
+  /* 「谢谢参与」原来是冷蓝灰(#f2f4f8→#dfe3ea)，跟暖橙盘面不是一系 —— 换暖灰 */
+  --bd-sector-none-grad: linear-gradient(180deg, #f6f2ed 0%, #e8dfd6 100%);
+  --bd-wedge: rgba(255, 255, 255, 0.92);
+  --bd-val-hit: #e04b00;
+  /* 空奖/再来一次的格底偏浅，原来的浅灰字对比不足（手机上要眯眼读）。
+     这两个色是「奖项名」，必须一眼读清，所以压深到 ≥3:1。 */
+  --bd-val-none: #6b5f54;
+  --bd-val-draw: #7a5009;
+
+  /* 中心按钮 */
+  --bd-center-off-grad: linear-gradient(135deg, #c9ced6 0%, #a8aeb8 100%);
+  --bd-center-empty-face: #fff6ee;
+
+  /* 中奖弹层（金色档） */
+  --bd-gold: #ffd24d;
+  --bd-gold-hi: #ffe89a;
+  --bd-gold-glow: rgba(255, 190, 40, 0.75);
+  --bd-gold-glow-hi: rgba(255, 210, 77, 0.95);
+
+  /* 彩带四色 */
+  --bd-confetti-1: #ff6b00;
+  --bd-confetti-2: #ffd24d;
+  --bd-confetti-3: #ff3d6e;
+  --bd-confetti-4: #4dd0e1;
+
+  /* 稀有标签 */
+  --bd-tag-rare-grad: linear-gradient(90deg, #ffb03d, #ff8a00);
+}
+
+/* 暗色下暖色必须**压暗重写**，直接套用亮色值会整页蒙雾、白字对比不足 */
+@media (prefers-color-scheme: dark) {
+  page {
+    --bd-page-grad: linear-gradient(180deg, #241a11 0rpx, #1d1710 320rpx, #191510 900rpx, #181410 100%);
+    --bd-feed-grad: linear-gradient(90deg, rgba(240, 146, 72, 0.18), rgba(240, 146, 72, 0.08));
+    --bd-brand-grad: linear-gradient(135deg, #f09248, #d96f1f);
+    --bd-brand-grad-90: linear-gradient(90deg, #f09248, #d95f10);
+    --bd-hot-grad: linear-gradient(90deg, #f09248, #d95f10);
+    --bd-wheel-rim: #3d2c1d;
+    --bd-wheel-shadow: rgba(0, 0, 0, 0.5);
+    --bd-wheel-glow: rgba(240, 146, 72, 0.45);
+    --bd-sector-steps-grad: linear-gradient(180deg, #4a3320 0%, #3a2716 100%);
+    --bd-sector-draw-grad: linear-gradient(180deg, #4b3f1e 0%, #3a3016 100%);
+    --bd-sector-none-grad: linear-gradient(180deg, #2c2b2a 0%, #232221 100%);
+    --bd-wedge: rgba(255, 255, 255, 0.1);
+    --bd-val-hit: #ffb066;
+    --bd-val-none: rgba(255, 255, 255, 0.45);
+    --bd-val-draw: #e0b45c;
+    --bd-center-empty-face: #2a211a;
+    /* 未开启时的灰渐变：亮色值在暗色下是一块刺眼的浅灰板 */
+    --bd-center-off-grad: linear-gradient(135deg, #3a3f47 0%, #2b2f35 100%);
+    --bd-gold: #e0a63c;
+    --bd-gold-hi: #f0c46a;
+    --bd-tag-rare-grad: linear-gradient(90deg, #f0b066, #e07b24);
+    --bd-gold-glow: rgba(240, 146, 72, 0.5);
+    --bd-gold-glow-hi: rgba(240, 146, 72, 0.72);
+  }
+}
+
 
 .bd-page {
   padding-top: 8rpx;
+  /* 暖光渐晕：整页不再是一块冷灰垫着白卡片 */
+  background: var(--bd-page-grad);
 }
 
 /* ===== 中奖播报 ===== */
@@ -13,7 +103,7 @@
   margin: 0 var(--tt-gap) 12rpx;
   padding: 14rpx 22rpx;
   border-radius: 999rpx;
-  background: linear-gradient(90deg, #fff4e8, #ffeada);
+  background: var(--bd-feed-grad);
   overflow: hidden;
 }
 
@@ -87,8 +177,8 @@
   border-radius: 6rpx;
   font-size: 18rpx;
   line-height: 26rpx;
-  color: #fff;
-  background: linear-gradient(90deg, #ff9a3d, #ff4d00);
+  color: var(--bd-on-brand);
+  background: var(--bd-brand-grad-90);
 }
 
 .bd-feed-time {
@@ -112,45 +202,56 @@
   margin: 6rpx auto 0;
 }
 
-/* 次数 + 已得 + 音效开关：一行，压在盘上方 */
-.bd-count {
-  position: absolute;
-  top: -52rpx;
-  left: 0;
-  right: 0;
+/* 次数 + 已得 + 音效开关：**独立一行，走正常文档流**。
+   早先它是 `position:absolute; top:-52rpx` 压在转盘容器上方 —— 正好落在播报条上面，
+   于是「王** 刚抽中 100步」和「0 次可抽 · 今日已得 100 步」两行字叠在一起（用户截图的成因）。
+   绝对定位在这里没有任何收益：它本来就在盘上方。 */
+.bd-stat {
   display: flex;
-  align-items: baseline;
-  justify-content: center;
-  gap: 8rpx;
-  z-index: 6;
+  align-items: center;
+  gap: 10rpx;
+  margin: 0 var(--tt-gap) 10rpx;
+  padding: 0 6rpx;
 }
 
-.bd-count-num {
-  font-size: 40rpx;
+.bd-stat-left {
+  display: flex;
+  align-items: baseline;
+  gap: 6rpx;
+  flex-shrink: 0;
+}
+
+.bd-stat-num {
+  font-size: 42rpx;
   font-weight: 700;
   color: var(--tt-brand);
   line-height: 1;
 }
 
-.bd-count-unit {
+.bd-stat-unit {
   font-size: 22rpx;
   color: var(--tt-text-2);
 }
 
-.bd-count-sep {
+.bd-stat-sep {
   font-size: 20rpx;
   color: var(--tt-text-3);
+  flex-shrink: 0;
 }
 
-.bd-count-earned {
+.bd-stat-earned {
+  flex: 1;
+  min-width: 0;
   font-size: 21rpx;
   color: var(--tt-text-3);
+  /* 一行收益文案，宽度不够就省略 —— 绝不换行把转盘挤下去 */
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .bd-sfx {
-  position: absolute;
-  right: 0;
-  bottom: -2rpx;
+  flex-shrink: 0;
   width: 52rpx;
   height: 52rpx;
   display: flex;
@@ -201,23 +302,27 @@
   }
 }
 
-/* 指针：正上方，尖端朝下 */
+/* 指针：固定在 12 点、尖端朝下插进盘面（**不旋转**）。
+   旋转的是盘面 —— 指针歪着停在某个角度会让人以为转盘坏了（用户 2026-11-13「这转盘不对」）。 */
 .bd-pointer {
   position: absolute;
   left: 50%;
-  top: -14rpx;
+  top: -10rpx;
   width: 0;
   height: 0;
   margin-left: -20rpx;
   border-left: 20rpx solid transparent;
   border-right: 20rpx solid transparent;
-  border-top: 50rpx solid var(--tt-brand);
+  border-top: 54rpx solid var(--tt-brand);
   filter: drop-shadow(0 4rpx 8rpx rgba(255, 107, 0, 0.4));
-  z-index: 5;
-  transform-origin: 50% 20%;
+  /* 0×0 盒子的百分比原点不可靠，直接用顶部顶点当原点，抖动才不会带偏三角 */
+  transform-origin: 50% 0;
+  z-index: 8;
+  pointer-events: none;
 }
 
-/* 抽奖中指针轻微抖动（观感：在「弹」格子） */
+/* 旋转中指针轻微跳动（观感：在「弹」格子）。注意这里只动 pointer 自己，
+   盘面的 rotate 是内联 transform，两者互不干扰。 */
 .bd-pointer.is-spin {
   animation: bd-pointer-tick 0.18s linear infinite;
 }
@@ -228,7 +333,7 @@
     transform: rotate(0deg);
   }
   50% {
-    transform: rotate(-7deg);
+    transform: rotate(-8deg);
   }
 }
 
@@ -241,8 +346,9 @@
   height: 100%;
   border-radius: 50%;
   overflow: hidden;
-  background: #fff;
-  box-shadow: 0 0 0 12rpx #ffd9b8, 0 14rpx 34rpx rgba(255, 107, 0, 0.22);
+  background: var(--bd-wheel-face);
+  box-shadow: 0 0 0 12rpx var(--bd-wheel-rim), 0 14rpx 34rpx var(--bd-wheel-shadow);
+  /* 盘面旋转（transform 由 WXML 内联下发，这里只给过渡时间） */
   will-change: transform;
   transition: transform 3.2s cubic-bezier(0.15, 0.9, 0.05, 1);
 }
@@ -258,16 +364,18 @@
 }
 
 /* 扇区底色：按 prizes[].type 上色（steps/draw/none），由 JS 写进类名的 tint 部分 */
+/* 三色分层要拉开：步数格暖橙、再来一次金、谢谢参与冷灰。
+   截图里盘面整片发白，就是因为三种 tint 的明度太接近。 */
 .bd-sector-steps {
-  background: linear-gradient(180deg, #fff3e6 0%, #ffd9b8 100%);
+  background: var(--bd-sector-steps-grad);
 }
 
 .bd-sector-draw {
-  background: linear-gradient(180deg, #fff9e0 0%, #ffe08a 100%);
+  background: var(--bd-sector-draw-grad);
 }
 
 .bd-sector-none {
-  background: linear-gradient(180deg, #f7f8fa 0%, #ebedf1 100%);
+  background: var(--bd-sector-none-grad);
 }
 
 /* 停位那格：闪一下，让人明确「中的是这个」 */
@@ -285,31 +393,44 @@
   }
 }
 
-/* 扇区内的文字块：随扇区中线旋转后向外平移，落在格子里 */
-.bd-sector-body {
+/* 扇区文字层：**独立于被裁剪的扇形**，所以永远不会被楔形边缘切掉。
+   定位：先 rotate(midDeg) 指到该格中线，再 translateY 推到半径上，
+   末段 rotate(±90) 让文字**沿半径读**（径向）。
+   为什么径向：盘面在转，径向是旋转对称的 —— 停在任何角度都整齐；
+   水平文字会被整体带歪 22.5°~90°（用户两次说「乱」的根源）。 */
+.bd-label {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 120rpx;
-  margin: -20rpx 0 0 -60rpx;
+  width: 150rpx;
+  margin: -17rpx 0 0 -75rpx;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 2rpx;
+  justify-content: center;
   transform-origin: 50% 50%;
+  pointer-events: none;
 }
 
 .bd-sector-val {
-  font-size: 30rpx;
-  font-weight: 700;
-  line-height: 1.1;
+  font-size: 24rpx;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.3rpx;
+  white-space: nowrap;
   color: var(--tt-brand-deep);
 }
 
-.bd-sector-unit {
-  font-size: 18rpx;
-  line-height: 1;
-  color: var(--tt-text-3);
+.bd-label.is-hit .bd-sector-val {
+  color: var(--bd-val-hit);
+}
+
+/* 空奖格子文字压暗：一眼能分出「有奖」和「谢谢参与」，不用去读字 */
+.bd-v-none {
+  color: var(--bd-val-none);
+}
+
+.bd-v-draw {
+  color: var(--bd-val-draw);
 }
 
 /* 扇区分隔线 */
@@ -320,8 +441,27 @@
   width: 2rpx;
   height: 50%;
   margin-left: -1rpx;
-  background: rgba(255, 255, 255, 0.92);
+  background: var(--bd-wedge);
   transform-origin: 50% 100%;
+}
+
+/* 内圈白环：让「中心按钮」和「格子」之间有个台阶，盘面才不像一块色块 */
+.bd-inner-ring {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 214rpx;
+  height: 214rpx;
+  margin: -107rpx 0 0 -107rpx;
+  border-radius: 50%;
+  background: var(--bd-wheel-face);
+  box-shadow: 0 6rpx 18rpx var(--bd-wheel-shadow), inset 0 0 0 3rpx var(--bd-wheel-rim);
+  pointer-events: none;
+}
+
+/* 旋转中：整个盘轻微发光，配合指针抖动，让「在转」比静止更明显 */
+.bd-wheel.is-spinning {
+  box-shadow: 0 0 0 12rpx var(--bd-wheel-rim), 0 0 42rpx var(--bd-wheel-glow), 0 14rpx 34rpx var(--bd-wheel-shadow);
 }
 
 /* 中心按钮 */
@@ -338,14 +478,42 @@
   align-items: center;
   justify-content: center;
   gap: 2rpx;
-  background: linear-gradient(135deg, #ff9a3d 0%, #ff6b00 100%);
+  background: var(--bd-brand-grad);
   box-shadow: 0 8rpx 22rpx rgba(255, 107, 0, 0.36), inset 0 0 0 6rpx rgba(255, 255, 255, 0.5);
   z-index: 6;
 }
 
 .bd-center.is-disabled {
-  background: linear-gradient(135deg, #c9ced6 0%, #a8aeb8 100%);
+  background: var(--bd-center-off-grad);
   box-shadow: 0 6rpx 16rpx rgba(0, 0, 0, 0.12);
+}
+
+/* 没次数：**不做成灰色死按钮**。
+   灰色「没次数」是用户截图里最劝退的一块 —— 点了没反应，只能退出去。
+   这里改成浅底 + 品牌色字（写「赚次数 / 去做任务」），点一下滚到任务区。 */
+.bd-center.is-empty {
+  background: var(--bd-center-empty-face);
+  box-shadow: 0 6rpx 18rpx var(--bd-wheel-shadow), inset 0 0 0 4rpx var(--tt-brand);
+  animation: bd-empty-breath 2.4s ease-in-out infinite;
+}
+
+.bd-center.is-empty .bd-center-main {
+  color: var(--tt-brand-deep);
+  font-size: 32rpx;
+}
+
+.bd-center.is-empty .bd-center-sub {
+  color: var(--tt-brand);
+}
+
+@keyframes bd-empty-breath {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.04);
+  }
 }
 
 .bd-center.is-spinning {
@@ -365,7 +533,7 @@
 .bd-center-main {
   font-size: 30rpx;
   font-weight: 700;
-  color: #fff;
+  color: var(--bd-on-brand);
 }
 
 .bd-center-sub {
@@ -381,8 +549,8 @@
   transform: translate(-50%, -50%) scale(0.6);
   padding: 12rpx 32rpx;
   border-radius: 999rpx;
-  background: linear-gradient(90deg, #ff8a00, #ff3d00);
-  box-shadow: 0 10rpx 26rpx rgba(255, 61, 0, 0.45);
+  background: var(--bd-hot-grad);
+  box-shadow: 0 10rpx 26rpx var(--bd-wheel-glow);
   z-index: 8;
   animation: bd-burst-in 0.7s cubic-bezier(0.2, 1.5, 0.4, 1) forwards;
 }
@@ -405,7 +573,7 @@
 .bd-burst-text {
   font-size: 26rpx;
   font-weight: 700;
-  color: #fff;
+  color: var(--bd-on-brand);
   white-space: nowrap;
 }
 
@@ -446,30 +614,48 @@
   gap: 6rpx;
 }
 
+/* 签到格：三行 —— 第几天 / 给几次 / 给多少步。
+   早先第二行只写一个「大」字（表示第 3/7 天是大奖），等于什么奖励都没说。 */
 .bd-cl {
   flex: 1;
-  height: 54rpx;
+  min-width: 0;
+  height: 72rpx;
   border-radius: 12rpx;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 1rpx;
+  gap: 0;
   background: var(--td-bg-color-component);
 }
 
 .bd-cl-d {
-  font-size: 20rpx;
+  font-size: 18rpx;
   font-weight: 600;
   color: var(--tt-text-3);
-  line-height: 1;
+  line-height: 1.15;
 }
 
 .bd-cl-r {
+  font-size: 17rpx;
+  font-weight: 600;
+  line-height: 1.15;
+  color: var(--tt-text-2);
+  white-space: nowrap;
+}
+
+/* 有步数的那两天：步数额外加一行，用品牌色强调 */
+.bd-cl-s {
   font-size: 15rpx;
-  line-height: 1;
-  color: #fff;
-  height: 16rpx;
+  font-weight: 700;
+  line-height: 1.15;
+  color: var(--tt-brand);
+  white-space: nowrap;
+}
+
+/* 第 3/7 天大档：加一圈描边（原来靠一个「大」字，现在靠样式） */
+.bd-cl.is-big {
+  box-shadow: inset 0 0 0 2rpx rgba(255, 107, 0, 0.45);
 }
 
 .bd-cl.is-signed {
@@ -480,21 +666,19 @@
   color: var(--tt-brand-deep);
 }
 
-.bd-cl.is-signed .bd-cl-r {
-  color: var(--tt-brand);
+.bd-cl.is-signed .bd-cl-r,
+.bd-cl.is-signed .bd-cl-s {
+  color: var(--tt-brand-deep);
 }
 
 .bd-cl.is-today {
   background: var(--tt-brand);
 }
 
-.bd-cl.is-today .bd-cl-d {
-  color: #fff;
-}
-
-/* 第 3/7 天的「大」标记 */
-.bd-cl.is-signed .bd-cl-r {
-  color: var(--tt-brand);
+.bd-cl.is-today .bd-cl-d,
+.bd-cl.is-today .bd-cl-r,
+.bd-cl.is-today .bd-cl-s {
+  color: var(--bd-on-brand);
 }
 
 .bd-strip-btn {
@@ -505,8 +689,8 @@
   border-radius: 999rpx;
   font-size: 24rpx;
   font-weight: 600;
-  color: #fff;
-  background: linear-gradient(135deg, #ff9a3d, #ff6b00);
+  color: var(--bd-on-brand);
+  background: var(--bd-brand-grad);
 }
 
 .bd-strip-btn.is-done {
@@ -698,7 +882,7 @@ button.bd-task::after {
   flex-direction: column;
   align-items: center;
   gap: 14rpx;
-  background: #fff;
+  background: var(--bd-wheel-face);
   box-shadow: 0 20rpx 50rpx rgba(0, 0, 0, 0.25);
   /* rare / rarest 从下方弹入 */
   animation: bd-card-in 0.42s cubic-bezier(0.2, 1.4, 0.4, 1);
@@ -717,17 +901,17 @@ button.bd-task::after {
 
 /* 最稀有：金色描边 + 呼吸光 */
 .bd-card.is-gold {
-  box-shadow: 0 20rpx 50rpx rgba(0, 0, 0, 0.25), 0 0 0 6rpx #ffd24d, 0 0 40rpx rgba(255, 190, 40, 0.75);
+  box-shadow: 0 20rpx 50rpx rgba(0, 0, 0, 0.25), 0 0 0 6rpx var(--bd-gold), 0 0 40rpx var(--bd-gold-glow);
   animation: bd-card-in 0.42s cubic-bezier(0.2, 1.4, 0.4, 1), bd-card-shine 1.4s ease-in-out 0.42s;
 }
 
 @keyframes bd-card-shine {
   0%,
   100% {
-    box-shadow: 0 20rpx 50rpx rgba(0, 0, 0, 0.25), 0 0 0 6rpx #ffd24d, 0 0 40rpx rgba(255, 190, 40, 0.75);
+    box-shadow: 0 20rpx 50rpx rgba(0, 0, 0, 0.25), 0 0 0 6rpx var(--bd-gold), 0 0 40rpx var(--bd-gold-glow);
   }
   50% {
-    box-shadow: 0 20rpx 50rpx rgba(0, 0, 0, 0.25), 0 0 0 10rpx #ffe89a, 0 0 70rpx rgba(255, 210, 77, 0.95);
+    box-shadow: 0 20rpx 50rpx rgba(0, 0, 0, 0.25), 0 0 0 10rpx var(--bd-gold-hi), 0 0 70rpx var(--bd-gold-glow-hi);
   }
 }
 
@@ -738,7 +922,7 @@ button.bd-task::after {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #ff9a3d, #ff6b00);
+  background: var(--bd-brand-grad);
   box-shadow: 0 8rpx 20rpx rgba(255, 107, 0, 0.35);
 }
 
@@ -763,9 +947,9 @@ button.bd-task::after {
   border-radius: 999rpx;
   font-size: 27rpx;
   font-weight: 700;
-  color: #fff;
-  background: linear-gradient(135deg, #ff9a3d, #ff6b00);
-  box-shadow: 0 8rpx 20rpx rgba(255, 107, 0, 0.32);
+  color: var(--bd-on-brand);
+  background: var(--bd-brand-grad);
+  box-shadow: 0 8rpx 20rpx var(--bd-wheel-shadow);
 }
 
 /* ===== 彩带（只在最稀有，8~12 片）===== */
@@ -783,16 +967,16 @@ button.bd-task::after {
 }
 
 .bd-confetti:nth-child(4n + 1) {
-  background: #ff6b00;
+  background: var(--bd-confetti-1);
 }
 .bd-confetti:nth-child(4n + 2) {
-  background: #ffd24d;
+  background: var(--bd-confetti-2);
 }
 .bd-confetti:nth-child(4n + 3) {
-  background: #ff3d6e;
+  background: var(--bd-confetti-3);
 }
 .bd-confetti:nth-child(4n + 4) {
-  background: #4dd0e1;
+  background: var(--bd-confetti-4);
 }
 
 @keyframes bd-confetti-fall {
@@ -804,4 +988,140 @@ button.bd-task::after {
     opacity: 0;
     transform: translateY(680rpx) rotate(540deg);
   }
+}
+
+/* ===== 弹层内的光晕（rare / rarest）===== */
+.bd-fx-halo {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 700rpx;
+  height: 700rpx;
+  margin: -350rpx 0 0 -350rpx;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(circle, rgba(255, 150, 60, 0.55) 0%, rgba(255, 107, 0, 0) 62%);
+  animation: bd-halo-out 1.3s ease-out;
+}
+
+@keyframes bd-halo-out {
+  0% {
+    opacity: 0.2;
+    transform: scale(0.4);
+  }
+  55% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.25);
+  }
+}
+
+/* 收起弹层（自动收起会再闪一下，用户想立刻看转盘就点这里） */
+.bd-card-close {
+  margin-top: 4rpx;
+  padding: 10rpx 30rpx;
+  font-size: 23rpx;
+  color: var(--tt-text-3);
+  border-radius: 999rpx;
+  background: var(--td-bg-color-component);
+}
+
+/* ===== 今日签到可得（写清「今天签到值不值」）===== */
+.bd-checkin-hint {
+  margin: 8rpx var(--tt-gap) 0;
+  padding-left: 8rpx;
+}
+
+.bd-checkin-hint-t {
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+}
+
+/* ===== 我的最近中奖 ===== */
+.bd-recent {
+  margin: 16rpx var(--tt-gap) 0;
+  padding: 18rpx 22rpx;
+  border-radius: 22rpx;
+  background: var(--td-bg-color-container);
+  box-shadow: 0 4rpx 14rpx rgba(0, 0, 0, 0.04);
+}
+
+.bd-recent-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8rpx;
+}
+
+.bd-recent-title {
+  font-size: 25rpx;
+  font-weight: 700;
+  color: var(--tt-text-1);
+}
+
+.bd-recent-count {
+  font-size: 19rpx;
+  color: var(--tt-text-3);
+}
+
+.bd-recent-row {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  height: 46rpx;
+  border-top: 1rpx solid var(--td-component-stroke);
+}
+
+.bd-recent-row.is-none {
+  opacity: 0.55;
+}
+
+.bd-recent-gift {
+  flex-shrink: 0;
+  font-size: 20rpx;
+}
+
+.bd-recent-prize {
+  flex: 1;
+  min-width: 0;
+  font-size: 23rpx;
+  font-weight: 600;
+  color: var(--tt-brand-deep);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.bd-recent-row.is-none .bd-recent-prize {
+  color: var(--tt-text-3);
+  font-weight: 400;
+}
+
+.bd-recent-tag {
+  flex-shrink: 0;
+  padding: 0 10rpx;
+  border-radius: 6rpx;
+  font-size: 17rpx;
+  line-height: 26rpx;
+  color: var(--bd-on-brand);
+  background: var(--bd-hot-grad);
+}
+
+.bd-recent-tag.is-rare {
+  background: var(--bd-tag-rare-grad);
+}
+
+.bd-recent-tag.is-cap {
+  color: var(--td-warning-color-7);
+  background: var(--td-warning-color-1);
+}
+
+.bd-recent-time {
+  flex-shrink: 0;
+  min-width: 72rpx;
+  text-align: right;
+  font-size: 20rpx;
+  color: var(--tt-text-3);
 }

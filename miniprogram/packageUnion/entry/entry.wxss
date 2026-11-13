@@ -499,7 +499,8 @@
   background: rgba(0, 0, 0, 0.5);
 }
 
-/* 加号按钮：虚线描边，与缩略图同尺寸，视觉上就是「再来一张」 */
+/* 加号按钮：虚线描边，与缩略图同尺寸，视觉上就是「再来一张」。
+   双入口（水印相机方案 D1）：水印拍照（品牌色描边突出主通道）+ 相册（显式标注无水印） */
 .en-photo-add {
   display: flex;
   flex-direction: column;
@@ -510,9 +511,19 @@
   background: var(--tt-bg-page);
 }
 
+.en-photo-add-wm {
+  border-color: var(--tt-brand);
+  background: var(--tt-brand-soft);
+}
+
 .en-photo-add-t {
   font-size: 20rpx;
   color: var(--tt-text-3);
+}
+
+.en-photo-add-t-brand {
+  color: var(--tt-brand);
+  font-weight: 600;
 }
 
 .en-photo-tip {

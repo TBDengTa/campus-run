@@ -19,6 +19,9 @@ const checkRecordSchema = new mongoose.Schema(
     // 结果归属班级（宿舍与卫生区经映射反查后写入）—— 班级维度查询与排名全靠它
     className: { type: String, default: '', index: true },
     departmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Organization', default: null },
+    // 目标系部名：**只**在「departmentId 为空」时参与范围判定（历史数据 / 名单只写了名字的形态），
+    // 以及给详情页兜底展示。有 id 时范围判定仍只认 id —— 同名系部跨校区不能被名字放行。
+    departmentName: { type: String, default: '' },
     grade: { type: String, default: '' },
 
     inspectorOpenid: { type: String, default: '' },

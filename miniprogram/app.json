@@ -78,6 +78,7 @@
       "root": "packageUnion",
       "pages": [
         "entry/entry",
+        "wcamera/wcamera",
         "records/records",
         "record/record",
         "review/review",

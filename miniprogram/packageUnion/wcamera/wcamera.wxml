@@ -1,0 +1,113 @@
+<view class="wm-page">
+  <!-- 自定义导航：pageOrientation:auto（自动横屏）在 iOS 需要 navigationStyle:custom 才生效；
+       返回 = 托盘有照片时等同「完成」带照片回录入台。
+       横屏时导航条退化成左上浮层圆钮（标题隐藏、去状态栏垫高）——竖向空间最贵，整条黑带零收益。
+       ⚠️ 图标尺寸横屏必须用 px：rpx 在横屏按屏幕**长边**换算，44rpx ≈ 48px（竖屏才 22px）= 钮巨大。 -->
+  <view class="wm-nav" style="{{isLandscape ? '' : 'padding-top: ' + statusBarHeight + 'px'}}">
+    <view class="wm-nav-back" hover-class="wm-nav-back-hover" bind:tap="onBack">
+      <t-icon name="chevron-left" size="{{isLandscape ? '18px' : '44rpx'}}" color="#ffffff" />
+    </view>
+    <text class="wm-nav-title">水印相机</text>
+  </view>
+
+  <!-- 取景区：camera 组件 + 实时水印浮层。
+       浮层只是「预告」——真正的水印在快门后由 canvas 烙进照片文件（docs/watermark-camera-plan.md）。
+       文案与烙图共用 utils/watermark.js::buildLines，两处各拼一份必然「预览写着 A、照片烙着 B」。
+       横屏全屏取景（round2 B3 定稿）：控件浮在四角，画面不被黑带切、也不被大字水印挡。 -->
+  <view class="wm-viewfinder" wx:if="{{!cameraError && !previewing}}">
+    <camera
+      class="wm-camera"
+      device-position="back"
+      flash="auto"
+      resolution="high"
+      binderror="onCameraError"
+    ></camera>
+    <view class="wm-live">
+      <text class="wm-live-l1">{{live.line1}}</text>
+      <text class="wm-live-l2">{{live.line2}}</text>
+      <text class="wm-live-l3">{{live.line3}}</text>
+    </view>
+  </view>
+
+  <!-- 合成结果预览（乐观预览）：快门成功立即显示原图，「重拍 / 用照片」马上可用；
+       水印在后台合成，完成后换成带水印图。显示的就是将要上传的图，确认才进托盘。 -->
+  <view class="wm-viewfinder" wx:elif="{{previewing}}">
+    <image class="wm-preview" src="{{previewPath}}" mode="aspectFit" />
+    <view class="wm-preview-hint {{composing ? 'is-composing' : ''}}">
+      <text>{{composing ? '正在合成水印…' : (previewSizeText ? '将上传 · ' + previewSizeText : '这张照片将带以上水印')}}</text>
+    </view>
+  </view>
+
+  <!-- 授权失败 / 组件不可用（PC 端、极旧基础库）：引导面板。
+       D8：录入不能被水印相机停摆 —— 可回退系统相机（无水印），照片照常入库。
+       本页是暗色底（#0a0a0a），文字/描边一律白色系：--tt-text-* 是亮色令牌，用在黑底上等于隐形。 -->
+  <view class="wm-guide" wx:if="{{cameraError}}">
+    <t-icon name="camera-off" size="{{isLandscape ? '44px' : '88rpx'}}" color="rgba(255, 255, 255, 0.5)" />
+    <text class="wm-guide-t">相机不可用</text>
+    <text class="wm-guide-sub">可能是摄像头权限被拒绝，或当前设备不支持小程序相机</text>
+    <view class="wm-guide-btns">
+      <view class="wm-guide-btn" bind:tap="onOpenSetting"><text>去开启摄像头权限</text></view>
+      <view class="wm-guide-btn wm-guide-btn-ghost" bind:tap="onSystemCamera"><text>用系统相机拍照（无水印）</text></view>
+    </view>
+  </view>
+
+  <!-- 底部控制条：托盘 + 操作钮（横竖两套结构，事件与语义零分叉）。
+       is-preview：横屏预览态把托盘抬高，让位给左下的「重拍」。 -->
+  <view class="wm-controls {{previewing ? 'is-preview' : ''}}" wx:if="{{!cameraError}}">
+    <!-- 本会话已确认的托盘：连拍（全景 + 细节）不用逐张退出重进。
+         横屏由媒体查询挪到左下横排（左手拇指），结构共用。 -->
+    <scroll-view class="wm-tray" wx:if="{{tray.length}}" scroll-x enhanced show-scrollbar="{{false}}">
+      <view class="wm-tray-item" wx:for="{{tray}}" wx:for-item="t" wx:key="path">
+        <image class="wm-tray-img" src="{{t.path}}" mode="aspectFill" />
+        <text class="wm-tray-idx num-font">{{index + 1}}</text>
+      </view>
+    </scroll-view>
+
+    <!-- 竖屏：底部横条（快门居中，左侧完成 / 右侧重拍或用照片）——第一轮已验收，一行不动 -->
+    <view class="wm-bar" wx:if="{{!isLandscape}}">
+      <block wx:if="{{previewing}}">
+        <view class="wm-side wm-act-retake" bind:tap="onRetake"><text>重拍</text></view>
+        <view class="wm-shutter wm-shutter-ok {{composing ? 'is-busy' : ''}}" bind:tap="onUsePhoto">
+          <t-icon wx:if="{{composing}}" name="loading" size="44rpx" color="#0a0a0a" />
+          <t-icon wx:else name="check" size="48rpx" color="#0a0a0a" />
+        </view>
+        <view class="wm-side wm-side-strong wm-act-use" bind:tap="onUsePhoto">
+          <text>{{composing ? '合成中…' : '用照片'}}</text>
+        </view>
+      </block>
+      <block wx:else>
+        <view class="wm-side" bind:tap="onFinish">
+          <text>完成{{tray.length ? '（' + tray.length + '）' : ''}}</text>
+        </view>
+        <view class="wm-shutter" bind:tap="onShutter"></view>
+        <view class="wm-side"></view>
+      </block>
+    </view>
+
+    <!-- 横屏（round2 B3 定稿）：一切控件浮在画面四角，尺寸一律 **px**（rpx 横屏膨胀近一倍，
+         正是上一版「水印大字挡画面、快门半个屏幕」的成因）。
+         右列（右手拇指）：完成 / 用照片在上，快门在下；预览态快门位换对勾。
+         左下（左手拇指）：托盘；预览态托盘抬高、下方给「重拍」。 -->
+    <block wx:else>
+      <view class="wm-land-right">
+        <view wx:if="{{!previewing}}" class="wm-land-btn" bind:tap="onFinish">
+          <text>完成{{tray.length ? '（' + tray.length + '）' : ''}}</text>
+        </view>
+        <view wx:if="{{previewing}}" class="wm-land-btn wm-land-primary" bind:tap="onUsePhoto">
+          <text>{{composing ? '合成中…' : '用照片'}}</text>
+        </view>
+        <view wx:if="{{!previewing}}" class="wm-shutter" bind:tap="onShutter"></view>
+        <view wx:if="{{previewing}}" class="wm-shutter wm-shutter-ok {{composing ? 'is-busy' : ''}}" bind:tap="onUsePhoto">
+          <t-icon wx:if="{{composing}}" name="loading" size="20px" color="#0a0a0a" />
+          <t-icon wx:else name="check" size="22px" color="#0a0a0a" />
+        </view>
+      </view>
+      <view wx:if="{{previewing}}" class="wm-land-retake" bind:tap="onRetake">
+        <text>重拍</text>
+      </view>
+    </block>
+  </view>
+
+  <!-- 离屏合成画布：display:none 在部分机型拿不到节点，必须「移出屏幕」 -->
+  <canvas type="2d" id="wm-canvas" class="wm-offscreen"></canvas>
+</view>

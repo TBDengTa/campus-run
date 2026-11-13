@@ -1761,9 +1761,12 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   const reqSrc = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'utils', 'request.js'), 'utf8');
   // 断言「demo-release 的调用出现在 clearAuth() 之前」—— 用两段独立匹配，避免把换行写进正则字面量
   // （历史踩坑：插入脚本时 \n 被还原成真实换行，正则直接断行 → SyntaxError: missing /）
+  // ⚠️ 匹配必须**与换行符无关**：仓库在 Windows（core.autocrlf=true）下签出的工作副本是 CRLF，
+  //    写死 'clearAuth();\n  markLoggedOut();' 会在 LF/CRLF 两种形态之间随机红（假失败，
+  //    且把排查方向带到「谁改了 request.js」上）。用 \s* 跨行匹配同一语义。
   const iRelease = reqSrc.indexOf('/api/auth/demo-release');
-  const iClear = reqSrc.indexOf('clearAuth();\n  markLoggedOut();');
-  ok('退出登录前先调 demo-release', iRelease > 0 && iClear > 0 && iRelease < iClear);
+  const iClear = reqSrc.search(/clearAuth\(\);\s*\n\s*markLoggedOut\(\);/);
+  ok('退出登录前先调 demo-release', iRelease > 0 && iClear > 0 && iRelease < iClear, { iRelease, iClear });
   const pwdPage = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'pages', 'password', 'change.js'), 'utf8');
   // 服务端必须直接返回合并好的 rows（前端不再自行按数组顺序拼状态）
   const demoRouteSrc = require('fs').readFileSync(path.join(SERVER, 'routes/admin/demo.js'), 'utf8');

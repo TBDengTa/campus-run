@@ -24,6 +24,10 @@ const FS_NAME = {
   rare: 'bd_win_rare.wav',
   rarest: 'bd_win_rarest.wav',
   none: 'bd_win_none.wav',
+  // 「哒」——点抽奖那一刻的即时反馈。
+  // 它不只是好听：iOS 上 InnerAudioContext 必须在**用户手势的同一 tick** 里发声过，
+  // 否则 3.2 秒后转盘停下再 play 会被静默拦掉（用户听到的就是「没有音效」）。
+  spin: 'bd_spin.wav',
 };
 
 const SAMPLE_RATE = 16000; // 16k 足够（只是提示音），文件小、合成快
@@ -37,6 +41,8 @@ const SEQUENCES = {
   rare: [[NOTE.C5, 80], [NOTE.E5, 80], [NOTE.G5, 140]],
   rarest: [[NOTE.C5, 70], [NOTE.E5, 70], [NOTE.G5, 100], [NOTE.C6, 220]],
   none: [[NOTE.G4, 90], [NOTE.E4, 120]],
+  // 两个极短高音 = 「哒」，比正片短得多，不抢后面中奖音的戏
+  spin: [[NOTE.C6, 18], [NOTE.G5, 16]],
 };
 
 /**
@@ -252,11 +258,23 @@ function prewarm() {
   }
 }
 
+/**
+ * 清掉「运行时失败后永久关闭」的标记（给用户手动重开音效时用一次）。
+ *
+ * 为什么要它：`disabled` 是一次失败就置位、本次会话内不再重试（避免每次抽奖都卡一下）。
+ * 但用户明确去点「开音效」时应该再给一次机会 —— 上一轮失败可能只是临时状态
+ * （音频被别的 App 占用、系统刚切出静音）。这不是重试风暴：只在手势里点一次才调。
+ */
+function reset() {
+  disabled = false;
+}
+
 module.exports = {
   synthWav,
   prewarm,
   play,
   vibrate,
+  reset,
   userMuted,
   setUserMuted,
   // 测试用

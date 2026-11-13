@@ -32,7 +32,10 @@ const DEG_PER_SECTOR = 360 / SECTOR_COUNT;
 // 播报轮播间隔
 const FEED_INTERVAL_MS = 3000;
 // 动效时长（与 WXSS 里的 animation 时长对齐，改一处要改两处）
-const FX_MS = { normal: 420, rare: 1200, rarest: 2000 };
+// 中奖弹层的**停留时长**。用户 2026-11-13「特效就显示了1秒不到我什么都没看见」——
+// 原来 normal 只有 420ms（还没看清就没了）。现在最普通的一档也给 2.2 秒，
+// 而且任何一档都能点「收下 / 知道了」或点遮罩立刻关（不必干等）。
+const FX_MS = { normal: 2200, rare: 3000, rarest: 4200 };
 
 function cachedRole() {
   try {
@@ -141,16 +144,27 @@ function buildSectorViews(sectors, prizes) {
   const byKey = new Map((prizes || []).map((p) => [p.key, p]));
   return (sectors || []).map((key, i) => {
     const p = byKey.get(key) || { key, label: key, type: 'none', amount: 0 };
+    const midDeg = i * DEG_PER_SECTOR + DEG_PER_SECTOR / 2;
     return {
       key: `${key}-${i}`,
       prizeKey: key,
       label: p.label || key,
-      shortLabel: shortLabelOf(p),
+      // 单行文字（「100步」「谢谢」「再来一次」）：径向排布时两行会被转成「一横一竖」，
+      // 所以压成一行，整条沿半径方向读。
+      labelText: labelTextOf(p),
       type: p.type,
       amount: p.amount || 0,
       startDeg: i * DEG_PER_SECTOR,
-      midDeg: i * DEG_PER_SECTOR + DEG_PER_SECTOR / 2,
-      centerDeg: i * DEG_PER_SECTOR + DEG_PER_SECTOR / 2,
+      midDeg,
+      // 径向文字：标签自身的绝对旋转 = midDeg + textDeg。
+      //   textDeg = -90 → 绝对角 = midDeg-90，文字沿半径**朝外**读（像轮辐）；
+      //   若这个角度落在 (90°,270°) 就是倒着读，翻 180°（textDeg=90）改成朝中心读，
+      //   字符仍然是正的（这就是轮盘上「左右两半文字方向相反」的由来，不是 bug）。
+      // 判据用 midDeg：midDeg-90 ∈ (90,270) ⟺ midDeg ∈ (180,360)。
+      // 为什么用径向而不是水平：盘面要转，水平文字停下后会被整体带歪 22.5°~90°；
+      // 径向是**旋转对称**的，任何旋转角度看着都一样整齐。
+      textDeg: midDeg > 180 && midDeg < 360 ? 90 : -90,
+      centerDeg: midDeg,
       // clip-path 用的多边形（12% 宽度的楔形，圆心在顶部中央）
       clip: clipOf(i),
       tint: p.type === 'steps' ? 'steps' : p.type === 'draw' ? 'draw' : 'none',
@@ -158,10 +172,10 @@ function buildSectorViews(sectors, prizes) {
   });
 }
 
-// 把「1500 步」压成「1500」+ 单位，扇区里字号才放得下
-function shortLabelOf(p) {
-  if (p.type === 'steps') return String(p.amount || '');
-  if (p.type === 'draw') return '再来';
+// 扇区里的单行文案（径向排列，只能一行放得下）
+function labelTextOf(p) {
+  if (p.type === 'steps') return `${p.amount || 0}步`;
+  if (p.type === 'draw') return '再来一次';
   return '谢谢';
 }
 
@@ -172,14 +186,18 @@ function shortLabelOf(p) {
  * 转盘会渲染成**纯色**（用户看到的就是「转盘没格子」）。clip-path polygon 兼容性好得多，
  * 而且每格是独立元素，能给停位那格单独加高亮 —— 这正是「炫」需要的能力。
  *
- * 几何：圆心在 (50%, 0)，半径取 100%。第 i 格从 (i*45-90)° 到 ((i+1)*45-90)°（0° 朝上）。
- * 每个楔形用「圆心 + 两条半径端点 + 中间若干弧点」拼多边形（8 段弧足够平滑）。
+ * ⚠️ 楔形的**顶点必须是圆心 (50%, 50%)**，弧点绕同一圆心画（半径 50%）。
+ *    这里曾写成顶点 `50% 0%`（盘子**正上方**）配绕圆心的弧：8 格的尖端于是全部汇聚到
+ *    12 点指针处，整盘从顶部往下散开 —— 中心白环与格子对不上、标签压在两格交界上，
+ *    用户看到的就是「背景分层错位」（2026-11-13 截图）。
+ *    顶点写错**不会报错、也不会白屏**，盘面照样有颜色，只有几何关系是错的，
+ *    所以这里由 `clipOf` 单点产出 + 检查器钉死首点必须是 50% 50%。
  */
 const ARC_STEPS = 6;
 function clipOf(i) {
   const a0 = (i * DEG_PER_SECTOR - 90) * (Math.PI / 180);
   const a1 = ((i + 1) * DEG_PER_SECTOR - 90) * (Math.PI / 180);
-  const pts = ['50% 0%'];
+  const pts = ['50% 50%'];
   for (let s = 0; s <= ARC_STEPS; s += 1) {
     const a = a0 + ((a1 - a0) * s) / ARC_STEPS;
     const x = 50 + Math.cos(a) * 50;
@@ -187,6 +205,19 @@ function clipOf(i) {
     pts.push(`${x.toFixed(2)}% ${y.toFixed(2)}%`);
   }
   return `polygon(${pts.join(', ')})`;
+}
+
+/**
+ * 中心按钮的三态文案（JS 预计算，模板不写三元拼接）。
+ *
+ * 「没次数」是一句**死话**：用户看到它只会退出去。改成「赚次数 / 去做任务」，
+ * 点一下直接滚到任务区（见 tapCenter），把死胡同变成下一步动作。
+ */
+function buildCenterState({ enabled, remaining, spinning }) {
+  if (spinning) return { main: '抽奖中', sub: '' };
+  if (enabled === false) return { main: '未开启', sub: '' };
+  if ((Number(remaining) || 0) > 0) return { main: '抽奖', sub: `剩 ${remaining} 次` };
+  return { main: '赚次数', sub: '去做任务' };
 }
 
 function buildOddsText(prizes) {
@@ -211,7 +242,13 @@ function buildCheckinCells(checkin) {
       steps: m.steps || 0,
       label: `第${dayNo}天`,
       rewardText: m.steps > 0 ? `+${m.draw}次 +${m.steps}步` : `+${m.draw}次`,
-      big: m.steps > 0, // 有步数的那档（第 3/7 天）标大
+      // 格子里那一行「给什么」——用户 2026-11-13「签到没有显示获得奖品，只有大字」。
+      // 早先格子里只有一个「大」字（表示第 3/7 天是大奖），等于什么奖励都没说。
+      // 大字号放不下「+2次+200步」，所以分两行：上行次数、下行步数（没有步数就只显示次数）。
+      rewardDrawText: m.draw > 0 ? `+${m.draw}次` : '',
+      rewardStepsText: m.steps > 0 ? `+${m.steps}步` : '',
+      // 有步数的档（第 3/7 天）用样式强调，不再写字
+      big: m.steps > 0,
     };
   });
 }
@@ -235,6 +272,11 @@ Page({
     spinning: false,
     activeIndex: -1, // 高亮停位那格
     lastPrize: null,
+    // 中心按钮三态文案（JS 预计算，模板不写三元）
+    centerMain: '抽奖',
+    centerSub: '',
+    // 我的最近中奖（服务端下发 5 条）
+    recent: [],
 
     // 动效
     fx: '', // '' | 'normal' | 'rare' | 'rarest'
@@ -415,12 +457,19 @@ Page({
         : cap.cap > 0
           ? `今日步数奖励还剩 ${cap.left} 步额度`
           : '';
+    const remaining = (data.draw && data.draw.remaining) || 0;
+    const enabled = data.enabled !== false;
+    const center = buildCenterState({ enabled, remaining, spinning: false });
     this.setData({
       loading: false,
-      enabled: data.enabled !== false,
+      enabled,
       sfxEnabled: data.sfxEnabled !== false,
       sectors: buildSectorViews(sectorList, prizes),
-      remaining: (data.draw && data.draw.remaining) || 0,
+      remaining,
+      centerMain: center.main,
+      centerSub: center.sub,
+      // 我的最近中奖（服务端已拼好 prizeLabel / atText，前端只渲染）
+      recent: Array.isArray(data.recent) ? data.recent : [],
       unlimited: !!(data.draw && data.draw.unlimited),
       maxPerDay: (data.draw && data.draw.maxPerDay) || 0,
       drawTotal: (data.draw && data.draw.total) || 0,
@@ -480,6 +529,16 @@ Page({
     if (res.maxPerDay !== undefined) patch.maxPerDay = res.maxPerDay;
     if (res.total !== undefined) patch.drawTotal = res.total;
     if (res.used !== undefined) patch.drawUsed = res.used;
+    // 次数变了，中心按钮文案要跟着变（否则「剩 3 次」会一直停在旧值）
+    if (patch.remaining !== undefined || patch.unlimited !== undefined) {
+      const center = buildCenterState({
+        enabled: this.data.enabled,
+        remaining: patch.remaining !== undefined ? patch.remaining : this.data.remaining,
+        spinning: !!this.data.spinning,
+      });
+      patch.centerMain = center.main;
+      patch.centerSub = center.sub;
+    }
     if (Object.keys(patch).length) this.setData(patch);
   },
 
@@ -511,15 +570,30 @@ Page({
     // ⚠️ iOS 要求音频在**用户手势同一 tick** 里初始化：这里同步预热一次，
     //    后面 applyDrawResult 里 play() 才不会因为「非手势触发」被静默拦掉。
     //    放在 try 外面也不行 —— 这里本身就在 tap handler 的同步栈里。
-    sfx.prewarm && sfx.prewarm();
+    //    管理端关掉音效时连预热都跳过（别为不存在的功能建上下文）。
+    // 点下去立刻给一声「哒」：既是最快的反馈，也是 iOS 上把音频上下文**解锁**在手势栈里的
+    // 唯一可靠时机（等 3.2 秒转盘停下来再 play，很多机型会静默不响 —— 那正是「没有音效」的成因）。
+    if (this.data.sfxEnabled) {
+      sfx.prewarm && sfx.prewarm();
+      sfx.play('spin');
+    }
 
     this._busy = true;
-    this.setData({ spinning: true, lastPrize: null, activeIndex: -1, fx: '' });
+    const spinCenter = buildCenterState({ enabled: true, remaining: this.data.remaining, spinning: true });
+    this.setData({
+      spinning: true,
+      lastPrize: null,
+      activeIndex: -1,
+      fx: '',
+      centerMain: spinCenter.main,
+      centerSub: spinCenter.sub,
+    });
     try {
       const result = await auth.post('/api/beidou/draw', { drawId: makeNonce('dr') });
       if (!result || !result.success) {
         wx.showToast({ title: (result && result.message) || '抽奖失败', icon: 'none' });
-        this.setData({ spinning: false });
+        // 失败也要把中心按钮从「抽奖中」还原，否则转盘没动、按钮却永远停在抽奖中
+        this.restoreCenter();
         this.load();
         return;
       }
@@ -527,7 +601,7 @@ Page({
         this.applyDrawResult(result);
       });
     } catch (e) {
-      this.setData({ spinning: false });
+      this.restoreCenter();
       if (e.code === 403001) {
         wx.navigateTo({ url: '/pages/banned/banned' });
         return;
@@ -543,8 +617,12 @@ Page({
   },
 
   /**
-   * 把第 index 格的中心转到指针位置（0° = 正上方）。
-   * 目标角 = base + 5 整圈 + (360 - centerDeg)。
+   * 把第 index 格的**中线**转到正上方的指针下（0° = 正上方，顺时针）。
+   *
+   * 指针固定在 12 点、盘面旋转 —— 这是用户对「转盘」的默认预期（指针歪着停在某个角度
+   * 会让人以为坏了）。文字因此必须用**径向**排布：径向是旋转对称的，盘面停在任何角度都整齐；
+   * 水平文字会被整体带歪 22.5°~90°。
+   * 目标角 = base + 5 整圈 + (360 − centerDeg)，centerDeg = i*45 + 22.5。
    * 停位误差超过半格（22.5°）就会「停在 A 却发 B」，所以只允许与 buildSectorViews 共用常量。
    */
   spinTo(index, done) {
@@ -559,7 +637,18 @@ Page({
         clearTimeout(this._spinTimer);
         this._spinTimer = null;
       }
-      this.setData({ spinning: false, activeIndex: safeIndex });
+      // 停稳后中心按钮恢复可点态（次数在 applyDrawResult → applyCounters 里更新）
+      const center = buildCenterState({
+        enabled: this.data.enabled,
+        remaining: this.data.remaining,
+        spinning: false,
+      });
+      this.setData({
+        spinning: false,
+        activeIndex: safeIndex,
+        centerMain: center.main,
+        centerSub: center.sub,
+      });
       if (typeof done === 'function') done();
     };
     this._spinDone = finish;
@@ -636,9 +725,13 @@ Page({
     const kind = rarity === 'none' ? 'none' : rarity === 'rarest' ? 'rarest' : rarity === 'rare' ? 'rare' : 'normal';
     this.clearFxTimers();
 
+    // 管理端总开关（goal_config.beidou.sfxEnabled）必须真的拦住播放 ——
+    // 早先它只进了 data、从没被读过，管理员关掉等于没关（开关是假的）。
+    const audio = this.data.sfxEnabled !== false;
+
     if (kind === 'none') {
       // 空奖：轻反馈，别做成「惩罚」
-      sfx.play('none');
+      if (audio) sfx.play('none');
       sfx.vibrate('none');
       this.setData({ fx: 'normal', fxRarity: 'normal' });
       this._fxTimer = setTimeout(() => {
@@ -658,7 +751,7 @@ Page({
           }))
         : [];
     this.setData({ fx: kind, fxRarity: kind, confetti });
-    sfx.play(kind);
+    if (audio) sfx.play(kind);
     sfx.vibrate(kind);
     this._fxTimer = setTimeout(() => {
       if (!this._unloaded) this.setData({ fx: '', confetti: [] });
@@ -670,6 +763,27 @@ Page({
       clearTimeout(this._fxTimer);
       this._fxTimer = null;
     }
+  },
+
+  /**
+   * 把中心按钮还原成「不转」的状态（失败/异常路径专用）。
+   *
+   * 早先这些路径只写 `spinning: false`，而中心文案是独立的 data ——
+   * 于是接口一失败，转盘没动、按钮却永远停在「抽奖中」，用户只能杀进程重进。
+   */
+  restoreCenter() {
+    const center = buildCenterState({
+      enabled: this.data.enabled,
+      remaining: this.data.remaining,
+      spinning: false,
+    });
+    this.setData({ spinning: false, centerMain: center.main, centerSub: center.sub });
+  },
+
+  // 手动收起中奖弹层（自动收起的计时器也要一起清，否则会再闪一下）
+  closeFx() {
+    this.clearFxTimers();
+    if (!this._unloaded) this.setData({ fx: '', confetti: [] });
   },
 
   // 自己中奖时把播报置顶（本地插入，不重新请求）
@@ -798,8 +912,33 @@ Page({
     const next = !sfx.userMuted();
     sfx.setUserMuted(next);
     this.setData({ sfxMuted: next });
+    if (!next) {
+      // 打开音效也在手势栈里：顺手解锁音频上下文并试响一声，用户立刻知道「开了」。
+      // 打开音效是明确的用户意图，清掉上一轮失败留下的 disabled 标记再试一次。
+      sfx.reset && sfx.reset();
+      sfx.prewarm && sfx.prewarm();
+      if (this.data.sfxEnabled !== false) sfx.play('normal');
+    }
     wx.showToast({ title: next ? '已关闭音效' : '已开启音效', icon: 'none' });
-    if (!next) sfx.play('normal');
+  },
+
+  /**
+   * 点转盘中心：有次数就抽，没次数就滚到任务区。
+   *
+   * 早先「没次数」是个点了没反应的死按钮，用户只能退出去 ——
+   * 现在它是下一步动作的入口（这也是截图里那个灰色「没次数」最需要改的地方）。
+   */
+  tapCenter() {
+    if (this.data.spinning) return;
+    if (this.data.enabled === false) {
+      wx.showToast({ title: '活动暂未开启', icon: 'none' });
+      return;
+    }
+    if ((Number(this.data.remaining) || 0) <= 0) {
+      this.scrollToTasks();
+      return;
+    }
+    this.draw();
   },
 
   toggleRules() {

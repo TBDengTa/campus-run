@@ -1,6 +1,9 @@
 const User = require('../models/user');
 const pwd = require('./password');
 const XLSX = require('xlsx');
+// 组织归属解析（名字 → id）：导入时就把 schoolId / departmentId 落好，
+// 否则整届学生只有名字，分院成员的录入范围判定会把他们判成「无归属」（见本文件 importRows 注释）
+const orgResolve = require('./org-resolve');
 
 const MAX_ROWS = 5000;
 
@@ -327,6 +330,18 @@ async function importRows(rows, mode = 'create') {
   if (requestedMode === 'smart') rows = await smartFillRows(rows);
   const effective = requestedMode === 'smart' ? 'create' : requestedMode;
   const result = { mode: requestedMode, total: rows.length, created: 0, updated: 0, failed: [] };
+  // 组织架构索引：**一次**加载，随后逐行按（院校名, 系部名）反查 id（见下方 resolveOrgIds）。
+  // 用户 2026-11-13「目标班级没有归属院系」的根因就是导入只写名字不写 id：
+  // 学籍缺 id → 台账同步也拿不到 id → 分院成员录这些班被判「没有归属院系」。
+  const orgIndex = await orgResolve.loadIndex();
+  // 名字 → id：唯一命中才写；同名系部跨校区又没有院校名时**不猜**（留空，由事件方提示）
+  const resolveOrgIds = (row) => {
+    const org = orgResolve.resolveDepartmentSync(orgIndex, {
+      departmentName: row.department,
+      schoolName: row.school,
+    });
+    return { schoolId: org.schoolId || '', departmentId: org.departmentId || '' };
+  };
   // 先归一化，收集合法行
   const items = [];
   for (let i = 0; i < rows.length; i++) {
@@ -399,6 +414,11 @@ async function importRows(rows, mode = 'create') {
       if (item.school) existing.schoolName = item.school;
       if (item.department) existing.departmentName = item.department;
       if (item.specialty) existing.specialty = item.specialty;
+      // 组织 id：名单里有院校/系部名且能在组织架构里唯一解析时一并回填
+      // （只补不覆盖：已有 id 不因名单缺列被清空；解析不出就保持原值）
+      const orgIds = resolveOrgIds(item);
+      if (orgIds.schoolId) existing.schoolId = orgIds.schoolId;
+      if (orgIds.departmentId) existing.departmentId = orgIds.departmentId;
       // 名单未给年级时按学号前 4 位（入学年份）推导
       const grade = item.grade || gradeFromStudentId(item.studentId);
       if (grade) existing.grade = grade;
@@ -443,12 +463,15 @@ async function importRows(rows, mode = 'create') {
     const hashSets = await Promise.all(toCreate.map((item) => pwd.hashInitialPasswordSet(initialPasswords(item))));
     const docs = toCreate.map((item, i) => {
       const grade = item.grade || gradeFromStudentId(item.studentId);
+      const orgIds = resolveOrgIds(item);
       return {
         account: item.name,
         realName: item.name,
         studentId: item.studentId,
         schoolName: item.school,
+        schoolId: orgIds.schoolId || undefined,
         departmentName: item.department,
+        departmentId: orgIds.departmentId || undefined,
         // 班级统一按「年级+专业」组合：名单班级列可选，显式写了同前缀更细班时原样保留
         className: classNameFromGradeSpecialty(grade, item.specialty, item.className),
         specialty: item.specialty,

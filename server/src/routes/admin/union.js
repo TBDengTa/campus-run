@@ -105,7 +105,9 @@ function presentMember(m) {
     studentId: m.studentId || '',
     className: m.className || '',
     level: m.level,
-    levelText: m.level === 'school' ? '校学生会' : '分院学生会',
+    // 用户 2026-11-13「这里显示真实的院校名称」：分院显示「北校区学生会」，不再统一叫「分院学生会」。
+    // 与 /api/union/mine（services/union.js::buildIdentity）同一口径。
+    levelText: m.level === 'school' ? '校学生会' : m.schoolName ? `${m.schoolName}学生会` : '分院学生会',
     // 新口径：院校（校区，organizations.type='school'）—— 前端列表副标题优先显示它
     schoolId: m.schoolId ? String(m.schoolId) : '',
     schoolName: m.schoolName || '',

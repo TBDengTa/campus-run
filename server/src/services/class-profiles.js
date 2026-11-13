@@ -13,6 +13,8 @@
  */
 const User = require('../models/user');
 const ClassProfile = require('../models/class-profile');
+// 组织归属解析（名字 → id）：学籍缺 id 时按名字补齐台账，见 syncClassProfiles 注释
+const orgResolve = require('./org-resolve');
 
 // 归属名归一化：去首尾空白（与 routes/admin/class-profile.js 的 str() 同口径）。
 // 台账里的院校 / 系部名会被**原样当成筛选值**下发，带脏空白就会「选了却筛不出任何班」。
@@ -176,10 +178,15 @@ async function syncClassProfiles({ className } = {}) {
     .select('className hasMorningExercise hasMorningClass')
     .lean();
   const existsSet = new Set(existing.map((e) => e.className));
+  // 组织架构索引：一次加载，逐行按（院校名, 系部名）把 id 补上。
+  // 学籍里 id 为空（名单导入只写名字的形态）时，台账否则永远拿不到 id ——
+  // 分院成员录这些班会被判「目标班级没有归属院系」（用户 2026-11-13 报障）。
+  const orgIndex = await orgResolve.loadIndex();
 
   const ops = [];
   let created = 0;
   let updated = 0;
+  let idsRepaired = 0;
   for (const r of wanted) {
     const isNew = !existsSet.has(r._id);
     if (isNew) created += 1;
@@ -198,6 +205,21 @@ async function syncClassProfiles({ className } = {}) {
     if (r.departmentId) set.departmentId = r.departmentId;
     if (r.departmentName) set.departmentName = r.departmentName;
     if (r.grade) set.grade = r.grade;
+    // id 缺失但名字能唯一解析 → 补 id（只补不覆盖：学籍已有 id 时上面已经写入，这里不覆盖）
+    if (!set.schoolId || !set.departmentId) {
+      const org = orgResolve.resolveDepartmentSync(orgIndex, {
+        departmentId: set.departmentId || r.departmentId,
+        departmentName: set.departmentName || r.departmentName,
+        schoolId: set.schoolId || r.schoolId,
+        schoolName: set.schoolName || r.schoolName,
+      });
+      if (!set.schoolId && org.schoolId) set.schoolId = org.schoolId;
+      if (!set.departmentId && org.departmentId) {
+        set.departmentId = org.departmentId;
+        if (!set.departmentName && org.departmentName) set.departmentName = org.departmentName;
+        idsRepaired += 1;
+      }
+    }
     ops.push({
       updateOne: {
         filter: { className: r._id },
@@ -216,6 +238,7 @@ async function syncClassProfiles({ className } = {}) {
   return {
     created,
     updated,
+    idsRepaired,
     total: wanted.length,
     conflicts: className ? conflicts.filter((c) => c.className === className) : conflicts,
   };

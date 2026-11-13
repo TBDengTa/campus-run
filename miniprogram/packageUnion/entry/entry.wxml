@@ -456,9 +456,15 @@
                     <text class="en-photo-err-t">{{p.error}}</text>
                   </view>
 
-                  <view class="en-photo-add" data-field="{{f.key}}" bind:tap="onChoosePhoto">
-                    <t-icon name="camera" size="40rpx" color="var(--tt-text-3)" />
-                    <text class="en-photo-add-t">拍照 / 相册</text>
+                  <!-- 双入口（docs/watermark-camera-plan.md D1）：拍照走水印相机，
+                       相册保留但显式标注「无水印」——复核员看水印有无即可分辨拍摄通道 -->
+                  <view class="en-photo-add en-photo-add-wm" data-field="{{f.key}}" bind:tap="onWatermarkCamera">
+                    <t-icon name="location" size="40rpx" color="var(--tt-brand)" />
+                    <text class="en-photo-add-t en-photo-add-t-brand">水印拍照</text>
+                  </view>
+                  <view class="en-photo-add" data-field="{{f.key}}" bind:tap="onAlbumPick">
+                    <t-icon name="image" size="40rpx" color="var(--tt-text-3)" />
+                    <text class="en-photo-add-t">相册（无水印）</text>
                   </view>
                 </view>
                 <view class="en-photo-tip">
