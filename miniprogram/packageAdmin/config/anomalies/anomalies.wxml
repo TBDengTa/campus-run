@@ -16,11 +16,11 @@
   <view class="sa-engine" wx:if="{{engine}}">
     <view class="sa-engine-item">
       <view class="sa-dot {{engine.werunReady ? '' : 'off'}}"></view>
-      <text>微信模型{{engine.werunReady ? '已就绪' : '预热中'}}{{engine.werunRows ? '（' + engine.werunRows + ' 条样本）' : ''}}</text>
+      <text>微信模型{{engine.werunReady ? '已就绪' : '预热中'}}{{engine.werunSampleText ? '（' + engine.werunSampleText + '）' : ''}}</text>
     </view>
     <view class="sa-engine-item">
       <view class="sa-dot {{engine.gpsReady ? '' : 'off'}}"></view>
-      <text>GPS 模型{{engine.gpsReady ? '已就绪' : '预热中'}}{{engine.gpsRows ? '（' + engine.gpsRows + ' 条样本）' : ''}}</text>
+      <text>GPS 模型{{engine.gpsReady ? '已就绪' : '预热中'}}{{engine.gpsSampleText ? '（' + engine.gpsSampleText + '）' : ''}}</text>
     </view>
     <view class="sa-engine-item">
       <text>判定阈值 {{engine.thresholdText}}</text>

@@ -340,16 +340,53 @@ function toVector(feat, order) {
 
 /**
  * 训练某个来源的模型（数据来自历史记录，**不需要任何标签**）。
- * @param {'werun'|'gps'} source
+ *
+ * ===== 「样本数」必须区分两个口径（用户 2026-11-14「微信记录无论有多少一直是 20000」）=====
+ * 事故：管理端「唐跑AI数据模型」卡片显示「微信同步模型 · 20000 条样本」，
+ *   而库里当时已有 **162,996 条** werun 记录 —— 那个 20000 是 `TRAIN_MAX_ROWS`
+ *   这个**训练采样上限**，被当成了「样本量」直接下发。
+ *   于是无论真实数据涨到多少（从 2 万涨到 16 万），管理员看到的永远是同一个数字，
+ *   完全无法判断「我的数据在不在进去」「模型是不是没在学新东西」。
+ *
+ * 正确口径（两个数都要给，且在界面上说清各自含义）：
+ *   · `totalRows`  = **库内该来源可用样本总数**（真实数据量，会一直增长）；
+ *   · `rows`       = 本次**实际进入训练**的样本数（= min(totalRows, TRAIN_MAX_ROWS)）。
+ * 为什么要保留训练上限：Isolation Forest 每棵树的采样只有 256 点（见 SAMPLE_SIZE），
+ *   再多的行对森林质量几乎没有边际收益，却会让每次重训的取数+特征计算线性变慢。
+ *   上限本身是对的，错的只是**把它当成数据量展示**。
  */
 async function trainSource(source) {
+  // 先取真实总量（countDocuments 走索引，很便宜），再按上限抽样训练
+  const totalRows = await countTrainingRows(source);
   const rows = await fetchTrainingRows(source);
   if (!rows.length) return null;
   const order = source === 'werun' ? WERUN_ORDER : GPS_ORDER;
   const vectors = rows.map((r) => toVector(featureFor(source, r), order));
   const model = buildIsolationForest(vectors);
-  if (model) model.source = source;
+  if (model) {
+    model.source = source;
+    // ⚠️ 明确区分：rows = 进训练的行数（模型的样本量），totalRows = 库内真实数据量。
+    //   只写 rows 就是本次的 bug（界面上永远 20000）。
+    model.totalRows = Math.max(rows.length, totalRows);
+    model.cappedByLimit = totalRows > rows.length;
+  }
   return model;
+}
+
+/** 库内该来源**可用于训练**的样本总数（与 fetchTrainingRows 的过滤条件逐条一致） */
+async function countTrainingRows(source) {
+  try {
+    if (source === 'gps') {
+      return await RunRecord.countDocuments({
+        source: 'gps',
+        distance: { $gt: 50 },
+        'routePoints.1': { $exists: true },
+      });
+    }
+    return await RunRecord.countDocuments({ source: 'werun', steps: { $gt: 0 } });
+  } catch (e) {
+    return 0; // 统计失败不影响训练：trainSource 会退回只用 rows.length
+  }
 }
 
 /**
@@ -1147,6 +1184,8 @@ module.exports = {
   getModel,
   peekModel,
   trainSource,
+  // 训练采样上限：管理端要用它解释「为什么样本数停在这个值」（用户 2026-11-14）
+  TRAIN_MAX_ROWS,
   evaluate,
   // 反馈学习
   recordFeedback,

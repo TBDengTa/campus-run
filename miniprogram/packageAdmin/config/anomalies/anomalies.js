@@ -283,12 +283,23 @@ Page({
       const models = r.models || {};
       const th = r.threshold || {};
       const fmt = (x) => (Number.isFinite(Number(x)) ? Number(x).toFixed(2) : '-');
+      // 样本量文案由服务端两个数拼出：totalRows = 库内真实总量，rows = 实际进训练量。
+      // 用户 2026-11-14「微信记录无论有多少一直是 20000」：旧版只显示 rows，
+      // 而 rows 恒等于训练采样上限（TRAIN_MAX_ROWS=20000），库里涨到 16 万条也不动。
+      const sampleText = (x) => {
+        if (!x || !x.ready) return '预热中';
+        const total = Number(x.totalRows) || Number(x.rows) || 0;
+        if (x.capped && Number(x.rows) < total) return `${total} 条 · 取 ${x.rows} 条训练`;
+        return `${total} 条样本`;
+      };
       this.setData({
         engine: {
           werunReady: !!(models.werun && models.werun.ready),
           werunRows: (models.werun && models.werun.rows) || 0,
+          werunSampleText: sampleText(models.werun),
           gpsReady: !!(models.gps && models.gps.ready),
           gpsRows: (models.gps && models.gps.rows) || 0,
+          gpsSampleText: sampleText(models.gps),
           thresholdText: `可疑 ${fmt(th.suspicious)} / 自动封禁 ${fmt(th.autoBan)}`,
         },
       });

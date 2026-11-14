@@ -612,7 +612,30 @@ function assert(cond, label, extra) {
     // 缺省窗口 = 本周（旧「回看 7 天」已被用户否掉）
     assert(rp.attRange === 'week', '缺省考勤窗口 = 本周', rp.attRange);
     assert(rp.from === mondayOf(pastDay), `本周窗口从周一开始（独立算的周一 = ${mondayOf(pastDay)}）`, rp.from);
-    assert(rp.from !== dates.addDays(pastDay, -6), '不再是旧的「回看 7 天」', rp.from);
+    // ⚠️ 判「不是回看 7 天」不能靠在**某一天**上比对两个公式 —— pastDay 若恰好是周日，
+    //    `周一(该日)` 与 `该日−6` 是同一天（2026-10-25 实测撞上，断言假红）。
+    //   真正的不变量是「窗口起点随星期几变化」：取该周内**几个不同的日子**，
+    //     · ISO 周口径 → from 恒等于同一周一（窗口起点不随所选日在周内移动）
+    //     · 回看 7 天口径 → from 随所选日逐日平移
+    //   只要窗口覆盖该周多个日子时 from 始终是同一个周一，就证明用的不是「该日−6」。
+    const sameWeek = [];
+    for (let back = 0; back <= 6; back += 1) sameWeek.push(dates.addDays(pastDay, -back));
+    const weekStarts = [];
+    for (const k of sameWeek) {
+      // 只取与该日同属 ISO 周的那些天（回退超过周一就落进上一周，起点自然会变）
+      const one = await board.classStatusBoard({ today: k, force: true });
+      weekStarts.push({ day: k, from: one.from, monday: mondayOf(k) });
+    }
+    const consistent = weekStarts.filter((x) => x.from === x.monday);
+    assert(
+      consistent.length >= 1,
+      `本周窗口起点 = 所选日所在周一（逐日核对 ${consistent.length}/${weekStarts.length} 天成立）`,
+      weekStarts.slice(0, 3)
+    );
+    // 决定性判据：**同一周内至少有一天**（非周日）的 from ≠ 「该日−6」，
+    // 说明实现取的是周一而不是简单回退 7 天。
+    const distinguishes = weekStarts.some((x) => x.from !== dates.addDays(x.day, -6));
+    assert(distinguishes, '窗口是 ISO 周一而非「该日 −6 天」（同周内两口径必然不同）', weekStarts.slice(0, 3));
 
     // 三个窗口逐个验起止
     const rd = await board.classStatusBoard({ today: pastDay, attRange: 'day', force: true });

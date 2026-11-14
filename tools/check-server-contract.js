@@ -113,6 +113,39 @@ ok('parseRoomLabel 拆出楼号与门号', parsed.buildingId === '1号楼' && pa
 ok('parseRoomLabel 只填门号也能存', dormsSvc.parseRoomLabel('201').roomNo === '201');
 ok('roomLabel 输出「楼·门」', dormsSvc.roomLabel({ buildingName: '1号楼', roomNo: '201' }) === '1号楼·201');
 
+// ===== 楼名自带连字符（用户 2026-11-14「检查录入里洋河校区的宿舍楼栋显示出现 BUG」）=====
+// 系统设置的宿舍用楼清单里有「洋河-男宿 / 洋河-女宿」。旧实现一上来就按 `[·・\-—/、,\s]` 切，
+// 把「洋河-女宿·301」拆成楼名「洋河」+ 房号「女宿301」；下次回显成「洋河·女宿301」、
+// 用户再点一次标准楼名保存 → 「洋河-女宿·女宿301」→ 房号「女宿女宿301」……
+// **每保存一次多叠一层**，线上实测叠到 7 层，检查录入台因此列出上百个「幽灵房间」。
+const DORM_BUILDINGS = ['1号楼(女生宿舍)', '2号楼(男生旧宿)', '3号楼(男生新宿)', '洋河-男宿', '洋河-女宿'];
+{
+  const p = dormsSvc.parseRoomLabel('洋河-女宿·301', { buildings: DORM_BUILDINGS });
+  ok('楼名自带连字符不被切开（洋河-女宿·301）', p.buildingName === '洋河-女宿' && p.roomNo === '301', JSON.stringify(p));
+  const m = dormsSvc.parseRoomLabel('洋河-男宿·303', { buildings: DORM_BUILDINGS });
+  ok('楼名自带连字符不被切开（洋河-男宿·303）', m.buildingName === '洋河-男宿' && m.roomNo === '303', JSON.stringify(m));
+  const paren = dormsSvc.parseRoomLabel('1号楼(女生宿舍)·408', { buildings: DORM_BUILDINGS });
+  ok('楼名含括号不被切开', paren.buildingName === '1号楼(女生宿舍)' && paren.roomNo === '408', JSON.stringify(paren));
+  // 即使拿不到白名单，也必须优先认规范分隔符「·」——它才是 roomLabel 拼出来的那个
+  const noCfg = dormsSvc.parseRoomLabel('洋河-女宿·301');
+  ok('没有白名单时仍不在「·」处切错', noCfg.buildingName === '洋河-女宿' && noCfg.roomNo === '301', JSON.stringify(noCfg));
+  // 已污染的房号要被归一（否则同一间房继续以新写法扩散）
+  const dirty = dormsSvc.parseRoomLabel('洋河-女宿·女宿301', { buildings: DORM_BUILDINGS });
+  ok('重复性别前缀被归一（楼名带性别时全剥）', dirty.roomNo === '301', JSON.stringify(dirty));
+  const seven = dormsSvc.parseRoomLabel('洋河·女宿女宿女宿女宿女宿女宿女宿301', { buildings: DORM_BUILDINGS });
+  ok('7 层污染房号归一为单层', seven.roomNo === '女宿301', JSON.stringify(seven));
+  // 旧写法仍要认（「1号楼-201」没有规范分隔符）
+  const legacy = dormsSvc.parseRoomLabel('1号楼-201', { buildings: DORM_BUILDINGS });
+  ok('无「·」的旧写法仍按任意分隔符拆', legacy.buildingName === '1号楼' && legacy.roomNo === '201', JSON.stringify(legacy));
+  // 幂等：同一房间反复保存，房号不再叠字（这是本次事故的核心回归点）
+  let label = '洋河-女宿·301';
+  for (let i = 0; i < 5; i += 1) {
+    const q = dormsSvc.parseRoomLabel(label, { buildings: DORM_BUILDINGS });
+    label = dormsSvc.roomLabel({ buildingName: q.buildingName, roomNo: q.roomNo });
+  }
+  ok('反复保存 5 次房号不叠字（幂等）', label === '洋河-女宿·301', label);
+}
+
 // 学生会成员唯一索引必须含 schoolId（校区维度）：
 //   校区口径下分院记录的 departmentId 恒为 null，若唯一键只看 departmentId，
 //   「北校区分会-生活部」与「洋河校区分会-生活部」会被当成同一个键 → E11000 → 500。
@@ -1663,7 +1696,20 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('迁移会覆盖 targetTypes', /set\.targetTypes = def\.targetTypes;/.test(cmSrc));
   // 教室 / 教学楼由班级台账下发，供前端「优先显示教室」与「按教学楼筛选」
   ok('班级对象下发 classroom / building', /const classroom = String\(p\.classroom/.test(bcSrc) && /building = classroom \? classroom\.split/.test(bcSrc));
-  ok('宿舍对象也下发 building', /targetType: 'dorm_room'[\s\S]{0,300}building: r\.buildingName/.test(bcSrc));
+  // 宿舍对象：楼栋来自房间自身（buildingName），房号展示名走 dorms.roomLabel 的**同一口径**
+  // （2026-11-14 起必须如此：存量房号有被拆坏的重复性别前缀，直接拼串会把垃圾摆到录入台上）。
+  // 这里断言的是「字段与口径」而不是字符间距 —— 旧写法把 0~300 字符的窗口当契约，
+  // 中间插入一条注释就会误报（本轮就撞过）。
+  ok(
+    '宿舍对象也下发 building（取房间楼名）',
+    /targetType: 'dorm_room'/.test(bcSrc) && /building: buildingName/.test(bcSrc) && /const buildingName = r\.buildingName \|\| r\.buildingId/.test(bcSrc),
+    'dorm_room 分支缺 building 字段或楼名来源'
+  );
+  ok(
+    '宿舍对象展示名走 dorms.roomLabel（房号归一）',
+    /targetName: dormsSvc\.roomLabel\(\{ buildingName, roomNo: r\.roomNo \}\)/.test(bcSrc),
+    '录入台对象名没有走统一 roomLabel，脏房号会原样显示'
+  );
 
   // 前端：类型 / 楼栋两栏筛选 + 教室优先显示
   ok('前端有类型与楼栋筛选选项生成', /buildTypeOptions/.test(entrySrc) && /buildBuildingOptions/.test(entrySrc));

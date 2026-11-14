@@ -250,18 +250,27 @@ function renderDash(d) {
   var m = d.models || {};
   var w = m.werun || {};
   var g = m.gps || {};
+  // 样本量展示：**必须同时说清「库内总量」与「实际进训练量」**
+  // （用户 2026-11-14「微信记录无论有多少一直是 20000」：旧代码只显示 rows，
+  //   而 rows 恒等于训练采样上限 20000，于是无论库里涨到多少万条，数字永远不动。）
+  var sampleText = function (x) {
+    if (!x.ready) return '预热中…';
+    var total = Number(x.totalRows) || Number(x.rows) || 0;
+    if (x.capped && Number(x.rows) < total) {
+      return fmt(total) + ' 条 · 取 ' + fmt(x.rows) + ' 条训练';
+    }
+    return fmt(total) + ' 条样本';
+  };
+  var treeText = function (x) {
+    if (!x.trees) return '首次判定前自动预热';
+    var t = x.trees + ' 棵树 · 训练于 ' + ago(x.trainedAt);
+    if (x.capped) t += '（抽样上限 ' + fmt(x.trainingCap) + '）';
+    return t;
+  };
   var mg = $('modelGrid');
   clear(mg);
-  mg.appendChild(statCard(
-    '微信同步模型',
-    w.ready ? fmt(w.rows) + ' 条样本' : '预热中…',
-    w.trees ? w.trees + ' 棵树 · 训练于 ' + ago(w.trainedAt) : '首次判定前自动预热'
-  ));
-  mg.appendChild(statCard(
-    'GPS 实跑模型',
-    g.ready ? fmt(g.rows) + ' 条样本' : '预热中…',
-    g.trees ? g.trees + ' 棵树 · 训练于 ' + ago(g.trainedAt) : '首次判定前自动预热'
-  ));
+  mg.appendChild(statCard('微信同步模型', sampleText(w), treeText(w)));
+  mg.appendChild(statCard('GPS 实跑模型', sampleText(g), treeText(g)));
 
   var bothReady = !!w.ready && !!g.ready;
   var tag = $('aiStateTag');

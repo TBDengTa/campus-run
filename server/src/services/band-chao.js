@@ -20,6 +20,7 @@ const User = require('../models/user');
 const dates = require('../utils/dates');
 const roster = require('./roster');
 const checkModules = require('./check-modules');
+const dormsSvc = require('./dorms');
 const scoreScale = require('./score-scale');
 const { liveCounts } = require('./class-counts');
 
@@ -542,13 +543,18 @@ async function entryTargets({ moduleDef, date, period, scopeDepartmentIds = null
       const residentCount = liveResidents.has(String(r._id))
         ? liveResidents.get(String(r._id))
         : Number(r.residents) || 0;
+      // 展示名走 dorms.roomLabel 的同一口径（楼名·门号 + 房号归一）：
+      // 存量里有被拆坏的房号（`洋河` + `女宿女宿女宿…301`），直接拼会把这串垃圾摆到
+      // 检查录入台的对象列表上（用户 2026-11-14 报障的截图就是这个）。
+      // 库里的真实纠正由 scripts/fix-dorm-room-dup-prefix.js 负责，这里只保证**显示**正常。
+      const buildingName = r.buildingName || r.buildingId || '';
       targets.push({
         targetType: 'dorm_room',
         targetId: String(r._id),
-        targetName: `${r.buildingName || r.buildingId || ''}${r.buildingName ? ' ' : ''}${r.roomNo}`.trim(),
+        targetName: dormsSvc.roomLabel({ buildingName, roomNo: r.roomNo }).replace('·', ' '),
         className: r.className || '',
         // 楼栋：查宿录入台按「宿舍楼」筛选（与卫生的「教学楼」筛选同一种交互）
-        building: r.buildingName || r.buildingId || '',
+        building: buildingName,
         // 房间按默认班级导出年级（混宿房间仅作展示/筛选参考，真正归属仍按在住学生分摊）
         grade: roster.gradeFromClassName(r.className || ''),
         schoolId: org.schoolId,

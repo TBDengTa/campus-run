@@ -265,9 +265,16 @@ router.get(
     const peek = (source) => {
       const m = acModel.peekModel(source);
       if (!m) acModel.getModel(source).catch(() => {}); // 后台静默预热
+      const rows = (m && m.rows) || 0; // 本次实际进训练的行数（受 TRAIN_MAX_ROWS 上限约束）
+      const totalRows = (m && m.totalRows) || rows; // 库内真实可用样本总数
       return {
         ready: !!m,
-        rows: (m && m.rows) || 0,
+        rows,
+        // 用户 2026-11-14「微信记录无论有多少一直是 20000」：那个 20000 是训练采样上限，
+        // 不是数据量。两个数都要下发，前端据此显示「16.3 万条 · 取 2 万训练」。
+        totalRows,
+        trainingCap: acModel.TRAIN_MAX_ROWS,
+        capped: !!totalRows && totalRows > rows,
         trees: m && m.forest ? m.forest.length : 0,
         trainedAt: m && m.trainedAt ? new Date(m.trainedAt).toISOString() : null,
       };

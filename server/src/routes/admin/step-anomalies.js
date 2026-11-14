@@ -197,24 +197,31 @@ router.get(
     // ⚠️ 不能在这里等待训练（实测：GPS 训练 3 秒、修复前 30 秒，管理端会超时）。
     //   只读缓存；没有缓存就返回 ready=false 并**在后台异步预热**，
     //   下一次刷新就能看到状态。这与「同步链路上的懒加载」互不影响。
-    const out = { threshold: acModel.currentThreshold(), models: {} };
+    const out = { threshold: acModel.currentThreshold(), trainingCap: acModel.TRAIN_MAX_ROWS, models: {} };
     for (const source of ['werun', 'gps']) {
       try {
         const cached = acModel.peekModel(source);
         if (cached) {
+          const rows = cached.rows || 0;
+          const totalRows = cached.totalRows || rows;
           out.models[source] = {
             ready: true,
             trees: cached.forest.length,
-            rows: cached.rows,
+            // rows = 实际进训练的行数（受上限约束）；totalRows = 库内真实数据量。
+            // 用户 2026-11-14「微信记录无论有多少一直是 20000」：只给 rows 会让管理员
+            // 以为数据没进来（那 20000 是采样上限，库里当时已有 16 万条）。
+            rows,
+            totalRows,
+            capped: !!totalRows && totalRows > rows,
             trainedAt: new Date(cached.trainedAt),
           };
         } else {
-          out.models[source] = { ready: false, trees: 0, rows: 0, trainedAt: null, warming: true };
+          out.models[source] = { ready: false, trees: 0, rows: 0, totalRows: 0, capped: false, trainedAt: null, warming: true };
           // 后台预热，不阻塞本次响应
           acModel.getModel(source).catch(() => {});
         }
       } catch (e) {
-        out.models[source] = { ready: false, trees: 0, rows: 0, trainedAt: null };
+        out.models[source] = { ready: false, trees: 0, rows: 0, totalRows: 0, capped: false, trainedAt: null };
       }
     }
     ok(res, out);

@@ -278,5 +278,30 @@ ok('checkUpgradeReadiness 仍在（旧提示与闸门并存）', /async function
 ok('管理端 /upgrade-status 仍在', /'\/upgrade-status'/.test(adminSrc));
 ok('Web 状态台仍渲染旧进度条', /renderUpgrade/.test(consoleJs) && /id="upgradeBox"/.test(consoleHtml));
 
+// ===== ⑪ 样本量必须区分「库内总量」与「进训练量」（用户 2026-11-14） =====
+//
+// 事故：管理端「唐跑AI数据模型」卡片微信模型恒显示「20000 条样本」，
+//   而库里当时已有 162,998 条 werun 记录。那个 20000 是 TRAIN_MAX_ROWS 训练采样上限，
+//   被当成「样本量」下发 —— 数据从 2 万涨到 16 万，管理员看到的数字一动不动。
+console.log('\n[11] 样本量口径（库内总量 ≠ 进训练量）');
+
+ok('模型上带 totalRows（库内真实可用样本数）', /model\.totalRows = Math\.max\(rows\.length, totalRows\)/.test(modelSrc));
+ok('模型上带 cappedByLimit 标记（是否被采样上限截断）', /model\.cappedByLimit = totalRows > rows\.length/.test(modelSrc));
+ok('有独立的计数函数（过滤条件与取数一致）',
+  /async function countTrainingRows/.test(modelSrc)
+  && /countDocuments\(\{ source: 'werun', steps: \{ \$gt: 0 \} \}\)/.test(modelSrc)
+  && /distance: \{ \$gt: 50 \}/.test(modelSrc));
+ok('trainSource 先计数再抽样', /const totalRows = await countTrainingRows\(source\);\s*\n\s*const rows = await fetchTrainingRows\(source\)/.test(modelSrc));
+ok('TRAIN_MAX_ROWS 对外导出（前端要解释「抽样上限」）', /TRAIN_MAX_ROWS,\s*\n\s*evaluate,/.test(modelSrc));
+
+ok('Web dashboard 下发 totalRows 与 capped',
+  /totalRows,\s*\n\s*trainingCap: acModel\.TRAIN_MAX_ROWS,\s*\n\s*capped:/.test(consoleSrc));
+ok('小程序管理端下发 totalRows 与 capped',
+  /totalRows,\s*\n\s*capped: !!totalRows && totalRows > rows,/.test(adminSrc));
+ok('Web 前端展示「总量 · 取 N 条训练」（不再只显示 rows）',
+  /' 条 · 取 ' \+ fmt\(x\.rows\) \+ ' 条训练'/.test(consoleJs));
+ok('小程序前端同样区分两个口径', /条 · 取 \$\{x\.rows\} 条训练/.test(mpAnoJs));
+ok('小程序 wxml 用 sampleText（不是裸 rows）', /engine\.werunSampleText/.test(mpAnoWxml) && /engine\.gpsSampleText/.test(mpAnoWxml));
+
 console.log(`\n${failed ? `✗ ${failed} 项未通过` : '✓ 全部通过'}`);
 process.exit(failed ? 1 : 0);

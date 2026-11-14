@@ -35,6 +35,9 @@
 //   change  detail:{ field:'roomText'|'bedNo', value }  — roomText 始终是**拼好的**「楼号·门号」
 //   save    detail:{ roomText, bedNo }（已 trim）
 //   unbind  detail:{}   close detail:{}
+// 楼名/房号拆分口径唯一实现在 utils/room-label.js（详情见该文件头）
+const roomLabel = require('../../utils/room-label');
+
 Component({
   properties: {
     visible: { type: Boolean, value: false },
@@ -69,48 +72,34 @@ Component({
     // 父页面回灌 roomText（如打开抽屉时展示当前宿舍）→ 拆成楼号 + 门号
     'roomText, buildings': function (roomText, buildings) {
       const raw = String(roomText || '');
-      // 与服务端 services/dorms.js::parseRoomLabel 同一套分隔符，避免「1号楼 201」拆不出来
-      const parts = raw.split(/[·・\-—/、,\s]+/).filter(Boolean);
+      // 拆分口径唯一实现在 utils/room-label.js（与服务端 services/dorms.js::parseRoomLabel 同源）。
+      // ⚠️ 以前这里自己按 `[·・\-—/、,\s]` 切 —— 楼名自带连字符的（系统设置里的「洋河-女宿」）
+      //    会被切成楼名「洋河」+ 房号「女宿301」，用户每保存一次房号就多叠一层「女宿」。
+      //    见 miniprogram/utils/room-label.js 文件头。
       const list = (buildings || [])
         .map((b) => (typeof b === 'string' ? b : (b && b.name) || ''))
         .filter(Boolean);
-      let pick = '';
-      let no = '';
-      if (parts.length >= 2 && list.includes(parts[0])) {
-        pick = parts[0];
-        no = parts.slice(1).join('');
-      } else if (parts.length === 1 && list.includes(parts[0])) {
-        // 只有楼名、还没填门号
-        pick = parts[0];
-      } else if (list.length) {
-        // 拆不出来但首段与某个楼名高度相似（历史数据）→ 尽力匹配，匹配不到就留空让人重选
-        const hit = list.find((name) => raw.startsWith(name));
-        if (hit) {
-          pick = hit;
-          no = raw.slice(hit.length).replace(/^[·・\-—/、,\s]+/, '');
-        } else {
-          no = parts.length >= 2 ? parts.slice(1).join('') : raw;
-        }
-      } else {
-        no = parts.length >= 2 ? parts.slice(1).join('') : raw;
-      }
+      const cut = roomLabel.splitRoomLabel(raw, list);
+      let pick = cut.building;
+      let no = cut.roomNo;
 
       // 楼名白名单收窄后（脏楼名不再下发），住在旧写法楼里的人会走到这里：
-      // 把「最后一个分隔符之前」那段当楼名补成一条胶囊（门号 = 最后一段）。
-      // 只补**该生自己当前这一条**，别的学生的胶囊仍是干净的白名单。
+      // 拆分结果里的楼名**不在清单里**就说明是历史写法 —— 补一条 legacy 胶囊，
+      // 让他能沿现住楼改床位而不被「请先选择楼号」堵死。只补**本人这一条**，
+      // 别的学生的胶囊仍是干净的白名单。
       let legacy = '';
-      if (!pick && parts.length >= 2) {
-        // 非全局 + 负向先行：命中的是**最后一个**分隔符串
+      if (raw && pick && !list.includes(pick)) {
+        legacy = pick;
+      } else if (raw && !pick) {
+        // 既拆不出楼名（没有规范分隔符）：按「最后一个分隔符之前」当楼名再试一次
         const lastSep = raw.match(/[·・\-—/、,\s]+(?!.*[·・\-—/、,\s])/);
-        if (lastSep) {
-          const cut = lastSep.index;
-          const cand = raw.slice(0, cut).trim();
-          no = raw.slice(cut + lastSep[0].length).trim();
+        if (lastSep && lastSep.index > 0) {
+          const cand = raw.slice(0, lastSep.index).trim();
+          const tail = raw.slice(lastSep.index + lastSep[0].length).trim();
           if (cand && !list.includes(cand)) {
             pick = cand;
+            no = roomLabel.normalizeRoomNo(tail, cand);
             legacy = cand;
-          } else {
-            no = parts[parts.length - 1];
           }
         }
       }
@@ -180,9 +169,11 @@ Component({
     },
 
     // 把「楼号 + 门号」拼成 roomText 抛出去（父页面只认识这一个字段）
+    // ⚠️ 拼之前先按所选楼名归一房号：楼名「洋河-女宿」+ 房号「女宿301」是同一间房，
+    //    不归一就会存成「洋河-女宿·女宿301」，下次再保存又多一层（本次报障的放大回路）。
     emitRoom(building, roomNo) {
       const b = String(building || '').trim();
-      const r = String(roomNo || '').trim();
+      const r = roomLabel.normalizeRoomNo(String(roomNo || '').trim(), b);
       const value = b && r ? `${b}·${r}` : b ? `${b}·` : r;
       this.triggerEvent('change', { field: 'roomText', value });
     },
@@ -190,7 +181,8 @@ Component({
     submit() {
       if (this.data.saving || this.data.disabled) return;
       const b = String(this.data.pickBuilding || '').trim();
-      const r = String(this.data.roomNo || '').trim();
+      // 同上：门号必须按最终楼名归一（否则 legacy 回显的「女宿301」会被原样带进标准楼）
+      const r = roomLabel.normalizeRoomNo(String(this.data.roomNo || '').trim(), b);
       // 楼号必选（它现在只能点选，没选就是没填）
       if (!b) {
         wx.showToast({ title: '请先选择楼号', icon: 'none' });

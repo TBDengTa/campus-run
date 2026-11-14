@@ -35,6 +35,8 @@
 // ⚠️ 楼名分隔符一律不允许出现在「门号」里（见 sanitizeRoomNo）：
 //    读回时组件与服务端都按 [·・\-—/、,\s] 拆分，门号里带这些字符会把自己拆成两段，
 //    存进去再打开就变成「楼名 + 半截门号」—— 这类脏数据很难收拾。
+const roomLabel = require('../../utils/room-label');
+
 Component({
   properties: {
     visible: { type: Boolean, value: false },
@@ -70,26 +72,12 @@ Component({
       if (!visible) return;
       const list = (buildings || []).map((b) => (b && b.name) || b).filter(Boolean);
       const raw = String(value || '');
-      // 与服务端 services/dorms.js::parseRoomLabel 同一套分隔符
-      const parts = raw.split(/[·・\-—/、,\s]+/).filter(Boolean);
-      let pick = '';
-      let no = '';
-      if (parts.length >= 2 && list.includes(parts[0])) {
-        pick = parts[0];
-        no = parts.slice(1).join('');
-      } else if (parts.length === 1 && list.includes(parts[0])) {
-        pick = parts[0];
-      } else if (list.length) {
-        const hit = list.find((name) => raw.startsWith(name));
-        if (hit) {
-          pick = hit;
-          no = raw.slice(hit.length).replace(/^[·・\-—/、,\s]+/, '');
-        } else {
-          no = parts.length >= 2 ? parts.slice(1).join('') : raw;
-        }
-      } else {
-        no = parts.length >= 2 ? parts.slice(1).join('') : raw;
-      }
+      // 拆分口径唯一实现在 utils/room-label.js（与服务端 services/dorms.js::parseRoomLabel 同源）：
+      // 楼名自带连字符的（系统设置里的「洋河-女宿」）不能再按 `-` 硬切，否则房号会带上「女宿」
+      // 并在每次保存时多叠一层 —— 见该文件头。
+      const cut = roomLabel.splitRoomLabel(raw, list);
+      const pick = cut.building;
+      const no = cut.roomNo;
       const isClassroom = kind === 'classroom';
       this.setData({
         pickBuilding: pick,
@@ -158,7 +146,12 @@ Component({
     submit() {
       if (this.data.saving) return;
       const b = String(this.data.pickBuilding || '').trim();
-      const r = this.sanitizeRoomNo(this.data.roomNo);
+      // 宿舍的门号先按楼名归一（楼名「洋河-女宿」+「女宿301」= 同一间房，不要再叠一层）；
+      // 教室（allowText）的场所名不归一 —— 「阶梯教室」是真名，剥字会把它改坏。
+      const rawRoom = this.data.allowText
+        ? this.sanitizeRoomNo(this.data.roomNo)
+        : roomLabel.normalizeRoomNo(this.sanitizeRoomNo(this.data.roomNo), b);
+      const r = rawRoom;
       if (!b) {
         wx.showToast({ title: '请先选择楼号', icon: 'none' });
         return;

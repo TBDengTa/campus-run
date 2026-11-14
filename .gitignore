@@ -40,8 +40,16 @@ deploy/
 # 用通配 tools/_* 而不是逐个列：临时文件可能是 _ac.txt / _uri.txt 这类非 .js 后缀，
 # 逐个列必然漏（本轮就把 tools/_ac.txt 误提交了）。
 # tools/ 下只应该有 check-*（可重复运行的静态检查）、verify-*（端到端验证）与生成器。
+# ⚠️ server/scripts/ 同样适用（2026-11-14 排查宿舍房号时把 _probe-dorm-rooms.js 写在那里，
+#    只写 tools/ 规则是漏的 —— 那个目录才是「直连数据库的试探脚本」最常被放的地方）。
 tools/_*
 tools/_probe*.js
+server/scripts/_*
+server/scripts/_tmp-*
+# server/ 根目录下的临时验证脚本（2026-11-14 排查宿舍房号时放的 _verify-entry.js）
+server/_*
+# 数据修复脚本落库前的自动备份（含学生真实姓名与学号，绝不入库）
+_backup/
 
 
 # 站点配置含真实域名与证书路径（AGENTS.md：真实域名不入库）。
