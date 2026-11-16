@@ -30,6 +30,10 @@ const BASE_SCORE = scoreScale.FULL_SCORE;
 
 const RANK_TTL = 60 * 1000;
 const MAX_ROWS = 4000; // 单次区间扫描上限（一学期 5 模块 × 全校班级的量级之内）
+// 查宿对象列表要「先按真实归属过滤、再按 limit 截断」，因此房间必须一次性取回：
+// 若先按 limit 截断，分院成员可能在自己那一段之前就被别人的房间占满 → 列表空。
+// 线上在用房间实测 272 间；上限给 5000 是量级护栏（不会把整表拖进内存）。
+const ROOM_SCAN_LIMIT = 5000;
 
 // ===== 通用小工具 =====
 const round1 = (n) => Math.round((Number(n) || 0) * 10) / 10;
@@ -409,6 +413,60 @@ async function classCampusMap(classNames) {
 }
 
 /**
+ * 班级 → **完整**组织归属（院校 + 系部，id 与名字都给，走 org-resolve 的唯一口径）。
+ *
+ * 为什么需要它（用户 2026-11-16「1号楼(女生宿舍)414 显示的却是 25 级软件」的同一处根因）：
+ *   `dorm_rooms.departmentId / departmentName` 与它的 className 一样，都是**建房间时的快照**。
+ *   换宿后房间记录指向的还是上一届那个班的系部，于是查宿对象列表把
+ *   「26级应用化工技术（冶金材料系）」显示成「计财系」，更糟的是**分院范围判定也跟着错**：
+ *   冶金材料系的成员看不到自己系里的这间房，计财系的成员反而能看/能录（越权）。
+ *   正确口径：按房间的**当前在住班级**去班级台账取归属，房间自身字段只作最后兜底
+ *   （与 routes/union.js::resolveClassInfo 同源，禁止各处再拼一套）。
+ *
+ * @param {string[]} classNames
+ * @returns {Promise<Map<string, {departmentId:string, departmentName:string, schoolId:string, schoolName:string, resolved:boolean}>>}
+ */
+async function classOrgMap(classNames) {
+  const names = [...new Set((classNames || []).map((n) => String(n || '').trim()).filter(Boolean))];
+  const map = new Map();
+  if (!names.length) return map;
+  const orgResolveSvc = require('./org-resolve');
+  const profiles = await ClassProfile.find({ className: { $in: names } })
+    .select('className schoolId schoolName departmentId departmentName')
+    .lean();
+  const byName = new Map(profiles.map((p) => [p.className, p]));
+  // 台账缺行时才退回学籍（与 resolveClassInfo 的兜底顺序一致）
+  const missing = names.filter((n) => !byName.has(n));
+  const fallbackUsers = missing.length
+    ? await User.find({ className: { $in: missing }, role: { $ne: 'teacher' } })
+        .select('className schoolId schoolName departmentId departmentName')
+        .lean()
+    : [];
+  for (const u of fallbackUsers) if (!byName.has(u.className)) byName.set(u.className, u);
+  for (const name of names) {
+    const row = byName.get(name);
+    if (!row) {
+      map.set(name, { departmentId: '', departmentName: '', schoolId: '', schoolName: '', resolved: false });
+      continue;
+    }
+    const org = await orgResolveSvc.resolveDepartment({
+      departmentId: row.departmentId,
+      departmentName: row.departmentName,
+      schoolId: row.schoolId,
+      schoolName: row.schoolName,
+    });
+    map.set(name, {
+      departmentId: org.departmentId || '',
+      departmentName: org.departmentName || row.departmentName || '',
+      schoolId: org.schoolId || '',
+      schoolName: org.schoolName || row.schoolName || '',
+      resolved: !!org.resolved,
+    });
+  }
+  return map;
+}
+
+/**
  * 某模块在某日应检对象 + 每个对象的录入状态
  *
  * scopeDepartmentIds：**null = 校级（全校）**；数组 = 分院，只允许该数组内的院系（空数组 = 无范围，fail-closed）。
@@ -516,33 +574,60 @@ async function entryTargets({ moduleDef, date, period, scopeDepartmentIds = null
 
   if (targetTypes.includes('dorm_room')) {
     const DormRoom = require('../models/dorm-room');
-    const rooms = await DormRoom.find({ enabled: { $ne: false }, ...scope })
+    // ⚠️ **不能把 scope 拼进房间查询**：scope 里的 departmentId / departmentName 是
+    //   `check_records` / 台账口径的字段，而 `dorm_rooms.departmentId / className` 都是
+    //   **建房间那一刻的快照**（换宿后没有任何代码刷新）。拿它做 DB 过滤会两向出错：
+    //     · 该看到的看不到：26级应用化工技术的房间记着「计财系」→ 冶金材料系成员查宿列表里没有这间；
+    //     · 不该看到的能看/能录：计财系成员反而能（用户 2026-11-16 报障的同一处根因）。
+    //   正确做法是**先按在住班级解析归属、再在内存里按 scope 过滤**（见下面的 inScope），
+    //   即「范围判定永远用真实归属」；房间量级（实测 272 间）一次取回没有性能问题。
+    const rooms = await DormRoom.find({ enabled: { $ne: false } })
       .select('buildingId buildingName roomNo floor className departmentId departmentName residents')
       .sort({ buildingId: 1, roomNo: 1 })
-      .limit(limit)
+      .limit(ROOM_SCAN_LIMIT)
       .lean();
     // ⚠️ 应住人数必须**实时聚合** dorm_assignments，不能只信 dorm_rooms.residents ——
     //   后者是「展示用缓存值」，退宿 / 换房后极易失真（用户 2026-10-26 报
     //   「查宿录入中没有计算应住人数」，这是第二层根因；第一层是下面这个字段名）。
-    const roomIds = rooms.map((r) => r._id);
+    //
+    // ⚠️⚠️ **归属班级同样必须按在住名单算**（用户 2026-11-16「1号楼(女生宿舍)414
+    //   宿舍成员都是 26 级化工的，但是显示的却是 25 级软件」）：
+    //   `dorm_rooms.className` 是**建房间那一刻的默认班级快照**，整届换宿后没有任何代码刷新它
+    //   （实测线上 272 间在用房里 3 间对不上）。拿它当展示归属，录入台就会把年级徽标、
+    //   系部归属和按班筛选全部指向上一届的班 —— 而且**按班统计的分母也会错**。
+    //   口径与 routes/union.js::resolveTarget 一致，统一走 dormsSvc.roomLiveOwners。
+    const roomOwners = await dormsSvc.roomLiveOwners(rooms);
+    // 该房真有在住名单吗（决定是否需要「补录名单」提示与归属兜底）
     const liveResidents = new Map();
-    if (roomIds.length) {
-      const DormAssignment = require('../models/dorm-assignment');
-      const agg = await DormAssignment.aggregate([
-        { $match: { roomId: { $in: roomIds }, status: { $in: ['checked_in', 'guest'] } } },
-        { $group: { _id: '$roomId', n: { $sum: 1 } } },
-      ]);
-      for (const a of agg) liveResidents.set(String(a._id), a.n);
-    }
-    // 房间自身没有院校字段：用**归属班级的院校**消歧（同名系部跨校区时不猜，见 resolveOrg 注释）
-    const roomCampus = await classCampusMap(rooms.map((r) => r.className));
+    for (const [key, val] of roomOwners) liveResidents.set(key, (val.owners || []).reduce((a, o) => a + (o.count || 0), 0));
+    // 房间自身没有院校 / 系部字段（或已过期）：用**当前在住班级**去台账取归属，
+    // 同名系部跨校区时不猜（见 resolveOrg / org-resolve 注释）。
+    // ⚠️ 绝不能用房间自己的 departmentId：那是建房间时的快照，换宿后会把归属指到别的系部
+    //   （26级应用化工技术的房间显示成「计财系」就是这个），并且会让**分院范围判定跟着越权**。
+    const roomCampus = await classOrgMap(
+      rooms.map((r) => (roomOwners.get(String(r._id)) || {}).className || r.className)
+    );
+    // 每个分支各自受 limit 约束（与教室分支的 .limit(limit) 同口径）
+    let roomPushed = 0;
     for (const r of rooms) {
-      const campus = roomCampus.get(String(r.className || '')) || null;
-      const org = resolveOrg({ ...r, schoolId: campus ? campus.schoolId : '', schoolName: campus ? campus.schoolName : '' }, maps);
+      if (roomPushed >= limit) break;
+      const live = roomOwners.get(String(r._id)) || { className: r.className || '', owners: [] };
+      const liveClass = live.className || r.className || '';
+      const clsOrg = roomCampus.get(String(liveClass)) || null;
+      // 归属优先级：在住班级的台账归属 → 房间自身字段（台账缺行时的兜底）→ 名字反查
+      const org = resolveOrg(
+        {
+          className: liveClass,
+          departmentId: (clsOrg && clsOrg.departmentId) || r.departmentId,
+          departmentName: (clsOrg && clsOrg.departmentName) || r.departmentName,
+          schoolId: (clsOrg && clsOrg.schoolId) || '',
+          schoolName: (clsOrg && clsOrg.schoolName) || '',
+        },
+        maps
+      );
       if (!inScope(org)) continue;
-      const residentCount = liveResidents.has(String(r._id))
-        ? liveResidents.get(String(r._id))
-        : Number(r.residents) || 0;
+      roomPushed += 1;
+      const residentCount = liveResidents.get(String(r._id)) || 0;
       // 展示名走 dorms.roomLabel 的同一口径（楼名·门号 + 房号归一）：
       // 存量里有被拆坏的房号（`洋河` + `女宿女宿女宿…301`），直接拼会把这串垃圾摆到
       // 检查录入台的对象列表上（用户 2026-11-14 报障的截图就是这个）。
@@ -552,11 +637,14 @@ async function entryTargets({ moduleDef, date, period, scopeDepartmentIds = null
         targetType: 'dorm_room',
         targetId: String(r._id),
         targetName: dormsSvc.roomLabel({ buildingName, roomNo: r.roomNo }).replace('·', ' '),
-        className: r.className || '',
+        // 归属班级 = **在住提醒的主班**（没有名单才退回房间默认班级）
+        className: liveClass,
+        // 混宿房间的全部在住班（含人数）：录入台可展示「混宿」提示，分数按人数分摊
+        classNames: (live.owners || []).map((o) => o.className).filter(Boolean),
         // 楼栋：查宿录入台按「宿舍楼」筛选（与卫生的「教学楼」筛选同一种交互）
         building: buildingName,
-        // 房间按默认班级导出年级（混宿房间仅作展示/筛选参考，真正归属仍按在住学生分摊）
-        grade: roster.gradeFromClassName(r.className || ''),
+        // 年级按**在住班级**推导（房间默认班级的年级是上一届的，会让「今年优先」排序失效）
+        grade: roster.gradeFromClassName(liveClass),
         schoolId: org.schoolId,
         schoolName: org.schoolName,
         departmentId: org.departmentId,
@@ -569,6 +657,8 @@ async function entryTargets({ moduleDef, date, period, scopeDepartmentIds = null
         //   是 undefined、从不注入（= 用户报的现象）。两个字段都给，
         //   避免再有任何一处按旧名读取时静默拿不到值。
         residentCount,
+        // 房间还没有在住名单（管理员尚未录入）→ 录入台提示补录，避免「归属按默认班级」被当真
+        needsRoster: residentCount === 0,
       });
     }
   }

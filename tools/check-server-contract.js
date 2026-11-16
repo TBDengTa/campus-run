@@ -1663,10 +1663,19 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   const entrySrc2 = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageUnion', 'entry', 'entry.js'), 'utf8');
   const shSrc = require('fs').readFileSync(path.join(__dirname, '..', 'deploy', 'install.sh'), 'utf8');
 
-  // ③ 查宿「应住人数」：字段名必须与 routes/union.js::shouldCountCtx 读的名字一致
-  ok('查宿应住人数用实时聚合', /DormAssignment\.aggregate\(\[[\s\S]{0,300}status: \{ \$in: \['checked_in', 'guest'\] \}/.test(bcSrc2));
+  // ③ 查宿「应住人数」：字段名必须与 routes/union.js::shouldCountCtx 读的名字一致。
+  //    聚合已收敛到 services/dorms.js::roomLiveOwners（唯一实现，列表与单房间共用）：
+  //    band-chao 只调用它，不再自己拼一份聚合 —— 两处各写一份就会出现
+  //    「列表显示 6 人、点进去应住 8 人」这类静默不一致。
+  const dormsSrc2 = require('fs').readFileSync(path.join(SERVER, 'services', 'dorms.js'), 'utf8');
+  ok('房间在住聚合在 services/dorms.js（唯一实现）', /async function roomLiveOwners\(rooms\)/.test(dormsSrc2) && /status: \{ \$in: \['checked_in', 'guest'\] \}/.test(dormsSrc2));
+  ok('查宿应住人数用实时聚合', /dormsSvc\.roomLiveOwners\(rooms\)/.test(bcSrc2) && /residentCount/.test(bcSrc2));
   ok('宿舍对象下发 residentCount（与 shouldCountCtx 同名）', /residents: residentCount,[\s\S]{0,400}residentCount,/.test(bcSrc2));
   ok('shouldCountCtx 读 residentCount', /Number\(target\.residentCount\)/.test(require('fs').readFileSync(path.join(SERVER, 'routes/union.js'), 'utf8')));
+  // 归属班级必须按**在住名单**取，不能用 dorm_rooms.className 快照
+  //（用户 2026-11-16「1号楼(女生宿舍)414 显示 25级软件」的根因）
+  ok('查宿对象归属班级按在住名单推导', /className: liveClass,/.test(bcSrc2) && /roomLiveOwners/.test(bcSrc2));
+  ok('房间默认班级只作无名单时的兜底', /没有名单才退回房间默认班级|无在住名单时退回房间默认班级/.test(dormsSrc2));
 
   // ② 早操不需要楼栋筛选：只有场所类（教室/宿舍）才生成楼栋选项
   ok('楼栋筛选仅限教室/宿舍', /BUILDING_TYPES = \['classroom', 'dorm'\]/.test(entrySrc2));

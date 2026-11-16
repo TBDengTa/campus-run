@@ -47,8 +47,25 @@ const resolveClassInfoFn = (unionRouteSrc.match(/async function resolveClassInfo
 ok('resolveClassInfo 走 orgResolve', /orgResolve\.resolveDepartment\(/.test(resolveClassInfoFn), '直接读 profile.departmentId 会复现 403');
 ok('resolveClassInfo 返回 schoolId / schoolName（供宿舍/卫生区消歧）', /schoolId: org\.schoolId/.test(resolveClassInfoFn) && /schoolName: org\.schoolName/.test(resolveClassInfoFn));
 const resolveTargetFn = (unionRouteSrc.match(/async function resolveTarget\(moduleDef[\s\S]*?\n\}/) || [''])[0];
-ok('resolveTarget 的宿舍分支走 orgResolve', /orgResolve\.resolveDepartment\(\{[\s\S]{0,160}departmentId: room\.departmentId/.test(resolveTargetFn));
-ok('resolveTarget 的卫生区分支走 orgResolve', /orgResolve\.resolveDepartment\(\{[\s\S]{0,160}departmentId: area\.departmentId/.test(resolveTargetFn));
+// 宿舍 / 卫生区的 departmentId 是**绑定那一刻的快照**（换宿、换责任班后没有代码刷新它），
+// 所以归属必须**先按归属班级的台账归属取**，房间/区域自身字段只在台账缺行时兜底。
+// 反过来（旧写法 room.departmentId 优先）就是 2026-11-16 报障的成因：
+// 26级应用化工技术（冶金材料系）的房间显示成「计财系」，分院范围判定跟着两向出错。
+ok(
+  'resolveTarget 的宿舍分支走 orgResolve 且**班级归属优先**',
+  /orgResolve\.resolveDepartment\(\{[\s\S]{0,200}departmentId: \(info && info\.departmentId\) \|\| room\.departmentId/.test(resolveTargetFn),
+  '房间快照优先会把系部判成上一届的'
+);
+ok(
+  'resolveTarget 的卫生区分支走 orgResolve 且**责任班归属优先**',
+  /orgResolve\.resolveDepartment\(\{[\s\S]{0,200}departmentId: \(info && info\.departmentId\) \|\| area\.departmentId/.test(resolveTargetFn),
+  '区域快照优先会把系部判成旧责任班的'
+);
+ok(
+  '宿舍主人班排序稳定（人数降序 + 班名，不依赖查询顺序）',
+  /sort\(\(a, b\) => b\.weight - a\.weight \|\| a\.className\.localeCompare\(b\.className\)\)/.test(resolveTargetFn),
+  '按 Map 插入顺序取 owners[0] 会随查询顺序漂移'
+);
 
 console.log('\n[3] 范围判定：id 优先、名字兜底');
 const unionSvcSrc = read(SERVER, 'services', 'union.js');

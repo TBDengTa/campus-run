@@ -40,9 +40,10 @@
         {{batchMode ? '退出' : '批量'}}
       </view>
     </view>
-    <!-- 提示条只在**真的筛过**时出现：campus='' 是「全部成员」（不限），不算筛选条件。 -->
-    <view class="um-filter-hint" wx:if="{{campus || deptKeyFilter || termIdFilter}}" bind:tap="onResetFilters">
-      共 {{total}} 人 · 点此清除筛选
+    <!-- 提示条只在**真的筛过**时出现：campus='' 是「全部成员」（不限），不算筛选条件。
+         搜索关键字也算筛选（否则搜完看不到「共 N 人」，也没法一键清空回到全部）。 -->
+    <view class="um-filter-hint" wx:if="{{campus || deptKeyFilter || termIdFilter || keyword}}" bind:tap="onResetFilters">
+      共 {{total}} 人 · 点此清除筛选{{keyword ? '与搜索' : ''}}
     </view>
   </view>
 

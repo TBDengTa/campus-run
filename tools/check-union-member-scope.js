@@ -211,5 +211,34 @@ ok('成员页拉取范围用 manage=1', /auth\.get\('\/api\/union\/manage\/join-
 ok('不再把干部引导去扫码（添加抽屉可直接加人）', !/请用扫码加人/.test(membersJs));
 ok('候选人组件绑定动态 api', /api="\{\{pickerApi\}\}"/.test(membersWxml));
 
+// ===== 10) 成员列表的「筛选 / 搜索 / 分页」（用户 2026-11-16 报障）=====
+//
+// 用户原话：「在学生会成员中无法筛选院校、部门、学年、无法搜索成员均有问题」。
+// 根因：`GET /api/union/manage/members` 把 status='active' 的全部成员一次查回来，
+//   **完全不读** campus / deptKey / termId / keyword，也不分页、也不下发 schools。
+// 于是前端任意筛选/搜索都「有请求、有响应、结果不变」——看起来就是功能全废。
+// 这组断言盯住「参数真的进了查询条件」，否则一次重构就会静默退回去。
+console.log('\n[10] 成员列表筛选 / 搜索 / 分页');
+const manageMembersFn = (unionRoute.match(/router\.get\(\s*'\/manage\/members',[\s\S]*?\n  \}\)\n\);/) || [''])[0];
+ok('成员列表接口取到了实现', manageMembersFn.length > 0);
+ok('院校筛选进查询条件（campus=school / campus=<id>）', /filter\.level = 'school'/.test(manageMembersFn) && /filter\.schoolId = /.test(manageMembersFn));
+ok('部门筛选进查询条件（deptKey）', /filter\.deptKey = deptKey/.test(manageMembersFn));
+ok('学年筛选进查询条件（termId，含老记录空值）', /filter\.termId = termId === terms\.current \? \{ \$in: \[termId, ''\] \} : termId/.test(manageMembersFn));
+ok('关键字走 nameSearch.keywordOr（与其它入口同一把尺子）', /nameSearch\.keywordOr\(keyword/.test(manageMembersFn));
+ok('成员列表分页（page/limit，不再恒返回全量）', /parsePagination\(req\.query/.test(manageMembersFn) && /visible\.slice\(skip, skip \+ limit\)/.test(manageMembersFn));
+ok('先做范围过滤再分页（页边界不随别人数据漂移）', manageMembersFn.indexOf('memberManageAllowed') < manageMembersFn.indexOf('visible.slice'));
+ok('下发院校选项 schools（前端院校下拉才有各校区）', /schools: campusList/.test(manageMembersFn));
+ok('院校 id 用 new ObjectId（少写 new = 接口 500，筛选一用就报错）', /new mongoose\.Types\.ObjectId\(campus\)/.test(manageMembersFn));
+ok('下发 hasMore / page / limit', /hasMore: skip \+ list\.length < total/.test(manageMembersFn) && /page,\n\s+limit,/.test(manageMembersFn));
+ok('成员行下发 schoolId（调部门要用它算校区）', /schoolId: m\.schoolId \? String\(m\.schoolId\) : ''/.test(unionRoute));
+ok('成员行下发 studentId（搜索/核对要用）', /studentId: m\.studentId \|\| '',/.test(manageMembersFn) || /studentId: m\.studentId \|\| '',/.test(unionRoute));
+
+// 前端：搜索并发与防抖（与本仓库用户管理页同一口径）
+ok('成员页搜索有防抖', /_searchTimer/.test(membersJs) && /clearTimeout\(this\._searchTimer\)/.test(membersJs));
+ok('成员页丢弃过期响应（seq）', /this\._loadSeq/.test(membersJs) && /if \(seq !== this\._loadSeq\) return;/.test(membersJs));
+ok('成员页不再用 `if (loading) return` 挡掉搜索', !/if \(loading\) return;/.test(membersJs));
+ok('清除筛选时撤掉待执行的搜索', /onResetFilters\(\)[\s\S]{0,400}clearTimeout\(this\._searchTimer\)/.test(membersJs));
+ok('搜索关键字也算「已筛选」（提示条会出现，可一键清空）', /campus \|\| deptKeyFilter \|\| termIdFilter \|\| keyword/.test(membersWxml));
+
 console.log(`\n成员管理范围自检：${failed} 项失败`);
 process.exit(failed ? 1 : 0);

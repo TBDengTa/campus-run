@@ -305,6 +305,71 @@ async function roomOwners(roomId) {
   return [...map.entries()].map(([className, count]) => ({ className, count }));
 }
 
+/**
+ * 批量取「若干房间的实际在住班级」（**列表页的唯一口径**）。
+ *
+ * 为什么必须有它（用户 2026-11-16「1号楼(女生宿舍)414 宿舍成员都是 26 级化工的，
+ * 但是显示的却是 25 级软件」）：查宿对象列表原来读 `dorm_rooms.className`
+ * —— 那是**建房间那一刻的默认班级快照**。整届学生换宿（26 级入学后这间房
+ * 从 25 级软件技术 换成 26 级应用化工技术）时，房间记录的 className 没有任何代码去刷新，
+ * 于是录入台把「谁的班」显示成上一届的班：年级徽标、系部归属、按班统计全都跟着错。
+ * 实测线上 272 间在用房里 3 间是这样（另 2 间是 26 级内部两个班对调）。
+ *
+ * 口径（与 routes/union.js::resolveTarget 完全一致，不许各写一套）：
+ *   ① 有在住名单 → 按 dorm_assignments 里**在住学生所属班**统计，人数多的排前面；
+ *   ② 一间都没在住 → 才退回房间的默认班级（管理员还没录名单时的兜底展示）。
+ *
+ * @param {Array} rooms 至少含 { _id, className }
+ * @returns {Promise<Map<string, {className:string, owners:Array<{className:string,count:number}>}>>}
+ *          key = String(roomId)
+ */
+async function roomLiveOwners(rooms) {
+  const list = Array.isArray(rooms) ? rooms.filter((r) => r && r._id) : [];
+  const out = new Map();
+  if (!list.length) return out;
+  const rows = await DormAssignment.find({
+    roomId: { $in: list.map((r) => r._id) },
+    status: { $in: ['checked_in', 'guest'] },
+  })
+    .select('roomId className')
+    .lean();
+  const byRoom = new Map();
+  for (const r of rows) {
+    const key = String(r.roomId || '');
+    const cn = String(r.className || '').trim();
+    if (!key || !cn) continue;
+    if (!byRoom.has(key)) byRoom.set(key, new Map());
+    const m = byRoom.get(key);
+    m.set(cn, (m.get(cn) || 0) + 1);
+  }
+  for (const r of list) {
+    const key = String(r._id);
+    const m = byRoom.get(key);
+    if (m && m.size) {
+      const owners = [...m.entries()]
+        .map(([className, count]) => ({ className, count }))
+        // 人数多的班排前面（= 名单里的主归属班），并列按班名稳定排序
+        .sort((a, b) => b.count - a.count || a.className.localeCompare(b.className));
+      out.set(key, { className: owners[0].className, owners });
+    } else {
+      const fallback = String((r && r.className) || '').trim();
+      out.set(key, { className: fallback, owners: fallback ? [{ className: fallback, count: 0 }] : [] });
+    }
+  }
+  return out;
+}
+
+/**
+ * 房间「当前归属班级」的单个取值（列表展示 / 院校消歧都用它，避免两处各算一遍）。
+ * @returns {Promise<string>} 无在住名单时退回房间默认班级；都没有返回 ''
+ */
+async function roomCurrentClass(room) {
+  if (!room || !room._id) return String((room && room.className) || '').trim();
+  const map = await roomLiveOwners([room]);
+  const hit = map.get(String(room._id));
+  return hit ? hit.className : '';
+}
+
 // 启动期幂等迁移：把旧的「唯一槽位」索引换成含 className 的版本。
 // 为什么必须显式删旧索引：Mongoose 只会**新建**缺失的索引，不会替换同名/同键的旧索引；
 // 旧索引（不含 className）继续存在的话，混宿房间第二个班那条记录会被唯一约束直接拒掉。
@@ -331,5 +396,7 @@ module.exports = {
   assignStudentRoom,
   rosterWithRooms,
   roomOwners,
+  roomLiveOwners,
+  roomCurrentClass,
   migrateSlotIndex,
 };

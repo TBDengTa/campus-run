@@ -127,6 +127,15 @@ Page({
 
   async load(reset) {
     const page = reset ? 1 : this.data.page + 1;
+    // ===== 并发防丢（用户 2026-11-16「无法搜索成员」）=====
+    // 搜索框每敲一个字都会触发 load()，而网络响应**不保证按序到达**：
+    // 旧实现没有序号，慢请求（第 1 个字）后到会把快请求（第 3 个字）的结果覆盖掉 →
+    // 搜「张伟」看到的却是「张」的结果（单字不做同音匹配，看起来就是"搜不到人"）。
+    // 本仓库在用户管理页踩过同一个坑（见 tools/check-name-search.js 的并发用例），
+    // 口径保持一致：自增 seq，只认最后一次发起的响应。
+    // ⚠️ 只丢**过期响应**，不阻塞首次加载 / 翻页（所以不做 `if (loading) return`）。
+    this._loadSeq = (Number(this._loadSeq) || 0) + 1;
+    const seq = this._loadSeq;
     this.setData({ loading: true });
     try {
       await getApp().ensureLogin();
@@ -161,6 +170,9 @@ Page({
           throw e;
         }
       }
+      // 过期响应直接丢弃（最后一次输入必须生效）：既不覆盖列表，也不动筛选选项，
+      // 更不能把 loading 关掉 —— 最新那次请求还在路上。
+      if (seq !== this._loadSeq) return;
       listRev += 1;
       const rev = listRev;
       const rows = (data.list || []).map((m) => ({
@@ -196,6 +208,8 @@ Page({
       // 注意：applyOptions 只刷新选项、**不复位已选筛选**；reset 只表示「重新拉第一页」
       this.applyOptions(data);
     } catch (e) {
+      // 过期请求的失败同样丢弃，避免「搜新词失败」把最新一次的成功结果盖成报错 toast
+      if (seq !== this._loadSeq) return;
       this.setData({ loading: false });
       wx.showToast({ title: e.message || '加载失败', icon: 'none' });
     }
@@ -333,15 +347,36 @@ Page({
 
   onKeyword(e) {
     this.setData({ keyword: e.detail.value || '' });
+    // 边打边搜 + 300ms 防抖（用户 2026-11-16「无法搜索成员」）：
+    // 旧实现只在键盘「搜索」键（bindconfirm）才搜，点输入框外的空白就直接丢 —— 用户以为搜索坏了。
+    // 但也不能每敲一个字就发请求：服务端姓名搜索**≥2 个汉字才启用同音匹配**
+    // （见 services/name-search.js），单字请求纯属浪费，而且会把中间态结果闪到屏幕上。
+    // 与用户管理页同一处理（那里踩过的并发丢请求坑见 load() 里的 seq）。
+    if (this._searchTimer) clearTimeout(this._searchTimer);
+    this._searchTimer = setTimeout(() => {
+      this._searchTimer = null;
+      this.load(true);
+    }, 300);
   },
 
   onSearch() {
+    // 键盘「搜索」键 = 立即搜（不等防抖），并清掉待执行的防抖定时器避免重复请求
+    if (this._searchTimer) {
+      clearTimeout(this._searchTimer);
+      this._searchTimer = null;
+    }
     this.load(true);
   },
 
   onResetFilters() {
     // 恢复「全部成员」（用户 2026-10-22）：清除筛选就该回到不限层级，
     // 而不是把院校限定在「校学生会」——那反而是一个隐藏的筛选条件。
+    // 清空时也要撤掉待执行的搜索防抖：否则 300ms 后那次 load 会带着**旧关键字**再查一遍，
+    // 把刚清好的列表又筛掉（用户会以为「清除筛选没生效」）。
+    if (this._searchTimer) {
+      clearTimeout(this._searchTimer);
+      this._searchTimer = null;
+    }
     this.setData(
       { campusIndex: 0, campus: '', deptFilterIndex: 0, deptKeyFilter: '', termIndex: 0, termIdFilter: '', keyword: '' },
       () => this.load(true)

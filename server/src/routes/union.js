@@ -45,6 +45,10 @@ const CONFIG = {
   // 补录窗口（天）：超过后只能由管理端补??
   backfillDays: Number(process.env.BANCHAO_BACKFILL_DAYS || 3),
 };
+// 成员列表「范围过滤」前的取回上限：范围判定依赖 identity 展开的院校/系部，
+// Mongo 表达不了，只能取回后内存过滤。成员量级（线上实测 300 上下）远低于此值，
+// 给上限是量级护栏（防止将来成员数暴涨把整表拖进内存）。
+const MEMBER_SCAN_LIMIT = 5000;
 
 // ===== 公共小工??=====
 
@@ -289,17 +293,25 @@ async function resolveTarget(moduleDef, { targetType, targetId }) {
       if (!cn) continue;
       countBy.set(cn, (countBy.get(cn) || 0) + 1);
     }
-    let owners = [...countBy.entries()].map(([className, weight]) => ({ className, weight }));
+    let owners = [...countBy.entries()]
+      .map(([className, weight]) => ({ className, weight }))
+      // 主归属班必须**确定**（人数多的在前，并列按班名稳定排序）：
+      // 直接按 Map 插入顺序取 owners[0] 会随查询顺序漂移，同一间房两次写入可能落到不同班。
+      .sort((a, b) => b.weight - a.weight || a.className.localeCompare(b.className));
     // 这间房还没有住宿名单（管理员尚未录入）时才退回房间默认班级，并在录入台上标出来提醒补名单
     if (!owners.length && room.className) owners = [{ className: room.className, weight: 1 }];
 
     const primaryClass = owners[0] ? owners[0].className : room.className || '';
     const info = primaryClass ? await resolveClassInfo(primaryClass) : null;
-    // 房间自身的 departmentId 优先，但它经常为空（153/335）或指向别的校区（实测 1 间）；
-    // 因此必须再过一遍 orgResolve：用「归属班级的院校」消歧，同名系部跨校区时才不会判错。
+    // ⚠️ 归属**必须按归属班级取**，不能用房间自己的 departmentId（用户 2026-11-16
+    //   「1号楼(女性宿舍)414 显示 25级软件」的同一处根因）：
+    //   房间的 departmentId / departmentName 是**建房间那一刻的快照**，整届换宿后不会刷新。
+    //   拿它优先，会把「26级应用化工技术（冶金材料系）」记成「计财系」——
+    //   写入的 check_records.departmentId 从此错系部，范围判定与按系部统计一起错。
+    //   顺序：归属班级的台账归属 → 房间自身字段（台账缺行时兜底）→ 系部名反查。
     const roomOrg = await orgResolve.resolveDepartment({
-      departmentId: room.departmentId,
-      departmentName: room.departmentName || (info && info.departmentName) || '',
+      departmentId: (info && info.departmentId) || room.departmentId,
+      departmentName: (info && info.departmentName) || room.departmentName || '',
       schoolId: (info && info.schoolId) || '',
       schoolName: (info && info.schoolName) || '',
     });
@@ -336,10 +348,11 @@ async function resolveTarget(moduleDef, { targetType, targetId }) {
   let info = null;
   if (classNames.length) info = await resolveClassInfo(classNames[0]);
   // 与宿舍同一口径：区域自身的 departmentId 常为空（21/37）或指错校区（实测 1 个），
-  // 用「责任班的院校」消歧后再判范围。
+  // 用「责任班台账的归属」消歧后再判范围 —— 区域自身字段只作台账缺行时的兜底
+  // （区域同样是手工绑定的快照，责任班换过之后不会自动刷新）。
   const areaOrg = await orgResolve.resolveDepartment({
-    departmentId: area.departmentId,
-    departmentName: area.departmentName || (info && info.departmentName) || '',
+    departmentId: (info && info.departmentId) || area.departmentId,
+    departmentName: (info && info.departmentName) || area.departmentName || '',
     schoolId: (info && info.schoolId) || '',
     schoolName: (info && info.schoolName) || '',
   });
@@ -469,12 +482,16 @@ function presentManageMember(m) {
     id: String(m._id),
     realName: m.realName || '',
     className: m.className || '',
+    studentId: m.studentId || '',
     level: m.level,
     // 层级文案带**真实校区名**（用户 2026-10-28「为什么全是校学生会啊」）：
     //   旧实现分院一律写「分院学生会」，看不出是哪个校区；
     //   校区名缺失时才退回「分院学生会」。
     levelText: m.level === 'school' ? '校学生会' : m.schoolName ? `${m.schoolName}学生会` : '分院学生会',
     orgTitle: m.level === 'school' ? '校学生会' : `${m.schoolName || '未设院校'}学生会`,
+    // ⚠️ schoolId 必须下发：前端「调部门」用它算 `campusOfMember`，
+    //   缺了它分院成员会被当成校级（可选到外校区的部门，选完必 403）。
+    schoolId: m.schoolId ? String(m.schoolId) : '',
     schoolName: m.schoolName || '',
     departmentName: m.departmentName || '',
     deptKey: m.deptKey || '',
@@ -926,30 +943,95 @@ router.get(
   })
 );
 
+/**
+ * 学生会成员管理列表（**用户端，干部身份**）。
+ *
+ * 用户 2026-11-16 报障「在学生会成员中无法筛选院校、部门、学年，无法搜索成员均有问题」。
+ * 根因：本接口原来把 `status:'active'` 的**全部成员**一次查回来，
+ *   —— 既不看 `campus / deptKey / termId / keyword`（前端明明传了），
+ *   —— 也不分页（`page/limit` 完全忽略，永远返回全量），
+ *   —— 更不下发 `schools`（前端院校下拉只有「全部成员 / 校学生会」两项，永远没有各校区）。
+ * 于是页面上任意筛选/搜索都"有反应但不改变结果"（返回的永远是同一份 289 条），
+ * 看起来就是筛选与搜索全部失效。
+ *
+ * 现在的口径（**筛选条件与可见范围是两件事，都必须成立**）：
+ *   ① 可见范围：`memberManageAllowed`（身份范围，fail-closed）—— 与写接口同一份判定；
+ *   ② 筛选条件：院校（campus）/ 部门（deptKey）/ 学年（termId）/ 关键词（姓名同音字 + 学号 + 班级）；
+ *   ③ 分页：page/limit（与其它列表接口同一套 parsePagination 语义）。
+ * 顺序也重要：范围过滤在内存里做（判定依赖 identity 的展开结果，Mongo 表达不了），
+ * 所以**先按筛选条件收窄、再套范围、最后分页**——否则「第 2 页」会随别人的数据漂移。
+ */
 router.get(
   '/manage/members',
-  wrap(async (req, res) => {    const identity = await unionSvc.resolveIdentity(req.user);
+  wrap(async (req, res) => {
+    const identity = await unionSvc.resolveIdentity(req.user);
     const steward = await assertMemberManager(req, identity);
-    const rows = await UnionMember.find({ status: 'active' })
-      .sort({ level: 1, schoolName: 1, departmentName: 1, deptName: 1, role: 1, realName: 1 })
-      .lean();
+    const { page, limit, skip } = parsePagination(req.query, { page: 1, limit: 20 });
     const terms = unionSvc.academicTerms();
     const currentTerm = terms.list[0] || {};
-    const list = rows
-      .filter((m) => memberManageAllowed(steward, identity, m))
-      .map((m) => {
-        const item = presentManageMember(m);
-        // 老记录没写学年：按当前学年展示，避免列表出现空字段；届次一并补齐
-        const term = terms.list.find((t) => t.termId === item.termId) || currentTerm;
-        item.termId = item.termId || currentTerm.termId || '';
-        item.termName = item.termName || term.termName || '';
-        item.sessionName = term.sessionName || '';
-        item.termLabel = term.termLabel || item.termName;
-        return item;
+
+    // ===== ① 筛选条件（服务端判定，别只信前端）=====
+    const filter = { status: 'active' };
+    // 院校（校区）：'' = 全部；'school' = 只列校级；<组织 id> = 该院校分会
+    const campus = str(req.query.campus, 40);
+    if (campus === 'school') {
+      filter.level = 'school';
+    } else if (campus && mongoose.isValidObjectId(campus)) {
+      filter.level = 'branch';
+      // ⚠️ 必须 `new mongoose.Types.ObjectId(...)`：本仓库的 mongoose 版本里
+      // ObjectId 是 ES class，直接调用会抛「Class constructor ObjectId cannot be
+      // invoked without 'new'」→ 整个接口 500（筛选一用就报错）。
+      filter.schoolId = new mongoose.Types.ObjectId(campus);
+    }
+    const deptKey = str(req.query.deptKey, 40);
+    if (deptKey) filter.deptKey = deptKey;
+    // 学年：早期成员记录没有 termId（历史数据），筛「当前学年」时要把它们一并算上，
+    // 否则一进页面默认学年就把所有人过滤掉（看起来像「成员都没了」）。与管理端同口径。
+    const termId = str(req.query.termId, 40);
+    if (termId) filter.termId = termId === terms.current ? { $in: [termId, ''] } : termId;
+    // 关键词：姓名含同音字匹配，学号 / 班级原样子串（见 services/name-search.js）
+    const keyword = str(req.query.keyword, 40);
+    if (keyword) {
+      filter.$or = nameSearch.keywordOr(keyword, {
+        nameFields: ['realName'],
+        textFields: ['studentId', 'className'],
       });
-    // 部门筛选选项也按管理范围收敛：分院干部不该在筛选里看到外校区的部门
-    //（列表本身已按 memberManageAllowed 过滤，但「能选到却永远 0 条」等于假入口）
+    }
+
+    // ===== ② 查库 + 范围过滤 =====
+    // 范围判定（memberManageAllowed）依赖 identity 展开出的院校 / 系部，Mongo 表达不了，
+    // 因此这里一次取回「满足筛选条件」的行再做范围过滤。成员量级（实测 300 上下）可控；
+    // 取回上限给护栏，避免将来成员数暴涨时把整表拖进内存。
+    const rows = await UnionMember.find(filter)
+      .sort({ level: 1, schoolName: 1, deptName: 1, role: 1, realName: 1 })
+      .limit(MEMBER_SCAN_LIMIT)
+      .lean();
+    const visible = rows.filter((m) => memberManageAllowed(steward, identity, m)).map((m) => {
+      const item = presentManageMember(m);
+      // 老记录没写学年：按当前学年展示，避免列表出现空字段；届次一并补齐
+      const term = terms.list.find((t) => t.termId === item.termId) || currentTerm;
+      item.termId = item.termId || currentTerm.termId || '';
+      item.termName = item.termName || term.termName || '';
+      item.sessionName = term.sessionName || '';
+      item.termLabel = term.termLabel || item.termName;
+      return item;
+    });
+    // ===== ③ 分页（在范围过滤之后，避免页边界随别人数据漂移）=====
+    const total = visible.length;
+    const list = visible.slice(skip, skip + limit);
+
+    // ===== ④ 筛选选项（按管理范围收敛，否则「能选到却永远 0 条」等于假入口）=====
     const scope = steward ? null : unionSvc.managerScopeOf(identity);
+    // 院校选项：各校区（organizations.type='school'）；分院干部只给本院校
+    const allCampuses = await Organization.find({ type: 'school' }).sort({ name: 1 }).select('name').lean();
+    let campusList = allCampuses.map((o) => ({ id: String(o._id), name: o.name || '' }));
+    if (scope && !scope.schoolWide) {
+      let ids = (scope.schoolIds || []).slice();
+      if (!ids.length && (scope.schoolNames || []).length) {
+        ids = campusList.filter((c) => scope.schoolNames.includes(c.name)).map((c) => c.id);
+      }
+      campusList = campusList.filter((c) => ids.includes(c.id));
+    }
     let depts = await UnionDepartment.find({ enabled: true, key: { $ne: 'presidium' } })
       .sort({ sort: 1 })
       .lean();
@@ -967,14 +1049,27 @@ router.get(
       const schools = await Organization.find({ _id: { $in: deptSchoolIds } }).select('name').lean();
       for (const s of schools) deptSchoolNames.set(String(s._id), s.name || '');
     }
+    // 学年选项：下发**全部可选学年**（当前学年 → 2024学年，只有 3 项）。
+    // ⚠️ 不要按「当前结果集里出现过的学年」收敛：那会变成自我引用 ——
+    //   选了 2025 学年后，2025 若没有任何成员，这个选项就从下拉里消失、
+    //   前端按「选项不存在」把筛选复位成「全部学年」，用户会以为「筛学年没反应」。
+    //   学年是有限枚举（每年 +1），列全比猜结果集更可靠。
+    const termOptions = terms.list;
+
     ok(res, {
-      total: list.length,
+      page,
+      limit,
+      total,
+      hasMore: skip + list.length < total,
       list,
       // 总管视角的文案：他可能不是成员，roleText 会是空的
       scopeText: steward ? '学生会总管（全校）' : identity.roleText,
+      currentTerm: terms.current,
       currentTermLabel: terms.currentLabel || '',
       currentSessionName: currentTerm.sessionName || '',
-      terms: terms.list,
+      terms: termOptions,
+      // 院校下拉：由前端拼「全部成员」「校学生会」两项（避免两端口径各写一遍）
+      schools: campusList,
       // 转移部门：校级主席团 / 总管可跨部门；分院主席团与部长仍限自己范围
       canTransfer: steward || !!identity.isPresidium,
       isSteward: !!steward,
