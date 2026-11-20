@@ -33,6 +33,21 @@ function req(rel) {
   return require(path.join(SERVER, rel));
 }
 
+/**
+ * 读源码做正则断言的**唯一**入口：一律把 CRLF 归一成 LF。
+ *
+ * ⚠️ 为什么必须归一（2026-11-19 真实踩到）：本检查器大量用
+ *   `unionRouteSrc.indexOf("router.get(\n  '/records',")` 这类**带换行的锚点**切片，
+ *   而 Windows 上 git 检出是 CRLF，源码里那是 `router.get(\r\n  '/records'` ——
+ *   锚点恒不命中 → 切片变成空串 → 一整批断言集体假失败（实测 11 条），
+ *   看起来像代码坏了，其实是检查器自己跨平台写错。
+ *   归一之后锚点在任何平台都能命中，正则里写的 \n 也才与文本一致
+ *   （`/record\.status = approve \? 'approved'[^\n]/` 这类也一样受 CRLF 影响）。
+ */
+function readSrc(file) {
+  return require('fs').readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
+}
+
 console.log('\n[1] 服务导出面');
 const services = {
   'services/check-modules': [
@@ -182,7 +197,7 @@ ok('check_modules.fields[].derived（本轮新增）', !!CheckModule.schema.path
 const FileObject = req('models/file-object');
 const fileCats = (FileObject && FileObject.CATEGORIES) || [];
 ok('files.category 含 check_photo（学生会留证照片）', fileCats.includes('check_photo'), JSON.stringify(fileCats));
-const adminFilesSrc = require('fs').readFileSync(path.join(SERVER, 'routes', 'admin', 'files.js'), 'utf8');
+const adminFilesSrc = readSrc(path.join(SERVER, 'routes', 'admin', 'files.js'), 'utf8');
 ok(
   '管理端文件统计键由 FileObject.CATEGORIES 派生（不再硬编码枚举）',
   /for \(const c of FileObject\.CATEGORIES\)/.test(adminFilesSrc)
@@ -191,7 +206,7 @@ ok(
   '删除文件会摘掉 check_records.photos 的引用（$pull，避免留裂图）',
   /\$pull: \{ photos: doc\.url \}/.test(adminFilesSrc)
 );
-const filesCatSrc = require('fs').readFileSync(
+const filesCatSrc = readSrc(
   path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'files', 'files.js'),
   'utf8'
 );
@@ -244,7 +259,7 @@ if (cm) {
   ok('check_modules 有 noRecordText 字段', !!CheckModuleModel.schema.path('noRecordText'));
   // 版本迁移与幂等补齐都必须带上这两个字段：只 +1 版本号、不写字段 = 库里永远没有
   //（本轮真实踩坑：defVersion 先到 4，随后才加字段 → 早八一直按「未录」算）
-  const seedSrc = require('fs').readFileSync(path.join(SERVER, 'services/check-modules.js'), 'utf8');
+  const seedSrc = readSrc(path.join(SERVER, 'services/check-modules.js'), 'utf8');
   const migSeg = seedSrc.slice(seedSrc.indexOf('if (curVersion < DEF_VERSION)'), seedSrc.indexOf('results.migrated += 1;'));
   const idleSeg = seedSrc.slice(seedSrc.indexOf('if (curVersion >= DEF_VERSION)'), seedSrc.indexOf('if (Object.keys(set).length)'));
   ok('版本迁移分支写入 optionalWhenMissing / noRecordText', migSeg.includes('set.optionalWhenMissing') && migSeg.includes('set.noRecordText'));
@@ -337,7 +352,7 @@ if (cm) {
   // admin 统计 100−扣分、复审档位、卫生折算…），漏改任一处就是「这页 8 分、那页 80 分」，
   // 而用户正是拿页面互相核对的。这几条断言把「真源 + 不许再出现 100」钉住。
   const fs2 = require('fs');
-  const rd = (...p) => fs2.readFileSync(path.join(...p), 'utf8');
+  const rd = (...p) => readSrc(path.join(...p));
   const MINIR = path.join(__dirname, '..', 'miniprogram');
   const ss = cm && req('services/score-scale');
   const bcSrc10 = rd(SERVER, 'services/band-chao.js');
@@ -357,15 +372,29 @@ if (cm) {
   ok('computeDeduct 折算到 FULL_SCORE（不再 ×100）', /\* FULL_SCORE \* w/.test(seedSrc) && !/\* 100 \* w/.test(seedSrc));
   ok('按人扣分只有一份实现（rate 退化路径与 deduct 模式共用）',
     (seedSrc.match(/personDeduct\(details\) \* w/g) || []).length === 2 && !/\* 0\.5;/.test(seedSrc), '又出现两份单价字面量');
-  ok('看板考勤分数用同一份迟到单价', /PERSON_DEDUCT\.late/.test(boardSrc10), '考勤分自己写了迟到单价');
-  ok('看板下发 attendance.score / lateCount', /score: attScore/.test(boardSrc10) && /lateCount: lateTotal/.test(boardSrc10));
-  // 分数与 hasData 必须同一个判定：否则「只有早八记录、没人迟到」的班显示「—」，
-  // 而迟到 3 人的班显示 9.85 —— 老师只会认为统计坏了（比显示 0 分更难解释）
-  ok('考勤分数按 hasData 判定（不是按「率与迟到都为空」推断）',
-    /function attendanceScore\(rateWeighted, lateTotal, hasData\)/.test(boardSrc10)
-      && /if \(!hasData\) return null;/.test(boardSrc10)
-      && /attendanceScore\([\s\S]{0,120}attHasData\)/.test(boardSrc10)
-      && /hasData: attHasData/.test(boardSrc10), '分数与 hasData 又分成两套判定了');
+  // ===== 班级状态看板的分数必须与班超**同一个实现**（用户 2026-11-19
+  // 「班级状态日周月考勤不一致，并且考勤的卫生、查宿等相关内容相应没有被减分」）=====
+  // 旧版这里有两套公式：看板 = 10×加权出勤率 − 迟到×0.05（只有 4 个考勤模块、**不含卫生**），
+  // 班超 = 10 − 日均扣分（全部模块）。实测同一个班同一周 9.74 vs 8.40 ——
+  // 用户就是拿两个页面对照时报障的，而且这里的数会被复制发进工作群。
+  ok('看板分数走 bandChao.scoreOfAggregate（不留第二套公式）',
+    /bandChao\.scoreOfAggregate\(/.test(boardSrc10)
+      // 反向断言：本页不许再出现「按加权率算分」的旧实现
+      && !/function attendanceScore\(/.test(boardSrc10)
+      && !/Math\.min\(1, Math\.max\(0, rateWeighted\)\) \* scoreScale\.FULL_SCORE/.test(boardSrc10),
+    '看板又自己写了一套考勤分公式');
+  ok('看板扣分聚合走 bandChao（含卫生，不是只查 4 个考勤模块）',
+    /bandChao\.aggregateScoresLite\(/.test(boardSrc10)
+      // 分数用的聚合不能带 moduleKey: { $in: MODULE_KEYS }（那正是「卫生没被减分」的机制）
+      && !/aggregateScoresLite\(\{[^}]*moduleKey/.test(boardSrc10),
+    '班超分聚合被收窄成考勤四模块');
+  ok('看板下发 attendance.deduct / deductDetail（分被谁扣掉的要看得见）',
+    /deduct: agg\.deduct/.test(boardSrc10) && /deductDetail,/.test(boardSrc10));
+  ok('扣分明细用日均扣分（与分数同分母，能算平）',
+    /modDeduct\[k\]\.avgDeduct/.test(boardSrc10) && /avgDeduct: round2\(\(hit\.deduct \|\| 0\) \/ dayCount\)/.test(bcSrc10));
+  ok('看板下发 hasAnyCheck（只录卫生的班也算有检查）',
+    /hasAnyCheck,/.test(boardSrc10) && /const hasAnyCheck = agg\.dayCount > 0/.test(boardSrc10));
+  ok('看板下发 attendance.lateCount（迟到人数仍可见）', /lateCount: lateTotal/.test(boardSrc10));
   ok('管理端记录统计走 scoreScale（不再 100 − 扣分）',
     !/100 - \(c\.deduct/.test(adminUnion10) && /scoreScale\.avgScoreOf/.test(adminUnion10));
   ok('得分文案两位小数（0.05 分不能被 round1 吞掉）', /toFixed\(2\)/.test(ssSrc10) && /function scoreText/.test(ssSrc10));
@@ -441,7 +470,7 @@ if (cm) {
     ok('非成员（教师）不可复核', !unionSvc.canReview(teacher, 'A1', '', hygKeys));
     // 申诉结案（PUT + settleAppeal）必须与 /appeal/review 同权限：只有评审者能结案
     // （此处单独读文件，避免依赖下面才声明的 unionRoutes）
-    const unionSrcForPerm = require('fs').readFileSync(path.join(SERVER, 'routes/union.js'), 'utf8');
+    const unionSrcForPerm = readSrc(path.join(SERVER, 'routes/union.js'), 'utf8');
     const putStart = unionSrcForPerm.indexOf("router.put(\n  '/records/:id'");
     const putSrc = putStart < 0 ? '' : unionSrcForPerm.slice(putStart, unionSrcForPerm.indexOf('// 取消记录', putStart));
     ok('申诉结案要求评审者（不能自己批准自己的申诉）', /if \(body\.settleAppeal === true && !isReviewer\)/.test(putSrc));
@@ -460,7 +489,7 @@ if (cm) {
     ok('副部长不可自审', unionSvc.canSelfReview({ members: [{ deptKey: 'life', role: 'vice_minister' }] }) === false);
     ok('空身份不可自审', unionSvc.canSelfReview(null) === false);
     // 详情出口与复核接口都必须按这个口径（旧实现详情页写死 `!isInspector &&`）
-    const unionRouteSrc = require('fs').readFileSync(path.join(SERVER, 'routes/union.js'), 'utf8');
+    const unionRouteSrc = readSrc(path.join(SERVER, 'routes/union.js'), 'utf8');
     ok('详情出口不再写死 !isInspector', !/canReview: !isInspector &&/.test(unionRouteSrc));
     ok('详情出口用 canSelfReview', /selfReviewOk = !isInspector \|\| unionSvc\.canSelfReview\(identity\)/.test(unionRouteSrc));
     ok('复核接口的自审拦截只对非主席团生效', /!unionSvc\.canSelfReview\(identity\)/.test(unionRouteSrc));
@@ -507,7 +536,7 @@ if (cm) {
   ok('毕业班不参加班超', !ClassProfileModel.joinsBandChao({ status: 'graduated' }));
 
   // 批量编辑接口：状态与三个跑操标记共用同一入口
-  const cpSrc = require('fs').readFileSync(path.join(SERVER, 'routes/admin/class-profile.js'), 'utf8');
+  const cpSrc = readSrc(path.join(SERVER, 'routes/admin/class-profile.js'), 'utf8');
   ok('批量编辑支持三个跑操标记', /FLAG_FIELDS\s*=\s*\[[^\]]*hasMorningExercise[^\]]*hasMorningClass[^\]]*hasMorningRun/.test(cpSrc));
   ok('批量接口同时接受 status 与 field', /const status = str\(body\.status/.test(cpSrc) && /const field = str\(body\.field/.test(cpSrc));
   ok('批量接口拒绝非法标记字段', /批量标记只支持早操 \/ 早八 \/ 参跑三项/.test(cpSrc));
@@ -528,7 +557,7 @@ if (cm) {
   ok('可选学年逐级对应届次（连续递减 1）', termsNow.list.every((t, i, arr) => i === 0 || arr[i - 1].session - t.session === 1));
 
   // 人数只读：源码里不应出现任何对 users / dorm_assignments 的写操作
-  const countsSrc = require('fs').readFileSync(path.join(SERVER, 'services/class-counts.js'), 'utf8');
+  const countsSrc = readSrc(path.join(SERVER, 'services/class-counts.js'), 'utf8');
   ok(
     '人数服务只做聚合查询，不写任何集合',
     !/\.(updateOne|updateMany|bulkWrite|insertOne|insertMany|deleteOne|deleteMany|save)\s*\(/.test(countsSrc)
@@ -536,7 +565,7 @@ if (cm) {
 }
 
 console.log('\n[4] 班级域写接口白名单');
-const classRoutes = require('fs').readFileSync(path.join(SERVER, 'routes/class.js'), 'utf8');
+const classRoutes = readSrc(path.join(SERVER, 'routes/class.js'), 'utf8');
 ok('班级域有 GET /profile', /router\.get\(\s*'\s*\/profile'/.test(classRoutes) || classRoutes.includes("'/profile'"));
 ok('班级域有 PUT /profile', classRoutes.includes("router.put(") && classRoutes.includes("'/profile'"));
 ok('班级配置可改字段为白名单', classRoutes.includes('PROFILE_FIELDS'));
@@ -558,7 +587,7 @@ ok(
 // 根因：楼名只有 GET /api/admin/config/buildings 一条读路径，挂在 building.view 下（宿管维护权限）。
 // 守住三条，别再合回去：
 {
-  const dormSvc = require('fs').readFileSync(path.join(SERVER, 'services/student-dorm.js'), 'utf8');
+  const dormSvc = readSrc(path.join(SERVER, 'services/student-dorm.js'), 'utf8');
   ok('楼名清单由 service 统一取（configuredBuildings）', /function configuredBuildings/.test(dormSvc));
   ok('宿舍面板自带楼名（不另开接口）', /configuredDormBuildings|cfgBuildings/.test(dormSvc) && /buildings/.test(dormSvc));
   // 用户 2026-11-12「班级宿舍管理与用户详情的弹窗多出来 1号楼 与 洋河，正常的只有我的班级→宿舍管理」：
@@ -571,11 +600,11 @@ ok(
   ok('只在清单为空时才退回历史楼名', /if \(!cfg\.length\)/.test(boptSeg));
   ok('buildDormPayload 走 buildingOptions（不再自己拼两份）', /buildingOptions\(/.test(dormSvc) && !/seenB/.test(dormSvc));
   // 「现住楼不在清单里」由展示层补一条 legacy 胶囊兜住（否则住在旧写法楼里的人改床位被「请先选择楼号」堵死）
-  const dormSheetJs = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'components', 'dorm-sheet', 'dorm-sheet.js'), 'utf8');
+  const dormSheetJs = readSrc(path.join(__dirname, '..', 'miniprogram', 'components', 'dorm-sheet', 'dorm-sheet.js'), 'utf8');
   ok('宿舍抽屉补「现住旧楼名」胶囊（legacy 标记）', /legacyBuilding/.test(dormSheetJs) && /legacy: true/.test(dormSheetJs));
   ok('改选标准楼名后撤掉 legacy 胶囊', /filter\(\(c\) => c && !c\.legacy\)/.test(dormSheetJs));
   // 管理端「班级管理 → 宿舍」页同样不许把全校历史楼名并进胶囊（图1 比 图3 多两块的根因）
-  const dormsPage = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'class-manage', 'dorms', 'dorms.js'), 'utf8');
+  const dormsPage = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'class-manage', 'dorms', 'dorms.js'), 'utf8');
   ok('宿舍绑定页楼号胶囊只认配置清单', !/concat\(\(data\.buildings/.test(dormsPage) && /cfgBuildings\.length/.test(dormsPage));
   ok('班级域有只读楼名接口', classRoutes.includes("'/buildings'"));
   ok('班级域的楼名接口不挂 requirePermission', classRoutesNoComment.includes("'/buildings'"));
@@ -593,7 +622,7 @@ ok(
         // 允许：楼名管理页本身、config/* 配置子页、nav-groups(只是 URL 字符串)、注释
         if (rel.startsWith('packageAdmin/config/')) continue;
         if (rel === 'utils/nav-groups.js') continue;
-        const src = require('fs').readFileSync(p, 'utf8')
+        const src = readSrc(p, 'utf8')
           .split('\n')
           .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l))
           .join('\n');
@@ -610,7 +639,7 @@ ok(
   ok('班级域宿舍写接口复用 studentDorm', /studentDorm\.assignDorm\(/.test(classRoutes) && /studentDorm\.checkoutDorm\(/.test(classRoutes));
   ok(
     '管理端宿舍写接口复用同一份 service',
-    /studentDorm\.assignDorm\(/.test(require('fs').readFileSync(path.join(SERVER, 'routes/admin/users.js'), 'utf8'))
+    /studentDorm\.assignDorm\(/.test(readSrc(path.join(SERVER, 'routes/admin/users.js'), 'utf8'))
   );
 }
 
@@ -619,7 +648,7 @@ ok(
 // 旧实现在记录详情/列表开头无条件 assertMember → 非学生会成员（班主任、班委）
 // 还没走到 sameClass / isHomeroom 的放行就被「你还不是学生会成员」拦掉，那两行永远执行不到。
 {
-  const unionRouteSrc = require('fs').readFileSync(path.join(SERVER, 'routes/union.js'), 'utf8');
+  const unionRouteSrc = readSrc(path.join(SERVER, 'routes/union.js'), 'utf8');
   const seg = (from, to) => {
     const a = unionRouteSrc.indexOf(from);
     return a < 0 ? '' : unionRouteSrc.slice(a, unionRouteSrc.indexOf(to, a));
@@ -632,7 +661,7 @@ ok(
     '详情放行条件含 本班学生/班委 + 班主任 + 检查人 + 学生会总管',
     /if \(!inScope && !sameClass && !isHomeroom && !isInspector && !isStewardViewer\)/.test(detailSeg)
   );
-  ok('总管可查看记录（列表全校 / 详情放行）', /await isRecordSteward\(req, identity\)/.test(detailSeg || '') || /isRecordSteward/.test(require('fs').readFileSync(path.join(SERVER, 'routes/union.js'), 'utf8')));
+  ok('总管可查看记录（列表全校 / 详情放行）', /await isRecordSteward\(req, identity\)/.test(detailSeg || '') || /isRecordSteward/.test(readSrc(path.join(SERVER, 'routes/union.js'), 'utf8')));
   ok('非成员不会因 level 被误判为在范围内', /!!identity\.isMember &&/.test(detailSeg));
   ok('记录列表不再无条件 assertMember', !!listSeg && !/assertMember\(identity\)/.test(listSeg));
   ok('非成员的列表范围按 className $in 收敛', /className: \{ \$in: classes \}/.test(listSeg));
@@ -647,18 +676,18 @@ ok(
 }
 
 console.log('\n[5] 管理端与登录出口');
-const authRoutes = require('fs').readFileSync(path.join(SERVER, 'routes/auth.js'), 'utf8');
+const authRoutes = readSrc(path.join(SERVER, 'routes/auth.js'), 'utf8');
 ok('/api/auth/me 下发 isUnionMember', authRoutes.includes('decorateUser'));
 ok('/me 仍走 toSafeJSON（不下发凭据哈希）', authRoutes.includes('toSafeJSON'));
-const permModel = require('fs').readFileSync(path.join(SERVER, 'models/permission.js'), 'utf8');
+const permModel = readSrc(path.join(SERVER, 'models/permission.js'), 'utf8');
 ok('权限目录含 union.view', permModel.includes("'union.view'"));
 ok('权限目录含 union.manage', permModel.includes("'union.manage'"));
 
 // ===== 内置权限组可编辑（用户 2026-10-20 修订，旧规则是「只读、每次启动覆盖」）=====
 {
-  const pgModelSrc = require('fs').readFileSync(path.join(SERVER, 'models/permission-group.js'), 'utf8');
-  const pgRouteSrc = require('fs').readFileSync(path.join(SERVER, 'routes/admin/permission-groups.js'), 'utf8');
-  const rbacSrc = require('fs').readFileSync(path.join(SERVER, 'services/rbac.js'), 'utf8');
+  const pgModelSrc = readSrc(path.join(SERVER, 'models/permission-group.js'), 'utf8');
+  const pgRouteSrc = readSrc(path.join(SERVER, 'routes/admin/permission-groups.js'), 'utf8');
+  const rbacSrc = readSrc(path.join(SERVER, 'services/rbac.js'), 'utf8');
   ok('权限组模型有 customized 字段', !!pgModelSrc.includes('customized: { type: Boolean'));
   // 关键：放开编辑必须配套改播种，否则改动在下次重启被静默抹掉（假生效，比不能改更糟）
   ok('播种跳过已改过的内置组', /exists\.customized\) continue/.test(rbacSrc));
@@ -669,7 +698,7 @@ ok('权限目录含 union.manage', permModel.includes("'union.manage'"));
   ok('保存内置组时打 customized 标记', /if \(doc\.builtIn\) doc\.customized = true/.test(pgRouteSrc));
   ok('内置组仍不可删除', /if \(doc\.builtIn\) throw new ApiError\(400, 400, '内置权限组不可删除'\)/.test(pgRouteSrc));
   // 前端同步：编辑按钮不再按 builtIn 隐藏，但 superadmin 仍锁
-  const groupsWxml = require('fs').readFileSync(
+  const groupsWxml = readSrc(
     path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'permissions', 'groups.wxml'),
     'utf8'
   );
@@ -683,16 +712,16 @@ const PermModel = require(path.join(SERVER, 'models/permission'));
 ok('union.steward 蕴含 union.view + union.manage', JSON.stringify(PermModel.PERM_IMPLIES['union.steward']) === JSON.stringify(['union.view', 'union.manage']));
 ok('蕴含展开只升不降', PermModel.expandImplies(['union.view']).join(',') === 'union.view');
 ok('蕴含展开对 steward 生效', ['union.view', 'union.manage'].every((p) => PermModel.expandImplies(['union.steward']).includes(p)));
-const userSrc = require('fs').readFileSync(path.join(SERVER, 'models/user.js'), 'utf8');
+const userSrc = readSrc(path.join(SERVER, 'models/user.js'), 'utf8');
 ok('有效权限在唯一出口做蕴含展开（三条链路自动一致）', userSrc.includes('Permission.expandImplies'));
-const unionStewardSrc = require('fs').readFileSync(path.join(SERVER, 'routes/union.js'), 'utf8');
+const unionStewardSrc = readSrc(path.join(SERVER, 'routes/union.js'), 'utf8');
 ok('用户端成员管理允许总管（非成员）', /const steward = await assertMemberManager\(req, identity\)/.test(unionStewardSrc));
 ok('总管放行范围＝全校', /return isStewardScope \|\| unionSvc\.memberInManageScope/.test(unionStewardSrc));
 ok('成员管理拒绝文案含总管', /只有主席团、部门部长或学生会总管可以调整成员/.test(unionStewardSrc));
 
 // ===== 用户管理：班级状态 / 身份 / 批量操作（用户 2026-10-20）=====
 {
-  const adminUsers = require('fs').readFileSync(path.join(SERVER, 'routes/admin/users.js'), 'utf8');
+  const adminUsers = readSrc(path.join(SERVER, 'routes/admin/users.js'), 'utf8');
   // 列表行必须带班级状态与学生会身份（否则管理员看不出这个班是实习/毕业）
   ok('列表附带班级状态与学生会身份', /attachClassAndUnion\(list\)/.test(adminUsers));
   ok('班级状态与宿舍/目标并发批量补（无 N+1）', /Promise\.all\(\[attachGoals\(list\), attachDorms\(list\), attachClassAndUnion\(list\)\]\)/.test(adminUsers));
@@ -711,14 +740,14 @@ ok('成员管理拒绝文案含总管', /只有主席团、部门部长或学生
   // 单条 / 批量 / 班级域（班主任管本班学生）三方必须共用同一实现
   // （否则会出现「单条会恢复 initialHashes、批量不会」「管理端吊销设备令牌、班级域不吊销」的分裂）。
   // 实现自 2026-10-22 起收敛在 services/user-account-admin.js，路由只做鉴权与取参。
-  const accountAdminSvc = require('fs').readFileSync(path.join(SERVER, 'services/user-account-admin.js'), 'utf8');
+  const accountAdminSvc = readSrc(path.join(SERVER, 'services/user-account-admin.js'), 'utf8');
   ok('删除级联只有一份实现', (accountAdminSvc.match(/RunRecord\.deleteMany/g) || []).length === 1);
   ok('重置密码只有一份实现', (accountAdminSvc.match(/user\.mustChangePassword = true/g) || []).length === 1);
   ok('路由不再自己实现删除级联', !/async function deleteUserCascade/.test(adminUsers) && !/RunRecord\.deleteMany/.test(adminUsers));
   ok('批量复用 deleteUserCascade', /await accountAdmin\.deleteUserCascade\(user\)/.test(adminUsers));
   ok('批量复用 resetUserPassword', /await accountAdmin\.resetUserPassword\(user\)/.test(adminUsers));
   // 班级域（班主任）也必须复用同一份实现，而不是另写一套
-  const classRouteSrc = require('fs').readFileSync(path.join(SERVER, 'routes/class.js'), 'utf8');
+  const classRouteSrc = readSrc(path.join(SERVER, 'routes/class.js'), 'utf8');
   ok(
     '班级域复用同一份密码变更实现',
     /accountAdmin\.changeUserPassword\(/.test(classRouteSrc) || /accountAdmin\.resetUserPassword\(/.test(classRouteSrc)
@@ -731,7 +760,7 @@ ok('成员管理拒绝文案含总管', /只有主席团、部门部长或学生
 }
 
 console.log('\n[6] 检查记录留痕（复核人 / 复核时间 / history 出口）');
-const unionRoutes = require('fs').readFileSync(path.join(SERVER, 'routes/union.js'), 'utf8');
+const unionRoutes = readSrc(path.join(SERVER, 'routes/union.js'), 'utf8');
 ok('复核写入 reviewedByName / reviewedAt', /record\.reviewedByName = /.test(unionRoutes) && /record\.reviewedAt = new Date\(\)/.test(unionRoutes));
 // history 必须能在详情页读到：presentRecord 里要有 base.history，且只在 withDetails 分支
 const presentSrc = unionRoutes.slice(unionRoutes.indexOf('function presentRecord'), unionRoutes.indexOf('function fingerprint'));
@@ -766,8 +795,8 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
 
 // ===== 同名账号登录消歧（用户 2026-10-20「学生与教师账号重名」）=====
 {
-  const authRoutes = require('fs').readFileSync(path.join(SERVER, 'routes/auth.js'), 'utf8');
-  const loginPage = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'pages', 'auth-login', 'auth-login.js'), 'utf8');
+  const authRoutes = readSrc(path.join(SERVER, 'routes/auth.js'), 'utf8');
+  const loginPage = readSrc(path.join(__dirname, '..', 'miniprogram', 'pages', 'auth-login', 'auth-login.js'), 'utf8');
   const bindSeg = (authRoutes.match(/router\.post\(\s*'\/bind'[\s\S]*?\n\);/) || [''])[0];
   ok('/bind 接收 studentId 收窄候选', /studentId/.test(bindSeg) && /all\.filter\(\(u\) => String\(u\.studentId/.test(bindSeg));
   ok('歧义时要求补学号（400902）而非盲选', /NEED_STUDENT_ID = 400902/.test(authRoutes) && /matched\.length > 1\)/.test(bindSeg));
@@ -789,7 +818,7 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
 
 // ===== 批量转移：目标值必须存在于组织架构（用户 2026-10-21「组织架构只能有有权限的更改」）=====
 {
-  const batchSrc = require('fs').readFileSync(path.join(SERVER, 'routes/admin/users.js'), 'utf8');
+  const batchSrc = readSrc(path.join(SERVER, 'routes/admin/users.js'), 'utf8');
   const transferSeg = (batchSrc.match(/\} else if \(action === 'transfer'\) \{[\s\S]*?\n        \} else if/) || [''])[0];
   ok('转移不再无条件 String(x).trim() 落库', !/user\.schoolName = String\(school\)\.trim\(\)/.test(transferSeg), '仍可写入任意字符串');
   ok('转移走组织架构解析', /resolveTransferTarget\(orgSchools/.test(transferSeg));
@@ -810,7 +839,7 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
 
 // ===== 筛选选项的实时人数（用户 2026-10-21「括号中的人数要根据筛选实时计算才对」）=====
 {
-  const uSrc = require('fs').readFileSync(path.join(SERVER, 'routes/admin/users.js'), 'utf8');
+  const uSrc = readSrc(path.join(SERVER, 'routes/admin/users.js'), 'utf8');
   const listSeg = (uSrc.match(/router\.get\(\s*'\/',[\s\S]*?\n\);/) || [''])[0];
   ok('列表条件构造抽成共用函数', /async function buildUserMatch\(q, omit\)/.test(uSrc));
   ok('列表路由改用共用条件构造', /await buildUserMatch\(req\.query, null\)/.test(listSeg));
@@ -831,10 +860,10 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
 
 // ===== 学生会部门去内置 + 职责可自助配置（用户 2026-10-21「这几个内置应该不需要内置」）=====
 {
-  const deptModel = require('fs').readFileSync(path.join(SERVER, 'models/union-department.js'), 'utf8');
-  const unionSvcSrc = require('fs').readFileSync(path.join(SERVER, 'services/union.js'), 'utf8');
-  const cmSrc2 = require('fs').readFileSync(path.join(SERVER, 'services/check-modules.js'), 'utf8');
-  const auSrc = require('fs').readFileSync(path.join(SERVER, 'routes/admin/union.js'), 'utf8');
+  const deptModel = readSrc(path.join(SERVER, 'models/union-department.js'), 'utf8');
+  const unionSvcSrc = readSrc(path.join(SERVER, 'services/union.js'), 'utf8');
+  const cmSrc2 = readSrc(path.join(SERVER, 'services/check-modules.js'), 'utf8');
+  const auSrc = readSrc(path.join(SERVER, 'routes/admin/union.js'), 'utf8');
   const seedSeg = (unionSvcSrc.match(/async function seedUnionDepartments\(\) \{[\s\S]*?\n\}/) || [''])[0];
 
   // 只有主席团还是内置（它的 key 被 20 处代码当语义常量用于复核权限判定）
@@ -859,15 +888,15 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('主席团不可删除', /主席团不可删除/.test(auSrc));
   ok('删除前检查模块引用（防 entryDeptKeys 悬空）', /CheckModule\.find\(\{ entryDeptKeys: doc\.key \}\)/.test(auSrc));
   // 前端显示中文职责名 + 区分「按设计不参与录入」与「未配置」
-  const cfgJs = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'config', 'config.js'), 'utf8');
+  const cfgJs = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'config', 'config.js'), 'utf8');
   ok('前端用 dutyNames（中文）', /dutyText:[\s\S]{0,200}dutyNames/.test(cfgJs) && !/dutyModules \|\| \[\]\)\.join/.test(cfgJs));
   ok('前端区分不参与录入与未配置', /noEntryByDesign/.test(cfgJs) && /未配置/.test(cfgJs));
 }
 
 // ===== 部门按校区独立（用户 2026-10-21「所有部门都是一个、只是在不同校区显示，需要互不干扰」）=====
 {
-  const deptModel2 = require('fs').readFileSync(path.join(SERVER, 'models/union-department.js'), 'utf8');
-  const auSrc2 = require('fs').readFileSync(path.join(SERVER, 'routes/admin/union.js'), 'utf8');
+  const deptModel2 = readSrc(path.join(SERVER, 'models/union-department.js'), 'utf8');
+  const auSrc2 = readSrc(path.join(SERVER, 'routes/admin/union.js'), 'utf8');
   const fitFn = (auSrc2.match(/function assertDeptFitsCampus\([\s\S]*?\n\}/) || [''])[0];
 
   ok('部门模型有 schoolId（归属校区）', /schoolId: \{ type: mongoose\.Schema\.Types\.ObjectId, ref: 'Organization'/.test(deptModel2));
@@ -893,10 +922,10 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('删部门前检查模块引用', /CheckModule\.find\(\{ entryDeptKeys: doc\.key \}\)/.test(auSrc2));
 
   // 前端：配置页与成员页共用同一份归属判定（两页各写必然漂移）
-  const deptUtil = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'utils', 'union-dept.js'), 'utf8');
+  const deptUtil = readSrc(path.join(__dirname, '..', 'miniprogram', 'utils', 'union-dept.js'), 'utf8');
   ok('抽出共享判定 utils/union-dept', /function deptFitsCampus/.test(deptUtil));
-  const cfgPage = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'config', 'config.js'), 'utf8');
-  const memPage = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'members', 'members.js'), 'utf8');
+  const cfgPage = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'config', 'config.js'), 'utf8');
+  const memPage = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'members', 'members.js'), 'utf8');
   ok('配置页用共享判定', /require\('\.\.\/\.\.\/\.\.\/utils\/union-dept'\)/.test(cfgPage) && /deptFitsCampus\(dept, root\.isAll/.test(cfgPage));
   ok('成员页用共享判定', /require\('\.\.\/\.\.\/\.\.\/utils\/union-dept'\)/.test(memPage) && /deptFitsCampus\(d, campusOfMember\)/.test(memPage));
   ok(
@@ -911,11 +940,11 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
 
 // ===== 班主任班级 TAB 能力（用户 2026-10-24「示例教师1 没有本班操作权限/班级TAB没配置」）=====
 {
-  const clsRoute = require('fs').readFileSync(path.join(SERVER, 'routes/class.js'), 'utf8');
-  const usersRoute = require('fs').readFileSync(path.join(SERVER, 'routes/admin/users.js'), 'utf8');
-  const rolesSvc = require('fs').readFileSync(path.join(SERVER, 'services/class-roles.js'), 'utf8');
-  const detailJs = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'user-detail', 'user-detail.js'), 'utf8');
-  const detailWxml = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'user-detail', 'user-detail.wxml'), 'utf8');
+  const clsRoute = readSrc(path.join(SERVER, 'routes/class.js'), 'utf8');
+  const usersRoute = readSrc(path.join(SERVER, 'routes/admin/users.js'), 'utf8');
+  const rolesSvc = readSrc(path.join(SERVER, 'services/class-roles.js'), 'utf8');
+  const detailJs = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'user-detail', 'user-detail.js'), 'utf8');
+  const detailWxml = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'user-detail', 'user-detail.wxml'), 'utf8');
 
   // 单一实现：班委/班主任校验只在 services/class-roles.js 一份，两个入口都调它
   ok('class-roles 单一实现（学生校验）', /只有学生账号可以设为班委/.test(rolesSvc));
@@ -933,21 +962,21 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   // 班级 TAB：班主任（caps.classOfficer）也渲染班委块；班主任班级仍只归管理员
   ok('班级TAB门控含 caps.classOfficer', /canManageClass \|\| caps\.classOfficer/.test(detailWxml));
   // 班委在用户详情页排宿舍（用户 2026-10-24：入口画得出来、一点却弹「只有班主任或管理员」）
-  const detailSrc = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'user-detail', 'user-detail.js'), 'utf8');
+  const detailSrc = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'user-detail', 'user-detail.js'), 'utf8');
   ok('宿舍守卫只认 caps.dorm', !/canDorm = this\.data\.canManageUser \|\| this\.data\.canManageStudent/.test(detailSrc) && (detailSrc.match(/if \(!this\.data\.caps\.dorm\)/g) || []).length >= 2);
   ok('宿舍面板数据源含 overview（班委）', /\(manage && manage\.dorm\) \|\| \(overview && overview\.dorm\)/.test(detailSrc));
   ok('班级域不重算 wechatBound', /this\.data\.classOnly\s*\?\s*this\.data\.dormWechatBound/.test(detailSrc));
-  ok('「仅查看」标签按能力判断', !/classOnly && !canManageStudent/.test(require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'user-detail', 'user-detail.wxml'), 'utf8')));
+  ok('「仅查看」标签按能力判断', !/classOnly && !canManageStudent/.test(readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'user-detail', 'user-detail.wxml'), 'utf8')));
   // 督促未达标对班委开放（用户 2026-10-24「班委需要能查看校园跑未达标的学生」）
   ok('capabilities.nudge 班委也放行', /nudge: !!role/.test(clsRoute));
   ok('canNudge 全部端点含班委', (clsRoute.match(/canNudge: scope\.isHomeroom \|\| scope\.isOfficer/g) || []).length >= 4 && !/canNudge: scope\.isHomeroom,/.test(clsRoute));
-  ok('前端 canNudge 读 capabilities', /mine\.capabilities \? !!mine\.capabilities\.nudge/.test(require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'class', 'class.js'), 'utf8')));
+  ok('前端 canNudge 读 capabilities', /mine\.capabilities \? !!mine\.capabilities\.nudge/.test(readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'class', 'class.js'), 'utf8')));
   ok('班主任班级入口仍只归管理员', /ud-pick-row" wx:if="\{\{canManageClass\}\}" bind:tap="openClassSheet"/.test(detailWxml));
 }
 
 // ===== 学生会录入抽屉：拍照返回不得关掉抽屉（用户 2026-10-24「上传到 100% 时弹窗被关掉」）=====
 {
-  const entryJs = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageUnion', 'entry', 'entry.js'), 'utf8');
+  const entryJs = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageUnion', 'entry', 'entry.js'), 'utf8');
   const onShowBlock = (entryJs.match(/onShow\(\) \{[\s\S]{0,600}?\n  \},/) || [''])[0];
   ok('录入抽屉 onShow 不重置', /if \(this\.data\.showForm\) return;/.test(onShowBlock));
   ok('onShow 仍会刷新列表（关抽屉时）', /this\.load\(\);/.test(onShowBlock));
@@ -961,20 +990,20 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
 
 // ===== 相册照片仍失败：检查照片也必须压缩 + 上限过小（用户 2026-10-26 第五轮）=====
 {
-  const entrySrc4 = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageUnion', 'entry', 'entry.js'), 'utf8');
-  const routeUpSrc2 = require('fs').readFileSync(path.join(SERVER, 'routes/upload.js'), 'utf8');
+  const entrySrc4 = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageUnion', 'entry', 'entry.js'), 'utf8');
+  const routeUpSrc2 = readSrc(path.join(SERVER, 'routes/upload.js'), 'utf8');
   // 不写死带真实域名的文件名（AGENTS.md：被 git 跟踪的文件不许出现真实域名）。
   // 直接扫描 deploy/nginx/ 下的 *.conf —— 该目录不入库，测试只在开发者本机跑到。
   const nginxSrc = (() => {
     const dir = path.join(__dirname, '..', 'deploy', 'nginx');
     try {
       const f = require('fs').readdirSync(dir).find((n) => n.endsWith('.conf'));
-      return f ? require('fs').readFileSync(path.join(dir, f), 'utf8') : '';
+      return f ? readSrc(path.join(dir, f), 'utf8') : '';
     } catch (e) {
       return '';
     }
   })();
-  const envEx = require('fs').readFileSync(path.join(__dirname, '..', 'server', '.env.example'), 'utf8');
+  const envEx = readSrc(path.join(__dirname, '..', 'server', '.env.example'), 'utf8');
 
   // 2026-11-12 用户「解除所有上传照片的限制」：原图直传，不再压缩 / 不再限张数 / 不再限体积。
   // 反向断言同样重要：任何一条限制被"顺手"加回来，这里都会 FAIL。
@@ -988,7 +1017,7 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('nginx client_max_body_size 0（不限制）', /client_max_body_size\s+0;/.test(nginxSrc));
 // ===== 后台定位接口必须声明（用户 2026-10-28 发布受阻）=====
 {
-  const appJsonRaw = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'app.json'), 'utf8');
+  const appJsonRaw = readSrc(path.join(__dirname, '..', 'miniprogram', 'app.json'), 'utf8');
   const appJ = JSON.parse(appJsonRaw.replace(/\/\/.*$/gm, ''));
   const jp = appJ.requiredPrivateInfos || [];
   // 代码里调了 wx.startLocationUpdateBackground，就必须同时满足两个声明，
@@ -998,27 +1027,27 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('前台定位接口仍声明（降级路径可用）', jp.includes('startLocationUpdate') && jp.includes('onLocationChange'));
   ok('定位弹窗有文案', !!(appJ.permission && appJ.permission['scope.userLocation'] && appJ.permission['scope.userLocation'].desc));
   // 代码里确实在使用后台定位（否则这条声明就没意义）
-  const runPage = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'pages', 'run', 'index.js'), 'utf8');
+  const runPage = readSrc(path.join(__dirname, '..', 'miniprogram', 'pages', 'run', 'index.js'), 'utf8');
   ok('代码优先用后台定位、失败退回前台', /wx\.startLocationUpdateBackground/.test(runPage) && /startForeground/.test(runPage));
   // 静态检查器必须有这道反查（防止以后新增定位 API 又漏声明）
-  const appChecker = require('fs').readFileSync(path.join(__dirname, 'check-app-json.js'), 'utf8');
+  const appChecker = readSrc(path.join(__dirname, 'check-app-json.js'), 'utf8');
   ok('check-app-json 会反查未声明的定位接口', /requiredPrivateInfos 未声明/.test(appChecker));
 }
 
 // ===== 控制台 B 端布局 + 配置缓存自检 + GPS 指标 + 升级进度（用户 2026-11-02）=====
 {
-  const consoleHtml = require('fs').readFileSync(path.join(SERVER, '..', 'public/console/index.html'), 'utf8');
-  const consoleCss = require('fs').readFileSync(path.join(SERVER, '..', 'public/console/app.css'), 'utf8');
-  const consoleRoute = require('fs').readFileSync(path.join(SERVER, 'routes/console.js'), 'utf8');
-  const runRoute = require('fs').readFileSync(path.join(SERVER, 'routes/run.js'), 'utf8');
-  const gpsSvc = require('fs').readFileSync(path.join(SERVER, 'services/gps-metrics.js'), 'utf8');
-  const adminUsersRoute = require('fs').readFileSync(path.join(SERVER, 'routes/admin/users.js'), 'utf8');
-  const classRoute = require('fs').readFileSync(path.join(SERVER, 'routes/class.js'), 'utf8');
-  const consoleAppJs = require('fs').readFileSync(path.join(SERVER, '..', 'public/console/app.js'), 'utf8');
-  const appSrc = require('fs').readFileSync(path.join(SERVER, 'app.js'), 'utf8');
-  const modelSrc2 = require('fs').readFileSync(path.join(SERVER, 'services/anticheat-model.js'), 'utf8');
-  const runDetailJs = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'pages', 'run', 'detail.js'), 'utf8');
-  const runDetailWxml = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'pages', 'run', 'detail.wxml'), 'utf8');
+  const consoleHtml = readSrc(path.join(SERVER, '..', 'public/console/index.html'), 'utf8');
+  const consoleCss = readSrc(path.join(SERVER, '..', 'public/console/app.css'), 'utf8');
+  const consoleRoute = readSrc(path.join(SERVER, 'routes/console.js'), 'utf8');
+  const runRoute = readSrc(path.join(SERVER, 'routes/run.js'), 'utf8');
+  const gpsSvc = readSrc(path.join(SERVER, 'services/gps-metrics.js'), 'utf8');
+  const adminUsersRoute = readSrc(path.join(SERVER, 'routes/admin/users.js'), 'utf8');
+  const classRoute = readSrc(path.join(SERVER, 'routes/class.js'), 'utf8');
+  const consoleAppJs = readSrc(path.join(SERVER, '..', 'public/console/app.js'), 'utf8');
+  const appSrc = readSrc(path.join(SERVER, 'app.js'), 'utf8');
+  const modelSrc2 = readSrc(path.join(SERVER, 'services/anticheat-model.js'), 'utf8');
+  const runDetailJs = readSrc(path.join(__dirname, '..', 'miniprogram', 'pages', 'run', 'detail.js'), 'utf8');
+  const runDetailWxml = readSrc(path.join(__dirname, '..', 'miniprogram', 'pages', 'run', 'detail.wxml'), 'utf8');
 
   // ① 控制台是 B 端布局（侧边栏 + 内容区），不是顶部横条
   ok('控制台有侧边栏', /class="sidebar"/.test(consoleHtml) && /<aside/.test(consoleHtml));
@@ -1070,16 +1099,22 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   // ===== 标注与「移出待研判」联动（用户 2026-11-02「标注后依然显示待研判」）=====
   // ===== 复审台照片隐私：队列必须按权限裁剪（宿舍原图不下发给无权者）=====
   {
-    const urSrc = require('fs').readFileSync(path.join(SERVER, 'routes/union.js'), 'utf8');
-    // 队列与详情都走同一份 cropPhotos（判定不在前端，也不各写一套）
-    ok('复审队列按权限裁剪照片', /review\/queue[\s\S]{0,3000}unionSvc\.cropPhotos/.test(urSrc));
+    const urSrc = readSrc(path.join(SERVER, 'routes/union.js'), 'utf8');
+    // ⚠️ 不要用「从 '/review/queue' 往后跳 N 个字符」的窗口正则：
+    //   窗口大小写死成 3000 之后，队列里每加一个下发字段（本轮加 roster）都会把它顶出去，
+    //   于是断言变成「代码没问题、检查器自己红了」的假失败 —— 而且下次改回来时窗口又被放大，
+    //   离真相越来越远。正确做法是按**路由边界切片**（queue 段 = '/review/queue' 到 '/review/batch'）。
+    const qStart = urSrc.indexOf("'/review/queue'");
+    const qEnd = urSrc.indexOf("'/review/batch'");
+    const queueSection = qStart >= 0 && qEnd > qStart ? urSrc.slice(qStart, qEnd) : '';
+    ok('复审队列按权限裁剪照片', /unionSvc\.cropPhotos/.test(queueSection), `队列段长度=${queueSection.length}`);
     ok('队列只下发前 3 张照片', /photos: photoView\.photos\.slice\(0, 3\)/.test(urSrc));
     ok('无权者零原图 URL（photosBlurred 标记）', /photosBlurred: photoView\.photosBlurred/.test(urSrc));
-    ok('照片裁剪判定单点在 services/union.js', /function cropPhotos/.test(require('fs').readFileSync(path.join(SERVER, 'services/union.js'), 'utf8')));
+    ok('照片裁剪判定单点在 services/union.js', /function cropPhotos/.test(readSrc(path.join(SERVER, 'services/union.js'), 'utf8')));
   }
   {
-    const disposalSrc = require('fs').readFileSync(path.join(SERVER, 'services/anomaly-disposal.js'), 'utf8');
-    const cApp = require('fs').readFileSync(path.join(SERVER, '..', 'public/console/app.js'), 'utf8');
+    const disposalSrc = readSrc(path.join(SERVER, 'services/anomaly-disposal.js'), 'utf8');
+    const cApp = readSrc(path.join(SERVER, '..', 'public/console/app.js'), 'utf8');
     // normal / device 都要移出队列（旧实现只移 device，normal 标完仍显示「待研判」）
     ok('标注 normal 会移出待研判', /label === 'normal' \|\| label === 'device'[\s\S]{0,120}status = 'dismissed'/.test(disposalSrc));
     // 改判回滚：dismissed 改标 cheat/minor 要回到队列（否则误点正常后无法再封禁）
@@ -1095,8 +1130,8 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
       /r\.label === 'cheat' \|\| r\.label === 'minor'[\s\S]{0,120}已判定 · 待处置/.test(cApp)
     );
     // 两端共用一份实现（禁止各写一套）
-    const adminRoute = require('fs').readFileSync(path.join(SERVER, 'routes/admin/step-anomalies.js'), 'utf8');
-    const consoleRoute2 = require('fs').readFileSync(path.join(SERVER, 'routes/console.js'), 'utf8');
+    const adminRoute = readSrc(path.join(SERVER, 'routes/admin/step-anomalies.js'), 'utf8');
+    const consoleRoute2 = readSrc(path.join(SERVER, 'routes/console.js'), 'utf8');
     ok('小程序侧复用 disposal', /disposal\.labelAnomaly/.test(adminRoute));
     ok('控制台侧复用 disposal', /disposal\.labelAnomaly/.test(consoleRoute2));
   }
@@ -1109,14 +1144,29 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
 
 // ===== 申诉解封重置重犯时钟 + AI 严谨度可调（用户 2026-10-28）=====
 {
-  const acSrc = require('fs').readFileSync(path.join(SERVER, 'services/anticheat.js'), 'utf8');
-  const modelSrc = require('fs').readFileSync(path.join(SERVER, 'services/anticheat-model.js'), 'utf8');
-  const cfgSrc = require('fs').readFileSync(path.join(SERVER, 'models/goal-config.js'), 'utf8');
-  const acPageJs = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'config', 'anticheat.js'), 'utf8');
-  const cfgRoute = require('fs').readFileSync(path.join(SERVER, 'routes/admin/config.js'), 'utf8');
+  const acSrc = readSrc(path.join(SERVER, 'services/anticheat.js'), 'utf8');
+  const modelSrc = readSrc(path.join(SERVER, 'services/anticheat-model.js'), 'utf8');
+  const cfgSrc = readSrc(path.join(SERVER, 'models/goal-config.js'), 'utf8');
+  const acPageJs = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'config', 'anticheat.js'), 'utf8');
+  const cfgRoute = readSrc(path.join(SERVER, 'routes/admin/config.js'), 'utf8');
 
   // ① 解封必须清空 at，否则「刚解封就处于 24h 内已违规」→ 再触发一次直接升级限制登录
-  ok('解封会清空 24h 重犯时钟', /at: null, count: r\.count \|\| 0/.test(acSrc));
+  // ⚠️ 断言改成**结构化**：取 lift() 里重置 restrictions[s] 的那段对象字面量，
+  //   再逐项检查语义（at: null / liftedAt 有写 / count 保留）。
+  //   旧写法匹配一整行 `at: null, count: r.count || 0` —— 本轮加 liftedAt 字段把对象拆成多行，
+  //   断言立刻假红（代码行为完全正确）。这类「格式一变就红」的断言比不测更糟：
+  //   会被当成已知失败忽略掉，真正回归时反而看不出来。
+  const liftBody = (acSrc.match(/async function lift\([\s\S]*?\n\}/) || [''])[0];
+  ok('解封会清空 24h 重犯时钟（at 置空）', /at:\s*null/.test(liftBody), liftBody.slice(0, 300));
+  ok('解封保留累计次数 count（它是历史累犯次数，不是升级判据）', /count:\s*r\.count\s*\|\|\s*0/.test(liftBody));
+  // 2026-11-19：解封必须留「解封时刻」—— 自动封禁侧靠它判断「这批数据已被人工推翻」。
+  // 两个字段各管一件事（at 管升级时钟、liftedAt 管重复封禁闸门），**绝不能合并**。
+  ok('解封写 liftedAt（防「解封后同一天数据又被封」的唯一凭据）',
+    /liftedAt:\s*now/.test(liftBody), (liftBody.match(/liftedAt[^\n]*/) || ['缺 liftedAt'])[0]);
+  ok('解封不清除已有的 liftedAt（新违规不抹掉「已被推翻」的凭据）',
+    /liftedAt:\s*prev\.liftedAt\s*\|\|\s*null/.test(acSrc));
+  ok('限制登录（login 档）解封写 banLiftedAt',
+    /user\.banLiftedAt = now;/.test(liftBody), (liftBody.match(/banLiftedAt[^\n]*/) || ['缺 banLiftedAt'])[0]);
   ok('升级判据仍看 at（原设计保留）', /const recent = prev\.at && now\.getTime\(\)/.test(acSrc));
 
   // ② AI 严谨度四档可调
@@ -1141,14 +1191,14 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   })());
 
   // ③ 微信同步合并窗口（报告用，非断言性的行为说明）
-  const stepsSrc = require('fs').readFileSync(path.join(SERVER, 'services/steps.js'), 'utf8');
+  const stepsSrc = readSrc(path.join(SERVER, 'services/steps.js'), 'utf8');
   ok('1 小时内同步合并为同一条记录', /SYNC_WINDOW_MS = 60 \* 60 \* 1000/.test(stepsSrc) && /const merge = !!last && now - lastAt < SYNC_WINDOW_MS/.test(stepsSrc));
 }
 
 // ===== 班级名规范化（用户 2026-10-28「25班不是25级班，数据不匹配」）=====
 {
-  const rosterSrc = require('fs').readFileSync(path.join(SERVER, 'services/roster.js'), 'utf8');
-  const fixTool = require('fs').readFileSync(path.join(__dirname, 'fix-class-names.js'), 'utf8');
+  const rosterSrc = readSrc(path.join(SERVER, 'services/roster.js'), 'utf8');
+  const fixTool = readSrc(path.join(__dirname, 'fix-class-names.js'), 'utf8');
 
   // 权威口径：班级名 = 「年级后两位 + 级 + 专业」（services/roster.js::classNameFromGradeSpecialty）
   ok('班级名权威格式含「级」字', /const prefix = `\$\{g\.slice\(-2\)\}级\$\{s\}`/.test(rosterSrc));
@@ -1162,8 +1212,8 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
 
 // ===== 用户管理「封禁」筛选 + 成员页接口（用户 2026-10-28）=====
 {
-  const usersRoute = require('fs').readFileSync(path.join(SERVER, 'routes/admin/users.js'), 'utf8');
-  const mmJs2 = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'members', 'members.js'), 'utf8');
+  const usersRoute = readSrc(path.join(SERVER, 'routes/admin/users.js'), 'utf8');
+  const mmJs2 = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'members', 'members.js'), 'utf8');
 
   // ① 封禁筛选必须覆盖三种限制（login/sync/gps），不能只匹配 status='banned'
   ok('封禁筛选包含单项限制', /q\.status === 'banned'[\s\S]{0,700}restrictions\.sync\.until/.test(usersRoute));
@@ -1181,9 +1231,9 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
 
 // ===== 学生会成员入口的三级口径（用户 2026-10-28 最终版）=====
 {
-  const navSrc2 = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'utils', 'nav-groups.js'), 'utf8');
-  const mmJs = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'members', 'members.js'), 'utf8');
-  const svcUnion = require('fs').readFileSync(path.join(SERVER, 'services/union.js'), 'utf8');
+  const navSrc2 = readSrc(path.join(__dirname, '..', 'miniprogram', 'utils', 'nav-groups.js'), 'utf8');
+  const mmJs = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'members', 'members.js'), 'utf8');
+  const svcUnion = readSrc(path.join(SERVER, 'services/union.js'), 'utf8');
 
   // 入口：主席团 + 部长/副部长（可查看）+ 管理员；普通部员无入口
   ok('成员入口三级口径', /canViewMembers:[\s\S]{0,400}canUnionScanJoin\(user, perms\)/.test(navSrc2));
@@ -1200,11 +1250,11 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
 
 // ===== 部门选择器带校区前缀 + 成员页合并（用户 2026-10-28）=====
 {
-  const sjJs = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'scan-join', 'scan-join.js'), 'utf8');
-  const sjWxml = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'scan-join', 'scan-join.wxml'), 'utf8');
-  const navSrc = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'utils', 'nav-groups.js'), 'utf8');
-  const appJson = JSON.parse(require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'app.json'), 'utf8').replace(/\/\/.*$/gm, ''));
-  const unionJs = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'pages', 'union', 'union.js'), 'utf8');
+  const sjJs = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'scan-join', 'scan-join.js'), 'utf8');
+  const sjWxml = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'scan-join', 'scan-join.wxml'), 'utf8');
+  const navSrc = readSrc(path.join(__dirname, '..', 'miniprogram', 'utils', 'nav-groups.js'), 'utf8');
+  const appJson = JSON.parse(readSrc(path.join(__dirname, '..', 'miniprogram', 'app.json'), 'utf8').replace(/\/\/.*$/gm, ''));
+  const unionJs = readSrc(path.join(__dirname, '..', 'miniprogram', 'pages', 'union', 'union.js'), 'utf8');
 
   // ① 下拉必须带校区前缀（否则两个「体育部」无法区分）
   ok('部门选择器带校区前缀', /label: d\.schoolName \? `\$\{d\.schoolName\} · \$\{d\.name\}`/.test(sjJs));
@@ -1226,8 +1276,8 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
 
 // ===== 部门层级必须按所属校区显示（用户 2026-10-28「为什么全是校学生会啊」）=====
 {
-  const uSrc2 = require('fs').readFileSync(path.join(SERVER, 'routes/union.js'), 'utf8');
-  const sjJs2 = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'scan-join', 'scan-join.js'), 'utf8');
+  const uSrc2 = readSrc(path.join(SERVER, 'routes/union.js'), 'utf8');
+  const sjJs2 = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'scan-join', 'scan-join.js'), 'utf8');
 
   // 服务端 join-options 必须按部门 schoolId 算层级，不能一律校学生会
   ok('join-options 带校区名', /schoolNameById/.test(uSrc2) && /new Map\(allCampuses\.map/.test(uSrc2));
@@ -1256,23 +1306,23 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
 
 // ===== 照片解除全部上传限制 + 失败必提示原因（用户 2026-11-12，沿用 2026-10-28 的提示要求）=====
 {
-  const upRoute = require('fs').readFileSync(path.join(SERVER, 'routes/upload.js'), 'utf8');
-  const errMw = require('fs').readFileSync(path.join(SERVER, 'middlewares/error.js'), 'utf8');
-  const entryJs = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageUnion', 'entry', 'entry.js'), 'utf8');
-  const entryWxml = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageUnion', 'entry', 'entry.wxml'), 'utf8');
-  const reqJs = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'utils', 'request.js'), 'utf8');
+  const upRoute = readSrc(path.join(SERVER, 'routes/upload.js'), 'utf8');
+  const errMw = readSrc(path.join(SERVER, 'middlewares/error.js'), 'utf8');
+  const entryJs = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageUnion', 'entry', 'entry.js'), 'utf8');
+  const entryWxml = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageUnion', 'entry', 'entry.wxml'), 'utf8');
+  const reqJs = readSrc(path.join(__dirname, '..', 'miniprogram', 'utils', 'request.js'), 'utf8');
   const nginxConf = (() => {
     const dir = path.join(__dirname, '..', 'deploy', 'nginx');
     try {
       const f = require('fs').readdirSync(dir).find((n) => n.endsWith('.conf'));
-      return f ? require('fs').readFileSync(path.join(dir, f), 'utf8') : '';
+      return f ? readSrc(path.join(dir, f), 'utf8') : '';
     } catch (e) { return ''; }
   })();
 
   // ① 用户 2026-11-12：**不再限制体积**，三层必须同时放开
   //（缺一层就会撞在中间那层且收不到可读报错；反向断言防止有人把上限加回来）
   ok('照片不限制体积（0 = 不限）', /CHECK_PHOTO_MAX_MB \|\| 0\) \|\| 0/.test(upRoute));
-  ok('.env.example 上限 0', /CHECK_PHOTO_MAX_MB=0/.test(require('fs').readFileSync(path.join(__dirname, '..', 'server', '.env.example'), 'utf8')));
+  ok('.env.example 上限 0', /CHECK_PHOTO_MAX_MB=0/.test(readSrc(path.join(__dirname, '..', 'server', '.env.example'), 'utf8')));
   ok('前端不再有压缩安全线', !/PHOTO_SAFE_BYTES/.test(entryJs));
   ok('nginx 不限制请求体（0）', /client_max_body_size\s+0;/.test(nginxConf));
 
@@ -1290,9 +1340,9 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
 
 // ===== 主席团可加任意部门 + 主席团不可加入 + 可选职务（用户 2026-10-28）=====
 {
-  const uSrc = require('fs').readFileSync(path.join(SERVER, 'routes/union.js'), 'utf8');
-  const sjJs = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'scan-join', 'scan-join.js'), 'utf8');
-  const sjWxml = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'scan-join', 'scan-join.wxml'), 'utf8');
+  const uSrc = readSrc(path.join(SERVER, 'routes/union.js'), 'utf8');
+  const sjJs = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'scan-join', 'scan-join.js'), 'utf8');
+  const sjWxml = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'scan-join', 'scan-join.wxml'), 'utf8');
 
   // ① 主席团可加载全部业务部门（旧实现读 /mine 的 roles，只能加自己部门）
   ok('扫码页改走 join-options 接口', /\/api\/union\/manage\/join-options/.test(sjJs));
@@ -1310,7 +1360,7 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('不能授予高于自己的职务', /不能授予高于你自己的职务/.test(uSrc));
   // 等级判定唯一实现在 services/union.js；路由只做别名
   {
-    const svcSrc = require('fs').readFileSync(path.join(SERVER, 'services/union.js'), 'utf8');
+    const svcSrc = readSrc(path.join(SERVER, 'services/union.js'), 'utf8');
     ok(
       'roleRank / maxRoleRank 存在（service 唯一实现）',
       /function roleRank\(/.test(svcSrc) &&
@@ -1322,7 +1372,7 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   // ④ 部门可用性按 scope 判（旧规则「校级只允许主席团」与 11 个校级部门冲突）
   ok('部门可用性按 scope 判定', /const scope = String\(dept\.scope \|\| 'both'\)/.test(uSrc));
   // 去掉注释再判断（注释里故意记了旧报错文案，说明历史）
-  ok('不再用「校级只允许主席团」的旧判据', !/不是学生会主席团，请选择具体院校/.test(require('fs').readFileSync(path.join(SERVER, 'routes/union.js'), 'utf8').replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '')));
+  ok('不再用「校级只允许主席团」的旧判据', !/不是学生会主席团，请选择具体院校/.test(readSrc(path.join(SERVER, 'routes/union.js'), 'utf8').replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '')));
 
   // ⑤ 前端职务选择 UI
   ok('前端有职务选择', /roleOptions/.test(sjJs) && /onRolePick/.test(sjJs));
@@ -1332,9 +1382,9 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
 
 // ===== 学生会控制台要有「扫码加人」入口（用户 2026-10-27）=====
 {
-  const unionRouteSrc = require('fs').readFileSync(path.join(SERVER, 'routes/union.js'), 'utf8');
-  const unionJs = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'pages', 'union', 'union.js'), 'utf8');
-  const unionWxml = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'pages', 'union', 'union.wxml'), 'utf8');
+  const unionRouteSrc = readSrc(path.join(SERVER, 'routes/union.js'), 'utf8');
+  const unionJs = readSrc(path.join(__dirname, '..', 'miniprogram', 'pages', 'union', 'union.js'), 'utf8');
+  const unionWxml = readSrc(path.join(__dirname, '..', 'miniprogram', 'pages', 'union', 'union.wxml'), 'utf8');
 
   // 服务端：/dashboard 必须下发 canScanJoin
   // ⚠️ 用「取 /dashboard 路由片段再断言」，而不是全文搜 —— /mine 里也有同形的 ok(res,{...})，
@@ -1365,9 +1415,9 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
 
 // ===== GPS 记录必须换算步数与卡路里（用户 2026-10-27「没有步数的换算」）=====
 {
-  const stepsSrc4 = require('fs').readFileSync(path.join(SERVER, 'services/steps.js'), 'utf8');
-  const runRoute = require('fs').readFileSync(path.join(SERVER, 'routes/run.js'), 'utf8');
-  const wxSrc = require('fs').readFileSync(path.join(SERVER, 'services/wechat.js'), 'utf8');
+  const stepsSrc4 = readSrc(path.join(SERVER, 'services/steps.js'), 'utf8');
+  const runRoute = readSrc(path.join(SERVER, 'routes/run.js'), 'utf8');
+  const wxSrc = readSrc(path.join(SERVER, 'services/wechat.js'), 'utf8');
 
   // 根因：GPS 写入固定 steps:0，而小程序提交 GPS 时不传步数 → 详情页永远 0 步
   ok('GPS 记录按距离换算步数', /stepsFromDist = Math\.round\(distMeters \/ 0\.7\)/.test(stepsSrc4));
@@ -1386,7 +1436,7 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
 
 // ===== nginx upstream 端口必须跟随实际 PORT（用户 2026-10-27 整站 502）=====
 {
-  const shSrc3 = require('fs').readFileSync(path.join(__dirname, '..', 'deploy', 'install.sh'), 'utf8');
+  const shSrc3 = readSrc(path.join(__dirname, '..', 'deploy', 'install.sh'), 'utf8');
   ok('nginx upstream 端口跟随 .env PORT', /fix_nginx_upstream_port\(\) \{/.test(shSrc3));
   // 必须在 resolve_port 之后调用（$PORT 才是真实值）
   const iResolve = shSrc3.indexOf('PORT="$(resolve_port)"');
@@ -1401,9 +1451,9 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
 
 // ===== 列表空但徽章有数（用户 2026-10-27）=====
 {
-  const anoJs3 = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'config', 'anomalies', 'anomalies.js'), 'utf8');
-  const anoRoute3 = require('fs').readFileSync(path.join(SERVER, 'routes/admin/step-anomalies.js'), 'utf8');
-  const model3 = require('fs').readFileSync(path.join(SERVER, 'services/anticheat-model.js'), 'utf8');
+  const anoJs3 = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'config', 'anomalies', 'anomalies.js'), 'utf8');
+  const anoRoute3 = readSrc(path.join(SERVER, 'routes/admin/step-anomalies.js'), 'utf8');
+  const model3 = readSrc(path.join(SERVER, 'services/anticheat-model.js'), 'utf8');
 
   // 根因：wx.request 把 { keyword: undefined } 序列化成字面量 keyword=undefined，
   // 服务端当真关键字去匹配「姓名含 undefined」→ total=0、列表空，而 counts 仍是真实数量。
@@ -1416,7 +1466,7 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   // 2026-11-12 起转义统一收进 services/name-search.js（同音字搜索那一轮）：
   // 这里改成断言「该路由走 nameSearch」+「那个服务里真的做了转义」，
   // 否则各路由各写一份 replace 必然漂移（漏一处就是「关键字带括号就 500」）。
-  const nsSvc3 = require('fs').readFileSync(path.join(SERVER, 'services/name-search.js'), 'utf8');
+  const nsSvc3 = readSrc(path.join(SERVER, 'services/name-search.js'), 'utf8');
   ok(
     '关键字转义统一收在 name-search（路由不再各写一份）',
     /nameSearch\.keywordOr\(/.test(anoRoute3) && /function escapeRe/.test(nsSvc3),
@@ -1428,19 +1478,19 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   // 理由语义去重（同一件事不该出现两三次）
   ok('理由语义去重', /function dedupeReasons/.test(model3) && /REASON_KINDS/.test(model3));
   ok('evaluate 使用语义去重', /dedupeReasons\(\[\.\.\.hardScore\.reasons/.test(model3));
-  ok('合并理由走去重（model 与 rule 两来源都参与）', /dedupeReasons\(\[[\s\S]{0,160}model\.reasons[\s\S]{0,160}rule\.reasons/.test(require('fs').readFileSync(path.join(SERVER, 'services/steps.js'), 'utf8')));
+  ok('合并理由走去重（model 与 rule 两来源都参与）', /dedupeReasons\(\[[\s\S]{0,160}model\.reasons[\s\S]{0,160}rule\.reasons/.test(readSrc(path.join(SERVER, 'services/steps.js'), 'utf8')));
 }
 
 // ===== 标注积累与升级提示（用户 2026-10-27）=====
 {
-  const model2 = require('fs').readFileSync(path.join(SERVER, 'services/anticheat-model.js'), 'utf8');
-  const labelModel = require('fs').readFileSync(path.join(SERVER, 'models/step-label.js'), 'utf8');
-  const anoRoute2 = require('fs').readFileSync(path.join(SERVER, 'routes/admin/step-anomalies.js'), 'utf8');
+  const model2 = readSrc(path.join(SERVER, 'services/anticheat-model.js'), 'utf8');
+  const labelModel = readSrc(path.join(SERVER, 'models/step-label.js'), 'utf8');
+  const anoRoute2 = readSrc(path.join(SERVER, 'routes/admin/step-anomalies.js'), 'utf8');
   // 2026-10-29 处置逻辑（标注/封禁/排除）收敛到 services/anomaly-disposal.js：
   // 管理端路由与 Web 控制台（/console）共用同一份，避免「一边封禁喂了反馈、另一边没喂」的分裂。
   // 所以「持久标注 / 清缓存 / 喂反馈」这几条现在钉的是 **disposal**，而不是路由。
-  const disposal2 = require('fs').readFileSync(path.join(SERVER, 'services/anomaly-disposal.js'), 'utf8');
-  const anomalModel2 = require('fs').readFileSync(path.join(SERVER, 'models/step-anomaly.js'), 'utf8');
+  const disposal2 = readSrc(path.join(SERVER, 'services/anomaly-disposal.js'), 'utf8');
+  const anomalModel2 = readSrc(path.join(SERVER, 'models/step-anomaly.js'), 'utf8');
 
   // 标注必须持久化（上一版只在内存，重启丢失 + 多进程不一致）
   ok('标注持久化到 step_labels', /step_labels/.test(labelModel));
@@ -1463,8 +1513,8 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('标注变化后清进度缓存（在 disposal）', /invalidateUpgradeCache/.test(model2) && /invalidateUpgradeCache\(\)/.test(disposal2));
 
   // 前端展示升级进度
-  const anoJs2 = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'config', 'anomalies', 'anomalies.js'), 'utf8');
-  const anoWxml2 = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'config', 'anomalies', 'anomalies.wxml'), 'utf8');
+  const anoJs2 = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'config', 'anomalies', 'anomalies.js'), 'utf8');
+  const anoWxml2 = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'config', 'anomalies', 'anomalies.wxml'), 'utf8');
   ok('前端加载升级进度', /loadUpgrade\(\)/.test(anoJs2) && /upgrade-status/.test(anoJs2));
   ok('前端展示升级进度条与提示', /sa-upgrade/.test(anoWxml2) && /upgrade.progress/.test(anoWxml2));
   ok('异常记录模型带特征快照', /features: \{ type: mongoose\.Schema\.Types\.Mixed/.test(anomalModel2));
@@ -1472,11 +1522,11 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
 
 // ===== 反作弊学习引擎（用户 2026-10-27：融入大数据/推理模型，自己学模式，按来源分开）=====
 {
-  const model = require('fs').readFileSync(path.join(SERVER, 'services/anticheat-model.js'), 'utf8');
-  const stepsSrc3 = require('fs').readFileSync(path.join(SERVER, 'services/steps.js'), 'utf8');
-  const anomalModel = require('fs').readFileSync(path.join(SERVER, 'models/step-anomaly.js'), 'utf8');
-  const anoRoute = require('fs').readFileSync(path.join(SERVER, 'routes/admin/step-anomalies.js'), 'utf8');
-  const disposalSvc = require('fs').readFileSync(path.join(SERVER, 'services/anomaly-disposal.js'), 'utf8');
+  const model = readSrc(path.join(SERVER, 'services/anticheat-model.js'), 'utf8');
+  const stepsSrc3 = readSrc(path.join(SERVER, 'services/steps.js'), 'utf8');
+  const anomalModel = readSrc(path.join(SERVER, 'models/step-anomaly.js'), 'utf8');
+  const anoRoute = readSrc(path.join(SERVER, 'routes/admin/step-anomalies.js'), 'utf8');
+  const disposalSvc = readSrc(path.join(SERVER, 'services/anomaly-disposal.js'), 'utf8');
 
   // ① 真正的学习部件（不是硬编码阈值）
   ok('Isolation Forest 无监督模型', /function buildIsolationForest/.test(model) && /function scoreForest/.test(model));
@@ -1504,19 +1554,27 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('GPS 接入独立模型判定', /acModel\.evaluate\(\s*'gps'/.test(stepsSrc3));
   ok('模型判定在规则拦截之前（不丢线索）', (() => {
     const i1 = stepsSrc3.indexOf("acModel.evaluate('gps'");
-    const i2 = stepsSrc3.indexOf('anticheat.checkPace(user, distance, durationSeconds)');
+    // ⚠️ 不能写死调用参数列表：2026-11-19 给 checkPace 加了 ctx 参数（{ dateKey } 用于解封闸门），
+    //   旧写法 `checkPace(user, distance, durationSeconds)` 精确匹配立刻失效 → 假红。
+    //   这里只要求「存在对 checkPace 的调用」，顺序才是不丢线索的关键。
+    const i2 = stepsSrc3.indexOf('anticheat.checkPace(');
     return i1 > 0 && i2 > i1;
   })());
+  // 规则通道也要过解封闸门（用户 2026-11-19「解封的会被重复封禁」）：
+  // 只在 AI 侧加闸门是不够的，库里实测大量 unban→ban 流水来自规则通道。
+  ok('GPS 规则通道（checkPace）调用时带 dateKey（解封闸门需要线索日期）',
+    /anticheat\.checkPace\(user, distance, durationSeconds, \{ dateKey \}\)/.test(stepsSrc3),
+    (stepsSrc3.match(/checkPace\([^\n]*/) || ['未传 dateKey'])[0]);
   ok('异常记录带 source 与 modelScore', /source: \{ type: String, enum: \['werun', 'gps'\]/.test(anomalModel) && /modelScore/.test(anomalModel));
 }
 
 // ===== 反作弊完善：可疑步数识别 + 手动封禁列表（用户 2026-10-27）=====
 {
-  const anoSrc = require('fs').readFileSync(path.join(SERVER, 'services/step-anomaly.js'), 'utf8');
-  const modelSrc = require('fs').readFileSync(path.join(SERVER, 'models/step-anomaly.js'), 'utf8');
-  const routeSrc = require('fs').readFileSync(path.join(SERVER, 'routes/admin/step-anomalies.js'), 'utf8');
-  const idxSrc = require('fs').readFileSync(path.join(SERVER, 'routes/admin/index.js'), 'utf8');
-  const stepsSrc2 = require('fs').readFileSync(path.join(SERVER, 'services/steps.js'), 'utf8');
+  const anoSrc = readSrc(path.join(SERVER, 'services/step-anomaly.js'), 'utf8');
+  const modelSrc = readSrc(path.join(SERVER, 'models/step-anomaly.js'), 'utf8');
+  const routeSrc = readSrc(path.join(SERVER, 'routes/admin/step-anomalies.js'), 'utf8');
+  const idxSrc = readSrc(path.join(SERVER, 'routes/admin/index.js'), 'utf8');
+  const stepsSrc2 = readSrc(path.join(SERVER, 'services/steps.js'), 'utf8');
 
   // 特征识别：整数步数 / 66666 这类重复数字 / 增速 / 单日上限
   ok('识别重复数字（66666 类）', /\/\(\)\)\)\/\^\^\^/.test(anoSrc) || /checkPatternNumber/.test(anoSrc));
@@ -1541,8 +1599,8 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('研判失败不阻塞同步', /研判失败绝不能阻塞正常同步/.test(stepsSrc2));
 
   // 前端页面（2026-11-03 适配判定/处置两组：与 Web 控制台同一语义）
-  const anoJs = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'config', 'anomalies', 'anomalies.js'), 'utf8');
-  const anoWxml = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'config', 'anomalies', 'anomalies.wxml'), 'utf8');
+  const anoJs = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'config', 'anomalies', 'anomalies.js'), 'utf8');
+  const anoWxml = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'config', 'anomalies', 'anomalies.wxml'), 'utf8');
   // canManage 仍由 user.manage 兜底计算（封禁弹层过渡期引用），按钮显隐由服务端 caps 驱动
   ok('前端列表页存在且受 user.manage 兜底守卫', /applyManage\(this, 'user\.manage'\)/.test(anoJs));
   ok('前端可手动封禁（submitBan）', /submitBan/.test(anoJs));
@@ -1555,10 +1613,10 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
 
 // ===== 微信运动自动同步 + 步数不得误封（用户 2026-10-26）=====
 {
-  const homeSrc = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'pages', 'home', 'home.js'), 'utf8');
-  const acSrc = require('fs').readFileSync(path.join(SERVER, 'services/anticheat.js'), 'utf8');
-  const stepsSrc = require('fs').readFileSync(path.join(SERVER, 'services/steps.js'), 'utf8');
-  const cfgModel = require('fs').readFileSync(path.join(SERVER, 'models/goal-config.js'), 'utf8');
+  const homeSrc = readSrc(path.join(__dirname, '..', 'miniprogram', 'pages', 'home', 'home.js'), 'utf8');
+  const acSrc = readSrc(path.join(SERVER, 'services/anticheat.js'), 'utf8');
+  const stepsSrc = readSrc(path.join(SERVER, 'services/steps.js'), 'utf8');
+  const cfgModel = readSrc(path.join(SERVER, 'models/goal-config.js'), 'utf8');
 
   // ① 进页面自动同步（静默、带护栏）
   ok('进首页自动同步微信运动', /onShow\(\)[\s\S]{0,700}this\.autoSyncWerun\(\)/.test(homeSrc));
@@ -1577,20 +1635,20 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
 
 // ===== 检查照片要清晰：自适应压缩（用户 2026-10-26 第六轮「可以大一点 清晰一点」）=====
 {
-  const entrySrc5 = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageUnion', 'entry', 'entry.js'), 'utf8');
+  const entrySrc5 = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageUnion', 'entry', 'entry.js'), 'utf8');
   const nginxSrc2 = (() => {
     const dir = path.join(__dirname, '..', 'deploy', 'nginx');
     try {
       const f = require('fs').readdirSync(dir).find((n) => n.endsWith('.conf'));
-      return f ? require('fs').readFileSync(path.join(dir, f), 'utf8') : '';
+      return f ? readSrc(path.join(dir, f), 'utf8') : '';
     } catch (e) {
       return '';
     }
   })();
-  const routeUpSrc3 = require('fs').readFileSync(path.join(SERVER, 'routes/upload.js'), 'utf8');
+  const routeUpSrc3 = readSrc(path.join(SERVER, 'routes/upload.js'), 'utf8');
 
   // 2026-11-12「解除所有上传照片的限制」：不压缩、不限张数、不限体积
-  const checkModsSrc = require('fs').readFileSync(path.join(SERVER, 'services/check-modules.js'), 'utf8');
+  const checkModsSrc = readSrc(path.join(SERVER, 'services/check-modules.js'), 'utf8');
   ok('前端不再自适应预压缩', !/compressForUpload/.test(entrySrc5) && !/PHOTO_SAFE_BYTES/.test(entrySrc5) && !/PHOTO_MAX_EDGE/.test(entrySrc5));
   ok('失败兜底压缩只重试一次', /retryWithCompressed/.test(entrySrc5) && /const retried = await this\.retryWithCompressed/.test(entrySrc5));
   ok('前端不再限制总张数', !/MAX_PHOTOS|maxPhotos/.test(entrySrc5) && /PHOTO_PICK_COUNT = 9/.test(entrySrc5));
@@ -1604,16 +1662,16 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok(
     '超限时保留服务端可操作原因',
     !/照片太大（压缩后仍超限）/.test(entrySrc4) &&
-      /该入口单张上限约/.test(require('fs').readFileSync(path.join(SERVER, 'middlewares/error.js'), 'utf8'))
+      /该入口单张上限约/.test(readSrc(path.join(SERVER, 'middlewares/error.js'), 'utf8'))
   );
 }
 
 // ===== 图库上传失败：mimetype 不可靠 + 头像 2MB 太小（用户 2026-10-26 第四轮）=====
 {
-  const upSrc3 = require('fs').readFileSync(path.join(SERVER, 'utils/uploader.js'), 'utf8');
-  const routeUpSrc = require('fs').readFileSync(path.join(SERVER, 'routes/upload.js'), 'utf8');
-  const profSrc = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'pages', 'profile', 'profile.js'), 'utf8');
-  const entrySrc3 = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageUnion', 'entry', 'entry.js'), 'utf8');
+  const upSrc3 = readSrc(path.join(SERVER, 'utils/uploader.js'), 'utf8');
+  const routeUpSrc = readSrc(path.join(SERVER, 'routes/upload.js'), 'utf8');
+  const profSrc = readSrc(path.join(__dirname, '..', 'miniprogram', 'pages', 'profile', 'profile.js'), 'utf8');
+  const entrySrc3 = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageUnion', 'entry', 'entry.js'), 'utf8');
 
   // 根因①：图库原图的 mimetype 常是 application/octet-stream（iPhone HEIC），不能只看 MIME
   ok('上传按扩展名白名单放行', /const IMAGE_EXTS = \[/.test(upSrc3) && /IMAGE_EXTS\.includes\(ext\)\) return cb\(null, true\)/.test(upSrc3));
@@ -1632,11 +1690,11 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
 
 // ===== 上传失败排查 + 密码变更界面重做（用户 2026-10-26 第三轮）=====
 {
-  const shSrc2 = require('fs').readFileSync(path.join(__dirname, '..', 'deploy', 'install.sh'), 'utf8');
-  const upSrc2 = require('fs').readFileSync(path.join(SERVER, 'utils/uploader.js'), 'utf8');
-  const detJs2 = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'user-detail', 'user-detail.js'), 'utf8');
-  const detWxml2 = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'user-detail', 'user-detail.wxml'), 'utf8');
-  const entryJs2 = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageUnion', 'entry', 'entry.js'), 'utf8');
+  const shSrc2 = readSrc(path.join(__dirname, '..', 'deploy', 'install.sh'), 'utf8');
+  const upSrc2 = readSrc(path.join(SERVER, 'utils/uploader.js'), 'utf8');
+  const detJs2 = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'user-detail', 'user-detail.js'), 'utf8');
+  const detWxml2 = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'user-detail', 'user-detail.wxml'), 'utf8');
+  const entryJs2 = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageUnion', 'entry', 'entry.js'), 'utf8');
 
   // 上传照片打不开的头号原因：nginx /uploads/ 别名指向别的目录（部署目录不是 /opt/campus-run）
   ok('install.sh 自动修正 nginx uploads 别名', /fix_nginx_uploads_alias\(\)/.test(shSrc2) && /alias \$\{target\};/.test(shSrc2.replace(/\$APP_DIR\/server\/uploads\//g,'${target}')));
@@ -1657,21 +1715,21 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
 
 // ===== 检查录入三处修复（用户 2026-10-26 第二轮）=====
 {
-  const bcSrc2 = require('fs').readFileSync(path.join(SERVER, 'services/band-chao.js'), 'utf8');
-  const upSrc = require('fs').readFileSync(path.join(SERVER, 'utils/uploader.js'), 'utf8');
-  const cfgSrc = require('fs').readFileSync(path.join(SERVER, 'config/index.js'), 'utf8');
-  const entrySrc2 = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageUnion', 'entry', 'entry.js'), 'utf8');
-  const shSrc = require('fs').readFileSync(path.join(__dirname, '..', 'deploy', 'install.sh'), 'utf8');
+  const bcSrc2 = readSrc(path.join(SERVER, 'services/band-chao.js'), 'utf8');
+  const upSrc = readSrc(path.join(SERVER, 'utils/uploader.js'), 'utf8');
+  const cfgSrc = readSrc(path.join(SERVER, 'config/index.js'), 'utf8');
+  const entrySrc2 = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageUnion', 'entry', 'entry.js'), 'utf8');
+  const shSrc = readSrc(path.join(__dirname, '..', 'deploy', 'install.sh'), 'utf8');
 
   // ③ 查宿「应住人数」：字段名必须与 routes/union.js::shouldCountCtx 读的名字一致。
   //    聚合已收敛到 services/dorms.js::roomLiveOwners（唯一实现，列表与单房间共用）：
   //    band-chao 只调用它，不再自己拼一份聚合 —— 两处各写一份就会出现
   //    「列表显示 6 人、点进去应住 8 人」这类静默不一致。
-  const dormsSrc2 = require('fs').readFileSync(path.join(SERVER, 'services', 'dorms.js'), 'utf8');
+  const dormsSrc2 = readSrc(path.join(SERVER, 'services', 'dorms.js'), 'utf8');
   ok('房间在住聚合在 services/dorms.js（唯一实现）', /async function roomLiveOwners\(rooms\)/.test(dormsSrc2) && /status: \{ \$in: \['checked_in', 'guest'\] \}/.test(dormsSrc2));
   ok('查宿应住人数用实时聚合', /dormsSvc\.roomLiveOwners\(rooms\)/.test(bcSrc2) && /residentCount/.test(bcSrc2));
   ok('宿舍对象下发 residentCount（与 shouldCountCtx 同名）', /residents: residentCount,[\s\S]{0,400}residentCount,/.test(bcSrc2));
-  ok('shouldCountCtx 读 residentCount', /Number\(target\.residentCount\)/.test(require('fs').readFileSync(path.join(SERVER, 'routes/union.js'), 'utf8')));
+  ok('shouldCountCtx 读 residentCount', /Number\(target\.residentCount\)/.test(readSrc(path.join(SERVER, 'routes/union.js'), 'utf8')));
   // 归属班级必须按**在住名单**取，不能用 dorm_rooms.className 快照
   //（用户 2026-11-16「1号楼(女生宿舍)414 显示 25级软件」的根因）
   ok('查宿对象归属班级按在住名单推导', /className: liveClass,/.test(bcSrc2) && /roomLiveOwners/.test(bcSrc2));
@@ -1690,11 +1748,11 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
 
 // ===== 检查录入：对象类型 / 教学楼筛选（用户 2026-10-26 第 4、5 点）=====
 {
-  const cmSrc = require('fs').readFileSync(path.join(SERVER, 'services/check-modules.js'), 'utf8');
-  const bcSrc = require('fs').readFileSync(path.join(SERVER, 'services/band-chao.js'), 'utf8');
-  const dormsSrc = require('fs').readFileSync(path.join(SERVER, 'services/dorms.js'), 'utf8');
-  const entrySrc = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageUnion', 'entry', 'entry.js'), 'utf8');
-  const entryWxml = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageUnion', 'entry', 'entry.wxml'), 'utf8');
+  const cmSrc = readSrc(path.join(SERVER, 'services/check-modules.js'), 'utf8');
+  const bcSrc = readSrc(path.join(SERVER, 'services/band-chao.js'), 'utf8');
+  const dormsSrc = readSrc(path.join(SERVER, 'services/dorms.js'), 'utf8');
+  const entrySrc = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageUnion', 'entry', 'entry.js'), 'utf8');
+  const entryWxml = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageUnion', 'entry', 'entry.wxml'), 'utf8');
 
   ok('卫生检查支持三类受检对象', /targetTypes: \['classroom', 'dorm_room', 'area'\]/.test(cmSrc));
   // ⑤ 晚自习：以教室为受检对象（不再是 class），并靠 DEF_VERSION 迁移存量库
@@ -1733,9 +1791,9 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
 
 // ===== 密码变更（用户 2026-10-26：「重置密码」改称「密码变更」，两个动作）=====
 {
-  const acctSrc = require('fs').readFileSync(path.join(SERVER, 'services/user-account-admin.js'), 'utf8');
-  const adminUsersSrc = require('fs').readFileSync(path.join(SERVER, 'routes/admin/users.js'), 'utf8');
-  const classSrc2 = require('fs').readFileSync(path.join(SERVER, 'routes/class.js'), 'utf8');
+  const acctSrc = readSrc(path.join(SERVER, 'services/user-account-admin.js'), 'utf8');
+  const adminUsersSrc = readSrc(path.join(SERVER, 'routes/admin/users.js'), 'utf8');
+  const classSrc2 = readSrc(path.join(SERVER, 'routes/class.js'), 'utf8');
 
   ok('密码变更：教师初始密码固定 123456', /TEACHER_INITIAL_PASSWORD = '123456'/.test(acctSrc));
   ok('教师恢复初始密码写三个哈希字段（可重复恢复）', /role === 'teacher'\)[\s\S]{0,400}resetHashes = \[h\]/.test(acctSrc));
@@ -1748,8 +1806,8 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('批量入口只做恢复初始密码', /action === 'reset-password'[\s\S]{0,200}resetUserPassword/.test(adminUsersSrc));
 
   // 前端
-  const detJs = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'user-detail', 'user-detail.js'), 'utf8');
-  const detWxml = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'user-detail', 'user-detail.wxml'), 'utf8');
+  const detJs = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'user-detail', 'user-detail.js'), 'utf8');
+  const detWxml = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'user-detail', 'user-detail.wxml'), 'utf8');
   ok('前端改称「密码变更」且有两个动作', /changePassword\(\)/.test(detJs) && /恢复初始密码/.test(detJs) && /设置新密码/.test(detJs));
   ok('按钮文案已改为「密码变更」', /密码变更/.test(detWxml) && !/重置密码<\/text>/.test(detWxml));
   ok('密码弹层受 caps 守卫', /wx:if="\{\{caps\.resetPassword\}\}" visible="\{\{pwdSheetVisible\}\}"/.test(detWxml));
@@ -1758,8 +1816,8 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
 
 // ===== 首页学生会卡片 / 导航栏：身份字段缺失时自愈（用户 2026-10-25）=====
 {
-  const blockJs = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'components', 'banchao-block', 'banchao-block.js'), 'utf8');
-  const tabJs = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'custom-tab-bar', 'index.js'), 'utf8');
+  const blockJs = readSrc(path.join(__dirname, '..', 'miniprogram', 'components', 'banchao-block', 'banchao-block.js'), 'utf8');
+  const tabJs = readSrc(path.join(__dirname, '..', 'miniprogram', 'custom-tab-bar', 'index.js'), 'utf8');
   // isUnionMember 是 /api/auth/me 现算下发的；旧缓存里没有该字段 → 卡片/导航项被误判为「非成员」且无提示
   ok('卡片在身份字段缺失时自愈', /resolveUnionUser/.test(blockJs) && /typeof me\.isUnionMember === 'boolean'/.test(blockJs));
   ok('卡片自愈会调 refreshUser', /resolveUnionUser[\s\S]{0,600}refreshUser\(\)/.test(blockJs));
@@ -1769,12 +1827,12 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
 
 // ===== 示例账户（用户 2026-10-24）=====
 {
-  const demoModel = require('fs').readFileSync(path.join(SERVER, 'models/user.js'), 'utf8');
-  const demoSvc = require('fs').readFileSync(path.join(SERVER, 'services/demo-accounts.js'), 'utf8');
-  const demoRoute = require('fs').readFileSync(path.join(SERVER, 'routes/admin/demo.js'), 'utf8');
-  const authSrc = require('fs').readFileSync(path.join(SERVER, 'routes/auth.js'), 'utf8');
-  const countsSrc = require('fs').readFileSync(path.join(SERVER, 'services/class-counts.js'), 'utf8');
-  const rankSrc = require('fs').readFileSync(path.join(SERVER, 'routes/ranking.js'), 'utf8');
+  const demoModel = readSrc(path.join(SERVER, 'models/user.js'), 'utf8');
+  const demoSvc = readSrc(path.join(SERVER, 'services/demo-accounts.js'), 'utf8');
+  const demoRoute = readSrc(path.join(SERVER, 'routes/admin/demo.js'), 'utf8');
+  const authSrc = readSrc(path.join(SERVER, 'routes/auth.js'), 'utf8');
+  const countsSrc = readSrc(path.join(SERVER, 'services/class-counts.js'), 'utf8');
+  const rankSrc = readSrc(path.join(SERVER, 'routes/ranking.js'), 'utf8');
 
   ok('用户模型有 isDemo 标记', /isDemo: \{ type: Boolean, default: false, index: true \}/.test(demoModel));
   ok('用户模型有跳过改密标记', /passwordChangeSkipped: \{ type: Boolean, default: false \}/.test(demoModel));
@@ -1787,19 +1845,19 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   // seed 前必须先清旧的在任记录：否则换层级会变成「再加一条」而不是「改成一条」
   ok('seed 先清旧在任记录再建（避免多条并存）', /UnionMember\.deleteMany\(\{ userId: user\._id, status: 'active' \}\)/.test(demoSvc));
   // 身份识别必须 openid + userId 双路（用户 2026-10-25 实测：绑微信后仍「未加入学生会」）
-  const unionSvcSrc = require('fs').readFileSync(path.join(SERVER, 'services/union.js'), 'utf8');
+  const unionSvcSrc = readSrc(path.join(SERVER, 'services/union.js'), 'utf8');
   ok('身份解析按 userId 兜底', /async function findActiveMembers/.test(unionSvcSrc) && /or\.push\(\{ userId: user\._id \}\)/.test(unionSvcSrc));
   ok('身份解析不再只按 openid', !/memberModel\.find\(\{ openid, status: 'active' \}\)/.test(unionSvcSrc));
   ok('isUnionMember 走双路', /async function isUnionMember[\s\S]{0,260}findActiveMembers\(user\)/.test(unionSvcSrc));
   ok('decorateUser 不再要求已绑微信', !/if \(!user \|\| !user\.openid\) return payload;/.test(unionSvcSrc));
   // 候选人「已是成员」标记按 userId（openid 快照为空会漏标 → 重复添加 → 两条职务并存）
   // 注：这里自己读一次源码，不能复用后面块的 auSrc3（TDZ：let 在下方块内才声明）
-  const adminUnionSrc = require('fs').readFileSync(path.join(SERVER, 'routes/admin/union.js'), 'utf8');
+  const adminUnionSrc = readSrc(path.join(SERVER, 'routes/admin/union.js'), 'utf8');
   ok('候选人标记按 userId 查成员', /UnionMember\.find\(\{ userId: \{ \$in: userIds \}, status: 'active' \}\)/.test(adminUnionSrc));
   ok('候选人不再按 openid 标记', !/existBy\.get\(u\.openid\)/.test(adminUnionSrc));
   // 换绑 / 解绑必须清身份缓存（用户 2026-10-25 端到端实测：换绑后读到上一个账号的学生会身份）
   ok('换绑必须清身份缓存', /unionSvc\.clearIdentityCache\(openid\)/.test(authSrc));
-  ok('解绑必须清身份缓存', /clearIdentityCache\(openid\)/.test(require('fs').readFileSync(path.join(SERVER, 'services/user-account-admin.js'), 'utf8')));
+  ok('解绑必须清身份缓存', /clearIdentityCache\(openid\)/.test(readSrc(path.join(SERVER, 'services/user-account-admin.js'), 'utf8')));
   ok('示例权限组按 spec 下发（教师1=teacher 组，学生=无）', /permissionGroups: spec\.groups \|\| \[\]/.test(demoSvc) && /groups: \['teacher'\]/.test(demoSvc));
   ok('示例账号不签发设备令牌', /deviceToken: user\.isDemo \? undefined/.test(authSrc));
   ok('/bind 里示例账号豁免学生绑定限制', /isDemoAccount/.test(authSrc) && /!isTeacherAccount && !isDemoAccount/.test(authSrc));
@@ -1809,11 +1867,11 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('示例账号不计入应到人数', /isDemo: \{ \$ne: true \}/.test(countsSrc));
   ok('示例账号不进排行榜（个人榜）', /'u\.isDemo': \{ \$ne: true \}/.test(rankSrc));
   ok('示例账号不进排行榜（班级榜）', /isDemo: \{ \$ne: true \}/.test(rankSrc));
-  ok('管理端示例路由挂载', /router\.use\('\/demo'/.test(require('fs').readFileSync(path.join(SERVER, 'routes/admin/index.js'), 'utf8')));
+  ok('管理端示例路由挂载', /router\.use\('\/demo'/.test(readSrc(path.join(SERVER, 'routes/admin/index.js'), 'utf8')));
   ok('示例路由写操作需 config.manage', /requirePermission\('config\.manage'\)/.test(demoRoute));
 
   // 前端
-  const reqSrc = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'utils', 'request.js'), 'utf8');
+  const reqSrc = readSrc(path.join(__dirname, '..', 'miniprogram', 'utils', 'request.js'), 'utf8');
   // 断言「demo-release 的调用出现在 clearAuth() 之前」—— 用两段独立匹配，避免把换行写进正则字面量
   // （历史踩坑：插入脚本时 \n 被还原成真实换行，正则直接断行 → SyntaxError: missing /）
   // ⚠️ 匹配必须**与换行符无关**：仓库在 Windows（core.autocrlf=true）下签出的工作副本是 CRLF，
@@ -1822,26 +1880,26 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   const iRelease = reqSrc.indexOf('/api/auth/demo-release');
   const iClear = reqSrc.search(/clearAuth\(\);\s*\n\s*markLoggedOut\(\);/);
   ok('退出登录前先调 demo-release', iRelease > 0 && iClear > 0 && iRelease < iClear, { iRelease, iClear });
-  const pwdPage = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'pages', 'password', 'change.js'), 'utf8');
+  const pwdPage = readSrc(path.join(__dirname, '..', 'miniprogram', 'pages', 'password', 'change.js'), 'utf8');
   // 服务端必须直接返回合并好的 rows（前端不再自行按数组顺序拼状态）
-  const demoRouteSrc = require('fs').readFileSync(path.join(SERVER, 'routes/admin/demo.js'), 'utf8');
+  const demoRouteSrc = readSrc(path.join(SERVER, 'routes/admin/demo.js'), 'utf8');
   ok('服务端合并 rows 返回（按 key，不用下标）', /const byKey = new Map\(list\.map/.test(demoRouteSrc) && /rows,/.test(demoRouteSrc));
-  ok('前端优先使用服务端 rows', /Array\.isArray\(res\.rows\)/.test(require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'config', 'demo', 'demo.js'), 'utf8')));
+  ok('前端优先使用服务端 rows', /Array\.isArray\(res\.rows\)/.test(readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'config', 'demo', 'demo.js'), 'utf8')));
   ok('示例接口自报版本与库名（远程定位版本/库不一致）', /apiVersion: API_VERSION/.test(demoRouteSrc) && /db: demo\.dbInfo\(\)/.test(demoRouteSrc));
   ok('未命中时接口吐诊断（查了什么/库里有什么）', /matchedBy: 'none'/.test(demoSvc) && /similar:/.test(demoSvc));
   // 防复发（用户 2026-10-24「创建后依旧显示未创建」）：
   // 模板里用 list[index] 跨数组取状态，依赖两个数组顺序严格一致 —— 顺序一变就静默错位。
   // 这里直接禁掉这种写法：示例账户页必须用 JS 合并好的 rows。
-  const demoWxml = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'config', 'demo', 'demo.wxml'), 'utf8');
+  const demoWxml = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'config', 'demo', 'demo.wxml'), 'utf8');
   // 只在**插值表达式**里查跨数组下标（注释里解释隐患不算违规）
   const demoExprs = [...demoWxml.matchAll(/\{\{([\s\S]*?)\}\}/g)].map((x) => x[1]).join('\n');
   ok('示例账户页禁止跨数组下标（list[index]）', !/list\[index\]/.test(demoExprs) && /wx:for="\{\{rows\}\}"/.test(demoWxml));
-  ok('改密页只有示例账号显示跳过', /wx:if="\{\{first && isDemo && !loading\}\}"/.test(require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'pages', 'password', 'change.wxml'), 'utf8')) && /isDemo/.test(pwdPage));
+  ok('改密页只有示例账号显示跳过', /wx:if="\{\{first && isDemo && !loading\}\}"/.test(readSrc(path.join(__dirname, '..', 'miniprogram', 'pages', 'password', 'change.wxml'), 'utf8')) && /isDemo/.test(pwdPage));
 }
 
 // ===== 部门 ↔ 职务匹配（用户 2026-10-21「主席团中怎么能有部长这类的职务呢」）=====
 {
-  const auSrc3 = require('fs').readFileSync(path.join(SERVER, 'routes/admin/union.js'), 'utf8');
+  const auSrc3 = readSrc(path.join(SERVER, 'routes/admin/union.js'), 'utf8');
   const roleFn = (auSrc3.match(/function assertRoleFitsDept\(role, deptKey\) \{[\s\S]*?\n\}/) || [''])[0];
   ok('部门/职务匹配校验函数存在', roleFn.length > 0);
 
@@ -1926,7 +1984,7 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('Excel 导入逐行报错而非整批失败', /部门与职务不匹配/.test(auSrc3));
 
   // 前端联动：主席团只给主席/副主席，业务部门只给部长类
-  const memPage2 = require('fs').readFileSync(
+  const memPage2 = readSrc(
     path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'members', 'members.js'),
     'utf8'
   );
@@ -1943,15 +2001,15 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
 
 // ===== 检查模块的录入部门必须可改且可见（用户 2026-10-21「我依旧无法改变部门啊」）=====
 {
-  const cfgJs2 = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'config', 'config.js'), 'utf8');
-  const cfgWxml2 = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'config', 'config.wxml'), 'utf8');
-  const auSrc3 = require('fs').readFileSync(path.join(SERVER, 'routes/admin/union.js'), 'utf8');
+  const cfgJs2 = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'config', 'config.js'), 'utf8');
+  const cfgWxml2 = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'config', 'config.wxml'), 'utf8');
+  const auSrc3 = readSrc(path.join(SERVER, 'routes/admin/union.js'), 'utf8');
 
   // ① 后端：PUT /modules 必须接受 entryDeptKeys，且校验部门存在
   ok('PUT /modules 接受 entryDeptKeys', /if \(body\.entryDeptKeys !== undefined\)/.test(auSrc3));
   ok('写入前校验部门存在', /部门不存在：\$\{missing\.join/.test(auSrc3));
   // ② 播种不得覆盖学校配置（否则「改了重启就没了」，上一轮已修，这里锁住）
-  const cmSrc3 = require('fs').readFileSync(path.join(SERVER, 'services/check-modules.js'), 'utf8');
+  const cmSrc3 = readSrc(path.join(SERVER, 'services/check-modules.js'), 'utf8');
   ok('播种不强制回写 entryDeptKeys', !/JSON\.stringify\(exists\.entryDeptKeys[\s\S]{0,80}!== JSON\.stringify\(def\.entryDeptKeys\)/.test(cmSrc3));
 
   // ③ 前端：选中态必须**预计算**。WXML 表达式不支持方法调用（TDesign 官方 WXML 0 处用 indexOf），
@@ -1963,7 +2021,7 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   // 用户 2026-10-21「你别叠加弹窗选择了，你就在原本弹窗中使用多级显示 我勾选吧」：
   // 去掉第二层 cascader 弹窗，抽屉内按层级分组直接勾选
   ok('抽屉内直接按层级列出部门（无第二层弹窗）', /wx:for="\{\{moduleDeptGroups\}\}"/.test(cfgWxmlNoComment) && /bind:tap="toggleModuleDept"/.test(cfgWxmlNoComment));
-  ok('不再使用 t-cascader（已移除注册与组件）', !/"t-cascader"/.test(require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'config', 'config.json'), 'utf8')) && !/<t-cascader/.test(cfgWxmlNoComment));
+  ok('不再使用 t-cascader（已移除注册与组件）', !/"t-cascader"/.test(readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'config', 'config.json'), 'utf8')) && !/<t-cascader/.test(cfgWxmlNoComment));
   ok('分组叫「校学生会」而非含糊的「全校 / 通用」', /name: '校学生会'/.test(cfgJs2) && !/name: '全校 \/ 通用'/.test(cfgJs2));
   ok('院校层级叫「<校区>学生会」', /name: `\$\{c\.name\}学生会`/.test(cfgJs2));
   // 主席团只在校学生会组出现：校区组过滤里必须显式排除它，否则会在每个校区各列一遍
@@ -1974,7 +2032,7 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('共用部门单独成组、不在每个校区重复', /rootKey: '__shared__'/.test(cfgJs2) && /各院校共用（未指定校区）/.test(cfgJs2));
   ok('校区组只列明确归属该校区的部门', /!isPresidium\(d\) && d\.schoolId && String\(d\.schoolId\) === String\(c\.rootKey\)/.test(cfgJs2));
   // 用户 2026-10-21「生活部」显示成单个「e」：胶囊必须禁止折行 + 不许被压窄
-  const cfgWxss = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'config', 'config.wxss'), 'utf8');
+  const cfgWxss = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'config', 'config.wxss'), 'utf8');
   const chipBlock = (cfgWxss.match(/\.uc-chip \{[\s\S]*?\n\}/) || [''])[0];
   ok('部门胶囊禁止折行（否则圆角裁掉只剩一个字）', /white-space: nowrap/.test(chipBlock), '「生活部」会显示成「e」');
   ok('部门胶囊不被 flex 压窄', /flex: 0 0 auto/.test(chipBlock));
@@ -1986,13 +2044,13 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('不再提供「所有院校通用」中间态', !/scope: 'both', name: '所有院校/.test(cfgJs2));
 
   // ===== 主席团全局唯一（用户 2026-10-21「图1你这个主席团是一样的代码，需要你不一样」）=====
-  const deptUtil2 = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'utils', 'union-dept.js'), 'utf8');
+  const deptUtil2 = readSrc(path.join(__dirname, '..', 'miniprogram', 'utils', 'union-dept.js'), 'utf8');
   ok('主席团按 key 识别为全局实体', /const isPresidium = \(dept\) =>/.test(deptUtil2) && /dept\.key/.test(deptUtil2));
   // 主席团：部门树只在「全校」层出现一次（不重复）；但作为可选职务，任何校区都能选
   //（分会主席团 = level=branch + deptKey=presidium，见 utils/union-dept.js 注释）
   ok('主席团在部门树只在全校层出现', /if \(isPresidium\(dept\)\) return opts\.forDeptTree \? isSchoolLevel : true/.test(deptUtil2));
   ok('配置页部门树传 forDeptTree', /forDeptTree: true/.test(cfgJs2));
-  ok('成员/模块选择器不传该项（分会主席可选）', /deptFitsCampus\(d, campusOfMember\)/.test(require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'members', 'members.js'), 'utf8')));
+  ok('成员/模块选择器不传该项（分会主席可选）', /deptFitsCampus\(d, campusOfMember\)/.test(readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'members', 'members.js'), 'utf8')));
   ok('归属文案说明主席团全局唯一', /全校（全局唯一）/.test(cfgJs2));
 
   // 校级只保留主席团（用户 2026-10-21「全校仅有主席团没有其他部门了」）
@@ -2023,15 +2081,15 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
     .filter((d) => d.isDirectory())
     .flatMap((d) => {
       const p = path.join(__dirname, '..', 'miniprogram', 'miniprogram_npm', 'tdesign-miniprogram', d.name, `${d.name}.wxml`);
-      return require('fs').existsSync(p) ? [require('fs').readFileSync(p, 'utf8')] : [];
+      return require('fs').existsSync(p) ? [readSrc(p, 'utf8')] : [];
     });
   ok('TDesign 官方 WXML 也不用 indexOf（佐证模板限制）', !tdWxml.some((s) => s.includes('indexOf(')));
 }
 
 // ===== 学生会总管可查看/留证（用户 2026-10-21 第2、3条）=====
 {
-  const unionRt = require('fs').readFileSync(path.join(SERVER, 'routes/union.js'), 'utf8');
-  const upRt = require('fs').readFileSync(path.join(SERVER, 'routes/upload.js'), 'utf8');
+  const unionRt = readSrc(path.join(SERVER, 'routes/union.js'), 'utf8');
+  const upRt = readSrc(path.join(SERVER, 'routes/upload.js'), 'utf8');
   ok('总管查看记录有专门判定', /async function isRecordSteward/.test(unionRt));
   ok('总管列表可见全校', /else if \(await isRecordSteward\(req, identity\)\) \{[\s\S]{0,120}scope = \{\}/.test(unionRt));
   ok('总管详情放行', /!isStewardViewer\) throw new ApiError\(403, 403002, NO_ACCESS\)/.test(unionRt));
@@ -2044,10 +2102,10 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
 
 // ===== 晚自习开关 + 楼名清单（用户 2026-10-21 第1、2条）=====
 {
-  const cpModel = require('fs').readFileSync(path.join(SERVER, 'models/class-profile.js'), 'utf8');
-  const bcSrc = require('fs').readFileSync(path.join(SERVER, 'services/band-chao.js'), 'utf8');
-  const cpRt = require('fs').readFileSync(path.join(SERVER, 'routes/admin/class-profile.js'), 'utf8');
-  const uRt = require('fs').readFileSync(path.join(SERVER, 'routes/union.js'), 'utf8');
+  const cpModel = readSrc(path.join(SERVER, 'models/class-profile.js'), 'utf8');
+  const bcSrc = readSrc(path.join(SERVER, 'services/band-chao.js'), 'utf8');
+  const cpRt = readSrc(path.join(SERVER, 'routes/admin/class-profile.js'), 'utf8');
+  const uRt = readSrc(path.join(SERVER, 'routes/union.js'), 'utf8');
 
   // ① 晚自习：模型 → 录入对象排除 → 标注 → 写入白名单 → 录入拦截，缺一环就不算生效
   ok('班级模型有晚自习开关', /hasNightStudy: \{ type: Boolean, default: true \}/.test(cpModel));
@@ -2060,8 +2118,8 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('班级详情返回 hasNightStudy', /hasNightStudy: profile \? profile\.hasNightStudy !== false : true/.test(cpRt));
 
   // ② 楼名清单：两份分开、有清洗、有只读接口给填表端
-  const gcModel = require('fs').readFileSync(path.join(SERVER, 'models/goal-config.js'), 'utf8');
-  const cfgRt = require('fs').readFileSync(path.join(SERVER, 'routes/admin/config.js'), 'utf8');
+  const gcModel = readSrc(path.join(SERVER, 'models/goal-config.js'), 'utf8');
+  const cfgRt = readSrc(path.join(SERVER, 'routes/admin/config.js'), 'utf8');
   ok('配置模型有教学楼/宿舍楼两份清单', /buildings: \{[\s\S]{0,160}teaching: \{ type: \[String\]/.test(gcModel) && /dorm: \{ type: \[String\]/.test(gcModel));
   ok('楼名保存有清洗（去空白/去重/限长）', /function normalizeBuildings/.test(cfgRt) && /seen\.has\(name\)/.test(cfgRt));
   ok('楼名截断到 20 字、上限 60 个', /slice\(0, 20\)/.test(cfgRt) && /out\.length >= 60/.test(cfgRt));
@@ -2069,25 +2127,25 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   // 读 building.view / building.manage / config.view（能管理就必须能查看，否则保存成功但列表 403）；
   // 写 building.manage / config.manage，且只持 building.manage 时不能顺手改计分/反作弊。
   ok('提供只读楼名接口（填表用）', /router\.get\(\s*'\/buildings'/.test(cfgRt) && /requirePermission\('building\.view', 'building\.manage', 'config\.view'\)/.test(cfgRt));
-  const permModel = require('fs').readFileSync(path.join(SERVER, 'models/permission.js'), 'utf8');
+  const permModel = readSrc(path.join(SERVER, 'models/permission.js'), 'utf8');
   ok('权限目录有 building.view / building.manage', /'building\.view'/.test(permModel) && /'building\.manage'/.test(permModel));
   ok('只有 building.manage 的账号不能改计分/反作弊', /wantsOthers && !canConfig/.test(cfgRt));
   // ⚠️ /config 前缀上不能再挂 config.view：那会把 GET /buildings 一并挡掉，
   //    子路由里写再细的权限也无效（本轮踩过：改完子路由仍然 403）。
-  const adminIdx = require('fs').readFileSync(path.join(SERVER, 'routes/admin/index.js'), 'utf8');
+  const adminIdx = readSrc(path.join(SERVER, 'routes/admin/index.js'), 'utf8');
   ok('/config 前缀不预挂 config.view（否则楼名接口被挡）', /router\.use\('\/config', require\('\.\/config'\)\)/.test(adminIdx));
   ok('GET 整份配置仍要求 config.view', /requirePermission\('config\.view'\),\s*\n\s*wrap\(async \(req, res\) => \{\s*\n\s*const doc = await GoalConfig\.getSingleton/.test(cfgRt));
 
   // 前端：管理端有楼名页 + 教室/宿舍都先选楼
-  const bdPage = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'config', 'buildings.js'), 'utf8');
+  const bdPage = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'config', 'buildings.js'), 'utf8');
   ok('楼名管理页存在且两份分栏', /addTeaching/.test(bdPage) && /addDorm/.test(bdPage));
   ok('保存时两份清单一起提交（避免清空另一份）', /teaching: field === 'teaching' \? list : this\.data\.teaching/.test(bdPage));
-  const cmPage = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'class-manage', 'class-manage.js'), 'utf8');
+  const cmPage = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'class-manage', 'class-manage.js'), 'utf8');
   // 教室：楼名只能选、只有门号能填，且**一个完整对话框一次填完**
   //（用户 2026-10-22「尽量使用 Dialog 对话框完整的，现在你选择教学楼竟然还有弹窗让输入门号，
   //   直接让用户一次输入完」）—— 不再用 action sheet + 二次 wx.showModal
-  const roomDlg = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'components', 'room-dialog', 'room-dialog.js'), 'utf8');
-  const roomDlgWxml = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'components', 'room-dialog', 'room-dialog.wxml'), 'utf8');
+  const roomDlg = readSrc(path.join(__dirname, '..', 'miniprogram', 'components', 'room-dialog', 'room-dialog.js'), 'utf8');
+  const roomDlgWxml = readSrc(path.join(__dirname, '..', 'miniprogram', 'components', 'room-dialog', 'room-dialog.wxml'), 'utf8');
   ok('教室改用完整对话框（不再是两步弹窗）', /roomTarget/.test(cmPage) && /onRoomConfirm/.test(cmPage) && !/roomPick\.composeRoom/.test(cmPage));
   ok('对话框内同时有楼号点选与门号输入', /bind:tap="tapBuilding"/.test(roomDlgWxml) && /bindinput="onRoomInput"/.test(roomDlgWxml));
   // 楼号区域只有胶囊、没有 input：取「楼号 label」到「门号 label」之间那段来判
@@ -2097,25 +2155,25 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('床号固定 1~8 且可选', /bedOptions: \[1, 2, 3, 4, 5, 6, 7, 8\]/.test(roomDlg) && /showBed/.test(roomDlg));
   ok('未选楼号 / 未填门号时拒绝保存', /请先选择楼号/.test(roomDlg) && /请填写门号/.test(roomDlg));
   // 「我的班级」页的教室也不再内联输入（那等于允许手打楼名）
-  const classWxml = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'class', 'class.wxml'), 'utf8');
+  const classWxml = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'class', 'class.wxml'), 'utf8');
   ok('我的班级页教室也不再内联手输', /cls-room-pick/.test(classWxml) && /bind:tap="openClassroom"/.test(classWxml));
-  ok('两个页面都注册了 room-dialog', /room-dialog/.test(require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'class-manage', 'class-manage.json'), 'utf8')) && /room-dialog/.test(require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'class', 'class.json'), 'utf8')));
+  ok('两个页面都注册了 room-dialog', /room-dialog/.test(readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'class-manage', 'class-manage.json'), 'utf8')) && /room-dialog/.test(readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'class', 'class.json'), 'utf8')));
   // 宿舍抽屉：楼号只能点选 + 床位号固定 1~8
-  const dormSheet = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'components', 'dorm-sheet', 'dorm-sheet.js'), 'utf8');
+  const dormSheet = readSrc(path.join(__dirname, '..', 'miniprogram', 'components', 'dorm-sheet', 'dorm-sheet.js'), 'utf8');
   ok('宿舍楼号只能点选（无可手打入口）', /tapBuilding/.test(dormSheet) && /bedOptions: \[1, 2, 3, 4, 5, 6, 7, 8\]/.test(dormSheet));
   ok('宿舍门号输入过滤非数字', /replace\(\/\\D\/g, ''\)/.test(dormSheet));
   ok('未选楼号 / 未填门号时拒绝保存', /请先选择楼号/.test(dormSheet) && /请填写门号/.test(dormSheet));
   // 系统设置里不再有「系统配置」中转页（用户 2026-10-21 第3条）
-  const navSrc = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'utils', 'nav-groups.js'), 'utf8');
+  const navSrc = readSrc(path.join(__dirname, '..', 'miniprogram', 'utils', 'nav-groups.js'), 'utf8');
   ok('系统设置不再有「系统配置」入口', !/label: '系统配置'/.test(navSrc));
   ok('系统设置有楼名管理入口', /label: '楼名管理'/.test(navSrc));
 }
 
 // ===== 批量管理成员 + 院校部门联动筛选（用户 2026-10-21 第2条）=====
 {
-  const auSrc4 = require('fs').readFileSync(path.join(SERVER, 'routes/admin/union.js'), 'utf8');
-  const memPage2 = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'members', 'members.js'), 'utf8');
-  const memWxml2 = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'members', 'members.wxml'), 'utf8');
+  const auSrc4 = readSrc(path.join(SERVER, 'routes/admin/union.js'), 'utf8');
+  const memPage2 = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'members', 'members.js'), 'utf8');
+  const memWxml2 = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'members', 'members.wxml'), 'utf8');
 
   // ① 批量接口：三种动作、逐条校验、部分失败不整体回滚
   ok('提供批量管理接口', /router\.post\(\s*'\/members\/bulk-update'/.test(auSrc4));
@@ -2244,10 +2302,10 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
 
 // ===== 扫码加人（用户 2026-10-22）=====
 {
-  const urt = require('fs').readFileSync(path.join(SERVER, 'routes/union.js'), 'utf8');
-  const invModel = require('fs').readFileSync(path.join(SERVER, 'models/union-invite.js'), 'utf8');
-  const udJs = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'user-detail', 'user-detail.js'), 'utf8');
-  const sjJs = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'scan-join', 'scan-join.js'), 'utf8');
+  const urt = readSrc(path.join(SERVER, 'routes/union.js'), 'utf8');
+  const invModel = readSrc(path.join(SERVER, 'models/union-invite.js'), 'utf8');
+  const udJs = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'user-detail', 'user-detail.js'), 'utf8');
+  const sjJs = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'scan-join', 'scan-join.js'), 'utf8');
 
   // 凭证模型：一次性 + 有期限 + 绑学生
   ok('凭证绑学生且一次性', /userId: \{ type: mongoose\.Schema\.Types\.ObjectId/.test(invModel) && /usedAt: \{ type: Date, default: null \}/.test(invModel));
@@ -2269,12 +2327,12 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('凭证用掉即标记 usedAt', /doc\.usedAt = new Date\(\)/.test(urt));
   // 真正生成二维码图（用户 2026-10-22「二维码呢」）：后端用 qrcode 出 PNG dataURL，
   // 前端直接 <image src> 显示；生成失败要能回退到凭证串，不能整块空着。
-  const pkg = JSON.parse(require('fs').readFileSync(path.join(__dirname, '..', 'server', 'package.json'), 'utf8'));
+  const pkg = JSON.parse(readSrc(path.join(__dirname, '..', 'server', 'package.json'), 'utf8'));
   ok('依赖里声明了 qrcode', !!pkg.dependencies.qrcode, String(pkg.dependencies.qrcode));
   ok('接口返回二维码图（dataURL）', /QRCode\.toDataURL\(qrText/.test(urt) && /qrImage,/.test(urt));
   ok('二维码内容就是 qrText（可被扫码识别）', /const qrText = `ttkp:\/\/union-invite\/\$\{doc\.token\}`/.test(urt));
   ok('生成失败仍返回 token（前端可回退）', /catch \(e\) \{\s*qrImage = '';\s*\}/.test(urt));
-  const pfWxml2 = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'pages', 'profile', 'profile.wxml'), 'utf8');
+  const pfWxml2 = readSrc(path.join(__dirname, '..', 'miniprogram', 'pages', 'profile', 'profile.wxml'), 'utf8');
   ok('我的页显示二维码图并保留文本回退', /qr\.qrImage/.test(pfWxml2) && /<image[^>]*pf-qr-img/.test(pfWxml2));
   // 用户 2026-10-22「底下的请让主席团/部长用这个不使用，因为以后也可能用到这个码」
   ok('不再显示「请让主席团/部长用扫码加人」的固定文案', !/请让主席团 \/ 部长用「扫码加人」扫这张码/.test(pfWxml2));
@@ -2282,12 +2340,12 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   // 前端：所有用户都有码 + 干部「先选部门再扫」
   ok('学生主页有二维码入口', /openInviteQr/.test(udJs) && /\/api\/union\/invite\/mine\?userId=/.test(udJs));
   // 「我的」页顶部卡片可开自己的码（所有用户含教师，用户 2026-10-22）
-  const pfJs = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'pages', 'profile', 'profile.js'), 'utf8');
-  const pfWxml = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'pages', 'profile', 'profile.wxml'), 'utf8');
+  const pfJs = readSrc(path.join(__dirname, '..', 'miniprogram', 'pages', 'profile', 'profile.js'), 'utf8');
+  const pfWxml = readSrc(path.join(__dirname, '..', 'miniprogram', 'pages', 'profile', 'profile.wxml'), 'utf8');
   ok('我的页顶部卡片有「我的码」按钮', /openMyQr/.test(pfJs) && /hero-qr-btn/.test(pfWxml));
   ok('我的码对所有用户开放（含教师）', /\/api\/union\/invite\/mine/.test(pfJs) && !/isTeacher[\s\S]{0,80}qrVisible/.test(pfWxml));
   // 干部扫码页：**先选部门**再扫，扫到即加入（用户 2026-10-22）
-  ok('扫码页先选部门再扫', /deptReady/.test(sjJs) && /请先选择要加入的部门/.test(sjJs) && /disabled="\{\{!deptReady\}\}"/.test(require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'scan-join', 'scan-join.wxml'), 'utf8')));
+  ok('扫码页先选部门再扫', /deptReady/.test(sjJs) && /请先选择要加入的部门/.test(sjJs) && /disabled="\{\{!deptReady\}\}"/.test(readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'union', 'scan-join', 'scan-join.wxml'), 'utf8')));
   // 2026-10-28：accept 多了一个 role 参数（扫码时可直接指定 部员/副部长/部长）
   ok('扫到即加入（部门与职务随扫码请求提交）', /wx\.scanCode/.test(sjJs) && /accept\(token, dept, role\)/.test(sjJs) && /deptKey: dept\.key/.test(sjJs) && /role: role \|\| 'member'/.test(sjJs));
   ok('加错可当场撤回（走用户端 remove 接口）', /\/manage\/members\/\$\{r\.memberId\}\/remove/.test(sjJs));
@@ -2324,7 +2382,7 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
 
 // ===== 登录刷新缓存 + 只读用户不显示写操作（用户 2026-10-22 第 1、2 条）=====
 {
-  const reqJs = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'utils', 'request.js'), 'utf8');
+  const reqJs = readSrc(path.join(__dirname, '..', 'miniprogram', 'utils', 'request.js'), 'utf8');
   // 第 1 条：三条登录路径（静默 / 绑定 / 一键）都必须刷新缓存
   ok('登录后刷新缓存', /function refreshCachesAfterLogin/.test(reqJs) && /permissionEpoch/.test(reqJs));
   ok('三条登录路径都调刷新', (reqJs.match(/refreshCachesAfterLogin\(data\.userInfo\)/g) || []).length >= 3, String((reqJs.match(/refreshCachesAfterLogin\(/g) || []).length));
@@ -2340,33 +2398,33 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
     'packageAdmin/content/badges.js',
   ];
   for (const p of pages) {
-    const src = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', p), 'utf8');
+    const src = readSrc(path.join(__dirname, '..', 'miniprogram', p), 'utf8');
     const short = p.split('/').slice(-1)[0];
     ok(`${short} 有 refreshPermission 且 onShow 调用`, /refreshPermission\(\)\s*\{/.test(src) && /onShow\(\)[\s\S]{0,200}refreshPermission\(\)/.test(src));
   }
   // config 三个子页由 section.js 注入 canManage
-  const secJs = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'config', 'section.js'), 'utf8');
+  const secJs = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'config', 'section.js'), 'utf8');
   ok('配置子页按 config.manage 区分只读/可写', /canManage: perms\.includes\('\*'\) \|\| perms\.includes\('config\.manage'\)/.test(secJs));
   for (const f of ['points', 'anticheat', 'reward-video']) {
-    const wxml = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'config', `${f}.wxml`), 'utf8');
+    const wxml = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'config', `${f}.wxml`), 'utf8');
     ok(`${f} 保存栏只给可写用户`, /cfg-save-bar[^>]*wx:if="\{\{canManage\}\}"/.test(wxml));
   }
 }
 
 // ===== 班级状态考勤字段路径 + 日期选择（2026-11-03 修复「考勤一直是 —」）=====
 {
-  const boardSrc = require('fs').readFileSync(path.join(SERVER, 'services/class-status-board.js'), 'utf8');
+  const boardSrc = readSrc(path.join(SERVER, 'services/class-status-board.js'), 'utf8');
   // 应到/实到数字存在 details（写入端 fillDerived 口径）；读成 $metrics.* 会恒 0 → 考勤列恒「—」
   ok('考勤聚合读 details.shouldCount/shouldStay/actualCount', /\$details\.shouldStay[\s\S]{0,200}\$details\.shouldCount[\s\S]{0,120}\$details\.actualCount/.test(boardSrc));
   ok('考勤聚合不再读 metrics.shouldCount/actualCount（防字段路径回归）', !/\$metrics\.(shouldCount|actualCount|shouldStay)/.test(boardSrc));
   ok('比率仍读 metrics.ratios.rate（这条路径本来就是对的）', /storedRate:\s*'\$metrics\.ratios\.rate'/.test(boardSrc));
   ok('today 参数非法回退服务器今天（isValidDateKey 防呆）', /dates\.isValidDateKey\(today\)\s*\?\s*today\s*:\s*dates\.todayKey\(\)/.test(boardSrc));
 
-  const csJs = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'class-status', 'class-status.js'), 'utf8');
-  const csWxml = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'class-status', 'class-status.wxml'), 'utf8');
+  const csJs = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'class-status', 'class-status.js'), 'utf8');
+  const csWxml = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'class-status', 'class-status.wxml'), 'utf8');
   // 路由源码：本块内多处要断言（窗口白名单），下面 [第三轮] 段也读一次同名变量，
   // 这里用独立名字避免重复 require 时的作用域冲突。
-  const csRoute2 = require('fs').readFileSync(path.join(SERVER, 'routes/admin/class-profile.js'), 'utf8');
+  const csRoute2 = readSrc(path.join(SERVER, 'routes/admin/class-profile.js'), 'utf8');
   ok('前端有日期选择器（mode=date 且不许选未来）', /mode="date"[^>]*end="\{\{todayKeyText\}\}"/.test(csWxml));
   ok('选了非今天才传 today（缓存友好）', /if \(d\.selectedDate\) q\.today = d\.selectedDate;/.test(csJs));
   ok('快捷 chip 文案随日期联动（今日→当日）', /chipsFor/.test(csJs) && /'当日未达标'/.test(csJs));
@@ -2376,16 +2434,29 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
     /ATT_RANGES = \{[\s\S]{0,200}day:[\s\S]{0,80}week:[\s\S]{0,80}month:/.test(boardSrc)
       && !/DEFAULT_DAYS|MAX_DAYS/.test(boardSrc)
       && !/DAY_OPTIONS = \[3, 7, 14, 30\]/.test(csJs), boardSrc.match(/DEFAULT_DAYS/) ? '服务层还留着天数窗口' : csJs.match(/DAY_OPTIONS[^;]*/) || '');
-  ok('窗口起止一律锚定所选日期（不是「今天」）',
+  // ===== 考勤统计窗口：本日 / 本周 / 本月 =====
+  // ⚠️ 2026-11-19 起窗口**一律委托 bandChao.rangeOf**（用户「班级状态日周月考勤不一致」）：
+  //   旧版这里自己写「周一起至所选日 / 1 号起至所选日」，班超写的是**完整周 / 完整月**，
+  //   同一个「本周」两个页面圈的是不同日期。现在窗口只有一份实现，
+  //   本文件不再断言 monthRange/weekRange —— 那些细节归 band-chao 与它的测试。
+  ok('窗口起止委托 bandChao.rangeOf（不再自己算第二套周/月区间）',
     /function attWindow\(rangeKey, day\)/.test(boardSrc)
-      && /monthRange\(day\.slice\(0, 7\)\)/.test(boardSrc)
-      && /weekRange\(day\)/.test(boardSrc));
-  ok('周窗口用 ISO 周一起（与校园跑周达标同一真源，不引 band-chao 的当月第N周）',
-    /dates\.weekRange\(day\)/.test(boardSrc) && !/monthWeekRange/.test(boardSrc));
+      && /bandChao\.rangeOf\(range, day\)/.test(boardSrc)
+      && !/dates\.monthRange\(day\.slice/.test(boardSrc)
+      && !/const \{ startKey \} = dates\.weekRange\(day\);\s*\n\s*return \{ from: startKey, to: day/.test(boardSrc),
+    '看板又自己写了一套窗口');
+  ok('统计区间终点用窗口 to（不是所选日 day）',
+    /date: \{ \$gte: from, \$lte: attTo \}/.test(boardSrc), (boardSrc.match(/date: \{ \$gte: from[^\n]*/) || [''])[0]);
+  ok('看板结果下发窗口终点 to', /to: attTo/.test(boardSrc) || /\n    to,/.test(boardSrc));
+  ok('周窗口用 ISO 周一起（不引 band-chao 的当月第N周）',
+    // rangeOf 的第 5 参 weekNo 不给 = 走 ISO 周；给了就变成「当月第 N 周」的另一套区间
+    /bandChao\.rangeOf\(range, day\)/.test(boardSrc) && !/monthWeekRange/.test(boardSrc));
   ok('非法窗口回退本周（不能让拼错的参数悄悄统计出空区间）',
     /ATT_RANGES\[rangeKey\] \? rangeKey : DEFAULT_RANGE/.test(boardSrc) && /DEFAULT_RANGE = 'week'/.test(boardSrc));
-  ok('缓存 key 含窗口维度（否则切窗口拿到上一个窗口的数据）',
-    /const cacheKey = `\$\{day\}\|\$\{from\}\|\$\{weekStart\}\|\$\{attRangeKey\}`/.test(boardSrc),
+  // ⚠️ key 必须**同时含 from 与 to**：窗口改成完整周/月后，周一那天与周三那天选「本周」
+  //   的 to 不同（回看历史日期时区间也不同），只带 from 会让两个区间共用一份缓存。
+  ok('缓存 key 含窗口起止两个日期（否则切窗口/切日期命中上一个区间的结果）',
+    /const cacheKey = `\$\{day\}\|\$\{from\}\|\$\{attTo\}\|\$\{weekStart\}\|\$\{attRangeKey\}`/.test(boardSrc),
     (boardSrc.match(/const cacheKey = .*/) || [''])[0]);
   ok('路由只认 day/week/month 白名单',
     /\['day', 'week', 'month'\]\.includes\(str\(req\.query\.attRange\)\)/.test(csRoute2));
@@ -2438,7 +2509,7 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('filterBoard 接收 grades 多选', /function filterBoard\(board, \{ school, department, grades,/.test(boardSrc) && /set\.has\(r\.grade\)/.test(boardSrc));
   ok('rows.grade 有班名解析兜底（gradeFromClassName）', /roster\.normalizeGrade\(p\.grade\) \|\| roster\.gradeFromClassName\(p\.className\)/.test(boardSrc));
   ok('排序按年级升序+班级名（空年级排末尾）', /rows\.sort\(\(a, b\) => \{[\s\S]{0,200}a\.grade \|\| '9999'[\s\S]{0,200}localeCompare/.test(boardSrc));
-  const csRoute = require('fs').readFileSync(path.join(SERVER, 'routes/admin/class-profile.js'), 'utf8');
+  const csRoute = readSrc(path.join(SERVER, 'routes/admin/class-profile.js'), 'utf8');
   ok('路由解析 grades（只认 4 位年份，防注入）', /\(19\|20\)\\d\{2\}/.test(csRoute) && /grades\.length \? grades : undefined/.test(csRoute));
   ok('响应含年级候选 grades', /grades: \[\.\.\.new Set\(rows\.map\(\(r\) => r\.grade\)/.test(boardSrc));
   ok('前端档位 chips 用 below95', /below95/.test(csJs) && !/belowHalf/.test(csJs));
@@ -2446,9 +2517,65 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('生成图片转发（canvas 2d + showShareImageMenu 回退存相册）', /id="csShareCanvas"/.test(csWxml) && /onShareImage\(\)/.test(csJs) && /showShareImageMenu/.test(csJs) && /saveImageToPhotosAlbum/.test(csJs));
   ok('图片画当前展示行（所见即所转）', /drawShareImage/.test(csJs) && /const rows = this\.data\.shown \|\| \[\];/.test(csJs) && /rows\.slice\(0, MAX_ROWS\)/.test(csJs));
 
+  // ===== 班级状态与班超「同一份分数 + 同一个窗口」（用户 2026-11-19 报障）=====
+  // 静态部分放这里，真连库逐班比对放 tools/verify-class-status.js 第 12 节。
+  // 旧版有两处各自实现：分数（看板只看 4 个考勤模块的加权出勤率，**卫生完全不在公式里**）
+  // 与窗口（看板「本周」= 周一起至所选日，班超 = 完整周）→ 同一个班同一周实测 9.74 vs 8.40。
+  const bcSrcSync = readSrc(path.join(SERVER, 'services/band-chao.js'), 'utf8');
+  ok('分数唯一实现：bandChao.scoreOfAggregate 存在且看板调用它',
+    /function scoreOfAggregate\(/.test(bcSrcSync) && /bandChao\.scoreOfAggregate\(/.test(boardSrc));
+  ok('看板不留第二套公式（attendanceScore 已删除、不再引用迟到单价）',
+    !/function attendanceScore\(/.test(boardSrc) && !/PERSON_DEDUCT\.late/.test(boardSrc),
+    '看板又自己写了一遍分数公式');
+  ok('班超侧 classSummary 也走 scoreOfAggregate（不留两份平均算法）',
+    /const agg = scoreOfAggregate\(cls, moduleList\)/.test(bcSrcSync) && /score: agg\.score/.test(bcSrcSync));
+  ok('看板扣分聚合用 bandChao.aggregateScoresLite（含全部模块）',
+    /bandChao\.aggregateScoresLite\(\{ from, to: attTo, classNames: activeNames \}\)/.test(boardSrc)
+      // Lite 聚合绝不能按考勤模块白名单过滤 —— 那正是「卫生没被减分」的机制
+      && !/aggregateScoresLite\([\s\S]{0,240}MODULE_KEYS/.test(boardSrc));
+  ok('模块级扣分明细用日均口径（与分数同分母，老师能算平）',
+    /avgDeduct: round2\(\(hit\.deduct \|\| 0\) \/ dayCount\)/.test(bcSrcSync)
+      && /deduct: dd \? dd\.avgDeduct : 0/.test(boardSrc)
+      && /modDeduct\[k\]\.avgDeduct/.test(boardSrc));
+  ok('窗口唯一实现：看板 attWindow 委托 bandChao.rangeOf',
+    /const r = bandChao\.rangeOf\(range, day\)/.test(boardSrc) && !/return \{ from: startKey, to: day/.test(boardSrc));
+  ok('看板考勤聚合区间用窗口终点（$lte: attTo）', /\$gte: from, \$lte: attTo/.test(boardSrc));
+  ok('缓存 key 含窗口终点 attTo（缺它就两个不同区间共用一份缓存）',
+    /\$\{day\}\|\$\{from\}\|\$\{attTo\}\|\$\{weekStart\}\|\$\{attRangeKey\}/.test(boardSrc),
+    (boardSrc.match(/const cacheKey = .*/) || [''])[0]);
+  ok('复制文案的待补区间用窗口终点（不再拿所选日说谎）', /~ \$\{to \|\| day\}/.test(boardSrc));
+  {
+    // 规则文案：分数公式换了，说明必须跟着换（留着旧句子就是「改了分数忘了改说明」）
+    const ruleSeg = (boardSrc.match(/function buildAttRuleLines[\s\S]*?\n\}/) || [''])[0];
+    ok('规则文案在服务端生成（buildAttRuleLines）', ruleSeg.length > 0);
+    ok('规则文案点名卫生（用户报「卫生没有被减分」，说明里必须先有它）',
+      /卫生/.test(ruleSeg) && /GRADE_SCORE/.test(ruleSeg), ruleSeg.slice(0, 200));
+    ok('规则文案不再描述旧的「只算考勤三项的出勤率」算法',
+      !/早操、晚自习、查宿三项一起算/.test(ruleSeg));
+    ok('规则里的单价取真源（PERSON_DEDUCT + FULL_SCORE，不写死）',
+      /PERSON_DEDUCT/.test(ruleSeg) && /scoreScale\.FULL_SCORE/.test(ruleSeg));
+  }
+  ok('看板下发 hasAnyCheck（只有卫生记录的班也算有检查）',
+    /const hasAnyCheck = agg\.dayCount > 0/.test(boardSrc) && /hasAnyCheck,/.test(boardSrc));
+  ok('前端考勤列改名「班超分」（页面表头 + 图片表头两处一致）',
+    /label: '班超分'/.test(csJs) && /head: '班超分'/.test(csJs) && />班超分</.test(csWxml));
+  ok('前端考勤列显隐看 hasAnyCheck（不是 hasData）',
+    /x\.attendance && x\.attendance\.hasAnyCheck/.test(csJs),
+    (csJs.match(/hasAttendance = [^\n]*/) || [''])[0]);
+  ok('前端分数下面那行显示扣分明细（buildAttSub 读 deductDetail）',
+    /buildAttSub\(att\)/.test(csJs) && /att\.deductDetail/.test(csJs));
+  ok('前端区间文案用服务端 to（attTo），不再拿所选日当终点',
+    /attTo: d\.to \|\| ''/.test(csJs) && /\$\{d\.to \|\| d\.today/.test(csJs)
+      // 图片标题同样不许留旧写法（from ~ today）
+      && !/this\.data\.from\} ~ \$\{this\.data\.today\}/.test(csJs));
+  ok('失败路径清空 attTo（不留一个不存在的区间给图片标题）',
+    /attRangeText: '',\s*\n\s*\/\/ [^\n]*\n\s*attTo: ''/.test(csJs)
+      || /attRangeText: '',\s*\n\s*attTo: ''/.test(csJs),
+    (csJs.match(/attTo: ''/) || ['未清空'])[0]);
+
   // 小程序反作弊页：指标网格 + 轨迹（2026-11-03 对齐 Web 控制台）
-  const anoJs2 = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'config', 'anomalies', 'anomalies.js'), 'utf8');
-  const anoWxml2 = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'config', 'anomalies', 'anomalies.wxml'), 'utf8');
+  const anoJs2 = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'config', 'anomalies', 'anomalies.js'), 'utf8');
+  const anoWxml2 = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'config', 'anomalies', 'anomalies.wxml'), 'utf8');
   ok('反作弊页指标预计算（metrics 数组，模板零拼接）', /decorate\(r\)[\s\S]{0,600}metrics\.push/.test(anoJs2) && /sa-grid/.test(anoWxml2));
   ok('GPS 详情指标对齐 Web（峰值/平均速度、配速、质量三项）', /峰值速度/.test(anoJs2) && /平均速度/.test(anoJs2) && /点间隔均值/.test(anoJs2) && /平滑度/.test(anoJs2));
   ok('格式化走 format.js（kmh/paceText/num2，不页面自写）', /require\('\.\.\/\.\.\/\.\.\/utils\/format'\)/.test(anoJs2) && /fmt\.kmh\(/.test(anoJs2) && /fmt\.paceText\(/.test(anoJs2));
@@ -2522,7 +2649,7 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('scopeKey 全校为 all', scopeSvc.scopeKey([]) === 'all');
 
   // ⑦ 路由接线：ranking.js 必须走单一实现，且不许再按 id 判可用性
-  const rankSrc2 = require('fs').readFileSync(path.join(SERVER, 'routes/ranking.js'), 'utf8');
+  const rankSrc2 = readSrc(path.join(SERVER, 'routes/ranking.js'), 'utf8');
   // 说明性注释里会引用「旧写法」原文（正是本节要防的那种），断言必须只看**代码本身**，
   // 否则注释会把回归防线变成永远失败。去掉块注释与行注释后再断言。
   const rankCode = rankSrc2.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
@@ -2537,8 +2664,8 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('班级榜 $match 用 mergeMatch 合并', /scopeSvc\.mergeMatch\(/.test(rankCode));
 
   // ⑧ 前端：文案读服务端 needText，不再写死「请先完成学生认证」
-  const rankJs = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'pages', 'ranking', 'ranking.js'), 'utf8');
-  const rankWxml = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'pages', 'ranking', 'ranking.wxml'), 'utf8');
+  const rankJs = readSrc(path.join(__dirname, '..', 'miniprogram', 'pages', 'ranking', 'ranking.js'), 'utf8');
+  const rankWxml = readSrc(path.join(__dirname, '..', 'miniprogram', 'pages', 'ranking', 'ranking.wxml'), 'utf8');
   ok('前端范围提示读服务端 needText', /needText/.test(rankJs) && /data-need-text="\{\{item\.needText\}\}"/.test(rankWxml));
   ok('前端不再写死「请先完成学生认证」', !/请先完成学生认证/.test(rankJs));
 }

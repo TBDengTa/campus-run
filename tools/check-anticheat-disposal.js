@@ -41,8 +41,48 @@ const modelSrc = read('models/step-anomaly.js');
 console.log('[1] 自动处置开关（anticheat.enabled）覆盖全部自动封禁路径');
 
 ok('steps.js 定义了统一闸门 autoDisposeEnabled()', /async function autoDisposeEnabled\(\)[\s\S]{0,200}anticheat\.enabled\s*===\s*false/.test(stepsSrc));
-ok('微信同步 AI 封禁前检查开关', /if\s*\(\s*anomaly\s*&&\s*anomaly\.autoBan\s*&&\s*\(await autoDisposeEnabled\(\)\)\s*\)/.test(stepsSrc));
-ok('GPS AI 封禁前检查开关', /if\s*\(\s*anomaly\s*&&\s*anomaly\.level\s*===\s*'autoBan'\s*&&\s*\(await autoDisposeEnabled\(\)\)\s*\)/.test(stepsSrc));
+
+// ⚠️ 这两条原来写成「匹配一整行 if 条件」的字面量正则：闸门条件一换行、
+//   或中间插一行注释，断言就假红（本轮加「已被人工推翻」闸门时真实踩到）。
+//   改成**结构化**判定：取那条 autoBan 判断的 if 条件本身，再检查里面同时有
+//   自动处置开关与解封闸门 —— 换行/注释/加条件都不影响，但漏掉闸门一定红。
+function ifCondOf(src, markerRe) {
+  const m = markerRe.exec(src);
+  if (!m) return '';
+  // ⚠️ 要往**前**找包住这个标记的那个 `if (`，不能往后找第一个左括号：
+  //   条件本身是多行且里面还有别的括号时（liftedCoversClueDate(...)），
+  //   往后找会取到内层函数的括号，条件文本就截断在错误位置了。
+  let open = -1;
+  let from = 0;
+  for (;;) {
+    const i = src.indexOf('(', from);
+    if (i < 0 || i > m.index) break;
+    // 只认 `if (` / `if(` 后面的那个括号（head 取的是左括号**之前**的 6 个字符）
+    const head = src.slice(Math.max(0, i - 6), i);
+    if (/\bif\s*$/.test(head)) open = i;
+    from = i + 1;
+  }
+  if (open < 0) return '';
+  let depth = 0;
+  for (let k = open; k < src.length; k += 1) {
+    if (src[k] === '(') depth += 1;
+    else if (src[k] === ')') {
+      depth -= 1;
+      if (depth === 0) return src.slice(open + 1, k);
+    }
+  }
+  return '';
+}
+// 标记用**正则**而不是字面量：条件被写成多行（本轮加了两个闸门后就是多行）时，
+// indexOf 的字符串标记会找不到，于是取到空串 → 断言假红。
+const werunBanCond = ifCondOf(stepsSrc, /anomaly\s*&&\s*anomaly\.autoBan/);
+const gpsBanCond = ifCondOf(stepsSrc, /anomaly\s*&&\s*anomaly\.level\s*===\s*'autoBan'/);
+ok('微信同步 AI 封禁前检查自动处置开关', /autoDisposeEnabled\(\)/.test(werunBanCond), werunBanCond.slice(0, 160));
+ok('GPS AI 封禁前检查自动处置开关', /autoDisposeEnabled\(\)/.test(gpsBanCond), gpsBanCond.slice(0, 160));
+// ===== 解封闸门覆盖两条 AI 通道（用户 2026-11-19「解封的会被重复封禁」）=====
+ok('微信同步 AI 封禁前过「已被人工推翻」闸门', /liftedCoversClueDate\(\s*user,\s*'sync'/.test(werunBanCond), werunBanCond.slice(0, 200));
+ok('GPS AI 封禁前过「已被人工推翻」闸门', /liftedCoversClueDate\(\s*user,\s*'gps'/.test(gpsBanCond), gpsBanCond.slice(0, 200));
+ok('两条 AI 通道都排除 settled 线索（已处置的不复活）', /anomaly\.settled/.test(stepsSrc) && /anomalySettled/.test(stepsSrc));
 const restrictCalls = [...stepsSrc.matchAll(/anticheat\.restrict\(/g)].length;
 ok(`steps.js 里 restrict 调用只有 AI 两处（实际 ${restrictCalls}）—— 新增自动路径必须同样过闸门`, restrictCalls === 2, restrictCalls);
 
@@ -51,6 +91,26 @@ const jumpBody = (anticheatSrc.match(/async function checkStepJump[\s\S]*?\n\}/)
 const paceBody = (anticheatSrc.match(/async function checkPace[\s\S]*?\n\}/) || [''])[0];
 ok('checkStepJump 检查 config.anticheat.enabled', /if\s*\(\s*!config\.anticheat\.enabled\s*\)\s*return\s*\{\s*violation:\s*false\s*\}/.test(jumpBody));
 ok('checkPace 检查 config.anticheat.enabled', /if\s*\(\s*!config\.anticheat\.enabled\s*\)\s*return\s*\{\s*violation:\s*false\s*\}/.test(paceBody));
+// ===== 规则通道也必须过解封闸门（用户 2026-11-19「解封的会被重复封禁」）=====
+// 只在 AI 侧加闸门是不够的：库里实测「单次同步暴增 / 配速异常」这类**规则**流水
+// 同样大量出现在 unban 之后 —— 四条自动处置路径必须过同一个 liftedCoversClueDate。
+ok('checkStepJump（规则通道）过解封闸门', /liftedCoversClueDate\(\s*user,\s*'sync',\s*date\s*\)/.test(jumpBody),
+  (jumpBody.match(/if \(liftedCoversClueDate[\s\S]{0,120}/) || ['规则通道没有闸门'])[0]);
+ok('checkPace（规则通道）过解封闸门', /liftedCoversClueDate\(\s*user,\s*'gps',\s*ctx\.dateKey\s*\)/.test(paceBody),
+  (paceBody.match(/if \(liftedCoversClueDate[\s\S]{0,120}/) || ['规则通道没有闸门'])[0]);
+ok('checkPace 接住调用方传的 dateKey（缺日期不拦=不放松反作弊）',
+  /async function checkPace\(user, distanceMeters, durationSeconds, ctx = \{\}\)/.test(paceBody)
+    && /if \(!dateKey\) return false;/.test((anticheatSrc.match(/function liftedCoversClueDate[\s\S]*?\n\}/) || [''])[0]),
+  'dateKey 缺失时的兜底行为没有钉住');
+ok('解封闸门唯一实现挂在 anticheat（steps.js 不复制一份）',
+  /function liftedCoversClueDate\(user, scope, dateKey\)/.test(anticheatSrc)
+    && !/function liftedCoversClueDate\(user, scope, dateKey\)/.test(stepsSrc)
+    && /const liftedCoversClueDate = anticheat\.liftedCoversClueDate;/.test(stepsSrc),
+  '闸门被复制成两份');
+ok('日历键走 utils/dates::toDateKey（不许 toISOString 切片：UTC 会把北京早晨的解封算成前一天）',
+  /dates\.toDateKey\(liftedAt\)/.test(anticheatSrc)
+    && !/toISOString\(\)\.slice\(0, 10\)/.test((anticheatSrc.match(/function liftedCoversClueDate[\s\S]*?\n\}/) || [''])[0]),
+  '解封闸门自己切 UTC 日期');
 
 // ===== ② 自动封禁必须回写线索 =====
 console.log('\n[2] 自动封禁回写线索（status=banned + autoBanned=true）');

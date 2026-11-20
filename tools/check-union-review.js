@@ -85,7 +85,14 @@ ok('服务导出 reviewableOf（唯一判定）', svc && typeof svc.reviewableOf
 ok('服务导出 reviewBatch', svc && typeof svc.reviewBatch === 'function');
 ok('reviewBatch 逐条调 reviewOne（不做批量捷径）', /await reviewOne\(\{/.test(read(SERVER, 'services', 'union-review.js')));
 // 单条复核接口也必须走 reviewOne —— 否则「单条 / 批量」两套写法迟早漂移
-const singleSeg = ROUTE.slice(ROUTE.indexOf("router.post(\n  '/records/:id/review'"), ROUTE.indexOf("'/records/:id/appeal',"));
+//
+// ⚠️ 切片锚点不要写死 `router.post(\n  '/records/:id/review'`（要求两行紧邻）：
+//   路由声明与路径之间加一段注释就会让 indexOf 返回 -1、切片变成空串 → 断言恒 FAIL，
+//   而这条断言正是防漂移的核心，**假红比不测更糟**（会被当成"已知失败"忽略掉）。
+//   用「找路径字面量 → 向前回溯到最近的 router.post(」的方式定位。
+const singleStart = ROUTE.lastIndexOf('router.post(', ROUTE.indexOf("'/records/:id/review'"));
+const singleEnd = ROUTE.indexOf("'/records/:id/appeal',");
+const singleSeg = singleStart >= 0 && singleEnd > singleStart ? ROUTE.slice(singleStart, singleEnd) : '';
 ok('单条复核走 reviewSvc.reviewOne', /reviewSvc\.reviewOne\(/.test(singleSeg));
 ok('单条复核不再自己写 status/reviewedBy', !/record\.status = approve \? 'approved' : 'rejected';/.test(singleSeg));
 ok('批量接口走 reviewSvc.reviewBatch', /reviewSvc\.reviewBatch\(/.test(ROUTE));
@@ -97,7 +104,11 @@ ok('history 只在一处 push', (read(SERVER, 'services', 'union-review.js').mat
 // ===== 3) 队列：权限 / 范围 / 照片裁剪 =====
 console.log('\n[3] 队列出口');
 const queueSeg = ROUTE.slice(ROUTE.indexOf("'/review/queue'"), ROUTE.indexOf("'/review/batch'"));
-ok('队列要求成员资格', /assertMember\(identity\)/.test(queueSeg));
+// 总管（含持 `*` 的超管）必须能进复审台（用户 2026-11-19「有学生会总管的权限…
+// 没有办法筛选与查看所有记录」的根因之一：旧实现先 assertMember 把总管拦在门外）。
+ok('队列允许学生会总管 / 超管进入（不再被 assertMember 挡掉）', /isRecordSteward\(req, identity\)/.test(queueSeg) && /if \(!steward\) assertMember\(identity\)/.test(queueSeg));
+ok('总管范围 = 全校（与 /records 的 scope 同口径）', /steward \? \{\} : unionSvc\.scopeFilter\(identity\)/.test(queueSeg));
+ok('队列存在「成员资格 + 复核资格」双闸门', /assertMember\(identity\)/.test(queueSeg));
 ok('队列要求复核资格（canReviewAny）', /canReviewAny\(identity\)/.test(queueSeg));
 ok('队列带可见范围 scopeFilter（分院读不到全校）', /scopeFilter\(identity\)/.test(queueSeg));
 ok('队列只取待复核（status=submitted）', /status: 'submitted'/.test(queueSeg));
@@ -106,7 +117,10 @@ ok('队列复用 cropPhotos（宿舍照片不下发原图）', /unionSvc\.cropPh
 ok('队列每条下发 canReview（自审禁令服务端判定）', /canReview: check\.ok/.test(queueSeg));
 ok('队列每条下发简化信息 summary', /summary: reviewSvc\.summarizeRecord/.test(queueSeg));
 ok('队列下发检查人 inspectorName', /inspectorName:/.test(queueSeg));
-ok('队列下发检查图片 photos', /photos: photoView\.photos\.slice/.test(queueSeg));
+ok('队列下发检查图片 photos（前 3 张）', /photos: photoView\.photos\.slice\(0, 3\)/.test(queueSeg));
+// 缺勤人（用户 2026-11-19「复审台卡片要增加缺勤人的显示」）
+ok('队列下发缺勤名单预览 roster', /roster: rosterFor\(r, moduleDef, req, viewer\)/.test(queueSeg));
+ok('名单不进 summary（摘要保持两行封顶的设计约束）', !/summarizeRecord\(r, moduleDef\)[\s\S]{0,80}absentList/.test(queueSeg));
 ok('viewer 只在循环外算一次（不 N+1 resolveIdentity）', /const viewer = \{ openid/.test(queueSeg) && !/rows\.map[\s\S]{0,120}await unionSvc\.resolveIdentity/.test(queueSeg));
 
 // ===== 4) 批量：逐条鉴权 + 不整批回滚 + 上限 =====
@@ -134,6 +148,10 @@ ok('WXML 有三块：分档 / 记录卡 / 批量条', /rv-bands/.test(WXML) && /
 ok('WXML 显示检查人', /inspectorName/.test(WXML));
 ok('WXML 显示简化检查信息', /item\.summary/.test(WXML));
 ok('WXML 显示检查图片', /item\.photos/.test(WXML));
+ok('WXML 显示缺勤人折叠名单（前 3 名 + +N）', /rv-roster/.test(WXML) && /item\.rosterNamesText/.test(WXML) && /item\.rosterMoreText/.test(WXML));
+ok('JS 预计算名单文案（模板不拼表达式）', /rosterNamesText = names\.join\('、'\)/.test(JS) && /rosterMoreText = roster\.more > 0/.test(JS));
+ok('点图预览走 wx.previewImage', /wx\.previewImage\(\{ urls: row\.photos/.test(JS));
+ok('WXSS 有 rv-roster 样式', /\.rv-roster\s*\{/.test(WXSS) && /\.rv-roster-names\s*\{/.test(WXSS));
 ok('WXML 显示不可复核原因', /reviewBlockReason/.test(WXML));
 ok('WXSS 无通配符选择器', !/[\s>,]*\*\s*[{,]/m.test(WXSS.replace(/\/\*[\s\S]*?\*\//g, ' ')));
 

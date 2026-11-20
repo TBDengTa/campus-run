@@ -174,8 +174,8 @@ function assert(cond, label, extra) {
   });
   assert(runDisabledInList.length === 0, '不参跑的班不被列为「未达标」（否则误报）', runDisabledInList.map((x) => x.className));
 
-  // ---- [6] 考勤口径：按应到加权，不是简单平均 ----
-  console.log('\n[6] 考勤加权口径');
+  // ---- [6] 考勤口径：率仍按应到加权；**分数改为班超同源**（用户 2026-11-19）----
+  console.log('\n[6] 考勤加权与班超同源分数');
   const attRows = r.rows.filter((x) => x.attendance.ratePercent !== null);
   if (attRows.length) {
     const row = attRows[0];
@@ -194,21 +194,17 @@ function assert(cond, label, extra) {
       `综合考勤率 = 各模块按应到加权（${row.className}：${row.attendance.ratePercent}% vs 期望 ${exp}%）`,
       { got: row.attendance.ratePercent, exp }
     );
-    // 考勤**分数**（10 分制，用户 2026-11-12）：率折算 + 早八迟到扣减，必须与率同源可推
+    // ===== 分数**不再**由率折算（旧公式 10×率 − 迟到×0.05 已删除）=====
+    // 用户 2026-11-19：「班级状态日周月考勤不一致，并且考勤的卫生、查宿等相关内容
+    // 相应没有被减分」—— 旧公式只看 4 个考勤模块，**卫生整块不在内**，
+    // 与班超总评（10 − 日均扣分，全部模块）实测差到 1.3 分。
+    // 现在分数 = bandChao 同一个实现，所以这里的独立核对必须**从 check_records 重算**
+    // 一遍班超分，而不是再抄一次被测代码的公式。
     const lateN = row.attendance.lateCount || 0;
-    // 只有早八记录（没有任何「应到/实到」模块）时没有率：分数 = 满分 − 迟到×0.05
-    const expScore =
-      shouldSum > 0
-        ? Math.round((Math.min(1, rateW / shouldSum) * 10 - lateN * 0.05) * 100) / 100
-        : Math.round((10 - lateN * 0.05) * 100) / 100;
-    assert(
-      row.attendance.score !== null && Math.abs(row.attendance.score - expScore) < 0.02,
-      `考勤分数 = 10 × 加权率 − 迟到×0.05（${row.className}：${row.attendance.score} vs 期望 ${expScore}）`,
-      { got: row.attendance.score, expScore, lateN }
-    );
+    assert(typeof lateN === 'number', '考勤带 lateCount（迟到人数仍下发）', lateN);
     assert(
       row.attendance.score === null || (row.attendance.score >= 0 && row.attendance.score <= 10),
-      '考勤分数在 0~10 区间（10 分制，不出现百分制数值）',
+      '分数在 0~10 区间（10 分制，不出现百分制数值）',
       row.attendance.score
     );
     // 早八不得有比率（它只记迟到人数）
@@ -221,6 +217,67 @@ function assert(cond, label, extra) {
     }
   } else {
     console.log('（当前区间没有考勤记录，跳过加权核对）');
+  }
+
+  // ---- [6b] 分数与班超同源：从 check_records **独立重算**（抽样逐班比对）----
+  console.log('\n[6b] 看板分数 = 从 check_records 独立重算的班超分（含卫生）');
+  {
+    const win = board.attWindow('week', day);
+    const sampleRows = r.rows.filter((x) => x.attendance.hasAnyCheck).slice(0, 8);
+    assert(sampleRows.length > 0, '本周有检查记录的班可用于核对', sampleRows.length);
+    let mismatch = 0;
+    let hygCases = 0;
+    let hygBroken = 0;
+    for (const row of sampleRows) {
+      // 独立算法：拉该班本周全部检查记录（**不限模块**）→ 按日求扣分和 →
+      // 逐日 10−扣分（负数封顶 0）→ 取平均。与被测实现完全无关。
+      const recs = await CheckRecord.find({
+        className: row.className,
+        date: { $gte: win.from, $lte: win.to },
+        status: { $in: ['submitted', 'approved'] },
+        voided: { $ne: true },
+      }).select('date deduct moduleKey').lean();
+      const byDay = new Map();
+      for (const x of recs) byDay.set(x.date, (byDay.get(x.date) || 0) + (Number(x.deduct) || 0));
+      const dayScores = [...byDay.values()].map((d) => Math.max(0, Math.round((10 - d) * 100) / 100));
+      const expScore = dayScores.length ? Math.round((dayScores.reduce((a, b) => a + b, 0) / dayScores.length) * 100) / 100 : null;
+      if (Math.abs(Number(row.attendance.score) - Number(expScore)) > 0.02) {
+        mismatch += 1;
+        console.log(`   DIFF ${row.className}: 看板=${row.attendance.score} 独立重算=${expScore}（记录 ${recs.length} 条，含模块 ${[...new Set(recs.map((x) => x.moduleKey))].join('/')}）`);
+      }
+      // 卫生是否真的被减分：拿同一批记录算两次 —— 含卫生 vs **排除卫生**，
+      // 只要该班有卫生扣分，含卫生的分数就必须**严格更低**。
+      // 这是用户报障「卫生、查宿等相关内容相应没有被减分」最直接的判据，
+      // 也是旧实现必然测不过的一条（旧公式压根不看 hygiene）。
+      const hygDeduct = recs.filter((x) => x.moduleKey === 'hygiene').reduce((a, x) => a + (Number(x.deduct) || 0), 0);
+      if (hygDeduct > 0) {
+        const noHyg = new Map();
+        for (const x of recs) {
+          if (x.moduleKey === 'hygiene') continue;
+          noHyg.set(x.date, (noHyg.get(x.date) || 0) + (Number(x.deduct) || 0));
+        }
+        const ns = [...noHyg.values()].map((d) => Math.max(0, Math.round((10 - d) * 100) / 100));
+        const expNoHyg = ns.length ? Math.round((ns.reduce((a, b) => a + b, 0) / ns.length) * 100) / 100 : null;
+        hygCases += 1;
+        if (expNoHyg !== null && !(row.attendance.score < expNoHyg - 0.001)) {
+          hygBroken += 1;
+          console.log(`   卫生没被减分 ${row.className}: 含卫生=${row.attendance.score} 排除卫生=${expNoHyg}`);
+        }
+      }
+    }
+    assert(mismatch === 0, `抽样 ${sampleRows.length} 个班的分数与独立重算一致`, mismatch);
+    assert(hygBroken === 0, `有卫生扣分的班（${hygCases} 个）分数确实因卫生而更低`, hygBroken);
+    // 窗口终点必须是**完整周**（班超同源），不能是所选日
+    assert(win.to > win.from || win.to === win.from, '本周窗口有终点字段', win);
+    const mondayOf = (k) => {
+      const d = new Date(`${k}T00:00:00`);
+      d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    };
+    assert(win.from === mondayOf(day), `本周窗口起点 = ISO 周一（${mondayOf(day)}）`, win.from);
+    const wholeWeekEnd = dates.addDays(mondayOf(day), 6);
+    assert(win.to === wholeWeekEnd, `本周窗口终点 = 周一+6 的**完整周**（不是所选日 ${day}）`, { got: win.to, exp: wholeWeekEnd });
+    assert(r.to === win.to, '看板结果下发窗口终点 to（前端脚注要用）', r.to);
   }
 
   // ---- [7] 复制文案与数据一致（用户最在意的场景：发到工作群）----
@@ -500,12 +557,28 @@ function assert(cond, label, extra) {
     //   早操   should 40 / actual 36 → 0.9；晚自习 should 38 / actual 30 → ≈0.7895
     //   查宿   shouldStay 40 / actual 38 → 0.95；早八只记迟到 3 人（rate 恒 null）
     //   综合率 = Σrate×should ÷ Σshould = (0.9×40 + 0.7895×38 + 0.95×40) ÷ 118 ≈ 88.6%
+    // 每条临时记录的**手工独立扣分**（与任何被测实现无关）：
+    // ⚠️ deduct 必须由本表给、期望值由本表推 —— 若从被测代码算出来再断言被测代码，
+    //   等于自证，正是 [6b] 要防的那类假绿。
+    const SEED_DEDUCT = {
+      morning_exercise: 1.0,
+      study_evening: 2.1,
+      night_dorm: 0.4,
+      morning_class: 0.15,
+      // 卫生评「良」→ 得 8 分 → 扣 2 分（与 check-modules 的 GRADE_SCORE 同一换算，
+      // 但这里的数字是本表**手写**的，不从被测代码取）
+      hygiene: 2.0,
+    };
+    const SEED_DAY_DEDUCT = Object.values(SEED_DEDUCT).reduce((a, b) => a + b, 0); // 5.65
     const seed = [
       { moduleKey: 'morning_exercise', details: { shouldCount: 40, actualCount: 36, absentCount: 4 }, rate: 36 / 40 },
       { moduleKey: 'study_evening', details: { shouldCount: 38, actualCount: 30, absentCount: 8 }, rate: 30 / 38 },
       { moduleKey: 'night_dorm', details: { shouldStay: 40, actualCount: 38, notReturnedCount: 2 }, rate: 38 / 40 },
       { moduleKey: 'morning_class', details: { lateCount: 3 }, rate: null },
-    ];
+      // ⚠️ 卫生这条是用户报障的主体（「卫生…相应没有被减分」）：旧公式压根不看它，
+      //   加了这条记录后分数必须**明显掉 2 分**。ratePercent 不受它影响（考勤率只看 4 个模块）。
+      { moduleKey: 'hygiene', details: { grade: ['良'], score: 8 }, rate: null, targetType: 'area', metrics: { values: { score: 8 } } },
+    ].map((s) => ({ ...s, deduct: SEED_DEDUCT[s.moduleKey] }));
     await ClassProfile.create({ className: CLS, status: 'normal' });
     await CheckRecord.insertMany(
       seed.map((s) => ({
@@ -517,8 +590,15 @@ function assert(cond, label, extra) {
         targetName: CLS,
         className: CLS,
         details: s.details,
+        // ⚠️ deduct 必须一起造（用户 2026-11-19 之后分数就是从这里算的）：
+        //   写入端 routes/union.js 每条记录都落 deduct = computeDeduct(...)，
+        //   只造 details 不造 deduct 的记录在看板里等于「零扣分」→ 分数恒 10，
+        //   断言会假绿（上一版就是这么测过的：公式读 details 时才碰巧对上）。
+        //   这里按**手工独立算**的扣分值写，与被测实现无关。
+        deduct: s.deduct,
         // 与真实写入同构：metrics 只装 ratios/values，数字都在 details —— 钉住字段路径
-        metrics: s.rate == null ? { values: { lateCount: s.details.lateCount } } : { ratios: { rate: s.rate } },
+        // （卫生例外：它带自己的 values.score，由上面 seed 表显式给，不能被 lateCount 兜底覆盖）
+        metrics: s.metrics || (s.rate == null ? { values: { lateCount: s.details.lateCount } } : { ratios: { rate: s.rate } }),
         status: 'submitted',
       }))
     );
@@ -543,16 +623,37 @@ function assert(cond, label, extra) {
         assert(me.should === 40 && me.actual === 36, '早操应到/实到读的是 details', { s: me.should, a: me.actual });
         assert(nc.should === 40 && nc.actual === 38, '查宿读 details.shouldStay（不是 shouldCount）', { s: nc.should, a: nc.actual });
         assert(mc.rate === null && mc.ratePercent === null && (mc.lateCount || mc.late) === 3, '早八只记迟到、不给比率', mc);
-        // 考勤分数（用户 2026-11-12「考勤应该显示分数，10 分制」）：
-        // 期望 = 10 × 加权率 − 迟到 3 人 × 0.05，与上面**独立**再算一遍（不复用被测函数的实现）
-        const expScore = Math.round((exp * 10 - 3 * 0.05) * 100) / 100;
+        // ===== 分数（用户 2026-11-19 改为班超同源）=====
+        // 期望 = 10 − 当日扣分合计，**扣分合计直接由本文件上方 SEED_DEDUCT 手算相加**，
+        // 不读任何被测函数的返回值（读了就是自证）。
+        const expScore = Math.round((10 - SEED_DAY_DEDUCT) * 100) / 100;
         assert(
           att.score !== null && att.score !== undefined && Math.abs(att.score - expScore) < 0.02,
-          `考勤分数 = 10×加权率 − 迟到×0.05（期望 ${expScore}，且必须体现迟到扣分）`,
+          `分数 = 10 − 当日扣分合计（期望 ${expScore}，含卫生 ${SEED_DEDUCT.hygiene || 0} 分扣分）`,
           { got: att.score, expScore }
         );
-        assert(att.lateCount === 3, '考勤带 lateCount（分数里扣了什么要能看见）', att.lateCount);
-        assert(att.score > 0 && att.score < 10, '考勤分数落在 10 分制区间', att.score);
+        assert(att.lateCount === 3, '考勤带 lateCount（迟到人数仍下发）', att.lateCount);
+        assert(att.score > 0 && att.score < 10, '分数落在 10 分制区间', att.score);
+        // 分数**不等于**旧公式（10×加权率 − 迟到×0.05）：证明换掉了那套只看考勤四项的算法
+        const legacyScore = Math.round((exp * 10 - 3 * 0.05) * 100) / 100;
+        assert(
+          Math.abs(att.score - legacyScore) > 0.05,
+          `分数已脱离旧的「10×加权率−迟到×0.05」公式（旧=${legacyScore} 新=${att.score}）`,
+          { legacyScore, got: att.score }
+        );
+        // 扣分明细必须能对上账：各模块日均扣分之和 = 日均总扣分 = 10 − 分数
+        const ddSum = (att.deductDetail || []).reduce((a, x) => a + x.deduct, 0);
+        assert(
+          Math.abs(ddSum - (Number(att.deduct) || 0)) < 0.02,
+          `扣分明细之和 = 日均总扣分（${ddSum.toFixed(2)} vs ${att.deduct}）`,
+          { ddSum, deduct: att.deduct, detail: att.deductDetail }
+        );
+        assert(
+          (att.deductDetail || []).some((x) => x.key === 'hygiene'),
+          '扣分明细里出现卫生（用户点名「卫生没有被减分」，看得见才算修好）',
+          att.deductDetail
+        );
+        assert(att.hasAnyCheck === true, '下发 hasAnyCheck（考勤列显隐看它）', att.hasAnyCheck);
       }
 
       // ---- [10b] 只有早八记录、且没人迟到：分数必须是 10.00 而不是「—」 ----

@@ -70,53 +70,61 @@ const serverResponse = {
   },
 };
 
-// ===== 假运行时：只需要 auth.get 返回上面的响应 + setData 落地 =====
+// ===== 假运行时：只需要 auth.get 返回指定响应 + setData 落地 =====
+// 抽成工厂：本文件要跑**两种响应形状**（旧的 summary 平铺 / 真实的 summary.modules 嵌套），
+// 每组用例都要一个干净的组件实例，否则上一组的 data 会串到下一组。
 const sandboxResults = {};
 const fakeWx = { showToast() {}, getStorageSync: () => '', setStorageSync() {} };
-let instance = null;
 
-const sandbox = {
-  console,
-  require(p) {
-    if (p.includes('utils/request')) {
-      return { get: async () => serverResponse, post: async () => ({}), env: {} };
-    }
-    if (p.includes('utils/format')) {
-      return { todayKey: () => '2026-03-08', formatNumber: (n) => String(n) };
-    }
-    throw new Error(`未预期的 require: ${p}`);
-  },
-  getApp: () => ({ ensureLogin: async () => ({}), globalData: { userInfo: {} }, requireLogin: () => true }),
-  wx: fakeWx,
-  Component(def) {
-    instance = {
-      data: { ...(def.data || {}) },
-      properties: def.properties || {},
-      setData(patch) {
-        for (const [k, v] of Object.entries(patch)) {
-          if (k.includes('.')) {
-            const [a, b] = k.split('.');
-            this.data[a] = { ...(this.data[a] || {}), [b]: v };
-          } else this.data[k] = v;
-        }
-      },
-      triggerEvent(name, detail) {
-        sandboxResults.events = sandboxResults.events || [];
-        sandboxResults.events.push({ name, detail });
-      },
-      selectComponent: () => null,
-    };
-    for (const [k, fn] of Object.entries(def.methods || {})) instance[k] = fn.bind(instance);
-    Object.assign(instance.properties, { className: '23级大数据技术', refreshAt: 0 });
-    Object.assign(instance.data, { className: '23级大数据技术' });
-    instance.data.className = '23级大数据技术';
-    instance.data.period = instance.data.period || 'day';
-  },
-  Page() {},
-};
-sandbox.global = sandbox;
-vm.createContext(sandbox);
-vm.runInContext(code, sandbox);
+function buildSandbox(resp) {
+  let inst = null;
+  const sb = {
+    console,
+    require(p) {
+      if (p.includes('utils/request')) {
+        return { get: async () => resp, post: async () => ({}), env: {} };
+      }
+      if (p.includes('utils/format')) {
+        return { todayKey: () => '2026-03-08', formatNumber: (n) => String(n) };
+      }
+      throw new Error(`未预期的 require: ${p}`);
+    },
+    getApp: () => ({ ensureLogin: async () => ({}), globalData: { userInfo: {} }, requireLogin: () => true }),
+    wx: fakeWx,
+    Component(def) {
+      inst = {
+        data: { ...(def.data || {}) },
+        properties: def.properties || {},
+        setData(patch) {
+          for (const [k, v] of Object.entries(patch)) {
+            if (k.includes('.')) {
+              const [a, b] = k.split('.');
+              this.data[a] = { ...(this.data[a] || {}), [b]: v };
+            } else this.data[k] = v;
+          }
+        },
+        triggerEvent(name, detail) {
+          sandboxResults.events = sandboxResults.events || [];
+          sandboxResults.events.push({ name, detail });
+        },
+        selectComponent: () => null,
+      };
+      for (const [k, fn] of Object.entries(def.methods || {})) inst[k] = fn.bind(inst);
+      Object.assign(inst.properties, { className: '23级大数据技术', refreshAt: 0 });
+      Object.assign(inst.data, { className: '23级大数据技术' });
+      inst.data.className = '23级大数据技术';
+      inst.data.period = inst.data.period || 'day';
+    },
+    Page() {},
+  };
+  sb.global = sb;
+  vm.createContext(sb);
+  vm.runInContext(code, sb);
+  return { instance: inst, sandbox: sb };
+}
+
+const firstCase = buildSandbox(serverResponse);
+const instance = firstCase.instance;
 
 function assert(name, cond, detail) {
   console.log(`${cond ? 'ok  ' : 'FAIL'} ${name}${cond ? '' : ` -> ${detail}`}`);
@@ -149,6 +157,77 @@ function assert(name, cond, detail) {
   assert('未标 estimated（服务端给了汇总）', sum.estimated === false, `${sum.estimated}`);
   // 「区间内在统计里的天数」：服务端没给 recordedDays 时按 days 里有记录的天数兜底
   assert('有记录天数兜底 = 2（days 里两天有模块数据）', sum.days === 2, `${sum.days}`);
+
+  // ========================================================================
+  // ⚠️ 真实形状回归（用户 2026-11-19「我的班级考勤未显示记录」的根因）
+  //
+  // 上面的夹具是**旧的平铺形状**（summary 本身就是模块 map），而 GET /api/class/attendance
+  // 的真实响应是 **summary.modules 嵌套**（routes/class.js: `summary: { modules: summaryModules }`）。
+  // 正因为夹具与真实形状不一致，这个组件一直「测试全绿、线上永远显示『该区间暂无考勤记录』」。
+  // 下面用**真实形状**再跑一遍：必须读出模块与概览（hasAny=true）。
+  // ========================================================================
+  console.log('\n=== 真实形状（summary.modules 嵌套）回归 ===');
+  const realShape = {
+    className: '25级大数据技术',
+    from: '2026-11-19',
+    to: '2026-11-19',
+    classInfo: { className: '25级大数据技术', studentCount: 40, hasMorningExercise: true, hasMorningClass: true },
+    days: [
+      {
+        date: '2026-11-19',
+        weekday: '周四',
+        hasRecord: true,
+        absentTotal: 2,
+        modules: {
+          morning_class: { moduleKey: 'morning_class', name: '早八', should: 0, actual: 0, absent: 0, notReturned: 0, late: 5, rate: 0, ratePercent: 0, recordCount: 1 },
+          study_evening: { moduleKey: 'study_evening', name: '晚自习', should: 40, actual: 38, absent: 2, notReturned: 0, late: 0, rate: 0.95, ratePercent: 95, recordCount: 1 },
+        },
+      },
+    ],
+    summary: {
+      from: '2026-11-19',
+      to: '2026-11-19',
+      totalDays: 1,
+      recordedDays: 1,
+      // ↓↓ 真实形状：模块挂在这一层（旧组件把它当元信息跳过 → 0 个模块）
+      modules: {
+        morning_exercise: { key: 'morning_exercise', name: '早操', skipped: false, days: 0, should: 0, actual: 0, absent: 0, notReturned: 0, avgRate: null, ratePercent: null },
+        morning_class: { key: 'morning_class', name: '早八', skipped: false, days: 1, should: 0, actual: 0, absent: 0, notReturned: 0, avgRate: null, ratePercent: null },
+        study_evening: { key: 'study_evening', name: '晚自习', skipped: false, days: 1, should: 40, actual: 38, absent: 2, notReturned: 0, avgRate: 0.95, ratePercent: 95 },
+        night_dorm: { key: 'night_dorm', name: '查宿', skipped: false, days: 0, should: 0, actual: 0, absent: 0, notReturned: 0, avgRate: null, ratePercent: null },
+      },
+      skipped: {},
+      absentTotal: 2,
+      notReturnedTotal: 0,
+      avgRate: 0.95,
+      ratePercent: 95,
+    },
+  };
+  const realSandbox = buildSandbox(realShape);
+  const realInst = realSandbox.instance;
+  realInst._ready = true;
+  realInst.data.className = realShape.className;
+  realInst.data.rangeFrom = realShape.from;
+  realInst.data.rangeTo = realShape.to;
+  realInst.data.rangePeriod = 'day';
+  await realInst.load();
+  const rd = realInst.data;
+  const rkeys = (rd.modules || []).map((m) => m.key);
+  assert('真实形状：读到了模块（不再是 0 个 → 不会显示「暂无考勤记录」）', rkeys.length >= 4, JSON.stringify(rkeys));
+  assert('真实形状：概览卡有内容（hasAny=true）', rd.summary && rd.summary.hasAny === true, JSON.stringify(rd.summary && rd.summary.modules));
+  assert('真实形状：累计缺勤取 summary.absentTotal=2', rd.summary && rd.summary.absent === 2, rd.summary && rd.summary.absent);
+  assert('真实形状：平均出勤率 = 95%', rd.summary && rd.summary.avg === 95, rd.summary && rd.summary.avg);
+  const rSe = (rd.modules || []).find((m) => m.key === 'study_evening');
+  assert('真实形状：晚自习出勤率 95%（模块字段真的读到了）', rSe && rSe.rate === 95, rSe && rSe.rate);
+  // 摊平 summary.modules 时**不能覆盖** summary 自身的同名元信息键（from/to/skipped/absentTotal…），
+  // 否则区间文案会变成模块对象。真实数据里 morning_exercise / night_dorm 只出现在
+  // summary.modules（days 里没有）→ 它们能出现就说明读的是嵌套层而不是从 days 猜出来的。
+  assert('真实形状：元信息键没被模块覆盖（from 仍是日期串）', String(rd.summary && rd.summary.from) === realShape.from, rd.summary && rd.summary.from);
+  assert(
+    '真实形状：只在 summary.modules 里出现的模块也被列出（不是从 days 猜的）',
+    rkeys.includes('morning_exercise') && rkeys.includes('night_dorm'),
+    JSON.stringify(rkeys)
+  );
 
   // 「每日明细」整块已按用户口径下线：组件不再构造每天单元格，也不再渲染该区块。
   // 这里守住「没有被悄悄加回来」——否则又会与页面顶部的周期筛选重复、并与概览卡的

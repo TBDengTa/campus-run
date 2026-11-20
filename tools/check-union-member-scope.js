@@ -17,7 +17,10 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
-const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), 'utf8');
+// 统一归一 LF 再匹配：Windows 上 core.autocrlf=true 检出的是 CRLF，
+// 而下面的路由提取正则用 `\n  })\n);` 定位函数结尾 —— 不归一就会「取不到实现」
+// 报出一串假失败（与 check-server-contract.js::readSrc 同一处修正）。
+const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), 'utf8').replace(/\r\n/g, '\n');
 const svc = require(path.join(ROOT, 'server/src/services/union'));
 
 let failed = 0;

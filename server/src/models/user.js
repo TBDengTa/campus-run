@@ -14,6 +14,18 @@ const restrictionSchema = new Schema(
     // 判定依据（用户 2026-10-30「封禁用户要有分类 人封/机封/AI封」）：
     // 与 operator 正交 —— operator 记「谁执行」，source 记「凭什么判定」。
     source: { type: String, default: '' }, // manual 人封 / ai AI封 / rule 机封
+    // ===== 解封留痕（用户 2026-11-19「解封的会被重复封禁」）=====
+    // 最近一次**解除该 scope 限制**的时刻。为什么必须单独存一个字段、不能复用 at：
+    //   ① at 的语义是「最近一次违规时间」，escalate（24h 内重犯升级）读的就是它；
+    //      解封时把 at 写成解封时刻 → 刚解封就处于「24h 内已违规」状态，
+    //      当天正常同步再撞一次规则就直接升级限制登录（这是本仓库 2026-10-28 真实踩过的坑，
+    //      所以 lift 一直刻意写 at: null —— 不要动那条）。
+    //   ② 但 at 置空后，「这批数据已经被人工推翻过」这件事就再也没地方查了：
+    //      学生申诉成功 → 解封 → 再次打开小程序，**同一天的同一批步数**又被判定一次 →
+    //      又被封。这就是用户报的「解封的会被重复封禁」。
+    //      现在解封时写 liftedAt，判自动封禁前先看「线索日期是否早于 liftedAt」→ 跳过。
+    // 注意：liftedAt **不参与** escalate 判定（升级只看 at）。
+    liftedAt: { type: Date, default: null },
   },
   { _id: false }
 );
@@ -85,6 +97,12 @@ const userSchema = new Schema(
     // 当前「限制登录」的来源（用户 2026-10-30「封禁要有分类」）：manual 人封 / ai AI封 / rule 机封。
     // 只对应 status=banned 这一档；sync/gps 的限制来源在各 restrictions 项里。
     banSource: { type: String, default: '' },
+    // 最近一次**解除限制登录**的时刻（用户 2026-11-19「解封的会被重复封禁」）。
+    // 语义与 restrictions[s].liftedAt 完全一致，只是 login 这一档不在 restrictions 里
+    //（它走 status + bannedUntil），解封时那些字段全被清空，不留这一笔就没法知道
+    // 「这批数据已经被人工推翻过」，于是同一天再判定一次就再封一次。
+    // ⚠️ 不参与任何「重犯升级」判定（那个只看 bannedAt / restrictions.at），只是自动封禁的前置闸门。
+    banLiftedAt: { type: Date, default: null },
     // 单项能力限制（限制登录走上面的 status/bannedUntil，这里只放 sync / gps）
     restrictions: {
       sync: { type: restrictionSchema, default: () => ({}) },

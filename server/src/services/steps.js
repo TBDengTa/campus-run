@@ -70,6 +70,61 @@ async function markAutoBanned(anomalyId, reason) {
   }
 }
 
+/**
+ * 线索写入的**唯一实现**：按 (userId, date, source) 幂等 upsert（用户 2026-11-19
+ * 「解封的会被重复封禁」）。
+ *
+ * ===== 为什么判重条件里不能带 status =====
+ * ① werun 侧旧写法是 `findOne({ userId, date, status: 'open' })`：自动封禁会把那条
+ *    改成 status='banned'（见 markAutoBanned），于是**下一次同步找不到 open 记录 →
+ *    新建一条** → 再次 autoBan → 再封一次。同人同日的线索条数就是这么滚上去的
+ *    （实测库里 80 组「同人+同日+同来源」存在多条，最多一组 **48 条**）。
+ * ② GPS 侧旧写法**完全没有去重**，模型判定 suspicious/autoBan 就无条件 create ——
+ *    同一天反复提交同一批轨迹 = N 条线索 = N 次自动封禁。
+ * 现在两侧都走这里，一条数据只对应一条线索。
+ *
+ * ===== 已处置（banned / dismissed）的线索绝不复活 =====
+ * 管理员封过 / 研判排除过的线索说明这件事**已经有人表过态**。
+ * 再同步一次就把 status 改回 open，等于把人工处置抹掉，也等于「同一条数据被重新判一遍」。
+ * 命中已处置记录时：不新建、不改状态、不刷分数，只把 id 带回去（settled=true）。
+ *
+ * @param {object} user 用户文档
+ * @param {object} p    { dateKey, source, fields }；fields = 业务字段（不含 userId/date/source/status）
+ * @returns {Promise<{id: string, created: boolean, settled: boolean}|null>}
+ */
+async function upsertStepAnomaly(user, { dateKey, source, fields }) {
+  if (!user || !user._id || !dateKey) return null;
+  const existing = await StepAnomaly.findOne({ userId: user._id, date: dateKey, source }).lean();
+  if (existing) {
+    if (existing.status !== 'open') {
+      return { id: String(existing._id), created: false, settled: true };
+    }
+    // 待研判：只在**分数更高**时刷新（保留最强线索，与旧 werun 行为一致）
+    const nextScore = Number(fields && fields.score) || 0;
+    if (nextScore > (existing.score || 0)) {
+      await StepAnomaly.updateOne({ _id: existing._id }, { $set: fields });
+    }
+    return { id: String(existing._id), created: false, settled: false };
+  }
+  const created = await StepAnomaly.create({
+    userId: user._id,
+    openid: user.openid || '',
+    realName: user.realName || user.nickname || user.account || '',
+    className: user.className || '',
+    studentId: user.studentId || '',
+    date: dateKey,
+    source,
+    status: 'open',
+    ...(fields || {}),
+  });
+  return { id: String(created._id), created: true, settled: false };
+}
+
+// 自动处置的「已被人工推翻」闸门 = anticheat.liftedCoversClueDate（唯一实现，
+// 四条自动处置路径都只过它；判定口径与 liftedAt 存储都在 anticheat 那一侧，
+// 这里不再复制一份 —— 两处比较逻辑迟早判反）。
+const liftedCoversClueDate = anticheat.liftedCoversClueDate;
+
 
 /**
  * 统计「今天有多少次同步步数与本次完全相同」。
@@ -141,57 +196,31 @@ async function recordStepAnomaly(user, { dateKey, cumulativeSteps, deltaSteps, e
   const merged = mergeAnomaly(result, modelResult);
   if (!merged.shouldRecord) return merged;
 
-  const existing = await StepAnomaly.findOne({ userId: user._id, date: dateKey, status: 'open' }).lean();
-  if (existing) {
-    // 已有一条待研判记录：只在本次分数更高时更新（保留最强线索）
-    if (merged.score > (existing.score || 0)) {
-      await StepAnomaly.updateOne(
-        { _id: existing._id },
-        {
-          $set: {
-            score: merged.score,
-            reasons: merged.reasons,
-            cumulativeSteps: Number(cumulativeSteps) || 0,
-            deltaSteps: Number(deltaSteps) || 0,
-            // 记录判定来源，便于事后复核「这条是模型判的还是规则判的」
-            modelScore: modelResult ? Number(modelResult.score) : null,
-            modelLevel: modelResult ? modelResult.level : '',
-            // 有监督模型的阶段与概率（用户 2026-11-12 阶段性自升级）：
-            // 与 modelScore 一起**同一次更新**写入 —— 影子精度评估读的就是这两个字段，
-            // 只更新分数不更新阶段会出现「按新阶段算的分数挂在上一条阶段的记录上」。
-            modelStage: modelResult ? Number(modelResult.modelStage) || 0 : 0,
-            supervisedProb: modelResult && modelResult.supervised ? Number(modelResult.supervised.prob) : null,
-            supervisedScore: modelResult && modelResult.supervised ? Number(modelResult.supervised.risk) : null,
-          },
-        }
-      );
-    }
-    // anomalyId：自动封禁执行后要靠它回写 status='banned'/autoBanned（见 markAutoBanned）
-    return { ...merged, anomalyId: String(existing._id) };
-  }
-  const created = await StepAnomaly.create({
-    userId: user._id,
-    openid: user.openid || '',
-    realName: user.realName || user.nickname || user.account || '',
-    className: user.className || '',
-    studentId: user.studentId || '',
-    date: dateKey,
-    cumulativeSteps: Number(cumulativeSteps) || 0,
-    deltaSteps: Number(deltaSteps) || 0,
-    score: merged.score,
-    reasons: merged.reasons,
-    status: 'open',
-    modelScore: modelResult ? Number(modelResult.score) : null,
-    modelLevel: modelResult ? modelResult.level : '',
-    // 有监督模型的阶段与概率（见上方 updateOne 的同名字段注释）
-    modelStage: modelResult ? Number(modelResult.modelStage) || 0 : 0,
-    supervisedProb: modelResult && modelResult.supervised ? Number(modelResult.supervised.prob) : null,
-    supervisedScore: modelResult && modelResult.supervised ? Number(modelResult.supervised.risk) : null,
-    // 特征快照：管理员处置后这条记录会连同特征进入 step_labels 训练集，
-    // 所以特征必须在**判定当下**存下来（原始数据将来可能被清理）
-    features: modelResult && modelResult.features ? modelResult.features : null,
+  // 线索写入统一走 upsertStepAnomaly（按 人 + 日期 + werun 判重，见该函数注释）。
+  // settled = 同人同日已有一条**被人工处置过**的线索 → 调用方据此不再自动封禁。
+  const up = await upsertStepAnomaly(user, {
+    dateKey,
+    source: 'werun',
+    fields: {
+      cumulativeSteps: Number(cumulativeSteps) || 0,
+      deltaSteps: Number(deltaSteps) || 0,
+      score: merged.score,
+      reasons: merged.reasons,
+      modelScore: modelResult ? Number(modelResult.score) : null,
+      modelLevel: modelResult ? modelResult.level : '',
+      // 有监督模型的阶段与概率（用户 2026-11-12 阶段性自升级）：
+      // 与 modelScore 一起**同一次更新**写入 —— 影子精度评估读的就是这两个字段，
+      // 只更新分数不更新阶段会出现「按新阶段算的分数挂在上一条阶段的记录上」。
+      modelStage: modelResult ? Number(modelResult.modelStage) || 0 : 0,
+      supervisedProb: modelResult && modelResult.supervised ? Number(modelResult.supervised.prob) : null,
+      supervisedScore: modelResult && modelResult.supervised ? Number(modelResult.supervised.risk) : null,
+      // 特征快照：管理员处置后这条记录会连同特征进入 step_labels 训练集，
+      // 所以特征必须在**判定当下**存下来（原始数据将来可能被清理）
+      features: modelResult && modelResult.features ? modelResult.features : null,
+    },
   });
-  return { ...merged, anomalyId: String(created._id) };
+  // anomalyId：自动封禁执行后要靠它回写 status='banned'/autoBanned（见 markAutoBanned）
+  return { ...merged, anomalyId: up ? up.id : null, settled: !!(up && up.settled) };
 }
 
 /**
@@ -329,7 +358,18 @@ async function syncWerunDay(user, dateKey, cumulativeSteps, { checkJump = true }
       });
       // 自动处置总开关（见 autoDisposeEnabled 注释）：关闭时线索已落库（open），
       // 交给人工研判，本次同步按正常流程写入，不自动限制。
-      if (anomaly && anomaly.autoBan && (await autoDisposeEnabled())) {
+      //
+      // ⚠️ 还要过 liftedCoversClueDate 闸门（用户 2026-11-19「解封的会被重复封禁」）：
+      //   这条线索所属日期若已被人工解封推翻（liftedAt ≥ 线索日），不再自动处置 ——
+      //   实测库里存在「上午申诉解封、下午同一天的数据又被系统封掉」的完整流水。
+      //   settled（同人同日已有**已处置**线索）同样跳过：那条已经有结论了。
+      if (
+        anomaly &&
+        anomaly.autoBan &&
+        !anomaly.settled &&
+        !liftedCoversClueDate(user, 'sync', dateKey) &&
+        (await autoDisposeEnabled())
+      ) {
         const reason = `步数异常（${(anomaly.reasons || []).join('、') || '可疑'}）`;
         const info = await anticheat.restrict({
           user,
@@ -385,6 +425,7 @@ async function saveGpsRun(user, { date, distance, durationSeconds, calories, ste
   // 绝不给 GPS 跑「步数特征」—— 那会让配速异常的人因为步数正常而漏判。
   let anomaly = null;
   let anomalyId = null; // 自动封禁回写 / runRecordId 回填要用的线索 id
+  let anomalySettled = false; // 同人同日已有**被人工处置过**的 GPS 线索
   try {
     const acModel = require('./anticheat-model');
     const modelResult = await acModel.evaluate('gps', { distance, durationSeconds, routePoints });
@@ -395,31 +436,34 @@ async function saveGpsRun(user, { date, distance, durationSeconds, calories, ste
         // 轨迹快照（≤400 点）：自动封禁的 GPS 跑不会落 run_records（拦截时直接 return），
         // 不在这里存一份的话，最严重的记录反而永远画不出路线图（用户 2026-11-03）。
         const routeSnapshot = downsamplePoints(normalizePoints(Array.isArray(routePoints) ? routePoints : []));
-        const created = await StepAnomaly.create({
-          userId: user._id,
-          openid: user.openid || '',
-          realName: user.realName || user.nickname || user.account || '',
-          className: user.className || '',
-          studentId: user.studentId || '',
-          date: dateKey,
-          // GPS 没有「步数」：cumulativeSteps/deltaSteps 留 0（列表语义不混乱），
-          // 用 reasons 说明异常（管理端已按 reasons 展示）
-          cumulativeSteps: 0,
-          deltaSteps: 0,
-          score,
-          reasons: modelResult.reasons || [],
-          status: 'open',
+        // ⚠️ 旧写法在这里**无条件 StepAnomaly.create**，完全没有去重 ——
+        //   同一天反复提交同一批轨迹就是 N 条线索 + N 次自动封禁
+        //   （实测某用户 2026-11-13 一天内 48 条 open GPS 线索；库里「同人+同日+同来源」
+        //   多条的组合共 80 组）。这就是用户 2026-11-19「解封的会被重复封禁」的主要形态：
+        //   解封后再跑一次/重传一次，同一天的数据又被判一遍、又被封。
+        //   现在与 werun 侧共用 upsertStepAnomaly（按 人 + 日期 + gps 判重）。
+        const up = await upsertStepAnomaly(user, {
+          dateKey,
           source: 'gps', // 来源分流：列表里可区分是哪种跑步被判定
-          modelScore: Number(modelResult.score),
-          modelLevel: modelResult.level,
-          // 有监督模型的阶段与概率（用户 2026-11-12 阶段性自升级）：影子精度评估的唯一数据源
-          modelStage: Number(modelResult.modelStage) || 0,
-          supervisedProb: modelResult.supervised ? Number(modelResult.supervised.prob) : null,
-          supervisedScore: modelResult.supervised ? Number(modelResult.supervised.risk) : null,
-          features: modelResult.features || null,
-          route: routeSnapshot,
+          fields: {
+            // GPS 没有「步数」：cumulativeSteps/deltaSteps 留 0（列表语义不混乱），
+            // 用 reasons 说明异常（管理端已按 reasons 展示）
+            cumulativeSteps: 0,
+            deltaSteps: 0,
+            score,
+            reasons: modelResult.reasons || [],
+            modelScore: Number(modelResult.score),
+            modelLevel: modelResult.level,
+            // 有监督模型的阶段与概率（用户 2026-11-12 阶段性自升级）：影子精度评估的唯一数据源
+            modelStage: Number(modelResult.modelStage) || 0,
+            supervisedProb: modelResult.supervised ? Number(modelResult.supervised.prob) : null,
+            supervisedScore: modelResult.supervised ? Number(modelResult.supervised.risk) : null,
+            features: modelResult.features || null,
+            route: routeSnapshot,
+          },
         });
-        anomalyId = String(created._id);
+        anomalyId = up ? up.id : null;
+        anomalySettled = !!(up && up.settled);
       }
     }
   } catch (e) {
@@ -427,11 +471,18 @@ async function saveGpsRun(user, { date, distance, durationSeconds, calories, ste
   }
 
   // 规则校验（配速 / 升级为限制登录）：仍然生效，且拦截时不丢上面的线索记录
-  const result = await anticheat.checkPace(user, distance, durationSeconds);
+  const result = await anticheat.checkPace(user, distance, durationSeconds, { dateKey });
   if (result.violation) return { restricted: result, anomaly };
 
   // 自动处置总开关（同微信同步那处）：关闭时线索留在待研判队列，不自动限制。
-  if (anomaly && anomaly.level === 'autoBan' && (await autoDisposeEnabled())) {
+  // 另过「已被人工推翻」闸门 + settled（同日线索已有人表过态）：见 werun 那处的同款注释。
+  if (
+    anomaly &&
+    anomaly.level === 'autoBan' &&
+    !anomalySettled &&
+    !liftedCoversClueDate(user, 'gps', dateKey) &&
+    (await autoDisposeEnabled())
+  ) {
     // GPS 自动封禁只限 scope=gps（不影响微信同步），与 checkPace 一致
     const reason = `GPS 轨迹异常（${(anomaly.reasons || []).join('、') || '可疑'}）`;
     const info = await anticheat.restrict({
@@ -636,4 +687,6 @@ module.exports = {
   isTeacher,
   TEACHER_BLOCK_MESSAGE,
   SYNC_WINDOW_MS,
+  // 线索写入的唯一实现（导出给回归脚本直接验幂等，见 tools/verify-reban.js）
+  upsertStepAnomaly,
 };

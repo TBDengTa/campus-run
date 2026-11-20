@@ -667,6 +667,69 @@ async function seedCheckModules() {
   return results;
 }
 
+// ===== 名单预览（卡片用，用户 2026-11-19「检查记录与复审台卡片要显示缺勤人」）=====
+//
+// 为什么需要它：缺勤/未归/迟到名单存在 `details.<students 字段>` 里，而列表出口
+// `presentRecord({withDetails:false})` 刻意不下发 details（分页轻量），于是卡片上看不到名单；
+// 详情出口虽然有，但用户要的是「列表上就能扫一眼谁缺勤」。
+//
+// 三条硬约束（改这里之前先读）：
+//   ① **绝不整块下发名单**：单条名单上限 FIELD_LIMIT=200，列表每页 20 条 → 理论 4000 个名字。
+//      只给前 ROSTER_PREVIEW_MAX 个姓名 + 总数，前端折叠成「张三、李四、王五 +5」。
+//   ② **计数与名单人数可能不一致**：老记录的 actualCount 是当年手填的，
+//      `absentCount = 应到 − 实到` 会**大于**名单人数（fillDerived 的兼容分支）；
+//      也有名单为空而计数 >0 的。所以 count 走派生计数，names 单独给，两段文案都要能表达。
+//   ③ **计数键不能靠 key.replace 猜**：查宿的字段名是 `absentList`、label 是「未归名单」、
+//      计数是 `notReturnedCount`；早八是 `lateList` / `lateCount`。硬编码映射表在这里，
+//      **不要**塞进 DEFAULT_MODULES 的 fields（fields 落库，seed 只补缺不覆盖，线上永远拿不到新属性）。
+const ROSTER_PREVIEW_MAX = 3;
+const ROSTER_COUNT_KEY = {
+  morning_exercise: 'absentCount',
+  study_evening: 'absentCount',
+  night_dorm: 'notReturnedCount', // 字段名仍叫 absentList，但语义与计数都是「未归」
+  morning_class: 'lateCount',
+};
+
+/**
+ * 单条记录的名单预览（卡片用）。
+ * @param {object} moduleDef 模块定义（check_modules 文档或 DEFAULT_MODULES 项）
+ * @param {object} details   记录明细
+ * @returns {{field,label,names,count,more,hidden}|null}
+ *   field  = details 里的字段名（absentList / lateList）
+ *   label  = 展示前缀（缺勤 / 未归 / 迟到），由字段 label 去掉「名单」得到
+ *   names  = 前 ROSTER_PREVIEW_MAX 个姓名（调用方按权限决定是否下发）
+ *   count  = 派生计数（与扣分口径同源）
+ *   more   = 折叠掉的条数（count − 已展示个数，≥0）
+ *   hidden = true 表示有名单但姓名被调用方按权限置空
+ */
+function rosterOf(moduleDef, details = {}) {
+  const d = details && typeof details === 'object' ? details : {};
+  const fields = (moduleDef && moduleDef.fields) || [];
+  for (const f of fields) {
+    if (!f || f.type !== 'students') continue;
+    const arr = Array.isArray(d[f.key]) ? d[f.key] : [];
+    const names = arr.map((s) => String((s && s.name) || '').trim()).filter(Boolean);
+    const derived = Number(d[ROSTER_COUNT_KEY[String((moduleDef && moduleDef.key) || '')]]);
+    // 计数优先用派生值（与扣分同源）；派生值无效时才退回名单人数
+    const count = Number.isFinite(derived) ? Math.max(0, derived) : names.length;
+    if (!count && !names.length) continue; // 空名单（含网课）→ 不产生这个块
+    const shown = names.slice(0, ROSTER_PREVIEW_MAX);
+    return {
+      field: f.key,
+      // '缺勤名单' → '缺勤'、'未归名单' → '未归'、'迟到名单' → '迟到'
+      label: String(f.label || '缺勤名单').replace(/名单$/, '') || '缺勤',
+      names: shown,
+      count,
+      // 折叠数按「总数 − 已展示姓名数」算：老记录的 count 可能大于名单人数，
+      // 此时 more 会把「没录入名字的那部分」也算进 +N —— 这是刻意的，
+      // 卡片上宁可见「缺勤 8 人 · 张三、李四 +7」也不要凭空抹掉 6 个缺勤。
+      more: Math.max(0, count - shown.length),
+      hidden: false,
+    };
+  }
+  return null;
+}
+
 // 管理端恢复默认（字段与计分）
 function defaultOf(key) {
   return DEFAULT_BY_KEY.get(key) || null;
@@ -691,6 +754,9 @@ module.exports = {
   clearCache,
   normalizeDetails,
   fillDerived,
+  rosterOf,
+  ROSTER_PREVIEW_MAX,
+  ROSTER_COUNT_KEY,
   isOnlineDormGrade,
   computeMetrics,
   computeDeduct,

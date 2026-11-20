@@ -165,6 +165,114 @@ async function aggregateScores({ from, to, className, departmentIds, classNames 
   return byClass;
 }
 
+/**
+ * 「一个班在某区间的班超分」的**唯一组装实现**
+ *（用户 2026-11-19「班级状态日周月考勤不一致，并且卫生、查宿等相关内容没有被减分」）。
+ *
+ * 为什么必须抽出来：班级状态看板原来自己算一套考勤分
+ * （`10 × 加权出勤率 − 迟到×0.05`，模块只有早操/早八/晚自习/查宿，**完全不含卫生**），
+ * 而班超总页算的是另一套（`10 − 日均扣分`，**所有模块**的 deduct 都算）。
+ * 实测同一个班同一周：班超 8.40 分、看板 9.74 分 —— 用户正是拿两个页面互相对照才发现的。
+ * 现在两处都走这里，分数只有一个公式。
+ *
+ * 算法（与改造前的 classSummary 逐字一致，只是搬进单点函数）：
+ *   · 逐日得分 = scoreScale.scoreOf(当日 Σdeduct)（10 − 当日扣分，扣穿不显负）
+ *   · 区间得分 = 各日得分的**平均**（不是「10 − 区间总扣分」：一个班两周的记录不该扣成负分）
+ *   · deduct   = 日均扣分 = 区间总扣分 ÷ 有记录天数
+ * ⚠️ 没有记录的班返回 score=null（前端显示「—」），**不是 0 分** ——
+ *    0 分是最严重的差评，会被当成真实成绩复制发进工作群。
+ *
+ * @param {object|undefined} cls aggregateScores() Map 里该班的那一项
+ * @param {Array} [moduleList] 模块定义列表：传了则按它的 key 与顺序输出 moduleDeduct
+ *   （classSummary 要用它列出**全部**模块，含没记录的）；
+ *   不传则按该班实际有记录的模块输出（班级状态看板用它 —— 那里不想为了一行文案再拉模块字典）。
+ */
+function scoreOfAggregate(cls, moduleList) {
+  const empty = { score: null, deduct: null, dayCount: 0, recordCount: 0, moduleDeduct: {} };
+  if (!cls || !cls.byDate || !cls.byDate.size) return empty;
+  const dayScores = [...cls.byDate.values()].map((d) => scoreScale.scoreOf(d.deduct));
+  const keys = Array.isArray(moduleList) && moduleList.length
+    ? moduleList.map((m) => m.key)
+    : [...(cls.byModule ? cls.byModule.keys() : [])];
+  const dayCount = cls.byDate.size;
+  const moduleDeduct = {};
+  for (const k of keys) {
+    const hit = cls.byModule && cls.byModule.get(k);
+    if (!hit) continue;
+    moduleDeduct[k] = {
+      deduct: round2(hit.deduct),
+      // 日均扣分（**与区间得分同一个分母 dayCount**）：
+      // 区间得分 = 10 − 日均总扣分，所以「各模块日均扣分之和」必须能与得分对上。
+      // 只给窗口累计的话，老师拿「10 − 卫生累计10.00」去核对「班超 8.45 分」必然算不平
+      // —— 这类「两个数字互相矛盾」正是本仓库反复报障的成因。
+      avgDeduct: round2((hit.deduct || 0) / dayCount),
+      score: scoreScale.scoreOf(hit.deduct),
+      count: hit.count || 0,
+    };
+  }
+  return {
+    score: round2(dayScores.reduce((a, b) => a + b, 0) / dayScores.length),
+    deduct: round2(cls.totalDeduct / cls.byDate.size),
+    dayCount: cls.byDate.size,
+    recordCount: cls.recordCount || 0,
+    moduleDeduct,
+  };
+}
+
+/**
+ * 班级状态看板专用的**轻量**扣分聚合（className × date）。
+ *
+ * 为什么不用 aggregateScores()：那个聚合带 `$push: '$metrics'` 并按
+ * className×date×moduleKey 分组，是给「每模块指标文案」用的；
+ * 看板只要「这个班这天扣了多少分」，把全部 metrics 数组拖到 Node 侧
+ * 会让网络传输与内存都翻几倍（看板每 60 秒被多个老师反复刷新）。
+ * 两者**分组口径完全一致**（同一个 match、同一个 COUNTED 状态集合），
+ * 所以算出来的分数与班超逐字相同 —— 只是少带了展示用的字段。
+ *
+ * @returns {Promise<Map<string, {byDate: Map, byModule: Map, totalDeduct: number, recordCount: number}>>}
+ *   形状与 aggregateScores() 的返回值**兼容**，可直接喂 scoreOfAggregate()
+ */
+async function aggregateScoresLite({ from, to, classNames }) {
+  const match = {
+    date: { $gte: from, $lte: to },
+    status: { $in: COUNTED },
+    voided: { $ne: true },
+  };
+  if (Array.isArray(classNames)) match.className = { $in: classNames };
+  const rows = await CheckRecord.aggregate([
+    { $match: match },
+    {
+      $group: {
+        _id: { className: '$className', date: '$date', moduleKey: '$moduleKey' },
+        deduct: { $sum: '$deduct' },
+        count: { $sum: 1 },
+      },
+    },
+    { $limit: MAX_ROWS },
+  ]);
+  const byClass = new Map();
+  for (const r of rows) {
+    const cn = r._id.className || '未分班';
+    const dk = r._id.date;
+    const mk = r._id.moduleKey;
+    let cls = byClass.get(cn);
+    if (!cls) {
+      cls = { byDate: new Map(), byModule: new Map(), totalDeduct: 0, recordCount: 0 };
+      byClass.set(cn, cls);
+    }
+    cls.totalDeduct += r.deduct || 0;
+    cls.recordCount += r.count || 0;
+    const day = cls.byDate.get(dk) || { date: dk, deduct: 0 };
+    day.deduct += r.deduct || 0;
+    cls.byDate.set(dk, day);
+    const mod = cls.byModule.get(mk) || { deduct: 0, count: 0 };
+    mod.deduct += r.deduct || 0;
+    mod.count += r.count || 0;
+    cls.byModule.set(mk, mod);
+  }
+  return byClass;
+}
+
 // 每模块的展示指标文案（如「出勤率 98.5%」「未归 1 人」）
 function metricText(moduleDef, metrics, count) {
   if (!moduleDef) return '';
@@ -207,7 +315,8 @@ async function classSummary({ className, date, range = 'day', weekStartKey, mont
   const days = [...cls.byDate.values()]
     .map((d) => ({ date: d.date, deduct: round1(d.deduct), score: scoreScale.scoreOf(d.deduct) }))
     .sort((a, b) => (a.date < b.date ? 1 : -1));
-  const avgScore = days.length ? round2(days.reduce((a, b) => a + b.score, 0) / days.length) : null;
+  // 区间得分与「卫生/查宿等有没有被减分」全部来自这一处组装（scoreOfAggregate）
+  const agg = scoreOfAggregate(cls, moduleList);
 
   const moduleRows = [];
   for (const mod of moduleList) {
@@ -261,10 +370,12 @@ async function classSummary({ className, date, range = 'day', weekStartKey, mont
     maxWeek: scope.maxWeek || null,
     from: scope.from,
     to: scope.to,
-    score: avgScore, // 区间平均分（当区间无记录时 null，前端显示「—」）
-    deduct: days.length ? round2(days.reduce((a, b) => a + b.deduct, 0) / days.length) : null,
+    // score / deduct 都来自 scoreOfAggregate（单点实现，班级状态看板走的是同一个函数）：
+    // ⚠️ 不要在这里再写一遍「逐日得分平均」—— 那正是用户报「两个页面对不上」的成因。
+    score: agg.score, // 区间平均分（当区间无记录时 null，前端显示「—」）
+    deduct: agg.deduct,
     days,
-    recordCount: cls.recordCount,
+    recordCount: agg.recordCount,
     modules: moduleRows,
   };
 }
@@ -770,10 +881,38 @@ async function entryTargets({ moduleDef, date, period, scopeDepartmentIds = null
 
 // ===== 我的记录 / 记录列表查询 =====
 // scope：由路由传入已校验的可见范围（services/union.js::scopeFilter / 班级域成员资格），本函数不再自行判权
+//
+// ===== 记录筛选的「类名条件」怎么合（用户 2026-11-19「检查记录要能按班级/系部/院校/楼栋筛选」）=====
+// 三种来源都会想写 `className`：
+//   ① scope（身份范围：分院成员限本院系 / 班主任限本班）—— **必须生效，不可被筛选绕过**；
+//   ② query.className（用户点选的班级）；
+//   ③ query.classNames（院校 / 系部筛选解析出的班级集合）。
+// 旧实现是 `Object.assign(filter, scope)`：scope 直接把 ①② 覆盖掉 —— 那对「防越权」是对的，
+// 但对「在范围内再收窄」是错的（选了院校却还是全院数据，看着像筛选没生效）。
+// 现在统一走 intersectClassCond()：**求交集**。交集为空 → `$in: []`（Mongo 直接返回 0 条），
+// 这样既不会 because-of-筛选 而越权，也不会出现「筛选后反而变多」。
+function classCondOf(cond) {
+  if (cond === undefined || cond === null || cond === '') return null;
+  if (typeof cond === 'string') return [cond];
+  if (Array.isArray(cond)) return cond.map(String);
+  if (cond.$in) return (Array.isArray(cond.$in) ? cond.$in : []).map(String);
+  return null; // 其它形态（$ne 等）不参与交集，交由 Object.assign 覆盖（保持旧语义）
+}
+
+function intersectClassCond(conds) {
+  const lists = conds.map(classCondOf).filter((x) => Array.isArray(x));
+  if (!lists.length) return null;
+  let out = lists[0];
+  for (let i = 1; i < lists.length; i += 1) {
+    const set = new Set(lists[i]);
+    out = out.filter((n) => set.has(n));
+  }
+  return { $in: [...new Set(out)] };
+}
+
 function buildRecordFilter(query = {}, scope = null) {
   const filter = { voided: { $ne: true } };
   if (query.moduleKey) filter.moduleKey = String(query.moduleKey);
-  if (query.className) filter.className = String(query.className);
   if (query.status) filter.status = String(query.status);
   if (query.date) filter.date = String(query.date);
   if (query.from || query.to) {
@@ -783,8 +922,158 @@ function buildRecordFilter(query = {}, scope = null) {
     filter.date = range;
   }
   if (query.inspectorOpenid) filter.inspectorOpenid = String(query.inspectorOpenid);
-  if (scope && Object.keys(scope).length) Object.assign(filter, scope);
+  // 院校 / 系部 / 楼栋 / 关键词（用户 2026-11-19）：
+  //   · school / department 由路由解析成 classNames 传进来（check_records 上没有 schoolName 字段，
+  //     唯一可信的院校归属在班级台账 class_profiles，见 routes/union.js::resolveRecordOrgFilter）；
+  //   · building 解析成 targetIds（查宿记录的 targetId = dorm_rooms._id，按楼查房最准确；
+  //     不要解析 targetName 前缀 —— 实测存量里存在「洋河 男宿406」这种把楼名劈成两半的脏数据）；
+  //   · keyword 只搜「班级名 / 受检对象名 / 检查人」，**不搜学生姓名**（那要走 nameSearch，另一条链路）。
+  const classConds = [query.className, query.classNames, scope && scope.className];
+  const merged = intersectClassCond(classConds);
+  if (merged) filter.className = merged;
+  if (Array.isArray(query.targetIds)) filter.targetId = { $in: query.targetIds.map(String) };
+  if (query.keyword) {
+    const q = String(query.keyword).trim().slice(0, 40);
+    if (q) {
+      // 转义正则元字符：用户搜「1号楼(女生宿舍)」不能把括号当分组
+      const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      filter.$and = [{ $or: [{ className: re }, { targetName: re }, { inspectorName: re }] }];
+    }
+  }
+  // scope 的其余维度（分院部门条件 / 班主任多班 $in 已由 className 交集处理）
+  if (scope && Object.keys(scope).length) {
+    const rest = { ...scope };
+    // className 已由交集处理；这里只补「非 className」的维度（departmentId / $or 等）
+    delete rest.className;
+    if (Object.keys(rest).length) {
+      if (rest.$or && filter.$and) {
+        filter.$and.push({ $or: rest.$or });
+        delete rest.$or;
+      }
+      Object.assign(filter, rest);
+    }
+  }
   return filter;
+}
+
+/**
+ * 「院校 / 系部」筛选 → 班级名集合（唯一实现）。
+ *
+ * 为什么必须走班级台账：`check_records` 只有 `departmentId / departmentName`（系部），
+ * **没有任何院校字段**；而两个校区都有「计财系」，只按系部名筛会把两校混在一起。
+ * 所以院校/系部一律先在 `class_profiles`（课程台账）里解析成 `className` 集合，
+ * 再由 buildRecordFilter 与身份范围求交集。
+ *
+ * @param {{school?: string, department?: string}} p
+ * @returns {Promise<string[]|null>} 班级名数组；null = 没传这两个维度（不过滤）
+ */
+async function resolveRecordClassNames({ school, department } = {}) {
+  const sc = String(school || '').trim();
+  const dp = String(department || '').trim();
+  if (!sc && !dp) return null;
+  const cond = {};
+  if (sc) cond.schoolName = sc;
+  if (dp) cond.departmentName = dp;
+  const rows = await ClassProfile.find(cond).select('className').lean();
+  return rows.map((r) => String(r.className || '')).filter(Boolean);
+}
+
+/**
+ * 「楼栋」筛选 → 房间 id 集合（唯一实现）。
+ * @param {string} building 楼名（与 goal_config.buildings.dorm 同一套口径，如「洋河-男宿」）
+ * @returns {Promise<string[]|null>} null = 没传楼栋（不过滤）
+ */
+async function resolveRecordTargetIds(building) {
+  const b = String(building || '').trim();
+  if (!b) return null;
+  const DormRoom = require('../models/dorm-room');
+  const rows = await DormRoom.find({ $or: [{ buildingName: b }, { buildingId: b }] }).select('_id').lean();
+  return rows.map((r) => String(r._id));
+}
+
+/**
+ * 记录列表的筛选候选（班级 / 院校 / 系部 / 楼栋 + 计数）。
+ *
+ * 口径：候选**只按身份范围（scope）统计，不叠加用户已选的筛选项** ——
+ * 否则选了「北校区」之后其它院校的选项就消失了，用户没法切回去（班级状态页踩过同一个坑）。
+ *
+ * @param {object|null} scope 身份范围条件（unionSvc.scopeFilter 的产物）
+ * @param {{from?: string, to?: string}} [window] 可选日期窗口（收窄统计范围，避免全表扫）
+ */
+async function recordFacets(scope = null, { from, to } = {}) {
+  const match = { voided: { $ne: true }, ...(scope || {}) };
+  if (from || to) {
+    match.date = {};
+    if (from) match.date.$gte = String(from);
+    if (to) match.date.$lte = String(to);
+  }
+  // 班级（顺带拿院校/系部归属，一次查询搞定三个维度）
+  const classAgg = await CheckRecord.aggregate([
+    { $match: match },
+    { $group: { _id: '$className', n: { $sum: 1 } } },
+    { $sort: { n: -1 } },
+    { $limit: 500 },
+  ]);
+  const names = classAgg.map((r) => String(r._id || '')).filter(Boolean);
+  const profiles = names.length
+    ? await ClassProfile.find({ className: { $in: names } })
+        .select('className schoolName departmentName')
+        .lean()
+    : [];
+  const profBy = new Map(profiles.map((p) => [p.className, p]));
+
+  const classes = classAgg
+    .filter((r) => r._id)
+    .map((r) => {
+      const p = profBy.get(r._id) || {};
+      return {
+        className: String(r._id),
+        count: r.n,
+        schoolName: p.schoolName || '',
+        departmentName: p.departmentName || '',
+      };
+    });
+
+  // 院校 / 系部：从班级台账汇总（同一批数据，保证计数守恒）
+  const schoolMap = new Map();
+  const deptMap = new Map();
+  for (const c of classes) {
+    if (c.schoolName) schoolMap.set(c.schoolName, (schoolMap.get(c.schoolName) || 0) + c.count);
+    if (c.departmentName) deptMap.set(c.departmentName, (deptMap.get(c.departmentName) || 0) + c.count);
+  }
+  const byName = (a, b) => String(a).localeCompare(String(b), 'zh-CN');
+
+  // 楼栋：只统计查宿（dorm_room）记录，按 targetId 反查 dorm_rooms.buildingName
+  const roomAgg = await CheckRecord.aggregate([
+    { $match: { ...match, targetType: 'dorm_room' } },
+    { $group: { _id: '$targetId', n: { $sum: 1 } } },
+    { $limit: 5000 },
+  ]);
+  let buildings = [];
+  if (roomAgg.length) {
+    const DormRoom = require('../models/dorm-room');
+    const roomIds = roomAgg.map((r) => r._id).filter((id) => id && /^[a-f0-9]{24}$/i.test(String(id)));
+    const rooms = roomIds.length
+      ? await DormRoom.find({ _id: { $in: roomIds } }).select('buildingName buildingId').lean()
+      : [];
+    const nameByRoom = new Map(rooms.map((r) => [String(r._id), String(r.buildingName || r.buildingId || '')]));
+    const bMap = new Map();
+    for (const r of roomAgg) {
+      const name = nameByRoom.get(String(r._id));
+      if (!name) continue;
+      bMap.set(name, (bMap.get(name) || 0) + r.n);
+    }
+    buildings = [...bMap.entries()].map(([building, count]) => ({ building, count })).sort((a, b) => byName(a.building, b.building));
+  }
+
+  return {
+    classes,
+    schools: [...schoolMap.entries()].map(([school, count]) => ({ school, count })).sort((a, b) => byName(a.school, b.school)),
+    departments: [...deptMap.entries()]
+      .map(([department, count]) => ({ department, count }))
+      .sort((a, b) => byName(a.department, b.department)),
+    buildings,
+  };
 }
 
 // 排名缓存失效：班级属性（是否有早操 / 是否参跑）改动后必须调用，
@@ -800,7 +1089,12 @@ module.exports = {
   clearRankCache,
   entryTargets,
   aggregateScores,
+  aggregateScoresLite,
+  scoreOfAggregate,
   metricText,
   rangeOf,
   buildRecordFilter,
+  resolveRecordClassNames,
+  resolveRecordTargetIds,
+  recordFacets,
 };

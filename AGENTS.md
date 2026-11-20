@@ -871,6 +871,83 @@
   回归：`verify-class-status.js` 8c/8d 节（排序有序性、年级单选/多选并集与标签进文案）+
   `check-server-contract.js`（below95 替换 belowHalf、grades 接线、canvas 接线）。
 
+- **班级状态与班超必须同源「一个窗口 + 一份分数」**（用户 2026-11-19「班级状态日周月考勤不一致，
+  并且考勤的卫生、查宿等相关内容相应没有被减分」）：改这块前必读，回退任一条都会复发。
+  **根因**：看板自己写了两处实现 —— ① 分数 `10 × 加权出勤率 − 迟到×0.05`，模块只列 4 个考勤项、
+  **卫生完全不在公式里**；② 窗口「周一起**至所选日** / 1 号起**至所选日**」，而班超是**完整周/整月**。
+  实测同一班同一周 **班超 8.40 / 看板 9.74**（差 1.34），用户正是拿两页对照发现的。
+  ① **分数唯一实现** `services/band-chao.js::scoreOfAggregate(cls, moduleList)`：
+  `score = 逐日 scoreOf(当日 Σdeduct) 的平均`、`deduct = 总扣分 ÷ 有记录天数`，**全部模块**（含卫生）。
+  `classSummary` 与看板都调它，**禁止**在 class-status-board 里再写第二套（`attendanceScore` 已删除）。
+  模块级扣分下发 `avgDeduct`（日均，**与分数同一分母**）—— 只给窗口累计会出现
+  「10 − 卫生累计10.00 ≠ 8.45」这种自相矛盾，老师拿两个数一算就发现对不上。
+  ② **窗口唯一实现** `band-chao.js::rangeOf`：本日 = 当天、本周 = ISO 周一至周日、本月 = 1 号至月末。
+  看板 `attWindow` 只做转发，**不许**再写 `to: day`（那正是「本周只统计到周三」的成因）。
+  ③ 聚合区间终点必须是**窗口 to**（`$lte: attTo`），不是所选日；缓存 key 必须含 `from|to` 两维
+  （完整周/月下同一周不同日子的 to 不同，漏了会串区间）。
+  ④ `attendance.hasAnyCheck`（窗口内有**任意**检查记录，含卫生）决定考勤列显隐；
+  `hasData`（只有 4 个考勤模块）仍给「考勤待补」筛选用 —— 两者语义不同，别合并。
+  ⑤ 规则文案 `buildAttRuleLines()` 必须与真实算式一致（卫生按 GRADE_SCORE 折算、
+  查宿/早八按 PERSON_DEDUCT 单价）；改了公式忘了改说明就是「老师照过时说明质疑正确分数」。
+  ⑥ 前端列名「班超分」、副行显示扣分明细（`buildAttSub` 读 `deductDetail`）；
+  区间文案与图片标题一律用服务端 `to`（`attTo`），**不许**拿所选日当终点。
+  回归：`verify-class-status.js` [6]/[6b]（三种窗口逐班与 `classSummary` 交叉核对 + 独立重算
+  + **有卫生扣分的班分数必须更低**）、[10]（造数含卫生记录，期望值由测试自己手算 deduct）、
+  [11]（窗口起止 = 完整周/月）+ `check-server-contract.js` 的「分数/窗口同源」一节。
+
+- **检查记录筛选与卡片（用户 2026-11-19「有学生会总管的权限查看检查记录没有办法筛选与查看
+  所有记录，增加筛选如班级、系部、院校、楼栋」「卡片增加缺勤人的显示、照片显示」）**：
+  ① **总裁判必须识别 `*` 通配**（`routes/union.js::hasWildcard`）：超管组有效权限是 `['*']`，
+  旧 `isSteward` 只判 `includes('union.steward')` → 拿全部权限的账号反而不被认作总管，
+  落到「非成员 → 只限本班」，全校 1208 条只能看到自己班 24 条、复审台直接 403。
+  与 `middlewares/admin.js` 的 `*` 口径必须一致。总管放行要覆盖**四处**：
+  `/records`（scope={} 全校）、`/records/:id`、`/review/queue`（先判总管再 assertMember）、
+  `/class/:className`（班超全景）—— 漏一处就是「能列全校、点不进某班」。
+  ② **筛选与身份范围求交集**（`band-chao.js::buildRecordFilter` + `intersectClassCond`）：
+  旧 `Object.assign(filter, scope)` 会把用户选的 className **覆盖掉**（选了院校却还是全院数据），
+  或者反过来被越权。交集为空 → `$in: []`（0 条，fail-closed）。
+  ③ 院校/系部在 `class_profiles` 解析成 className 集合（`check_records` **没有院校字段**，
+  且两校区都有「计财系」，只按系部名筛会混校）；楼栋解析成 `targetIds`（查宿 `targetId` = 房间 id），
+  **不要**按 `targetName` 前缀切（存量有「洋河 男宿406」这种劈开的脏数据）。
+  ④ facets 只按**身份范围**统计、不叠加已选项（否则选了北校区其它选项就消失、切不回去）；
+  只在第一页算。前端搜索必须 300ms 防抖 + `seq` 丢弃过期响应，**不许** `if (loading) return`。
+  ⑤ **卡片名单预览唯一实现** `check-modules.js::rosterOf`：字段名/label/计数映射都在这
+  （查宿字段名是 `absentList` 但语义是「未归」、计数走 `notReturnedCount`；早八是 `lateList`/`lateCount`）。
+  只给前 3 个姓名 + 总数，**绝不整块下发**（单条上限 200 人 × 20 条/页）。
+  `count ≠ names.length` 是正常的（老记录 actualCount 手填）→ 文案必须能表达「名单未记录」。
+  ⑥ **姓名按视角放行**（`routes/union.js::canSeeRosterNames`）：成员 / 总管 / 本班班主任 / 班委 /
+  检查人本人可见姓名；普通学生（`/records` 对本班学生开放）只给人数 + 「名单仅管理端可见」。
+  **不要**用 `name-mask` 打码（那是公开榜口径，管理视图出现 `张**` 会像 bug）。
+  ⑦ 照片：`presentRecord({photoLimit:3})` 的 `slice` 必须在 `cropPhotos` **之后**（否则
+  `photoCount` 语义错位），`photoCount` 始终总数供 +N 与裁剪占位；前端用 `catch:tap` 调
+  `wx.previewImage`（用 `bind` 会同时进详情）。
+  回归：`check-union-records-filter.js`（总管通配 / 交集 / facets / 卡片三态名单 / 照片预览）、
+  `check-union-review.js`（队列 roster + summary 保持干净）、
+  `check-server-contract.js`（由 CRLF 假失败一并修正：`readSrc` 统一归一 LF）。
+
+- **解封后不会被重复封禁**（用户 2026-11-19）：四条自动处置路径**共用一个闸门**，缺一条就复发。
+  ① **线索按 (userId, date, source) 唯一**（`steps.js::upsertStepAnomaly`）：GPS 侧旧写法
+  **完全没有去重**（实测某用户一天 48 条 open 线索、「同人+同日+同来源」多条共 80 组），
+  werun 侧按 `status:'open'` 判重 → 自动封禁把该条改成 `banned` 后下次同步**新建一条**再封一次。
+  判重条件**不许带 status**；命中已处置记录时**不新建、不改状态**（人工结论优先），返回 `settled`。
+  ② **解封留痕**：`lift()` 写 `restrictions[s].liftedAt` / `user.banLiftedAt`。
+  ⚠️ 与 `at` **是两件事不许合并**：`at` 管「24h 重犯升级」（解封必须清空，2026-10-28 的坑），
+  `liftedAt` 管「这批数据已被人工推翻」的闸门。
+  ③ **闸门** `anticheat.js::liftedCoversClueDate(user, scope, dateKey)`：线索**日期** ≤ 解封日 →
+  跳过自动处置（线索照常留库等人工）。比较**线索日期**而不是 createdAt（微信 7 天回补会给历史日
+  补建记录，用 createdAt 会让「昨天解封、今天回补昨天数据」再封一次）；
+  日期一律走 `utils/dates::toDateKey`（`toISOString` 是 UTC，会把北京早晨解封算成前一天）。
+  四条路径：两道 AI（`steps.js` 的 werun/GPS 分支）+ 两道规则（`checkStepJump` / `checkPace`，
+  后者新增 `ctx.dateKey` 参数）——**规则通道占实测流水的大多数，只堵 AI 侧等于没修**。
+  ④ `restrict()` **按执行主体幂等**：自动处置（`operator='system'`）在同 scope 已生效时跳过
+  （旧实现每次都写，流水出现相邻两条 `ban`、徽章被重复撤销）；人工（管理员/申诉）照常写入 ——
+  改时长/改永久是**新意图**，必须能盖掉系统写的值。⚠️ 不能只按 `until` 比大小：
+  自动封禁每次都是 `now + days`，第二次的 until 必然「更晚」→ 幂等永不命中。
+  ⑤ **反证不能放太宽**：解封**次日**的新数据必须仍能正常自动封禁（闸门只挡同一天同一批）。
+  回归：`tools/verify-reban.js`（7 节真连库：去重 / 不复活 / 幂等 / 闸门四路径 / 次日反证 /
+  login 档留痕 / 清理核对）+ `check-anticheat-disposal.js`（四条路径过闸门的静态断言）。
+
+
 ## 跑分（积分体系）
 - 配置在单例 `goal_config.points`（系统配置 → 跑分设置）：完成日目标得分、完成周目标得分、
   超出日目标后「**每再多达成个人日目标的 `extraPercent`%（默认 10，范围 1~100）加 `perStepScore` 分**」、

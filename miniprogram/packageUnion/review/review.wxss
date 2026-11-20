@@ -352,3 +352,50 @@
 .rv-bar-btn:active {
   opacity: 0.85;
 }
+
+/* ===== ȱ���ˣ�ǰ 3 ������ + �۵� +N���û� 2026-11-19��=====
+   ���ⲻ���� .rv-card-sum��ժҪҪ�������зⶥ��review Ҫһ��ɨ��������
+   ��������һ�С��������۵��� +N����������������ҳ�� */
+.rv-roster {
+  display: flex;
+  align-items: baseline;
+  gap: 8rpx;
+  margin-top: 10rpx;
+  padding: 8rpx 14rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-brand-soft-2);
+}
+
+.rv-roster-count {
+  flex-shrink: 0;
+  font-size: 20rpx;
+  font-weight: 600;
+  color: var(--tt-brand-deep);
+}
+
+.rv-roster-names {
+  flex: 1;
+  min-width: 0;
+  font-size: 20rpx;
+  color: var(--tt-text-2);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.rv-roster-more {
+  flex-shrink: 0;
+  font-size: 20rpx;
+  font-weight: 600;
+  color: var(--tt-brand-deep);
+}
+
+.rv-roster-flag {
+  flex: 1;
+  min-width: 0;
+  font-size: 19rpx;
+  color: var(--tt-text-3);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

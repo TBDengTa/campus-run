@@ -1,14 +1,14 @@
 # 唐唐快跑 · 校园跑小程序 2.0
 
 > 面向高校的校园运动记录与管理平台。微信小程序端（用户端 + 管理端同包）+ Node.js 后端。
-> **当前版本：v2.0.9**
+> **当前版本：v2.0.11**
 
 <p>
   <img alt="platform" src="https://img.shields.io/badge/platform-WeChat%20MiniProgram-07C160">
   <img alt="backend" src="https://img.shields.io/badge/backend-Node.js%20%7C%20Express-339933">
   <img alt="database" src="https://img.shields.io/badge/database-MongoDB-47A248">
   <img alt="ui" src="https://img.shields.io/badge/UI-TDesign-0052D9">
-  <img alt="version" src="https://img.shields.io/badge/version-2.0.9-FF6B00">
+  <img alt="version" src="https://img.shields.io/badge/version-2.0.11-FF6B00">
 </p>
 
 ---
@@ -307,6 +307,7 @@ node tools/verify-identity-e2e.js       # 旧令牌 401 自愈、一键登录身
 
 | 版本 | 日期 | 内容 |
 |---|---|---|
+| **v2.0.11** | 2026-11 | 班级状态与班超同源「一个窗口 + 一份分数」（卫生等全部模块进公式，修掉同一班同一周班超 8.40 / 看板 9.74；日/周/月窗口改为完整周与整月）+ 检查记录筛选与卡片（班级/系部/院校/楼栋真进查询、与身份范围取交集、缺勤名单预览与照片、总管 `*` 通配放行）+ 解封后不再被重复封禁（线索按人/日/来源唯一、解封留痕闸门、自动处置幂等、次日反证）+ 班级考勤「未显示记录」三层修复（summary.modules 摊平、早八无出勤率口径不画 0%、有迟到人数不再当空值灰掉） |
 | **v2.0.9** | 2026-11 | 宿舍「楼名·房号」唯一解析口径（白名单最长前缀优先，修掉洋河校区「女宿女宿…301」叠层污染）+ 房间归属按在住名单实时推导（不再用建房间那一刻的快照，修掉分院范围两向失真/越权）+ 学生会成员列表真按筛选查库（院校/部门/学年/关键词四项进条件 + 分页 + 学年选项不自我引用）+ 样本量两口径（rows 训练上限 vs totalRows 真实数据量，修掉「一直是 20000」）+ 组织归属单点解析与检查录入水印相机 |
 | **v2.0.7** | 2026-11 | 唐跑AI数据模型阶段性自升级：三级阶梯（0 无监督 → 1 影子辅助 → 2 有监督主判，阶段持久化到 `anticheat_model_states`）；有监督逻辑回归（纯 JS 零依赖，分层 K 折交叉验证，按覆盖率剔除老标注缺的新特征）；闸门量化（样本量/类别平衡/AUC 均值与折间波动/精度/影子实测精度），**影子阶段分数封顶在自动封禁线以下、绝不单独封号**；线上精度掉线自动降级；手动锁定后自动评估只写建议；Web 状态台与小程序异常记录页同款阶梯卡片 + 立即评估/手动指定；`goal_config.anticheat.autoUpgrade/autoDemote` 开关 |
 | **v2.0.6** | 2026-11 | 北斗运动 2.0（签到 + 转盘抽步数 + 看视频/分享得次数，结果只由服务端定、dailyStepsCap 唯一成本闸门、drawId 幂等、断签重置）；EO 链路缓存防护（`/api/*` no-store、`/health` no-store、`/uploads` immutable、gzip 只在 nginx、首页 onShow 30 秒节流）；暗色模式补全 |
@@ -328,5 +329,5 @@ node tools/verify-identity-e2e.js       # 旧令牌 401 自愈、一键登录身
 
 <p align="center">
   由 <b>河北唐博科技有限公司</b> 设计与开发<br>
-  <sub>校园运动记录与管理平台 · v2.0.9</sub>
+  <sub>校园运动记录与管理平台 · v2.0.11</sub>
 </p>

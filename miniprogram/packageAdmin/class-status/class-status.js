@@ -63,11 +63,14 @@ const METRIC_CHIPS = [
 ];
 
 // 显示内容（列表列）与复制内容（文案强调哪个指标）—— 两个独立开关
-// 考勤列 2026-11-12 起显示**分数**（10 分制），标签跟着改，否则「考勤」两字会被读成百分数
+// 考勤列 2026-11-12 起显示**分数**（10 分制）；
+// 2026-11-19 起这一列就是**班超分**（与班超总评同一个数：10 − 各模块日均扣分，**含卫生/查宿**）。
+// 标签跟着改成「班超分」—— 用户报的正是「考勤的卫生、查宿等内容没有被减分」，
+// 再叫「考勤分」会继续被读成「只算考勤四项」。
 const COLUMN_TOGGLES = [
   { key: 'daily', label: '日达标' },
   { key: 'weekly', label: '周达标' },
-  { key: 'attendance', label: '考勤分' },
+  { key: 'attendance', label: '班超分' },
 ];
 const COPY_SCOPES = [
   { key: 'all', label: '全部' },
@@ -125,11 +128,14 @@ Page({
     attRuleText: '',
     // 日期选择（2026-11-03）：空串 = 今天。选日期后日列/周列/考勤窗口一次联动：
     //   日达标 = 所选当天；周达标 = 所选日所在 ISO 周（周一至该日）；
-    //   考勤 = 按 attRange 窗口（本日/本周/本月），同样**锚定所选日**（2026-11-12 改）。
-    //   旧口径「考勤按天回看、永远没有周语义」已被用户否掉：老师要的是「本周考勤怎么样」。
+    //   考勤 = 按 attRange 窗口（本日/本周/本月），同样**锚定所选日**（2026-11-12 改），
+    //   但窗口区间是**完整周 / 完整月**（2026-11-19 与班超同源，见服务端 attWindow），
+    //   所以区间终点是服务端下发的 attTo，不再是所选日 —— 页面/脚注/图片三处都必须用 attTo。
     selectedDate: '',
     todayKeyText: '',
     dateLabel: '今天',
+    // 考勤窗口终点（服务端 d.to 回显；缺失时退回所选日）
+    attTo: '',
     attRangeText: '',
     // 显示内容（列表列）：默认日+周，考勤有数据时才自动加上
     columns: { daily: true, weekly: true, attendance: false },
@@ -250,8 +256,13 @@ Page({
       const selectedGrades = grades.length
         ? (this.data.selectedGrades || []).filter((g) => grades.includes(g))
         : this.data.selectedGrades || [];
-      // 考勤有没有真数据：决定考勤列与「考勤统计 N 天」那一行出不出现在页面上
-      const hasAttendance = rows.some((x) => x.attendance && x.attendance.hasData);
+      // 考勤有没有真数据：决定「班超分」列与「考勤统计 N 天」那一行出不出现在页面上。
+      // ⚠️ 这里必须用 **hasAnyCheck**（窗口内有**任意**检查记录，含卫生），不能用 hasData
+      //   （只含 4 个考勤模块）。用户 2026-11-19 报「卫生、查宿没有被减分」的另一半观感来源
+      //   就是「本周只录了卫生」的班：分数明明 8.40，但旧判定认为它没考勤数据 →
+      //   考勤列被关掉、「考勤统计」那一行也不出现，看着就像真的没减分。
+      // hasData 仍保留给服务端的「考勤待补」筛选（那个语义是「考勤四项都没录」，没变）。
+      const hasAttendance = rows.some((x) => x.attendance && x.attendance.hasAnyCheck);
       const columns = { ...this.data.columns };
       if (hasAttendance && !this._touchedColumns) columns.attendance = true;
       if (!hasAttendance) columns.attendance = false;
@@ -259,18 +270,25 @@ Page({
         loading: false,
         today: d.today || '',
         from: d.from || '',
+        // 窗口终点（完整周/完整月）：脚注与图片都要用它，不能用 today 顶替（见 attRangeText 注释）
+        attTo: d.to || '',
         weekStart: d.weekStart || '',
         // 窗口以服务端回显为准（非法值会被回退成 week，前端跟着改，否则 chip 与数据不符）
         attRange: d.attRange || this.data.attRange,
         attRangeLabel: d.attRangeLabel || '',
         attRuleLines: d.attRuleLines || [],
         attRuleText: (d.attRuleLines || []).join('；'),
-        // 联动展示：快捷 chip 文案随日期换词；考勤行标出实际统计区间（带窗口名）
+        // 联动展示：快捷 chip 文案随日期换词；考勤行标出实际统计区间（带窗口名）。
+        // ⚠️ 区间终点用服务端下发的 **d.to**（窗口终点），**不是 d.today**（所选日）：
+        //   窗口 2026-11-19 起与班超同源 = **完整周 / 完整月**，本周终点是周日而不是今天。
+        //   写 today 会让页面说「11月16日 ~ 11月19日」而数字里含 20~22 日 ——
+        //   老师照着这个区间去核对必然觉得「日周月不一致」（用户报障的第三种表现）。
+        //   d.to 缺失 = 后端还是旧版（没这个字段），此时退回 today 至少不说谎。
         chips: this.chipsFor(),
         attRangeText: d.from
-          ? d.from === d.today
-            ? `${d.today}（仅当日，早操/早八/晚自习/查宿）`
-            : `${d.from} ~ ${d.today || ''}（${d.attRangeLabel || ''}，早操/早八/晚自习/查宿）`
+          ? (d.to || d.today) === d.from
+            ? `${d.from}（仅当日，早操/早八/晚自习/查宿）`
+            : `${d.from} ~ ${d.to || d.today || ''}（${d.attRangeLabel || ''}，含卫生/查宿等全部检查）`
           : '',
         gradeChips: (grades.length ? grades : []).map((g) => ({
           key: g,
@@ -321,6 +339,8 @@ Page({
         attRuleLines: [],
         attRuleText: '',
         attRangeText: '',
+        // 窗口终点同属派生展示：失败后留着它，图片标题会顶着一个不存在的区间
+        attTo: '',
         errorText: noPerm ? '没有查看班级状态的权限（需要 class.view）' : e.message || '加载失败，请下拉重试',
       });
     }
@@ -390,7 +410,7 @@ Page({
     // 以前这里硬编码「每迟到 1 人扣 0.05 分」，单价改了页面不会跟着改 ——
     // 老师照着过时的说明质疑正确的分数，比没有说明更糟。
     if (hasAtt && (d.attRuleLines || []).length) {
-      parts.push(`考勤（${d.attRangeLabel || ''}：${d.from} ~ ${d.today}）：${d.attRuleLines[0]}`);
+      parts.push(`考勤（${d.attRangeLabel || ''}：${d.from} ~ ${d.to || d.today}）：${d.attRuleLines[0]}`);
     }
     return `${parts.join('；')}。`;
   },
@@ -425,8 +445,9 @@ Page({
   decorate(r) {
     const run = r.run || {};
     const att = r.attendance || {};
-    // 考勤列显示**分数**（10 分制，用户 2026-11-12）；出勤率仍留在副信息里对照，
-    // 因为「9.5 分」和「95%」说的是同一件事，但发群里的报告两个都可能出现。
+    // 分数 = 班超分（服务端与班超总评同一个实现，含卫生/查宿扣分）；
+    // 出勤率仍下发但不在这行重复显示：分数就是它的折算结果，
+    // 同一行给两个数只会让人去核对「9.5 分和 95% 是不是一个意思」。
     const attScoreText = scoreText(att.score);
     return {
       className: r.className,
@@ -439,13 +460,25 @@ Page({
       weeklyLevel: rateLevel(run.weeklyRate),
       attText: attScoreText,
       attLevel: attScoreLevel(att.score),
-      // 分数下面那行小字：迟到人数（分数里扣掉的那一项）。
-      // 出勤率**不再重复显示**：分数就是率的折算结果，同一行给两个数只会让人
-      // 去核对「9.85 和 98.5% 是不是同一个意思」，反而更慢。
-      attSub: att.lateCount ? `迟到 ${att.lateCount} 人` : '',
+      // 分数下面那行小字：**扣分明细**（含卫生、查宿、晚自习、早八，按扣分从大到小）。
+      // 用户 2026-11-19「卫生、查宿等相关内容相应没有被减分」—— 光给一个总分说不服人，
+      // 必须看得见「分是被哪一项扣掉的」。最多列 2 项，其余折成「等」，不撑破行高。
+      attSub: this.buildAttSub(att),
       // 不参跑的班要标出来：否则「0%」会被误读成没完成，而实际上本班不用跑
       runDisabled: run.enabled === false,
     };
+  },
+
+  // 扣分明细文案（整句在 JS 拼，模板不做三元拼接 —— 仓库约定）
+  // 「卫生 -1.33 · 晚自习 -0.24」 / 超过 2 项时「卫生 -10.00 · 查宿 -0.84 等」
+  // 没有明细（满分班）时退回迟到人数；两者都没有就是空串（不显示副行）。
+  buildAttSub(att) {
+    const detail = att.deductDetail || [];
+    if (detail.length) {
+      const shown = detail.slice(0, 2).map((d) => `${d.name} -${scoreText(d.deduct)}`).join(' · ');
+      return detail.length > 2 ? `${shown} 等` : shown;
+    }
+    return att.lateCount ? `迟到 ${att.lateCount} 人` : '';
   },
 
   onChip(e) {
@@ -597,7 +630,9 @@ Page({
 
     // 规则块：标题 1 行 + 每条规则按宽度折行（画布没有自动换行，必须自己切）
     const ruleLines = this.data.attRuleLines || [];
-    const ruleTitle = `考勤计算规则（${this.data.attRangeLabel || '本周'}：${this.data.from} ~ ${this.data.today}）`;
+    // 区间终点同样是 **attTo（窗口终点）** 而不是 today（见 load() 里 attRangeText 的同款注释）：
+    // 转发的图片是给人当通报用的，区间写错等于整份通报说谎。
+    const ruleTitle = `考勤计算规则（${this.data.attRangeLabel || '本周'}：${this.data.from} ~ ${this.data.attTo || this.data.today}）`;
     // 标题不折行（它最长也就 30 字左右），规则条目逐条折行后加「· 」
     const wrapped = ruleLines.length ? [ruleTitle, ...this.wrapCanvasLines(ruleLines, RULE_LINE_CHARS)] : [];
     // 底部布局只算一次（planShareFooter），高度与绘制共用同一份 ——
@@ -732,7 +767,8 @@ Page({
     const numCols = [];
     if (cols.daily) numCols.push({ key: 'daily', head: '日达标', w: 108 });
     if (cols.weekly) numCols.push({ key: 'weekly', head: '周达标', w: 108 });
-    if (cols.attendance) numCols.push({ key: 'att', head: '考勤分', w: 100 });
+    // 「班超分」与页面表头逐字一致（同一列在页面与图片里叫不同名字，看图的人会以为是两个指标）
+    if (cols.attendance) numCols.push({ key: 'att', head: '班超分', w: 100 });
     const stuW = 78;
     const xOf = [];
     let x = W - PAD;

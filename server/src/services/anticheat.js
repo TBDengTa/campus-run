@@ -2,6 +2,9 @@ const GoalConfig = require('../models/goal-config');
 const BanRecord = require('../models/ban-record');
 const User = require('../models/user');
 const badgesSvc = require('./badges');
+// 日历键唯一口径（本地时区）：解封闸门要把 liftedAt 折成日期比线索日期，
+// 自己 toISOString 取 UTC 日会把「北京早晨解封」算成前一天（见 liftedCoversClueDate）。
+const dates = require('../utils/dates');
 
 // ===== 限制的作用域 =====
 //   login 限制登录（整账号，走 user.status + bannedUntil）
@@ -26,6 +29,83 @@ function normalizeScope(scope) {
 
 function scopeText(scope) {
   return SCOPE_TEXT[normalizeScope(scope)] || '功能';
+}
+
+/**
+ * 「已有的限制是否已经覆盖本次要写入的时长」（restrict 幂等判定的唯一比较口径）。
+ *
+ * ⚠️ until = null 的含义是**永久**，必须单独判，不能当成 0 / Infinity 直接比大小：
+ *   · 已有永久 + 本次 7 天 → 已覆盖（跳过重写，否则只多一条 ban_records 流水）
+ *   · 已有 7 天 + 本次永久 → **没**覆盖（人工「永久封禁」必须能盖掉系统写的 7 天；
+ *     漏了这种就是「管理员设成永久、过会儿又变回 7 天」的成因）
+ *   · 已有 30 天 + 本次 7 天 → 已覆盖（否则管理员延长后又被系统短封覆盖回去）
+ *   · 已有已过期 → 不覆盖（照常写；login 那边过期的由 auth 中间件自动解除）
+ * 参数 existingUntil 传 null 且 existingActive=true 就表示「已有永久限制」。
+ */
+function coversUntil(existingActive, existingUntil, newUntil) {
+  if (!existingActive) return false;
+  if (!existingUntil) return true; // 已有永久：任何新的到期时间都不会比它更宽
+  if (!newUntil) return false; // 本次要永久：有限的旧值盖不住
+  return new Date(existingUntil) >= new Date(newUntil);
+}
+
+// 某 scope 当前是否**真的生效**（restrict 的幂等判定用，与 isRestricted 同一口径）
+function activeUntilOf(user, scope) {
+  const s = normalizeScope(scope);
+  const now = new Date();
+  if (s === 'login') {
+    if (user.status !== 'banned') return { active: false, until: null };
+    const u = user.bannedUntil || null;
+    return { active: !u || u > now, until: u };
+  }
+  const r = (user.restrictions || {})[s];
+  // 注意：sync/gps 的限制**没有永久形态**（isRestricted 要求 until 有值才算生效），
+  // 所以这里 until 为空一律算「没有生效中的限制」，照旧写入 —— 不改变既有语义。
+  if (!r || !r.until || !(r.until > now)) return { active: false, until: null };
+  return { active: true, until: r.until };
+}
+
+/**
+ * 该 scope 最近一次被**人工/申诉解封**的时刻（用户 2026-11-19「解封的会被重复封禁」）。
+ * 没有解封过返回 null。唯一实现 —— 自动封禁前的「这批数据已被推翻」闸门只读这里，
+ * 不要在 steps.js / 路由里各自去翻 restrictions.liftedAt。
+ */
+function lastLiftedAt(user, scope) {
+  const s = normalizeScope(scope);
+  if (s === 'login') return (user && user.banLiftedAt) || null;
+  const r = (user && user.restrictions && user.restrictions[s]) || {};
+  return r.liftedAt || null;
+}
+
+/**
+ * 自动处置闸门：这批数据是否已经被人工推翻过（用户 2026-11-19「解封的会被重复封禁」）。
+ *
+ * 语义（与 lift 的既有产品口径一致：**解封 = 之前那次违规被推翻/勾销**）：
+ *   线索所属**日期** ≤ 该 scope 最近一次解封的日期 → 这批数据人工已经判过一次，
+ *   不再自动处置；线索照常落库/保留（open，等人工看），只是不自动封人。
+ *   解封**次日**起的新数据 date 晚于解封日 → 照旧正常自动封禁，
+ *   闸门只挡「同一天同一批」，不放松整体反作弊
+ *   （与「涨幅速度封顶 0.72」「宁可漏判也不误封」是同一条边界）。
+ *
+ * ⚠️ 比较的是**线索日期**而不是线索 createdAt：微信 7 天回补会给历史日期补建记录
+ *   （AGENTS.md「跨日补同步行」：最近 500 条 werun 里 225 条是这种）。
+ *   用 createdAt 比较 = 「昨天被解封、今天回补昨天的数据」再封一次，正是用户报的现象。
+ * ⚠️ 日历键一律走 utils/dates::toDateKey（本地时区，全库唯一口径）。
+ *   自己 `toISOString().slice(0,10)` 取的是 UTC 日：「北京 07:00 解封」会被算成前一天，
+ *   于是**解封当天早晨的正常同步又被封一次**。
+ *
+ * 四条自动处置路径（werun AI / GPS AI / checkStepJump / checkPace）都只过这一个函数。
+ *
+ * @param {object} user    用户文档
+ * @param {string} scope   sync | gps
+ * @param {string} dateKey 线索所属日期 YYYY-MM-DD
+ * @returns {boolean} true = 应跳过本次自动处置
+ */
+function liftedCoversClueDate(user, scope, dateKey) {
+  const liftedAt = lastLiftedAt(user, scope);
+  if (!liftedAt) return false;
+  if (!dateKey) return false; // 没有日期维度时不拦（宁可照常处置，也不要因为参数缺失放行作弊）
+  return String(dateKey) <= dates.toDateKey(liftedAt);
 }
 
 // 某作用域当前是否生效（到期视为失效，不写库）
@@ -113,6 +193,13 @@ function activeRestriction(user, scope) {
  * @param {String} p.operator  'system' 或管理员 openid
  * @param {Boolean} p.escalate 同类 24h 内重犯 → 升级为限制登录
  * @returns {{ scope, until, escalated }}
+ *
+ * ⚠️ **幂等闸门**（用户 2026-11-19「解封的会被重复封禁」的流水侧表现）：
+ *   该 scope 已有**仍在生效且不早于本次**的限制时，直接返回已有结果，
+ *   不再重复写 user 字段、不再重复落 ban_records、也不再重复撤销徽章。
+ *   旧实现每次都写一遍：实测同一用户流水里出现相邻两条 action='ban'
+ *   （「封了两次、解封要解两次」），而用户管理页按 ban_records 分类计数会翻倍。
+ *   判定用 until 而不是 reason —— 同一个人当天多次同步本就该只算一次处置。
  */
 async function restrict({ user, scope, reason, days = 0, operator = 'system', escalate = false, source = '' }) {
   const target = normalizeScope(scope);
@@ -140,6 +227,25 @@ async function restrict({ user, scope, reason, days = 0, operator = 'system', es
     ? `${baseReason}（同类违规 24 小时内重复，升级为限制登录）`
     : baseReason;
 
+  // ===== 幂等：已经压得住就不要再压一次 =====
+  //
+  // ⚠️ 判据**不能只看 until 谁更晚**：自动封禁每次都是 `now + days`，
+  //   第二次调用时 now 往后推了几毫秒，新的 until 就「比旧的更晚」→ 同一条限制
+  //   永远判不成「已覆盖」，幂等形同虚设（本轮真实踩到：同一次 7 天回补同步里
+  //   逐日判定会把流水写到 7 条）。正确口径按**执行主体**分：
+  //   · 自动处置（operator='system'，含两条 AI 通道与两条规则通道）：
+  //     该 scope 已有生效中的限制 → 跳过。人已经在封了，再封一次只多一条流水、
+  //     多撤销一次徽章，对「限制学生」这件事没有任何增量作用。
+  //   · 人工（管理员/申诉审核）：照常写入 —— 管理员明确改时长/改永久是**新意图**，
+  //     必须能盖掉系统写的值（否则「设成永久又被系统改回 7 天」会反过来变成
+  //     「设成 30 天结果被幂等吞掉」）。
+  //   人工写入时仍用 coversUntil 比较：已有永久 + 本次有限 = 没有意义，跳过。
+  const cur = activeUntilOf(user, finalScope);
+  const isAutoDispose = !operator || operator === 'system';
+  if (cur.active && (isAutoDispose || coversUntil(cur.active, cur.until, until))) {
+    return { scope: finalScope, until: cur.until, escalated: false, skipped: 'already-restricted' };
+  }
+
   if (finalScope === 'login') {
     user.status = 'banned';
     user.banReason = finalReason;
@@ -158,6 +264,9 @@ async function restrict({ user, scope, reason, days = 0, operator = 'system', es
       count: (prev.count || 0) + 1,
       operator,
       source: finalSource,
+      // ⚠️ liftedAt 必须**保留**（不是重置为 null）：它是「人工已推翻过这批数据」的唯一凭据，
+      //   新一次违规不该把它抹掉 —— 抹掉后同一天其它批次的自动判定就失去闸门了。
+      liftedAt: prev.liftedAt || null,
     };
   }
   await user.save();
@@ -207,6 +316,11 @@ async function lift({ user, scope = 'all', operator, reason = '解封' }) {
         user.banType = '';
         user.bannedAt = null;
         user.bannedUntil = null;
+        // ⚠️ 留一笔解封时刻（用户 2026-11-19「解封的会被重复封禁」）：
+        //   login 这一档不在 restrictions 里，上面几个字段又全被清空，
+        //   不留 banLiftedAt 就没人知道「这批数据已经被人工推翻过」，
+        //   同一天再判定一次就再封一次 —— 而自动封禁侧需要的正是这个凭据。
+        user.banLiftedAt = now;
         lifted.push('login');
       }
     } else {
@@ -223,7 +337,20 @@ async function lift({ user, scope = 'all', operator, reason = '解封' }) {
         //   正确语义：解封 = 之前那次违规的记录被推翻/勾销，24 小时窗口应从**下一次**违规重新算。
         //   把 at 置空 → recent 判定为 false → 下次仍按首次（限制同步 / 限制 GPS），不再升级。
         //   count 保留（它是历史累犯次数，用于统计；升级判定只看 at，不看 count）。
-        user.restrictions[s] = { until: null, reason: '', at: null, count: r.count || 0, operator: operator || 'system' };
+        //
+        //   liftedAt 是**另一个维度**（用户 2026-11-19）：at 置空解决的是「升级为封号」，
+        //   但「同一天同一批数据被重新判一次就再封一次」没有解决 ——
+        //   自动封禁前需要看「线索日期 ≤ liftedAt」才知道这批已被推翻，跳过处置。
+        //   两个字段各管一件事，**绝不能合并成一个**（那是 2026-10-28 那次修复的反面）。
+        user.restrictions[s] = {
+          until: null,
+          reason: '',
+          at: null,
+          count: r.count || 0,
+          operator: operator || 'system',
+          source: '',
+          liftedAt: now,
+        };
         lifted.push(s);
       }
     }
@@ -284,6 +411,14 @@ async function checkStepJump(user, date, previousSteps, newSteps, ctx = {}) {
 
   // ③ 短窗口内仍然暴增超过配置阈值 → 才认定异常
   if (jump > config.anticheat.maxStepJumpPerSync) {
+    // ⚠️ ④ 人工推翻闸门（用户 2026-11-19「解封的会被重复封禁」）——
+    //   规则通道与两条 AI 通道**过同一个闸门**（liftedCoversClueDate 是唯一实现）：
+    //   旧版只在 AI 侧判，规则侧（这条「单次暴增」）照样能把刚解封的人再封一次，
+    //   而库里实测这类流水占多数（operator=system、reason 前缀「单次同步暴增」）。
+    //   闸门命中时**不写处置**：同步本身照常成功，这条数据留在待研判队列里等人工看。
+    if (liftedCoversClueDate(user, 'sync', date)) {
+      return { violation: false, skipped: 'lifted', message: '该日数据已被人工解封推翻，不再自动处置' };
+    }
     const days = config.anticheat.banDays || 7;
     const info = await restrict({
       user,
@@ -301,12 +436,20 @@ async function checkStepJump(user, date, previousSteps, newSteps, ctx = {}) {
 }
 
 // 配速异常（GPS 实跑）→ 限制 GPS；24h 内重犯升级为限制登录
-async function checkPace(user, distanceMeters, durationSeconds) {
+//
+// ⚠️ 第四个参数 ctx.dateKey（用户 2026-11-19「解封的会被重复封禁」）：
+//   规则通道也要过「已被人工推翻」闸门，与两条 AI 通道同一个口径。
+//   调用方（steps.saveGpsRun）一定传；缺失时**照常处置**（不因为参数没传就放行作弊）。
+async function checkPace(user, distanceMeters, durationSeconds, ctx = {}) {
   const config = await GoalConfig.getSingleton();
   if (!config.anticheat.enabled) return { violation: false };
   if (distanceMeters >= 500 && durationSeconds > 0) {
     const paceSeconds = durationSeconds / (distanceMeters / 1000);
     if (paceSeconds < config.anticheat.minPaceSecondsPerKm) {
+      // 人工已经推翻过这一天的数据 → 不再自动处置（线索/记录照常，只是不封人）
+      if (liftedCoversClueDate(user, 'gps', ctx.dateKey)) {
+        return { violation: false, skipped: 'lifted', message: '该日数据已被人工解封推翻，不再自动处置' };
+      }
       const m = Math.floor(paceSeconds / 60);
       const s = Math.round(paceSeconds % 60);
       const days = config.anticheat.banDays || 7;
@@ -348,6 +491,11 @@ module.exports = {
   activeRestrictions,
   restrict,
   lift,
+  // 解封留痕的唯一读取出口（steps.js 的自动封禁闸门用它，不要各自翻 restrictions.liftedAt）
+  lastLiftedAt,
+  liftedCoversClueDate,
+  coversUntil,
+  activeUntilOf,
   checkStepJump,
   checkPace,
   manualBan,

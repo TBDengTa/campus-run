@@ -416,3 +416,136 @@
   padding: 28rpx 0;
   font-size: 21rpx;
 }
+
+/* ===== ����ɸѡ��ԺУ / ϵ�� / ¥�� / �༶ / �ؼ��ʣ��û� 2026-11-19��=====
+   ��פ�����֡�ģ��/״̬ + ��Ƶ + ���ڡ����У���֯ά��Ĭ������
+   չ����ÿ�� picker ��һ��ҩ�裨������ģ��/״̬ͬһ�Ӿ����ԣ��� */
+.rs-row-org {
+  gap: 8rpx;
+}
+
+.rs-row-org picker {
+  flex: 1;
+  min-width: 0;
+}
+
+.rs-row-org .rs-pill {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.rs-row-search {
+  gap: 8rpx;
+}
+
+.rs-search {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8rpx;
+  min-width: 0;
+  padding: 8rpx 16rpx;
+  border-radius: 999rpx;
+  background: var(--tt-bg-page);
+}
+
+.rs-search-i {
+  flex: 1;
+  min-width: 0;
+  font-size: 21rpx;
+  color: var(--tt-text-1);
+}
+
+.rs-x {
+  flex-shrink: 0;
+  padding: 0 6rpx;
+  font-size: 24rpx;
+  color: var(--tt-text-3);
+}
+
+/* ===== ��Ƭ��ȱ���ˣ�ǰ 3 ������ + �۵� +N��===== */
+.rs-roster {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4rpx;
+  padding: 3rpx 8rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-brand-soft-2);
+}
+
+.rs-roster-count {
+  flex-shrink: 0;
+  font-size: 18rpx;
+  font-weight: 600;
+  color: var(--tt-brand-deep);
+}
+
+.rs-roster-names {
+  flex: 1;
+  min-width: 0;
+  font-size: 18rpx;
+  color: var(--tt-text-2);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.rs-roster-more {
+  flex-shrink: 0;
+  font-size: 18rpx;
+  font-weight: 600;
+  color: var(--tt-brand-deep);
+}
+
+.rs-roster-flag {
+  flex: 1;
+  min-width: 0;
+  font-size: 17rpx;
+  color: var(--tt-text-3);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* ===== ��Ƭ����Ƭ����ͼ��ǰ 3 �ţ����Ԥ����===== */
+.rs-photos {
+  display: flex;
+  align-items: center;
+  gap: 5rpx;
+  margin-top: 2rpx;
+}
+
+.rs-photo {
+  width: 88rpx;
+  height: 88rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-bg-page);
+}
+
+.rs-photo-more {
+  flex-shrink: 0;
+  padding: 2rpx 10rpx;
+  border-radius: 999rpx;
+  font-size: 18rpx;
+  color: var(--tt-text-2);
+  background: var(--tt-bg-page);
+}
+
+/* ������Ƭ���ü��ͼ�� + һ��˵������ռ�հ����� */
+.rs-photo-mask {
+  display: flex;
+  align-items: center;
+  gap: 5rpx;
+  margin-top: 2rpx;
+  font-size: 17rpx;
+  color: var(--tt-text-3);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

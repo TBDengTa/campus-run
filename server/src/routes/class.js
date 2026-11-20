@@ -1271,29 +1271,61 @@ function attendanceNumbers(moduleKey, rawDetails, ctx) {
 }
 
 // 出勤率（0~1，允许 >1 时截断到 1.5，与 computeMetrics 的 ratios 同口径）
+//
+// ⚠️ **返回 null = 这个模块没有出勤率口径**（早八只记迟到人，metrics 里没有 % 指标，
+//   拿不出分母）。旧实现在这里 `return 0` —— 0 是一个**真实存在的出勤率值**（全班都没到），
+//   于是早八在概览卡上被画成「0%」，老师读成「迟到率 0%」还是「一个人都没来」，完全无法解释
+//   （用户 2026-11-19「我的班级考勤未显示记录」修形状时暴露出来的第二层问题）。
+//   没有就是 null，由前端按「人数指标」文案显示。
 function attendanceRate(moduleDef, rawDetails, snapshot) {
+  const metrics = moduleDef.metrics || [];
+  // 先判「这个模块到底有没有率」：只看 % 单位指标，不看数值大小
+  if (!metrics.some((m) => (m.unit || '') === '%' || m.key === 'rate')) return null;
   const fromSnapshot = snapshot && snapshot.ratios ? Number(snapshot.ratios.rate) : NaN;
   if (Number.isFinite(fromSnapshot)) return Math.max(0, Math.min(1.5, fromSnapshot));
   const details = checkModules.fillDerived(moduleDef.key, rawDetails || {});
   const { ratios } = checkModules.computeMetrics(moduleDef, details);
   const v = Number(ratios.rate);
-  return Number.isFinite(v) ? Math.max(0, Math.min(1.5, v)) : 0;
+  return Number.isFinite(v) ? Math.max(0, Math.min(1.5, v)) : null;
+}
+
+// 该模块的「非百分比指标」名（早八 = 迟到、查宿 = 未归）：
+// 真源取 check_modules 的 metrics 定义，**不在前端硬编码模块 key**。
+function countMetricName(moduleDef) {
+  const m = (moduleDef.metrics || []).find((x) => (x.unit || '') !== '%' && x.key !== 'rate');
+  return m ? m.name || '' : '';
+}
+
+// 该模块有没有出勤率口径（同样只看 metrics 定义，不猜 key）
+function hasRateMetric(moduleDef) {
+  return (moduleDef.metrics || []).some((m) => (m.unit || '') === '%' || m.key === 'rate');
 }
 
 // 同一天同一模块的多条记录（多时段 / 多检查小组）：人数相加，出勤率按应到人数加权平均
+//
+// ⚠️ 没有率口径的模块（早八）必须让 rate / ratePercent 一路保持 **null**，
+//   不能被 round4/round1 的 `|| 0` 兜底成 0 —— 0 在卡面上是「0% 出勤率」，
+//   而事实是「这个模块没有出勤率可言」（它只记迟到人）。
+//   与 attendanceRate 的 null 语义是同一件事的两端，漏了这层修复就白做。
 function buildDayModule(moduleDef, items) {
   const sum = (pick) => items.reduce((a, x) => a + pick(x.numbers), 0);
   const should = sum((n) => n.should);
   const denominator = sum((n) => n.denominator);
-  let rate;
-  if (items.length === 1) rate = items[0].rate;
-  else if (denominator > 0) rate = items.reduce((a, x) => a + x.rate * x.numbers.denominator, 0) / denominator;
-  else rate = items.reduce((a, x) => a + x.rate, 0) / items.length;
+  let rate = null;
+  if (hasRateMetric(moduleDef)) {
+    const rates = items.map((x) => x.rate).filter((v) => v !== null && v !== undefined);
+    if (!rates.length) rate = null;
+    else if (items.length === 1) rate = items[0].rate;
+    else if (denominator > 0) rate = items.reduce((a, x) => a + (x.rate || 0) * x.numbers.denominator, 0) / denominator;
+    else rate = rates.reduce((a, b) => a + b, 0) / rates.length;
+  }
   const statuses = [...new Set(items.map((x) => x.record.status))];
   return {
     moduleKey: moduleDef.key,
     name: moduleDef.shortName || moduleDef.name,
     rateName: rateMetricOf(moduleDef).name || '出勤率',
+    // 非百分比指标名（早八「迟到」/ 查宿「未归」）：前端按它出文案，不再硬编码模块 key
+    countMetricName: countMetricName(moduleDef),
     should,
     actual: sum((n) => n.actual),
     absent: sum((n) => n.absent),
@@ -1302,8 +1334,8 @@ function buildDayModule(moduleDef, items) {
     late: sum((n) => n.late),
     earlyLeave: sum((n) => n.earlyLeave),
     violationCount: sum((n) => n.violationCount),
-    rate: round4(rate),
-    ratePercent: round1(rate * 100),
+    rate: rate === null ? null : round4(rate),
+    ratePercent: rate === null ? null : round1(rate * 100),
     status: statuses.length === 1 ? statuses[0] : 'mixed', // 多条记录状态不一致时给 mixed
     recordId: String(items[0].record._id),
     recordCount: items.length,
@@ -1391,6 +1423,7 @@ router.get(
     const summaryModules = {};
     let absentTotal = 0;
     let notReturnedTotal = 0;
+    let lateTotal = 0;
     let weightSum = 0;
     let weighted = 0;
     for (const key of ATTENDANCE_MODULES) {
@@ -1401,22 +1434,36 @@ router.get(
       const actualTotal = rows.reduce((a, x) => a + x.actual, 0);
       const absentSum = rows.reduce((a, x) => a + x.absent, 0);
       const notReturnedSum = rows.reduce((a, x) => a + x.notReturned, 0);
+      const lateSum = rows.reduce((a, x) => a + (x.late || 0), 0);
       // 平均出勤率：按应到人数加权（应到全为 0 时退化为简单平均，避免 0/0）
-      const avgRate = !rows.length
+      //
+      // ⚠️ **只对「有率口径」的模块算**（用户 2026-11-19「我的班级考勤未显示记录」第三层）：
+      //   早八没有应到/实到（只记迟到人），rows 里的 rate 全是 null。
+      //   旧写法 `rows.reduce((a,x) => a + x.rate, 0)` 里 `0 + null === 0`（不是 NaN！），
+      //   于是早八的 avgRate 被算成**真实的 0**、ratePercent 显示「0%」——
+      //   老师看到「早八 0%」只会认为全班都没到，比空着糟糕得多。
+      //   判据取模块定义（metrics 里有没有 % 指标），不靠硬编码 key。
+      const hasRate = hasRateMetric(moduleDef);
+      const rateRows = hasRate ? rows.filter((x) => x.rate !== null && x.rate !== undefined) : [];
+      const rateShould = rateRows.reduce((a, x) => a + x.should, 0);
+      const avgRate = !rateRows.length
         ? null
-        : shouldTotal > 0
-          ? rows.reduce((a, x) => a + x.rate * x.should, 0) / shouldTotal
-          : rows.reduce((a, x) => a + x.rate, 0) / rows.length;
-      if (avgRate !== null && shouldTotal > 0) {
-        weightSum += shouldTotal;
-        weighted += avgRate * shouldTotal;
+        : rateShould > 0
+          ? rateRows.reduce((a, x) => a + x.rate * x.should, 0) / rateShould
+          : rateRows.reduce((a, x) => a + x.rate, 0) / rateRows.length;
+      if (avgRate !== null && rateShould > 0) {
+        weightSum += rateShould;
+        weighted += avgRate * rateShould;
       }
       absentTotal += absentSum;
       notReturnedTotal += notReturnedSum;
+      lateTotal += lateSum;
       summaryModules[key] = {
         key,
         name: moduleDef.shortName || moduleDef.name,
         rateName: rateMetricOf(moduleDef).name || '出勤率',
+        // 非百分比指标名（早八「迟到」/ 查宿「未归」）：前端据此出文案，不硬编码模块 key
+        countMetricName: countMetricName(moduleDef),
         skipped: !!skipped[key],
         skipReason: skipped[key] || '',
         // 「没有记录 = 正常」的模块（早八：只记迟到人）：组件据此把「未录」显示成「无迟到」，
@@ -1428,6 +1475,11 @@ router.get(
         actual: actualTotal,
         absent: absentSum,
         notReturned: notReturnedSum,
+        // ⚠️ late 必须一起汇总（用户 2026-11-19「我的班级考勤未显示记录」的第二半）：
+        //   早八**没有应到/实到**，ratePercent 恒 null，如果 summary 只给率，
+        //   那这个模块在概览卡上永远是「—」—— 哪怕库里明明录了「迟到 5 人」。
+        //   days[] 里本来就有 late（buildDayModule 汇总过），summary 早前漏了这一维。
+        late: lateSum,
         avgRate: avgRate === null ? null : round4(avgRate),
         ratePercent: avgRate === null ? null : round1(avgRate * 100),
       };

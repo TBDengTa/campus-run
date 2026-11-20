@@ -1,5 +1,12 @@
+<!-- 检查记录列表（分包 packageUnion）
+     筛选（用户 2026-11-19「有学生会总管的权限查看检查记录没有办法筛选与查看所有记录，
+     增加筛选如班级、系部、院校、楼栋等全面的筛选搜索功能」）：
+       常驻区 = 模块 / 状态 / 高频（仅我的·待复核·申诉中）/ 日期快捷 / 精确日期
+       更多筛选（默认收起）= 院校 / 系部 / 楼栋 / 班级 / 关键词搜索
+     所有筛选都进服务端并与身份范围求交集（前端不本地过滤，避免越权与「总数对不上」）。
+     卡片（同轮需求）：缺勤人（前 3 个姓名 + 折叠+N）+ 照片缩略图（前 3 张，点击预览）。 -->
 <view class="page tt-page rs-page">
-  <!-- ===== 吸顶筛选（紧凑版：模块/状态 + 高频/日期快捷 + 精确日期） ===== -->
+  <!-- ===== 吸顶筛选 ===== -->
   <view class="rs-filters">
     <view class="rs-filter-card">
       <view class="rs-row">
@@ -17,12 +24,55 @@
             <text>{{statuses[statusIndex].label}}</text>
           </view>
         </picker>
+        <!-- 「更多筛选」入口：带生效数量角标，收起时也能看出有筛选在手 -->
+        <view class="rs-pill {{moreCount ? 'on' : ''}}" bind:tap="toggleMore">
+          <t-icon name="{{showMore ? 'chevron-up' : 'chevron-down'}}" size="22rpx" />
+          <text>更多筛选{{moreCount ? '(' + moreCount + ')' : ''}}</text>
+        </view>
         <view
           class="rs-pill rs-pill-clear"
-          wx:if="{{moduleIndex || statusIndex || fromDate || toDate || mine || pendingAppeal}}"
+          wx:if="{{moduleIndex || statusIndex || fromDate || toDate || mine || pendingAppeal || moreCount}}"
           bind:tap="resetFilters"
         >重置</view>
       </view>
+
+      <!-- ===== 更多筛选：院校 / 系部 / 楼栋 / 班级 / 关键词 =====
+           只在「能看到多个班」的人身上渲染（学生会成员 / 总管）；
+           班主任 / 班委只有一个班，给单选项下拉是噪音（用户需求里的「如果是班主任还要注意」）。 -->
+      <block wx:if="{{showMore && showOrgFilters}}">
+        <view class="rs-row rs-row-org">
+          <picker mode="selector" range="{{schoolLabels}}" value="{{schoolIndex}}" data-key="school" data-options="schools" bindchange="onOrgPick">
+            <view class="rs-pill {{school ? 'on' : ''}}">
+              <text>{{schoolLabels[schoolIndex]}}</text>
+            </view>
+          </picker>
+          <picker mode="selector" range="{{deptLabels}}" value="{{deptIndex}}" data-key="department" data-options="departments" bindchange="onOrgPick">
+            <view class="rs-pill {{department ? 'on' : ''}}">
+              <text>{{deptLabels[deptIndex]}}</text>
+            </view>
+          </picker>
+        </view>
+        <view class="rs-row rs-row-org">
+          <picker mode="selector" range="{{buildingLabels}}" value="{{buildingIndex}}" data-key="building" data-options="buildings" bindchange="onOrgPick">
+            <view class="rs-pill {{building ? 'on' : ''}}">
+              <text>{{buildingLabels[buildingIndex]}}</text>
+            </view>
+          </picker>
+          <picker mode="selector" range="{{classLabels}}" value="{{classIndex}}" data-key="className" data-options="classes" bindchange="onOrgPick">
+            <view class="rs-pill {{className ? 'on' : ''}}">
+              <text>{{classLabels[classIndex]}}</text>
+            </view>
+          </picker>
+        </view>
+        <view class="rs-row rs-row-search">
+          <view class="rs-search">
+            <t-icon name="search" size="22rpx" color="var(--tt-text-3)" />
+            <input class="rs-search-i" placeholder="班级 / 受检对象 / 检查人" value="{{keyword}}" bindinput="onKeyword" confirm-type="search" />
+            <text class="rs-x" wx:if="{{keyword}}" bind:tap="onClearKeyword">×</text>
+          </view>
+          <view class="rs-quick rs-quick-ghost" wx:if="{{moreSummary}}" bind:tap="clearOrgFilters">清组织筛选</view>
+        </view>
+      </block>
 
       <!-- 高频筛选 + 日期快捷合并一行：少占一行，现场高频操作仍在第一屏。
            「仅我的」「待复核」是**学生会专属**（我提交的 / 等我复核的）：
@@ -69,6 +119,45 @@
       </view>
       <text class="rs-card-target">{{item.targetName}}</text>
       <text class="rs-card-sub">{{item.dateText}} · {{item.inspectorName || '—'}}</text>
+
+      <!-- 缺勤/未归/迟到名单：前 3 个姓名 + 折叠 +N（用户 2026-11-19「卡片要显示缺勤人」）。
+           文案三段全部由 JS 预计算（rosterText / rosterNamesText / rosterMoreText / rosterFlagText），
+           因为「人数」与「名单人数」可能不一致（老记录 actualCount 手填）：
+             · 正常：缺勤 8 人 · 张三、李四、王五 +5
+             · 名单空但计数>0：缺勤 8 人 · 名单未记录
+             · 无权限：缺勤 5 人 · 名单仅管理端可见 -->
+      <view class="rs-roster" wx:if="{{item.hasRoster}}">
+        <text class="rs-roster-count">{{item.rosterText}}</text>
+        <text class="rs-roster-names" wx:if="{{item.rosterNamesText}}">{{item.rosterNamesText}}</text>
+        <text class="rs-roster-more" wx:if="{{item.rosterMoreText}}">{{item.rosterMoreText}}</text>
+        <text class="rs-roster-flag" wx:if="{{item.rosterFlagText}}">{{item.rosterFlagText}}</text>
+      </view>
+
+      <!-- 照片缩略图：前 3 张，点开预览（用户 2026-11-19「卡片要增加照片显示」）。
+           catch:tap 阻止冒泡 —— 卡片根节点是 bind:tap="goRecord"，用 bind 会同时进详情。
+           超过 3 张的用 +N 提示，点击进详情看全部。 -->
+      <view class="rs-photos" wx:if="{{item.hasPhotos}}">
+        <image
+          class="rs-photo"
+          wx:for="{{item.photos}}"
+          wx:for-item="p"
+          wx:for-index="pi"
+          wx:key="*this"
+          src="{{p}}"
+          mode="aspectFill"
+          lazy-load
+          data-id="{{item.id}}"
+          data-index="{{pi}}"
+          catch:tap="previewPhoto"
+        />
+        <text class="rs-photo-more" wx:if="{{item.photoMoreText}}" data-id="{{item.id}}" catch:tap="goRecord">{{item.photoMoreText}}</text>
+      </view>
+      <!-- 宿舍照片被裁剪（无权查看原图）：不显示空白区，给出原因 -->
+      <view class="rs-photo-mask" wx:elif="{{item.photosBlurred}}">
+        <t-icon name="secured" size="20rpx" color="var(--tt-text-3)" />
+        <text>{{item.photoMaskText}}</text>
+      </view>
+
       <view class="rs-card-foot">
         <text class="num-font rs-deduct">{{item.deductText}}</text>
         <view class="rs-appeal rs-appeal-{{item.appealClass}}" wx:if="{{item.appealText}}">

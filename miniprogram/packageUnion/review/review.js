@@ -69,18 +69,43 @@ Page({
         band: this.data.band,
         moduleKey: this.data.moduleKey,
       });
-      const rows = (data.list || []).map((r) => ({
-        ...r,
-        // 已在别的分页页里勾选过的条目，重新载入后要保持勾选态
-        checked: !!(this._sel && this._sel.has(r.id)),
-        // 扣分文案：10 分制下必须固定两位小数（0.05 / 1.50 / 10.00 同列对齐）。
-        // 以前用 formatNumber（千分位整数风格），会出现「-0.05」与「-2」混排，
-        // 复审的人扫一眼分不清「扣了两分」还是「扣了 0.2 分」。
-        deductText: r.deduct ? `-${fmt.scoreText(r.deduct)}` : fmt.scoreText(0),
-        photos: r.photos || [],
-        // 照片被服务端裁剪（宿舍照片对无权者不下发原图）：给出可读说明，不留白
-        photoMaskText: r.photosBlurred ? r.photoNote || '宿舍照片仅检查人 / 主席团 / 所属部门部长 / 教师可见' : '',
-      }));
+      const rows = (data.list || []).map((r) => {
+        // 缺勤/未归/迟到名单（用户 2026-11-19「复审台卡片要增加缺勤人的显示」）：
+        // 服务端 roster = { label, names(≤3), count, more, hidden }，
+        // 文案三段拼好（模板不做表达式拼接）—— 与检查记录列表同一套口径。
+        const roster = r.roster || null;
+        let rosterText = '';
+        let rosterNamesText = '';
+        let rosterMoreText = '';
+        let rosterFlagText = '';
+        if (roster && (roster.count > 0 || (roster.names || []).length)) {
+          rosterText = `${roster.label || '缺勤'} ${roster.count} 人`;
+          const names = (roster.names || []).filter(Boolean);
+          if (names.length) {
+            rosterNamesText = names.join('、');
+            rosterMoreText = roster.more > 0 ? `+${roster.more}` : '';
+          } else {
+            rosterFlagText = roster.hidden ? '名单仅管理端可见' : '名单未记录';
+          }
+        }
+        return {
+          ...r,
+          // 已在别的分页页里勾选过的条目，重新载入后要保持勾选态
+          checked: !!(this._sel && this._sel.has(r.id)),
+          // 扣分文案：10 分制下必须固定两位小数（0.05 / 1.50 / 10.00 同列对齐）。
+          // 以前用 formatNumber（千分位整数风格），会出现「-0.05」与「-2」混排，
+          // 复审的人扫一眼分不清「扣了两分」还是「扣了 0.2 分」。
+          deductText: r.deduct ? `-${fmt.scoreText(r.deduct)}` : fmt.scoreText(0),
+          photos: r.photos || [],
+          // 照片被服务端裁剪（宿舍照片对无权者不下发原图）：给出可读说明，不留白
+          photoMaskText: r.photosBlurred ? r.photoNote || '宿舍照片仅检查人 / 主席团 / 所属部门部长 / 教师可见' : '',
+          rosterText,
+          rosterNamesText,
+          rosterMoreText,
+          rosterFlagText,
+          hasRoster: !!rosterText,
+        };
+      });
       // 重置时清空选择（避免「换了分档还勾着上一批的条目」这种幽灵选中）
       if (reset) this._sel = new Set();
       this.setData(

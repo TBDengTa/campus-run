@@ -176,7 +176,7 @@
       <text class="cs-c1">班级</text>
       <text class="cs-cn" wx:if="{{columns.daily}}">日</text>
       <text class="cs-cn" wx:if="{{columns.weekly}}">周</text>
-      <text class="cs-cn" wx:if="{{columns.attendance}}">考勤分</text>
+      <text class="cs-cn" wx:if="{{columns.attendance}}">班超分</text>
     </view>
     <view class="cs-row" wx:for="{{shown}}" wx:key="className" data-name="{{item.className}}" bind:tap="openClass">
       <view class="cs-c1">

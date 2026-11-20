@@ -71,6 +71,16 @@
         </view>
       </view>
 
+      <!-- 缺勤/未归/迟到名单：前 3 个姓名 + 折叠 +N（用户 2026-11-19「复审台卡片要增加缺勤人的显示」）。
+           刻意**不并进 summary** —— 摘要要保持两行封顶（见 summarizeRecord 的设计约束），
+           名单单独一行，超出部分折叠成 +N，完整名单在详情页。 -->
+      <view class="rv-roster" wx:if="{{item.hasRoster}}">
+        <text class="rv-roster-count">{{item.rosterText}}</text>
+        <text class="rv-roster-names" wx:if="{{item.rosterNamesText}}">{{item.rosterNamesText}}</text>
+        <text class="rv-roster-more" wx:if="{{item.rosterMoreText}}">{{item.rosterMoreText}}</text>
+        <text class="rv-roster-flag" wx:if="{{item.rosterFlagText}}">{{item.rosterFlagText}}</text>
+      </view>
+
       <!-- 检查图片：前 3 张缩略图，点开大图；被裁剪时显示原因 -->
       <view class="rv-photos" wx:if="{{item.photos.length}}">
         <image

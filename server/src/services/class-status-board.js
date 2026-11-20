@@ -15,16 +15,20 @@
  * 另外加 60 秒内存缓存：这张表的数据变化很慢（老师刷新不是为了看秒级变化），
  * 缓存能让人连续点击时**立刻**出结果（与 `routes/class.js::classRankCache` 同一思路）。
  *
- * ===== 考勤分数（用户 2026-11-12「考勤是100%应该显示分数，并且不要满分100分制了，就10分制」）=====
- * 考勤列以前只显示加权出勤率（96.7%），老师要自己心算「这相当于几分」；现在直接给分数：
- *   考勤分 = 满分(10) × 加权出勤率 − 早八迟到人数 × 单价
- * 两条必须一起守住的口径：
- *   ① 单价取 services/check-modules.js::PERSON_DEDUCT.late —— 与早八模块扣分**同一个常量**。
- *      这里另写一份（哪怕只差 0.05）就会出现「看板 9.9 分、班超 9.95 分」，
- *      而这页的分数是要被复制发进工作群的。
- *   ② 展示保留**两位小数**（scoreScale.scoreText）：10 分制下迟到 1 人只扣 0.05，
- *      一位小数会把 9.95 显示成 10.0，看着就是「扣了个寂寞」。
- * ratePercent 仍然下发（档位筛选、其它页面、口径对照都要用），只是考勤列不再显示它。
+ * ===== 分数口径（用户 2026-11-19「班级状态日周月考勤不一致，并且卫生、查宿等内容没有被减分」）=====
+ * 本页的「考勤分」**就是班超分**，不是另一套算法：
+ *   分数 = bandChao.scoreOfAggregate() = 10 − 各模块日均扣分（**含卫生、查宿、晚自习、早操、早八全部模块**）
+ *   窗口 = bandChao.rangeOf()（本日 = 当天；本周 = ISO 周一起至周日；本月 = 1 号至月末，**完整区间**）
+ *
+ * 为什么必须同源：旧版这里自己写了第二套公式
+ * （`10 × 加权出勤率 − 迟到×0.05`，模块只列 4 个考勤项、**完全不含卫生**），
+ * 且窗口取「周一起至所选日」—— 同一个班同一周实测 **班超 8.40 / 本页 9.74**。
+ * 用户正是拿两个页面互相对照发现「卫生没被减分」的；老师还会把这里的数复制发进工作群，
+ * 两套口径迟早变成两份互相矛盾的通报。
+ *
+ * 仍保留 ratePercent（应到加权的**事实指标**，档位筛选与对照要用），但它**不参与算分**。
+ * 展示一律两位小数（scoreScale.scoreText）：10 分制下迟到 1 人只扣 0.05，
+ * 一位小数会把 9.95 显示成 10.0，看着就是「扣了个寂寞」。
  *
  * ===== 达标口径（改这里前先读对应实现，禁止另写一份）=====
  *   生效目标 = 个人计划优先，否则全局默认 —— 同 `services/goals.js::getEffectiveGoal`
@@ -45,6 +49,9 @@ const dates = require('../utils/dates');
 const roster = require('./roster');
 const checkModules = require('./check-modules');
 const scoreScale = require('./score-scale');
+// 班超的唯一实现：窗口（rangeOf）与分数组装（scoreOfAggregate / aggregateScores）都取自这里。
+// ⚠️ 延迟 require（在函数体内）也可以，但 band-chao 不依赖本文件，没有循环引用风险，直接顶层引。
+const bandChao = require('./band-chao');
 
 // 行的年级口径（用户 2026-11-03 多选年级筛选）：ClassProfile.grade 大量为空
 // （只有导入/手填才有值），按班级名「23级大数据技术」解析兜底 ——
@@ -72,29 +79,39 @@ const ATT_RANGES = {
 };
 const DEFAULT_RANGE = 'week';
 
-// ===== 考勤计算规则文案（用户 2026-11-12「要在图片下面标注考勤计算规则，如迟到缺勤等逻辑」）=====
+// ===== 考勤/班超分计算规则文案（用户 2026-11-12「要在图片下面标注考勤计算规则，如迟到缺勤等逻辑」）=====
 // **服务端生成**：图片、页面脚注、复制文案三处共用同一份中文 —— 前端自己写一份必然与
 // 实际算式漂移（改了单价忘了改说明，老师照着错误说明去质疑正确的分数）。
 //
-// ⚠️ 措辞必须与 attendanceScore() 的真实算式一致，特别是**两类扣分机制不同**：
-//   · 早操/晚自习/查宿走「出勤率」：缺勤/未归是通过**压低实到人数**影响分数的，
-//     每人扣多少**取决于班大小**（10 ÷ 应到人数），不是固定单价 —— 写成固定数字就是说谎；
-//   · 早八没有应到实到（只记迟到人），走固定单价 PERSON_DEDUCT.late。
-// 数字全部从 check-modules.PERSON_DEDUCT / scoreScale.FULL_SCORE 取值拼句，不写死。
+// ⚠️ 措辞必须与 bandChao.scoreOfAggregate()（= 本页分数的唯一来源）的真实算式逐字一致。
+//   用户 2026-11-19 报「卫生、查宿等内容没有被减分」之后，分数已从
+//   「4 个考勤模块的加权出勤率折算」改成「10 分 − 各模块日均扣分（**含卫生**）」，
+//   所以这里的说明也必须跟着重写 —— 说明留在旧算法上，就是「改了分数没改说明」的第二次翻车。
+// 各类扣分机制**不同**，句子必须分开说，不能笼统写「按出勤率」：
+//   · 卫生 = 评价折算（优/良/差 → 10/8/6），扣的是「满分减得分」；
+//   · 早操 / 晚自习 = 出勤率折算，每人扣多少**取决于班大小**（10 ÷ 应到人数）——
+//     写成固定单价就是说谎（实测 40 人的班缺 1 人扣 0.25，99 人的班扣 0.1）；
+//   · 查宿 = 按未归人数固定单价（rate 模式的分母在历史脏数据里可能是 0，走按人计扣）；
+//   · 早八 = 按迟到人数固定单价。
+// 数字全部从 checkModules.PERSON_DEDUCT / GRADE_SCORE / scoreScale.FULL_SCORE 取值拼句，不写死。
 function buildAttRuleLines() {
   const pd = checkModules.PERSON_DEDUCT;
   const full = scoreScale.FULL_SCORE;
+  const gs = checkModules.GRADE_SCORE || {};
+  // 卫生各评价的扣分 = 满分 − 评价折算分（与 computeDeduct 的 percent 分支同一算式）
+  const hyDeduct = (g) => round2(full - (Number(gs[g]) || 0));
   // 白话优先（用户 2026-11-13「一般人看不明白，需要你白话写出」）：
-  // 不出现「加权出勤率 / 实到 ÷ 应到」这类术语，也不写公式符号。
-  // ⚠️ 但口径必须仍是 attendanceScore() 的真实算法 —— 早操/晚自习/查宿是**合并成一锅**
-  //   算一个总分，绝不能写成「每项各 10 分累加」（那正是用户最初的误解，会把看图的人带偏）。
-  // 数字仍取真源（full / pd.late），改了单价这里跟着变，不会说谎。
+  // 不出现「加权出勤率 / 日均扣分」这类术语，也不写公式符号。
   return [
-    `考勤分满分 ${full} 分：到得越齐、分越高。`,
-    `早操、晚自习、查宿三项一起算：应到多少人、实际到了多少人，到的比例换算成这 ${full} 分——有人缺勤或查宿未归，到的比例就降、分就少。`,
-    `早八只登记迟到的人，每迟到 1 人扣 ${pd.late} 分（迟到 2 人扣 ${round2(pd.late * 2)} 分）。`,
+    `总分满分 ${full} 分（早操/早八/晚自习/查宿 + 卫生全部算在内）：每天从 ${full} 分起扣，统计期里各天的得分取平均。`,
+    `卫生按评价扣：评良扣 ${hyDeduct('良')} 分、评差扣 ${hyDeduct('差')} 分（评优不扣）。`,
+    '早操、晚自习按出勤情况扣：应到多少人、实际到了多少人，缺勤的人越多扣得越多；' +
+      '同样缺 1 个人，小班扣得多、大班扣得少（按人数比例折到 ' +
+      full + ' 分上）。',
+    `查宿按未归人数扣：每 1 人未归扣 ${pd.notReturned} 分（未归 2 人扣 ${round2(pd.notReturned * 2)} 分）。`,
+    `早八只登记迟到的人：每迟到 1 人扣 ${pd.late} 分（迟到 2 人扣 ${round2(pd.late * 2)} 分）。`,
     '班里没排某一项（比如没有晚自习）不另外扣分，只按实际有的项目算。',
-    '整个统计期一次考勤都没录的班显示「—」，不是 0 分。',
+    '整个统计期一次检查都没录的班显示「—」，不是 0 分。',
   ];
 }
 
@@ -108,41 +125,26 @@ const round1 = (n) => Math.round((Number(n) || 0) * 10) / 10;
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const pct = (num, den) => (den > 0 ? round1((num / den) * 100) : null);
 
-/**
- * 考勤分数（10 分制）：加权出勤率折算 + 早八迟到按人扣。
- *
- * 为什么早八要单独扣而不是并进率：早八模块**没有应到/实到**（只记迟到人，见
- * check-modules 的 morning_class 定义），拿不出分母，所以它不参与加权率；
- * 但它的迟到确实要扣分 —— 否则「迟到 10 人的班」和「一个人都没迟到」同分。
- *
- * ⚠️ 第三个参数 hasData 是**必需的**，不能靠「率与迟到都为空」推断：
- *   只有一个早八记录、且没人迟到的班，率没有、迟到 0 —— 若据此返回 null 就显示「—」，
- *   而同班若有 3 人迟到却显示 9.85，于是出现「迟到的有分、没迟到的反而没分」，
- *   老师只会认为统计坏了。有数据就给分（满分 10 − 0 = 10.00），没数据才是「—」。
- *
- * @param {number|null} rateWeighted 有应到模块的加权出勤率（0~1.5，可能 >1 的插班）
- * @param {number} lateTotal 区间内早八迟到总人数
- * @param {boolean} hasData 该班在区间内是否有任何考勤记录
- * @returns {number|null} 分数（两位小数）；完全没有考勤数据时 null（前端显示「—」）
- */
-function attendanceScore(rateWeighted, lateTotal, hasData) {
-  if (!hasData) return null;
-  const late = Number(lateTotal) || 0;
-  const hasRate = rateWeighted !== null && rateWeighted !== undefined;
-  // 率封顶满分：出勤率 >1（插班导致实到 > 应到）不该白送超额分，与 computeDeduct 同一护栏
-  const base = hasRate ? Math.min(1, Math.max(0, rateWeighted)) * scoreScale.FULL_SCORE : scoreScale.FULL_SCORE;
-  return round2(Math.max(0, base - late * checkModules.PERSON_DEDUCT.late));
-}
+// （已删除）attendanceScore(rateWeighted, lateTotal, hasData)
+//   用户 2026-11-19「班级状态日周月考勤不一致，并且卫生、查宿等相关内容没有被减分」：
+//   这个函数是本页**自己的一套考勤分公式**（加权出勤率折算 + 早八迟到单价），
+//   与班超总评（10 − 日均扣分，含卫生）是两套算法 —— 同一个班同一周实测 9.74 vs 8.40。
+//   现在分数一律走 bandChao.scoreOfAggregate（与班超同一个函数），本文件不再保留第二套公式。
+//   ⚠️ 不要因为「页面要显示出勤率」把它加回来：ratePercent 仍下发，但它只是事实指标，
+//      **不是**分数来源。回归断言见 tools/check-server-contract.js 的分数同源一节。
 
 /**
  * 考勤统计窗口：把「本日 / 本周 / 本月」翻译成起止日历键。
  *
- * 一律**锚定所选日期**（不是「今天」）：回看历史某天时，考勤窗口也该停在那一天所属的
- * 本日至本日 / 本周至该日 / 本月至该日 —— 否则「10月5日的班级状态」里考勤却是 10 月
- * 整月（含 10 月 5 日之后那些天的数据），与日列周列口径自相矛盾。
+ * ⚠️ **一律复用 band-chao.rangeOf**（用户 2026-11-19「班级状态日周月考勤不一致」的根因之二）：
+ *   旧实现在这里自己写了一套窗口 —— 本周 = 「ISO 周一起**至所选日**」、本月 = 「1 号起**至所选日**」，
+ *   而班超那侧的本周/本月是**完整区间**（band-chao 的「周要完整的日期，不要跟随月截断」）。
+ *   同一个「本周」标签在两个页面圈的是不同日期，老师对照着看自然觉得「数字对不上」。
+ *   现在窗口只有一份实现（band-chao.rangeOf）：本日 = 当天、本周 = ISO 周一至周日、本月 = 1 号至月末。
  *
- * ⚠️ 周起点用 ISO 周一（dates.weekRange），与校园跑周达标、班超周口径同一个真源。
- *   刻意**不用** band-chao 的「当月第 N 周」：那是排名页的月锚定周，两套周混用会出现
+ * 一律**锚定所选日期**（不是「今天」）：回看历史某天时，取的是那一天所属的本日 / 本周 / 本月。
+ * ⚠️ 周起点仍用 ISO 周一（dates.weekRange，由 rangeOf 内部走），**不用** band-chao 的
+ *   「当月第 N 周」（weekNo 参数不传）：那是排名页的月锚定周，两套周混用会出现
  *   「考勤说本周、跑分说本周却是不同区间」。
  *
  * @param {string} rangeKey day | week | month（非法值回退 DEFAULT_RANGE）
@@ -151,13 +153,10 @@ function attendanceScore(rateWeighted, lateTotal, hasData) {
  */
 function attWindow(rangeKey, day) {
   const range = ATT_RANGES[rangeKey] ? rangeKey : DEFAULT_RANGE;
-  if (range === 'day') return { from: day, to: day, range, rangeLabel: ATT_RANGES.day.label };
-  if (range === 'month') {
-    const { startKey } = dates.monthRange(day.slice(0, 7));
-    return { from: startKey, to: day, range, rangeLabel: ATT_RANGES.month.label };
-  }
-  const { startKey } = dates.weekRange(day);
-  return { from: startKey, to: day, range, rangeLabel: ATT_RANGES.week.label };
+  // rangeOf 的第 3/4/5 参（weekStartKey / monthKey / weekNo）一律不给：
+  // 让它按所选日期取 ISO 周 / 所属月的**完整区间**，与班超排名同一份实现。
+  const r = bandChao.rangeOf(range, day);
+  return { from: r.from, to: r.to, range, rangeLabel: ATT_RANGES[range].label };
 }
 
 /**
@@ -176,10 +175,13 @@ async function classStatusBoard({ today, attRange, days, force } = {}) {
   // 老客户端传 days=7 时这里按 attRange 缺省（本周）走，而不是假装还支持「回看 7 天」：
   // 两套窗口并存迟早出现「脚注说本周、数据是回看 7 天」，那比统一成本周更难解释。
   const win = attWindow(attRange, day);
-  const { from, range: attRangeKey, rangeLabel: attRangeLabel } = win;
+  const { from, to: attTo, range: attRangeKey, rangeLabel: attRangeLabel } = win;
   const { startKey: weekStart } = dates.weekRange(day);
 
-  const cacheKey = `${day}|${from}|${weekStart}|${attRangeKey}`;
+  // ⚠️ 缓存 key 必须含**起止两个日期**：旧 key 只有 from 没有 to，
+  //   而窗口改成「完整周/完整月」后 to 也随所选日期变（周一那天与周三那天的本周区间不同）；
+  //   漏了 to 会让两个不同区间共用一份缓存 = 数字看着正常但区间是错的（静默 bug）。
+  const cacheKey = `${day}|${from}|${attTo}|${weekStart}|${attRangeKey}`;
   if (!force) {
     const hit = boardCache.get(cacheKey);
     if (hit && Date.now() - hit.at < CACHE_TTL) return hit.value;
@@ -195,7 +197,7 @@ async function classStatusBoard({ today, attRange, days, force } = {}) {
   const skipped = profiles.length - activeNames.length;
 
   if (!activeNames.length) {
-    const empty = buildResult({ day, from, weekStart, attRangeKey, attRangeLabel, totals: emptyTotals(skipped), rows: [], attBy: new Map() });
+    const empty = buildResult({ day, from, to: attTo, weekStart, attRangeKey, attRangeLabel, totals: emptyTotals(skipped), rows: [], attBy: new Map() });
     boardCache.set(cacheKey, { at: Date.now(), value: empty });
     return empty;
   }
@@ -328,7 +330,11 @@ async function classStatusBoard({ today, attRange, days, force } = {}) {
     {
       $match: {
         className: { $in: activeNames },
-        date: { $gte: from, $lte: day },
+        // ⚠️ 区间终点必须是**窗口终点 attTo**，不是所选日 day（用户 2026-11-19「班级状态
+        //   日周月考勤不一致」的直接成因）：窗口已是完整周/完整月，
+        //   而这里仍写 `$lte: day` → 「本周」实际只统计到周三，
+        //   与班超同标签的整周区间必然对不上。
+        date: { $gte: from, $lte: attTo },
         moduleKey: { $in: MODULE_KEYS },
         status: { $in: CheckRecord.COUNTED_STATUS },
         voided: { $ne: true },
@@ -390,18 +396,34 @@ async function classStatusBoard({ today, attRange, days, force } = {}) {
     byModule[r._id.moduleKey] = r;
   }
 
+  // ---- 4b) 班超扣分聚合（**含卫生**，与班超总评同一份实现）----
+  // ⚠️ 这是用户 2026-11-19「卫生、查宿等相关内容相应没有被减分」的修复点：
+  //   旧版考勤分只按「4 个考勤模块的出勤率 + 早八迟到」自己算一套，
+  //   卫生（扣分最大的那一项，实测某班一周扣 4.00 分）完全不在公式里，
+  //   于是「班超 8.40 分、本页 9.74 分」这种两个页面对不上的情况必然出现。
+  //   现在分数一律走 bandChao.scoreOfAggregate（班超页用的是同一个函数）。
+  // 与上面的应到加权聚合并行：两次聚合都下推 Mongo，不增加往返。
+  const deductBy = await bandChao.aggregateScoresLite({ from, to: attTo, classNames: activeNames });
+  // 模块名（给「卫生 -4.00」这类扣分明细用）：listModules 自带 30 秒缓存
+  const allModules = await checkModules.listModules();
+  const moduleNameBy = new Map(allModules.map((m) => [m.key, m.shortName || m.name]));
+
   // ---- 5) 组装 43 行（这一步纯内存，无任何 await）----
   const rows = activeProfiles.map((p) => {
     const run = runBy.get(p.className) || { studentCount: 0, achievedToday: 0, achievedWeek: 0, stepsToday: 0 };
     const att = attBy.get(p.className) || {};
 
     const modules = {};
+    // 该班的班超扣分聚合（含卫生）：scoreOfAggregate 与班超页同一个函数
+    const agg = bandChao.scoreOfAggregate(deductBy.get(p.className));
+    const modDeduct = agg.moduleDeduct || {};
     for (const mDef of MODULES) {
       const m = att[mDef.key];
       if (!m) continue;
+      const dd = modDeduct[mDef.key];
       if (mDef.key === 'morning_class') {
         // 早八只记迟到人（无应到/实到，见 check-modules 模块定义），不产生比率
-        modules[mDef.key] = { key: mDef.key, name: mDef.name, rate: null, ratePercent: null, late: m.late, records: m.records };
+        modules[mDef.key] = { key: mDef.key, name: mDef.name, rate: null, ratePercent: null, late: m.late, records: m.records, deduct: dd ? dd.avgDeduct : 0 };
         continue;
       }
       const rate = m.should > 0 ? m.rateW / m.should : null;
@@ -413,10 +435,14 @@ async function classStatusBoard({ today, attRange, days, force } = {}) {
         should: m.should,
         actual: m.actual,
         records: m.records,
+        // 该模块在窗口内的**日均**扣分（与分数同一个分母）：让「查宿扣了几分」在这一页也看得见
+        deduct: dd ? dd.avgDeduct : 0,
       };
     }
 
-    // 综合出勤率：有应到人数的模块按应到加权合并（早八不参与）
+    // 综合出勤率：有应到人数的模块按应到加权合并（早八不参与）。
+    // ⚠️ 这个率仍要下发（ratePercent）——它是「实到/应到」的事实指标，页面副信息与口径对照要用；
+    //    但**不再用它算分数**（分数唯一来源见下）。
     let shouldSum = 0;
     let rateWSum = 0;
     for (const mDef of MODULES) {
@@ -426,12 +452,26 @@ async function classStatusBoard({ today, attRange, days, force } = {}) {
       rateWSum += m.rateW;
     }
     const attRate = shouldSum > 0 ? round1((rateWSum / shouldSum) * 100) : null;
-    // 早八迟到人数（分数里要扣的那一项）：只取早八模块，别的模块的 lateCount 不参与，
-    // 否则将来某个模块也写 lateCount 就会重复扣分。
+    // 早八迟到人数（分数里扣了什么，要能看见）：只取早八模块，别的模块的 lateCount 不参与。
     const lateTotal = (att.morning_class && att.morning_class.late) || 0;
-    // hasData 必须在分数之前定：它同时决定「考勤列显示分数还是 —」与「考勤统计 N 天那行出不出现」
+    // hasData = 窗口内有**考勤类**记录（4 模块）：「考勤待补」筛选的语义保持原样。
     const attHasData = shouldSum > 0 || !!att.morning_class;
-    const attScore = attendanceScore(shouldSum > 0 ? rateWSum / shouldSum : null, lateTotal, attHasData);
+    // hasAnyCheck = 窗口内有**任意检查**记录（含卫生）：考勤列显不显示「—」看它。
+    // ⚠️ 只拿考勤类记录判断会让「本周只录了卫生」的班显示「—」，
+    //   而它的班超分明明是 8.40 —— 用户报「卫生没有被减分」的另一半观感来源。
+    const hasAnyCheck = agg.dayCount > 0;
+    // 分数 = 班超区间分（**含卫生、查宿等全部模块扣分**，用户 2026-11-19 的核心修复）。
+    // 无记录 → null（显「—」），不是 0 分。
+    const attScore = agg.score;
+    // 扣分明细（按扣分降序，含卫生）：「卫生 -10.00 · 晚自习 -1.53」这种，
+    // 让老师看得见**分数是被谁扣掉的**，而不是只有一个孤零零的总分。
+    // ⚠️ 用的是**日均扣分 avgDeduct**（与分数同一个分母），不是窗口累计 ——
+    //   各模块日均扣分之和 ≈ 10 − 分数，老师能当场把账算平；
+    //   写成窗口累计就会出现「10 − 10.00 ≠ 8.45」这种自相矛盾（本轮实测差点踩进去）。
+    const deductDetail = Object.keys(modDeduct)
+      .filter((k) => modDeduct[k].avgDeduct > 0)
+      .map((k) => ({ key: k, name: moduleNameBy.get(k) || k, deduct: modDeduct[k].avgDeduct }))
+      .sort((a, b) => b.deduct - a.deduct || String(a.key).localeCompare(String(b.key)));
 
     return {
       className: p.className,
@@ -450,12 +490,14 @@ async function classStatusBoard({ today, attRange, days, force } = {}) {
       attendance: {
         modules,
         ratePercent: attRate,
-        // 考勤分数（10 分制，用户 2026-11-12）+ 早八迟到人数（分数里扣了什么，要能看见）
+        // 班超分（10 分制，与班超总评逐字同源）+ 扣分明细（含卫生/查宿）+ 早八迟到人数
         score: attScore,
+        deduct: agg.deduct,
+        deductDetail,
         lateCount: lateTotal,
-        // hasData 与分数同一个判定（attHasData）：两处分别写就会漂移成
-        // 「考勤统计那行出现了，但分数列是 —」
+        // hasData 与「考勤待补」同一个判定；hasAnyCheck 决定考勤列显示
         hasData: attHasData,
+        hasAnyCheck,
       },
       flags: {
         hasMorningExercise: p.hasMorningExercise !== false,
@@ -477,7 +519,7 @@ async function classStatusBoard({ today, attRange, days, force } = {}) {
     return String(a.className).localeCompare(String(b.className), 'zh-CN');
   });
 
-  const result = buildResult({ day, from, weekStart, attRangeKey, attRangeLabel, totals: null, rows, attBy, skipped });
+  const result = buildResult({ day, from, to: attTo, weekStart, attRangeKey, attRangeLabel, totals: null, rows, attBy, skipped });
   boardCache.set(cacheKey, { at: Date.now(), value: result });
   return result;
 }
@@ -494,7 +536,7 @@ function emptyTotals(skipped) {
  *   ② 班里没有学生（studentCount=0）—— 空班，催也没对象；
  *   ③ 没有达标率（dailyRate=null）—— 分母为 0，无意义。
  */
-function buildResult({ day, from, weekStart, attRangeKey, attRangeLabel, rows, skipped }) {
+function buildResult({ day, from, to, weekStart, attRangeKey, attRangeLabel, rows, skipped }) {
   const students = rows.reduce((a, r) => a + r.studentCount, 0);
   const aToday = rows.reduce((a, r) => a + r.run.achievedToday, 0);
   const aWeek = rows.reduce((a, r) => a + r.run.achievedWeek, 0);
@@ -527,6 +569,10 @@ function buildResult({ day, from, weekStart, attRangeKey, attRangeLabel, rows, s
   return {
     today: day,
     from,
+    // 考勤窗口终点（完整周/完整月）**必须单独下发**：
+    // 旧版没有这一项，前端与复制文案都拿「所选日」当区间终点 ——
+    // 窗口改成完整周/月后那句话说的是错的（写着「11月16日~11月19日」，数据其实统计到 22 日）。
+    to,
     weekStart,
     // 考勤窗口（用户 2026-11-12 本日/本周/本月）：range 是 key、rangeLabel 是中文，
     // 前端标题与图片都直接用 rangeLabel，不许自己按 from~to 反推「这是几天」。
@@ -552,7 +598,7 @@ function buildResult({ day, from, weekStart, attRangeKey, attRangeLabel, rows, s
       attendanceMissing: attendanceMissing.map(brief),
     },
     // 未筛选态的完整报告（有筛选时由 applyBoardFilter 重新生成对应文案）
-    copyText: buildCopyText({ day, from, weekStart, totals, filtered: null, tags: [], rows, copy: 'all', attRangeLabel }),
+    copyText: buildCopyText({ day, from, to, weekStart, totals, filtered: null, tags: [], rows, copy: 'all', attRangeLabel }),
   };
 }
 
@@ -591,6 +637,7 @@ function applyBoardFilter(board, { school, department, grades, quick, level, met
           : buildCopyText({
               day: board.today,
               from: board.from,
+              to: board.to,
               weekStart: board.weekStart,
               totals: board.totals,
               filtered: null,
@@ -613,6 +660,7 @@ function applyBoardFilter(board, { school, department, grades, quick, level, met
     copyText: buildCopyText({
       day: board.today,
       from: board.from,
+      to: board.to,
       weekStart: board.weekStart,
       totals: board.totals,
       filtered,
@@ -777,7 +825,7 @@ function filterBoard(board, { school, department, grades, quick, level, metric, 
  *  与「显示内容」是两回事：可以列表看着三列、复制时只要日达标那份名单，
  *  所以它是独立参数，不由列显隐推导。
  */
-function buildCopyText({ day, from, weekStart, totals, filtered, tags, rows, copy, attRangeLabel }) {
+function buildCopyText({ day, from, to, weekStart, totals, filtered, tags, rows, copy, attRangeLabel }) {
   const scoped = Array.isArray(tags) && tags.length > 0;
   const scope = copy === 'daily' || copy === 'weekly' ? copy : 'all';
   const scopeLabel = { daily: '日达标', weekly: '周达标' }[scope];
@@ -817,7 +865,11 @@ function buildCopyText({ day, from, weekStart, totals, filtered, tags, rows, cop
     if (scope === 'all') {
       const att = r.attendance || {};
       if (att.score !== null && att.score !== undefined) {
-        parts.push(`考勤 ${scoreScale.scoreText(att.score)} 分${att.lateCount ? `（迟到 ${att.lateCount} 人）` : ''}`);
+        // 分数即「班超分」（含卫生/查宿等全部扣分），措辞与页面对齐；
+        // 扣分明细里挑最大的那一项写出来，让「分数被谁扣掉的」在群里也能看见（用户 2026-11-19）。
+        const detail = (att.deductDetail || [])[0];
+        const why = detail ? `（${detail.name} -${scoreScale.scoreText(detail.deduct)}）` : att.lateCount ? `（迟到 ${att.lateCount} 人）` : '';
+        parts.push(`班超 ${scoreScale.scoreText(att.score)} 分${why}`);
       }
     }
     return `· ${r.className}：${parts.join('，')}${r.departmentName ? `｜${r.departmentName}` : ''}`;
@@ -848,10 +900,12 @@ function buildCopyText({ day, from, weekStart, totals, filtered, tags, rows, cop
   const attendanceMissing = list.filter(QUICK_FILTERS.attMissing.test);
   if (attendanceMissing.length) {
     lines.push('');
-    // 窗口措辞用服务端 rangeLabel（本日/本周/本月），不写死「至今」：
-    // 旧文案「{from} 至今」在本月窗口下会变成「11月1日 至今」，老师以为是「到今天为止的全部」，
-    // 而实际选的是 11月10日 那天 —— 回看历史日期时这句话就是错的。
-    lines.push(`考勤待补班级（${attRangeLabel || '本周'}：${from} ~ ${day} 无任何考勤记录，共 ${attendanceMissing.length} 个）：`);
+    // 窗口措辞用服务端 rangeLabel（本日/本周/本月），区间用**真实窗口起止**（from ~ to）：
+    // 旧文案写「{from} 至今」，窗口还是「回看到所选日」时勉强对；
+    // 现在窗口是**完整周/完整月**（与班超同源），终点不再是所选日 ——
+    // 拿 day 当终点会出现「文案说统计到 11月19日、数字里含 11月20-22 日」，
+    // 那正是用户拿两个页面对照时报「日周月不一致」的同一种说谎。
+    lines.push(`考勤待补班级（${attRangeLabel || '本周'}：${from} ~ ${to || day} 无任何考勤记录，共 ${attendanceMissing.length} 个）：`);
     for (const r of attendanceMissing) lines.push(`· ${r.className}`);
   }
 
@@ -877,7 +931,9 @@ module.exports = {
   applyBoardFilter,
   QUICK_FILTERS,
   buildCopyText,
-  attendanceScore,
+  // 分数没有第二套实现了（用户 2026-11-19）：本页的 attendance.score 一律来自
+  // bandChao.scoreOfAggregate，这里只把窗口翻译函数导出给检查器/测试交叉核对。
+  attWindow,
   MODULES,
   clearCache,
   CACHE_TTL,

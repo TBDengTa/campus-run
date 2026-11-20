@@ -721,14 +721,18 @@ const TARGETS = [
       const calls = [];
       state.get = (url, params) => {
         calls.push(params);
+        // 窗口终点 to：2026-11-19 起窗口是**完整周/月**（与班超同源），
+        // 脚注与图片标题必须用服务端下发的 to，不能用所选日 today 顶替。
+        const toOf = (r) => (r === 'day' ? '2026-11-12' : r === 'month' ? '2026-11-30' : '2026-11-15');
         return Promise.resolve({
           today: '2026-11-12',
           from: params.attRange === 'day' ? '2026-11-12' : params.attRange === 'month' ? '2026-11-01' : '2026-11-09',
+          to: toOf(params.attRange),
           weekStart: '2026-11-09',
           attRange: params.attRange,
           attRangeLabel: { day: '本日', week: '本周', month: '本月' }[params.attRange] || '本周',
-          attRuleLines: ['考勤分 = 10 × 加权出勤率 − 早八迟到人数 × 0.05', '早操 / 晚自习：出勤率 = 实到 ÷ 应到'],
-          rows: [{ className: 'A班', studentCount: 40, run: { enabled: true, dailyRate: 50, weeklyRate: 60 }, attendance: { score: 9.9, ratePercent: 99, lateCount: 2, hasData: true } }],
+          attRuleLines: ['总分满分 10 分（含卫生）：每天从 10 分起扣，统计期各天得分取平均', '卫生按评价扣：评良扣 2 分、评差扣 4 分'],
+          rows: [{ className: 'A班', studentCount: 40, run: { enabled: true, dailyRate: 50, weeklyRate: 60 }, attendance: { score: 9.9, ratePercent: 99, lateCount: 2, hasData: true, hasAnyCheck: true } }],
           totals: { classCount: 1, studentCount: 40, achievedToday: 20, achievedWeek: 24, dailyRate: 50, weeklyRate: 60, skippedClasses: 0 },
           filtered: null,
           activeFilters: [],
@@ -745,7 +749,7 @@ const TARGETS = [
       ok(!('days' in (calls[0] || {})), '请求里已经没有旧的 days 参数', Object.keys(calls[0] || {}));
       ok(p2.data.attRangeLabel === '本周' && /本周/.test(p2.data.attRangeText), '窗口标签用服务端回显', p2.data.attRangeText);
       ok(p2.data.attRuleLines.length === 2, '规则文案来自服务端', p2.data.attRuleLines);
-      ok(/10 × 加权出勤率/.test(p2.data.footerText), '页面脚注用服务端规则第一句', p2.data.footerText);
+      ok(/满分 10 分/.test(p2.data.footerText), '页面脚注用服务端规则第一句', p2.data.footerText);
       ok(!/每迟到 1 人扣 0\.05 分/.test(p2.data.footerText), '脚注不再硬编码单价（改了单价不会说谎）', p2.data.footerText);
 
       // onAttRange 内部是 setData(..., () => this.load())，load 是 async 且不返回给调用方，
@@ -759,13 +763,21 @@ const TARGETS = [
       ok(p2.data.attRangeText.includes('本月'), '本月窗口标签来自服务端回显', p2.data.attRangeText);
       p2.onAttRange({ currentTarget: { dataset: { key: 'day' } } });
       await flush();
-      ok(p2.data.attRangeText.includes('仅当日'), '本日窗口显示「仅当日」（from==today 不说成一段区间）', p2.data.attRangeText);
+      ok(p2.data.attRangeText.includes('仅当日'), '本日窗口显示「仅当日」（from==to 不说成一段区间）', p2.data.attRangeText);
+      // 2026-11-19：脚注区间终点用服务端 **to**（窗口终点），本日窗口 from==to 才是同一天
       ok(/考勤（本日：2026-11-12 ~ 2026-11-12）/.test(p2.data.footerText), '脚注里的窗口随服务端回显联动', p2.data.footerText);
       // 同窗口重复点不应再发请求
       const before = calls.length;
       p2.onAttRange({ currentTarget: { dataset: { key: 'day' } } });
       await flush();
       ok(calls.length === before, '重复点同一窗口不发多余请求', calls.length - before);
+
+      // ===== 窗口终点（2026-11-19）：本周脚注必须写完整周区间（周一~周日），
+      // 不能写所选日 —— 否则页面说的区间与实际统计区间不符（用户报「日周月不一致」的表现之一）。
+      // 放在所有「本日」断言之后，避免把后续断言的前提状态改掉。
+      p2.onAttRange({ currentTarget: { dataset: { key: 'week' } } });
+      await flush();
+      ok(/考勤（本周：2026-11-09 ~ 2026-11-15）/.test(p2.data.footerText), '本周脚注用完整周终点（不是所选日）', p2.data.footerText);
 
       // ===== 图片底部布局（用户 2026-11-12「要在图片下面标注考勤计算规则」）=====
       // 画布溢出是**静默**的：图片能生成、能发出去，只是规则少了半行。

@@ -64,9 +64,21 @@ function assertMember(identity) {
 //（团委老师 / 学生处干事通常不在成员名单里，却需要维护名单），且范围＝全校。
 // 判定顺序刻意是「身份先、权限后」：主席团/部长不额外查权限（省一次组展开）；
 // 只有身份不够时才落到总管权限兜底。
+//
+// ⚠️ **必须识别 `*` 通配**（用户 2026-11-19「有学生会总管的权限查看检查记录没有办法筛选与查看所有记录」）：
+//   超级管理员组的有效权限就是 `['*']`（见 models/user.js::getEffectivePermissions 直接返回 ['*']），
+//   旧实现只判 `perms.includes('union.steward')` → 拿着全部权限的账号**反而不被认作总管**，
+//   于是 `/records` 落到「非成员 → 只限自己班」分支，全校 1208 条记录只能看到自己班的 24 条，
+//   而且复审台直接 403（assertMember 拦掉）。这跟「我有全部权限啊」是同一种假失效：
+//   权限校验必须与 requirePermission 的 `*` 口径一致（见 middlewares/admin.js:16）。
+//   回归：tools/check-union-records-filter.js 的「总管/超管可见全校」用例。
+function hasWildcard(perms) {
+  return Array.isArray(perms) && perms.includes('*');
+}
+
 async function isSteward(req) {
   const perms = (await req.user.getEffectivePermissions()) || [];
-  return perms.includes('union.steward');
+  return hasWildcard(perms) || perms.includes('union.steward');
 }
 
 // 「查看检查记录」的可见范围（用户 2026-10-21「学生会总管是可以查看检查记录的，现在显示无法查看」）。
@@ -1757,12 +1769,59 @@ async function buildViewer(req) {
   };
 }
 
-function presentRecord(r, { withDetails = true, viewer = null } = {}) {
+/**
+ * 离职/无关者能否在**列表卡片**上看到缺勤人姓名（用户 2026-11-19「卡片要显示缺勤人」）。
+ *
+ * ⚠️ 为什么需要这道闸门：`GET /records` 对**普通学生**也开放本班（见该路由的 scope 分支），
+ *   而缺勤名单原本只存在于详情页（点进去才看得见）。把整班缺勤名单前移到可扫视/可截图的列表页，
+ *   等于扩大了数据的暴露面 —— 这不该由一个「优化卡片」的需求顺手带出去。
+ *   所以：**管理视角才给姓名，其他人只给人数**（仍能看到「缺勤 3 人」，看不见是谁）。
+ *
+ * 放行口径与「能看完整明细」逐字对齐（详情页的可见性判定在 GET /records/:id）：
+ *   ① 学生会成员（按身份范围，范围本身已由 scope 收窄）；
+ *   ② 该条记录的检查人本人；
+ *   ③ 本班班主任 / 本班班委。
+ */
+function canSeeRosterNames(req, viewer, record) {
+  const identity = viewer && viewer.identity;
+  if (identity && identity.isMember) return true;
+  // 学生会总管（含持 `*` 的超管）即使不在成员名单里也放行 —— 与「总管可见全校记录」
+  // 同一口径（isRecordSteward 是本文件唯一实现）。漏这一条会出现很怪的现象：
+  // 总管能列出**全校**记录、能点进详情看完整名单（详情走 details 全量），
+  // 唯独卡片上的姓名被抹掉、显示「名单仅管理端可见」—— 权限看起来自相矛盾。
+  if (viewer && viewer.isSteward) return true;
+  const me = (req.user && req.user.openid) || '';
+  // 检查人本人：他能录这条名单，自然也能看
+  if (record.inspectorOpenid && record.inspectorOpenid === me) return true;
+  const cls = String(record.className || '');
+  if (!cls) return false;
+  if ((req.user.homeroomClasses || []).includes(cls)) return true;
+  if (req.user.isClassOfficer === true && req.user.className === cls) return true;
+  return false;
+}
+
+/**
+ * 卡片用的名单预览（唯一实现：字段名 / label / 计数口径都在 check-modules.rosterOf）。
+ * 无权限时把姓名与折叠数清空，但**保留人数**（「缺勤 5 人 · 名单仅管理端可见」）。
+ */
+function rosterFor(record, moduleDef, req, viewer) {
+  const roster = checkModules.rosterOf(moduleDef, record.details || {});
+  if (!roster) return null;
+  if (canSeeRosterNames(req, viewer, record)) return roster;
+  return { ...roster, names: [], more: 0, hidden: true };
+}
+
+function presentRecord(r, { withDetails = true, viewer = null, photoLimit = 0, roster = null } = {}) {
   if (!r) return null;
-  // 宿舍照片隐私裁剪：宿舍类照片对无权??*不下发原??URL**，只给模糊占位（??services/union.js::cropPhotos）??
-  // 这是所有记录出口（详情 / 列表 / 我的 / 工作台最??/ 班级全景）的**唯一裁剪??*??
-  // 不要在路由里另写一份判??—??漏一个出口就等于泄露原图??
+  // 宿舍照片隐私裁剪：宿舍类照片对无权者**不下发原图 URL**，只给模糊占位（见 services/union.js::cropPhotos）。
+  // 这是所有记录出口（详情 / 列表 / 我的 / 工作台最近 / 班级全景）的**唯一裁剪点**，
+  // 不要在路由里另写一份判定 —— 漏一个出口就等于泄露原图。
   const photoView = unionSvc.cropPhotos(r, { viewer });
+  // 列表出口的照片上限（用户 2026-11-19「卡片要显示照片」）：
+  // ⚠️ slice 必须在 cropPhotos **之后** —— 先 slice 再裁剪会让 photoCount 的语义错位
+  //   （无权者本该看到「有 N 张、已模糊」，先 slice 会变成「有 3 张」）。
+  // photoCount 始终是**总数**，前端据此渲染 +N 角标与裁剪占位。
+  const photos = photoLimit > 0 ? photoView.photos.slice(0, photoLimit) : photoView.photos;
   const base = {
     id: String(r._id),
     moduleKey: r.moduleKey,
@@ -1780,8 +1839,8 @@ function presentRecord(r, { withDetails = true, viewer = null } = {}) {
     score: r.score,
     deduct: r.deduct,
     metrics: r.metrics || {},
-    // 宿舍照片：无权??photos=[]??*零原??URL**?? photosBlurred 标记 + photoCount 用于渲染占位
-    photos: photoView.photos,
+    // 宿舍照片：无权者 photos=[]（**零原图 URL**），photosBlurred 标记 + photoCount 用于渲染占位
+    photos,
     photosBlurred: photoView.photosBlurred,
     photoCount: photoView.photoCount,
     photoNote: photoView.photoNote,
@@ -1805,6 +1864,9 @@ function presentRecord(r, { withDetails = true, viewer = null } = {}) {
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
   };
+  // 名单预览（卡片用）：由调用方传入（列表/复审台都要，详情走 details 全量）。
+  // ⚠️ 只有显式传了才下发 —— 详情页已经用 details 渲染完整名单，再给一份预览是冗余。
+  if (roster !== null && roster !== undefined) base.roster = roster;
   if (withDetails) {
     base.details = r.details || {};
     // 修改 / 复核 / 取消的留痕（详情页的「复核与修改留痕」区）。
@@ -2179,10 +2241,12 @@ router.get(
     //      scope 由 buildRecordFilter 的 Object.assign **覆盖** query.className，
     //      所以传 className=别的班也跨不出去（fail-closed）。
     let scope;
+    let isStewardList = false;
     if (identity.isMember) {
       scope = unionSvc.scopeFilter(identity);
     } else if (await isRecordSteward(req, identity)) {
       scope = {}; // 全校
+      isStewardList = true;
     } else {
       const classes = [
         ...new Set(
@@ -2193,9 +2257,21 @@ router.get(
     }
     if (!scope) throw new ApiError(403, 403002, NO_ACCESS);
 
+    // ===== 筛选维度（用户 2026-11-19「检查记录要能按班级/系部/院校/楼栋筛选」）=====
+    // 院校 / 系部：check_records 上没有院校字段，先在班级台账解析成 className 集合；
+    // 楼栋：解析成房间 id 集合（targetId）。两者都与**身份范围求交集**（见 buildRecordFilter），
+    // 所以分院成员按外校区筛 → 0 条，班主任按别的班筛 → 0 条（fail-closed，无法绕过范围）。
+    const [orgClassNames, targetIds] = await Promise.all([
+      bandChao.resolveRecordClassNames({ school: req.query.school, department: req.query.department }),
+      bandChao.resolveRecordTargetIds(req.query.building),
+    ]);
     const query = {
       moduleKey: req.query.moduleKey,
       className: req.query.className,
+      // 院校/系部解析结果：null = 没选这两个维度（不过滤）；[] = 选了但一个班都没有（→ 0 条）
+      classNames: orgClassNames,
+      targetIds: targetIds === null ? undefined : targetIds,
+      keyword: req.query.keyword,
       status: req.query.status,
       date: req.query.date,
       from: req.query.from,
@@ -2209,20 +2285,34 @@ router.get(
       CheckRecord.countDocuments(filter),
       CheckRecord.find(filter).sort({ date: -1, createdAt: -1 }).skip(skip).limit(limit).lean(),
     ]);
+    // 筛选候选（班级 / 院校 / 系部 / 楼栋 + 计数）：**只按身份范围统计**，不叠加已选项
+    //（否则选了北校区之后其它院校的选项就消失，用户没法切回去）。
+    // 只在第一页算一次：翻页不需要重复统计（前端也会缓存）。
+    const facets = page === 1 ? await bandChao.recordFacets(scope, { from: req.query.from, to: req.query.to }) : null;
     const modules = await checkModules.listModules();
     const nameOf = new Map(modules.map((m) => [m.key, m.shortName || m.name]));
-    // ⚠️ **列表??viewer 只在循环外算一??*（openid / role / identity 都不随行变化）—??
-    // 放进 map 里就是每条记录一??resolveIdentity（N+1）。identity ??30s 缓存也挡不住这种放大??
-    const viewer = { openid: req.user.openid || '', role: req.user.role || '', identity };
+    const moduleMap = new Map(modules.map((m) => [m.key, m]));
+    // ⚠️ **列表出口 viewer 只在循环外算一次**（openid / role / identity 都不随行变化）——
+    // 放进 map 里就是每条记录一次 resolveIdentity（N+1）。identity 有 30s 缓存也挡不住这种放大。
+    // isSteward：总管不是成员，身份里看不出来，但名单权限与照片裁剪都要它（见 canSeeRosterNames）
+    const viewer = { openid: req.user.openid || '', role: req.user.role || '', identity, isSteward: isStewardList };
     ok(res, {
       page,
       limit,
       total,
       hasMore: skip + rows.length < total,
-      list: rows.map((r) => ({
-        ...presentRecord(r, { withDetails: false, viewer }),
-        moduleName: nameOf.get(r.moduleKey) || r.moduleKey,
-      })),
+      // 筛选候选（班级 / 院校 / 系部 / 楼栋，各带条数）：前端筛选面板直接渲染，不再自己算
+      facets,
+      list: rows.map((r) => {
+        const moduleDef = moduleMap.get(r.moduleKey);
+        return {
+          // photoLimit=3：列表卡片只给前 3 张缩略图（与复审台同口径），photoCount 仍是总数
+          ...presentRecord(r, { withDetails: false, viewer, photoLimit: 3 }),
+          moduleName: nameOf.get(r.moduleKey) || r.moduleKey,
+          // 缺勤/未归/迟到名单预览（前 3 个姓名 + 总数）：用户 2026-11-19「卡片要显示缺勤人」
+          roster: rosterFor(r, moduleDef, req, viewer),
+        };
+      }),
     });
   })
 );
@@ -2309,7 +2399,11 @@ router.get(
       identity.isMember && (identity.level === 'school' || (scope && info.departmentId && (identity.departmentIds || []).includes(info.departmentId)));
     const selfClass = className === req.user.className;
     const homeroom = (req.user.homeroomClasses || []).includes(className);
-    if (!inUnionScope && !selfClass && !homeroom) throw new ApiError(403, 403002, NO_ACCESS);
+    // 学生会总管（含持 `*` 的超管）全校可见 —— 与 /records 的 isRecordSteward 同一口径。
+    // 漏这条会出现「总管能列出全校记录、却点不进某个班的全景」（403），
+    // 而班超块与「我的班级」页正是从这条接口取数的（用户 2026-11-19「查看所有记录」）。
+    const isClassSteward = await isRecordSteward(req, identity);
+    if (!inUnionScope && !selfClass && !homeroom && !isClassSteward) throw new ApiError(403, 403002, NO_ACCESS);
 
     const range = ['day', 'week', 'month'].includes(String(req.query.range)) ? String(req.query.range) : 'day';
     const date = dates.isValidDateKey(String(req.query.date || '')) ? String(req.query.date) : dates.todayKey();
@@ -2339,8 +2433,9 @@ router.get(
       .limit(10)
       .lean();
     const nameOf = new Map(modules.map((m) => [m.key, m.shortName || m.name]));
-    // ??/records：viewer ??map 外算一次（identity ??resolve，不新增查询??
-    const viewer = { openid: req.user.openid || '', role: req.user.role || '', identity };
+    const moduleMap = new Map(modules.map((m) => [m.key, m]));
+    // 与 /records：viewer 在 map 外算一次（identity 不随记录变化，避免 N 次 resolve）
+    const viewer = { openid: req.user.openid || '', role: req.user.role || '', identity, isSteward: isClassSteward };
 
     ok(res, {
       className,
@@ -2350,8 +2445,10 @@ router.get(
       ranking: { rank: ranking.me ? ranking.me.rank : null, total: ranking.total, score: ranking.me ? ranking.me.score : null },
       rankingTop: ranking.top,
       recent: recent.map((r) => ({
-        ...presentRecord(r, { withDetails: false, viewer }),
+        // 班超页「最近记录」卡片同口径：前 3 张照片 + 名单预览（用户 2026-11-19）
+        ...presentRecord(r, { withDetails: false, viewer, photoLimit: 3 }),
         moduleName: nameOf.get(r.moduleKey) || r.moduleKey,
+        roster: rosterFor(r, moduleMap.get(r.moduleKey), req, viewer),
       })),
     });
   })
@@ -2480,10 +2577,19 @@ router.get(
   '/review/queue',
   wrap(async (req, res) => {
     const identity = await unionSvc.resolveIdentity(req.user);
-    assertMember(identity);
-    if (!unionSvc.canReviewAny(identity)) throw new ApiError(403, 403002, '只有部门部长或主席团可以进入复审');
+    // 学生会总管（含持 `*` 的超管）即使不在成员名单里也要能进复审台：
+    // 与 /records 的 isRecordSteward 同一口径（用户 2026-11-19「有学生会总管的权限…
+    // 没有办法筛选与查看所有记录」—— 旧实现先 assertMember 拦掉，总管根本进不来）。
+    const steward = await isRecordSteward(req, identity);
+    if (!steward) assertMember(identity);
+    if (!unionSvc.canReviewAny(identity) && !steward) {
+      throw new ApiError(403, 403002, '只有部门部长或主席团可以进入复审');
+    }
 
-    const scope = unionSvc.scopeFilter(identity) || {};
+    // 范围：总管 = 全校（与 /records 的 scope={} 同口径）；否则按身份范围。
+    // ⚠️ 不能写成 `scopeFilter(identity) || {}` —— 总管/超管是**非成员**，scopeFilter 返回 null，
+    //   兜底成 {} 恰好等于全校，但那只在「非成员」时成立；成员走的是身份范围，这里显式分支更安全。
+    const scope = steward ? {} : unionSvc.scopeFilter(identity) || {};
     const { page, limit, skip } = parsePagination(req.query, { page: 1, limit: 20 });
     const band = String(req.query.band || '').trim();
     const moduleKey = String(req.query.moduleKey || '').trim();
@@ -2530,12 +2636,20 @@ router.get(
     const moduleCountBy = new Map(moduleCounts.map((r) => [r._id, r.n]));
 
     // viewer 只在循环外算一次（与 /records 同一条铁律：放进 map 里就是 N 次 resolveIdentity）
-    const viewer = { openid: req.user.openid || '', role: req.user.role || '', identity };
+    // isSteward 让卡片名单权限对总管放行（复审台本来就全是能看完整明细的人）
+    const viewer = { openid: req.user.openid || '', role: req.user.role || '', identity, isSteward: steward };
     const me = req.user.openid || '';
 
     const list = rows.map((r) => {
       const moduleDef = moduleMap.get(r.moduleKey);
-      const check = reviewSvc.reviewableOf(r, { identity, openid: me, moduleDef });
+      // 总管（含持 `*` 的超管）不是成员 → canReview 恒 false（它开头就判 isMember）。
+      // 但「总管 = 管理学生会全部事务，含记录与复核」是 union.steward 的定义
+      // （models/permission.js::PERM_IMPLS），所以这里对**总管**给复核权；
+      // 自审禁令照旧生效（总管也不能审自己提交的记录）—— 与详情页 GET /records/:id 的
+      // `reviewPerm || isStewardViewer` 完全同口径。
+      const baseCheck = reviewSvc.reviewableOf(r, { identity, openid: me, moduleDef });
+      const selfReviewOk = !(r.inspectorOpenid && r.inspectorOpenid === me) || unionSvc.canSelfReview(identity);
+      const check = steward && !baseCheck.ok && selfReviewOk ? { ok: true, reason: '' } : baseCheck;
       const band = reviewSvc.bandOf(r.deduct);
       // 照片在这里就要**按权限裁剪**（presentRecord 的同一份 cropPhotos）：
       // 宿舍照片对无权者不下发原图 URL，列表出口尤其不能漏（列表是"随手一刷"的场景）。
@@ -2556,6 +2670,11 @@ router.get(
         score: Number.isFinite(Number(r.score)) ? Number(r.score) : 0,
         // 简化检查信息（评价 / 关键指标 / 备注摘要），文案在服务端拼，前端只渲染
         summary: reviewSvc.summarizeRecord(r, moduleDef),
+        // 缺勤/未归/迟到名单预览（前 3 个姓名 + 总数）：用户 2026-11-19「复审台卡片要显示缺勤人」。
+        // ⚠️ 刻意**不进 summary**：摘要要保持「一两行」的密度（review.wxss 有两行 clamp），
+        //   名单并进去会把卡片撑爆 —— 这是 summarizeRecord 里写死的设计约束。
+        // 复审台都是能看完整明细的复核人，所以姓名直出（rosterFor 的权限闸门对成员恒放行）。
+        roster: rosterFor(r, moduleDef, req, viewer),
         // 检查图片：只给前 3 张（复审扫一眼即可），完整照片在详情页
         photos: photoView.photos.slice(0, 3),
         photoCount: photoView.photoCount,

@@ -171,16 +171,40 @@ function percentOf(src, preferPercent) {
 
 // ===== 概览 / 汇总对象 =====
 // 先找嵌套的 summary / overview / totals，再退回顶层平铺（两种响应形状都要支持）
+//
+// ⚠️ **必须把 summary.modules 摊平**（用户 2026-11-19「我的班级考勤未显示记录」的根因）。
+//   服务端 GET /api/class/attendance 的 summary 形状是：
+//     { from, to, totalDays, recordedDays, modules: { morning_exercise: {...}, ... }, skipped, ... }
+//   模块字段挂在 **summary.modules** 下（routes/class.js 的 ok(res,{summary:{ modules: summaryModules }})）。
+//   本组件早前按「summary 本身就是模块 map」读（SUMMARY_META_KEYS 里还把 modules 当元信息跳过），
+//   于是拿到 0 个模块 → normalizeSummary 的 hasAny=false → 页面永远显示「该区间暂无考勤记录」，
+//   哪怕库里当天有晚自习/查宿记录也一样。
+//   现在两种形状都支持：有 summary.modules（对象）就摊到顶层；顶层平铺的形状照旧可用。
+//   回归：tools/check-class-attendance-e2e.js 用**真实路由响应**驱动本组件（此前用平铺夹具，
+//   夹具自己走样，所以从没测出这个形状错位）。
+function flattenSummary(sum) {
+  if (!sum || typeof sum !== 'object') return {};
+  const nested = sum.modules;
+  if (!nested || typeof nested !== 'object' || Array.isArray(nested)) return sum;
+  // 摊平但**不覆盖** summary 自身的同名元信息键：from/to/skipped/absentTotal…
+  const out = { ...sum };
+  for (const k of Object.keys(nested)) {
+    if (SUMMARY_META_KEYS.indexOf(k) >= 0) continue;
+    if (out[k] === undefined) out[k] = nested[k];
+  }
+  return out;
+}
+
 function pickSummary(data) {
   if (!data || typeof data !== 'object') return {};
   const nested = [data.summary, data.overview, data.totals].filter((x) => x && typeof x === 'object');
   for (const c of nested) {
-    if (pickNum(c, ['absentTotal', 'absentCount', 'absent']) !== null) return c;
-    if (pickNum(c, ['notReturnedTotal', 'notReturnedCount', 'notReturned']) !== null) return c;
-    if (pickNum(c, ['ratePercent', 'avgRate']) !== null) return c;
+    if (pickNum(c, ['absentTotal', 'absentCount', 'absent']) !== null) return flattenSummary(c);
+    if (pickNum(c, ['notReturnedTotal', 'notReturnedCount', 'notReturned']) !== null) return flattenSummary(c);
+    if (pickNum(c, ['ratePercent', 'avgRate']) !== null) return flattenSummary(c);
   }
-  if (nested.length) return nested[0];
-  return data;
+  if (nested.length) return flattenSummary(nested[0]);
+  return flattenSummary(data);
 }
 
 // 模块项取数（summary 顶层模块字段 / days 里的模块对象都走这里）
@@ -196,6 +220,11 @@ function moduleFields(src) {
     actual: pickNum(d, ['actual', 'actualCount', 'actualStay']),
     absent: pickNum(d, ['absent', 'absentCount']),
     notReturned: pickNum(d, ['notReturned', 'notReturnedCount', 'unreturned']),
+    // 早八等「只记异常人」的模块：这个数就是它唯一的展示内容（没有出勤率可言）
+    late: pickNum(d, ['late', 'lateCount']),
+    // 非百分比指标名（服务端由 check_modules.metrics 推出来：早八「迟到」/ 查宿「未归」）
+    // —— 前端**不硬编码模块 key**，以后加同类模块不用改这里。
+    countMetricName: d.countMetricName || '',
     rate: pickNum(d, ['rate']),
     ratePercent: pickNum(d, ['ratePercent']),
     avgRate: pickNum(d, ['avgRate']),
@@ -252,6 +281,26 @@ function normalizeModules(data) {
     const hasRate = !off && !isScoreModule && (rate !== null || f.should !== null);
     // 「只记异常人」的模块（早八）：没人迟到是常态 → 未录文案用 noRecordText（「无迟到」）
     const optionalMissing = f.optionalWhenMissing;
+    const days = pickNum(summary[key], ['days']) === null ? 0 : Number(summary[key].days) || 0;
+    // ⚠️ 没有出勤率的模块**不能一律显示「—」，也不能显示 0%**
+    //   （用户 2026-11-19「我的班级考勤未显示记录」的第二、三层）：
+    //   早八按设计就没有应到/实到（只记迟到人），率这一维**不存在**。
+    //     · 旧服务端把它算成 ratePercent=0 → 卡面显示「早八 0%」，
+    //       老师只会读成「全班一个都没到」——比空白更误导；
+    //     · 前端把「取不到率」统一渲染成「—」→ 明明录了「迟到 5 人」也看着像没记录。
+    //   现在文案只从**服务端给的事实**推：率有就出率；没率就出人数指标
+    //   （指标名 countMetricName 来自 check_modules.metrics，前端不硬编码模块 key），
+    //   两者都没有才「—」。绝不编造数字。
+    const metricName = f.countMetricName || '';
+    const noRateText = (() => {
+      if (off) return offText;
+      if (rate !== null) return `${rate}%`;
+      if (f.late !== null && f.late > 0) return `${metricName || '迟到'} ${f.late} 人`;
+      // 有记录但一个人都没迟到（或该模块本就「没记录=正常」）：用服务端文案
+      if (f.noRecordText && (days > 0 || optionalMissing)) return f.noRecordText;
+      if (days > 0) return '已录入';
+      return '—';
+    })();
     return {
       key,
       name,
@@ -261,18 +310,22 @@ function normalizeModules(data) {
       optionalWhenMissing: optionalMissing,
       noRecordText: f.noRecordText || (optionalMissing ? '无迟到' : ''),
       // 无早操的班级显示服务端文案（如「本班无早操」）而不是 0
-      rateText: off ? offText : rate === null ? '—' : `${rate}%`,
+      rateText: noRateText,
+      // 有内容（不是「—」）就不该被画成灰色：早八没有率但有迟到人数，
+      // 灰掉会被读成「没数据」—— 这正是用户以为「考勤未显示记录」的观感来源
+      hasValue: !off && noRateText !== '—',
       off,
       offText,
       isScoreModule,
       hasRate,
-      muted: off || !hasRate,
+      muted: off || noRateText === '—',
       full: hasRate && rate !== null && rate >= 100,
       should: f.should,
       actual: f.actual,
       absent: f.absent,
       notReturned: f.notReturned,
-      days: pickNum(summary[key], ['days']) === null ? 0 : Number(summary[key].days) || 0,
+      late: f.late,
+      days,
     };
   });
 
@@ -304,8 +357,13 @@ function normalizeSummary(data, modules, recordedDaysFallback) {
   const coveredDays = recordedDays === null ? Number(recordedDaysFallback) || 0 : recordedDays;
   const totalDays = pickNum(sum, ['totalDays']);
   const modulesOut = (modules || [])
-    // 打分模块（卫生）不上出勤率卡；「本班无」的模块保留（显示服务端文案，不显示 0）
-    .filter((m) => !m.isScoreModule && (m.hasRate || m.off))
+    // 概览卡的模块行保留判据（用户 2026-11-19「我的班级考勤未显示记录」）：
+    //   · 打分模块（卫生）仍不上这张卡（它没有人数/出勤率口径，与「平均出勤率」并列会误导）
+    //   · 有出勤率的、有迟到人数的、「本班无」的都保留
+    // 旧写法只有 (m.hasRate || m.off) —— 早八这种**天生没有率**的模块被整行滤掉，
+    // 于是「今天只录了早八」的班 modulesOut 为空 → hasAny=false →
+    // 概览卡不渲染、页面直接显示「该区间暂无考勤记录」，这正是用户看到的「没有记录」。
+    .filter((m) => !m.isScoreModule && (m.hasRate || m.off || m.hasValue))
     .map((m) => ({
       key: m.key,
       short: m.short,
