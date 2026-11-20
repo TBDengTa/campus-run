@@ -2797,16 +2797,24 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
       !/classSummary\(/.test(exportSvcSrc) && !/scoreOfAggregate\(/.test(exportSvcSrc));
     const SUMMARY_COLUMNS = [
       '序号', '院校', '系部', '专业', '年级', '学生数', '住宿数', '班委数', '学生会成员数',
-      '卫生累计扣分', '晚自习累计扣分', '查宿累计扣分', '早操累计扣分', '早八累计扣分',
+      '卫生累计扣分', '晚自习累计扣分', '查宿累计扣分', '早操累计扣分', '早八累计扣分', '班超分',
       '校园跑班级日目标平均达标率', '校园跑班级周目标平均达标率',
       '校园跑班级日目标达标次数', '校园跑班级周目标达标次数',
       '校园跑班级日目标达标最低值', '校园跑班级周目标达标最低值',
       '校园跑累计步数', '校园跑人均累计步数',
     ];
-    ok('总标表头 = 用户指定的 22 列（顺序固定、逐字一致）',
+    ok('总标表头 = 用户指定的 23 列（顺序固定、逐字一致，班超分紧跟早八）',
       SUMMARY_COLUMNS.every((t) => exportSvcSrc.includes(`'${t}'`)) &&
         new RegExp(`SUMMARY_COLUMNS[\\s\\S]{0,1200}序号[\\s\\S]{0,200}院校[\\s\\S]{0,200}专业`).test(exportSvcSrc),
       (exportSvcSrc.match(/const SUMMARY_COLUMNS[\s\S]{0,900}/) || [''])[0]);
+    ok(
+      '总标标题 = 日期段（本周）+ 可选年级段 + 班级状态总表（用户 2026-11-20 第五轮）',
+      /cnDate\(from\)/.test(exportSvcSrc) &&
+        /年级段只在/.test(exportSvcSrc) &&
+        /attRangeLabel \? `（\$\{attRangeLabel\}）` : ''/.test(exportSvcSrc) &&
+        /gradesText/.test(exportSvcSrc)
+    );
+    ok('班超分列取看板 attendance.score（导出不重算）', /row\.attendance \? row\.attendance\.score : null/.test(exportSvcSrc));
     ok('每班明细 sheet 命名「<className>详细数据」且有 31 字符/非法字符清洗',
       /详细数据/.test(exportSvcSrc) && /sheetNameOf/.test(exportSvcSrc) && /31/.test(exportSvcSrc));
     ok('明细含考勤（检查人/复核人/名单带假别）与校园跑每人达标（日/周）',
@@ -2826,7 +2834,7 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
         /bookType: 'xlsx'/.test(exportSvcSrc) &&
         /spreadsheetml\.sheet/.test(exportSvcSrc) &&
         /class-status-\$\{safeDay\}\.xlsx/.test(exportSvcSrc));
-    ok('CSV 只出总标 22 列 + BOM + 附件名（旧脚本/旧客户端兼容）',
+    ok('CSV 只出总标 23 列 + BOM + 附件名（旧脚本/旧客户端兼容）',
       /sendCsv/.test(exportSvcSrc) && /\\uFEFF/.test(exportSvcSrc) && /class-status-\$\{safeDay\}\.csv/.test(exportSvcSrc));
     ok('JSON 预览回总标列/截断行/total/sheets（不把明细全量下发）',
       /jsonPreview/.test(exportSvcSrc) && /sheets/.test(exportSvcSrc) && /total:/.test(exportSvcSrc) && /slice\(0, (lim|limit)/.test(exportSvcSrc));

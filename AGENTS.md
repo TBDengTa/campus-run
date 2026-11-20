@@ -995,16 +995,19 @@
      `buildAttRuleLines()` 的数字取 `bandChao.*` 常量 + `scoreScale.FULL_SCORE`（不许写死）；
      `buildCopyText` 的班超分行写「班超 X 分（四模块累计扣分 X.XX×10% + 缺勤 N 人次，加权 Y；主因 …）」。
      前端 `class-status.js::periodText` 同步写新公式；扣分 chips 默认口径切 `total`（与分数同为累计，
-     避免老师拿「日均扣 0.80」核对 8.72 分）。注意：**导出总标没有班超分列**（用户给定的 22 列里没有），
+     避免老师拿「日均扣 0.80」核对 8.72 分）。注意：**导出总标第五轮起有班超分列**（紧跟早八累计扣分，取看板 attendance.score，导出不重算），
      导出的五个「累计扣分」列是原始模块扣分，不是分数。
   ④ **导出工作簿唯一实现在 `services/class-status-export.js`**（路由只鉴权 + `boardQuery` 取参 +
      `classStatusBoard`/`applyBoardFilter`，不写格式、不查记录）：
-     **Sheet1「总标」22 列（顺序固定）**：序号 / 院校 / 系部 / 专业 / 年级 / 学生数 / 住宿数 /
+     **Sheet1「总标」23 列（顺序固定）**：序号 / 院校 / 系部 / 专业 / 年级 / 学生数 / 住宿数 /
      班委数 / 学生会成员数 / 卫生累计扣分 / 晚自习累计扣分 / 查宿累计扣分 / 早操累计扣分 /
-     早八累计扣分 / 校园跑班级日目标平均达标率 / 校园跑班级周目标平均达标率 /
+     早八累计扣分 / **班超分**（2026-11-20 第五轮新增）/ 校园跑班级日目标平均达标率 / 校园跑班级周目标平均达标率 /
      校园跑班级日目标达标次数 / 校园跑班级周目标达标次数 / 校园跑班级日目标达标最低值 /
      校园跑班级周目标达标最低值 / 校园跑累计步数 / 校园跑人均累计步数。
      （用户原需求里「周目标达标最低值」写了两次，按「日/周各一个」实现。）
+     第五轮起总标标题也按用户要求拼：`2026年11月16日至2026年11月22日（本周）2026级-2025级班级状态总表`
+     （年级段只在有年级筛选时出现；多选按年份降序、用「级-」连接）；路由把 `q.filter` 传给导出服务，
+     不要在导出里从 rows 反推「用户选了哪些年级」（整校数据本来就有多个年级）。
      随后**每班一张 `<className>详细数据`**：A. 区间考勤明细 14 列（日期/时段/模块/受检对象/
      应到/实到/缺勤·未归·迟到名单（姓名+假别）/得分/扣分/检查人/复核人/状态/备注/照片数，
      只含 COUNTED 且 `voided≠true`）；B. 校园跑每人 9 列（姓名/学号/日目标/周目标/达标天数/
@@ -1022,16 +1025,39 @@
        `class_profiles.specialty`（缺行退学籍）。**这些查询必须按全部筛选班批量下推**：
        导出是单次请求，按班 N+1 会在 43 个班时把接口拖到几秒。
      - 上限：总标 500 行 / 班级 sheet 500 张 / 区间考勤明细 5000 条（超出截断并在字段说明注明）。
-     - `format=xlsx` 是完整工作簿；`format=csv`（缺省）只出总标 22 列（旧脚本兼容）；
+     - `format=xlsx` 是完整工作簿；`format=csv`（缺省）只出总标 23 列（旧脚本兼容）；
        `format=json&preview=1&limit=N` 回 `{columns[{title,wch}], rows(截断), total, sheets}` 给
        小程序导出预览（**不下发明细行**）；微信 `wx.openDocument` 不支持 csv，小程序必须拿 xlsx。
   ⑥ **回归**：`tools/verify-class-status.js` [10c]（造「病/事/公/无故 + 早八 + 名单空回退 + 卫生」
      手算 9.49，验证不是一刀切 0.02、早八不进 deduct4、classSummary 与看板同源、clamp 0 分）+
-     [13] 全库逐行公式自洽；`tools/verify-class-export.js`（22 列表头逐字/临时班逐格手算/
+     [13] 全库逐行公式自洽；`tools/verify-class-export.js`（23 列表头逐字/临时班逐格手算/
      明细 sheet 表头与名单假别/每人跑步达标/JSON sheets/CSV BOM/权限/只读/清理）；
      `check-server-contract.js`（scoreOfParts/常量/absenceAccumulators 唯一展开/管理端统计/导出服务切片）、
-     `check-class-ui.js`（导出 service 结构 + 22 列 + 明细/字段说明 sheet + periodText 新公式）、
-     `check-page-runtime.js`（新预览 22 列 + sheets 提示 + xlsx 导出链路）。
+     `check-class-ui.js`（导出 service 结构 + 23 列 + 班超分/标题 + 明细/字段说明 sheet + periodText 新公式）、
+     `check-page-runtime.js`（新预览 23 列 + sheets 提示 + xlsx 导出链路）。
+
+- **班级状态「第五轮」（用户 2026-11-20，改这两页之前必读）**：行内指标从进度条改矩形块 +
+  卫生扣分展开到受检类型 + 图片同步 + 从看板点进「我的班级」的区间错位 BUG。
+  ① **指标矩形块**：`class-status.js::decorate` 预计算 `metricBlocks`（日达标 / 周达标 / 班超分，
+  各块 `{key,label,value,level}`），WXML 只渲染、模板零运算；**块与「显示内容」列开关一致**
+  （默认三块；关班超分=两块 —— 用户截图；关日/周同理）。**进度条代码/样式已全删**
+  （`runBars/runSingle/runbarsClass/buildRunBar`、`.cs-runbars/.cs-runbar*/.cs-side/.cs-score*`），
+  不要为了「看起来紧凑」把进度条加回来（用户明确「去掉进度条」）。
+  ② **扣分 chips 展开到受检类型**：`buildDeductChips(att, mode)` 每模块**有 targets 就只展开子项**
+  （`卫生-宿舍 -0.40`），不再用模块总数覆盖明细；同模块最多 3 条、整行 4 条，其余 `+N`（不可点）；
+  无 targets 或 targets 全 0 但有模块扣分 → 退回「模块名 -x.xx」，**扣分不能被吞**。
+  ③ **生成图片同步改块**：canvas 每行画 2/3 个矩形块（`drawMetricBlock`，浅橙底+描边+上标签下数值），
+  列宽按块数重算（3 块 114 / 2 块 150），行高 54→72；**不再画进度条/百分比条**；
+  班超分列关掉时不画任何扣分信息、只有两块。画布高度仍按行数现算（45 行上限不变）。
+  ④ **「图3 无数据但其实有数据」的 BUG**：班级状态看板点班级时原来只带 `className`，
+  「我的班级」默认 `range='day'`（今日）—— 看板看的是本周/本月，今日恰好没记录时
+  「班级考勤·检查记录」与「出勤率」两半全空。现在：
+  `class-status.js::openClass` 带 `tab=attendance&range=<看板 attRange>&date=<看板 today>`；
+  `class.js::onLoad` 读 `range`（白名单）与 `date`，`initPeriod()` 用一次性 `_entryDate`
+  定位到看板同一天的月/周（消费后清空，用户之后自己切周期不会被拉回）；
+  **不要再把区间回退成「今日」**，也不要把 `_entryDate` 留成常驻状态（下拉刷新会反复拉回看板日期）。
+  回归：`check-class-ui`（metricBlocks/chips 展开/无进度条残留/canvas 块绘制/看板入口带 range+date）、
+  `check-page-runtime`（三块/两块两态、chips 日均↔合计、图片块绘制与高度预算、无条状绘制）。
 
 - **检查记录筛选与卡片（用户 2026-11-19「有学生会总管的权限查看检查记录没有办法筛选与查看
   所有记录，增加筛选如班级、系部、院校、楼栋」「卡片增加缺勤人的显示、照片显示」）**：

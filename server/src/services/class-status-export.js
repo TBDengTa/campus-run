@@ -81,6 +81,8 @@ const SUMMARY_COLUMNS = [
   { title: '查宿累计扣分', wch: 12 },
   { title: '早操累计扣分', wch: 12 },
   { title: '早八累计扣分', wch: 12 },
+  // 用户 2026-11-20 第五轮：「在早八累计扣分后面增加班超分按照咱们的班超计算公式来」
+  { title: '班超分', wch: 9 },
   { title: '校园跑班级日目标平均达标率', wch: 24 },
   { title: '校园跑班级周目标平均达标率', wch: 24 },
   { title: '校园跑班级日目标达标次数', wch: 22 },
@@ -574,6 +576,7 @@ const SUMMARY_FIELD_DESC = {
   查宿累计扣分: '看板 attendance.deductDetail 中 night_dorm 的 totalDeduct（窗口累计），无记录 0',
   早操累计扣分: '看板 attendance.deductDetail 中 morning_exercise 的 totalDeduct（窗口累计），无记录 0',
   早八累计扣分: '看板 attendance.deductDetail 中 morning_class 的 totalDeduct（窗口累计），无记录 0',
+  班超分: '看板 attendance.score（新公式：10 − 卫生/查宿/晚自习/早操累计扣分×10% − 缺勤人次×0.02（病/事/公假 0.01），clamp 0~10）；区间内无检查记录写空（不是 0 分）',
   校园跑班级日目标平均达标率: '区间内各日「达标人数 ÷ 学生数」百分比的平均（1 位小数，%）；窗口无有效日写空',
   校园跑班级周目标平均达标率: '按 ISO 周（周一~周日）切分后，各周达标率的平均（1 位小数，%）；无有效周写空',
   校园跑班级日目标达标次数: '日达标率 = 100% 的天数',
@@ -618,9 +621,10 @@ function buildWorkbook(payload) {
  *
  * @param {object} opts
  * @param {object} opts.board `applyBoardFilter(classStatusBoard(...), filter)` 的结果（看板行已筛选）
+ * @param {object} [opts.filter] 看板的筛选条件（只用来生成标题里的「2026级-2025级」年级段）
  * @returns {Promise<object>} payload
  */
-async function buildExport({ board } = {}) {
+async function buildExport({ board, filter = {} } = {}) {
   const result = board || {};
   const rows = Array.isArray(result.rows) ? result.rows.slice(0, SUMMARY_ROW_LIMIT) : [];
   const classNames = rows.map((r) => String(r.className || '')).filter(Boolean);
@@ -684,6 +688,10 @@ async function buildExport({ board } = {}) {
       extras.unionBy.get(className) || 0,
     ];
     for (const m of DEDUCT_MODULES) values.push(deductOf(row, m.key));
+    // 班超分：直接取看板行 attendance.score（新公式唯一实现算好的值，导出不重算）；
+    // 区间内没有检查记录时看板 score 是 null → 写空（不是 0 分）。
+    const score = row.attendance ? row.attendance.score : null;
+    values.push(score === null || score === undefined ? '' : score);
     values.push(
       pctCell(runStats.dailyAvg),
       pctCell(runStats.weeklyAvg),
@@ -740,14 +748,29 @@ async function buildExport({ board } = {}) {
 
   // 表尾口径说明（总标 sheet 尾部整段跨列）
   const noteLines = [
-    `统计窗口：考勤 / 五模块累计扣分 = ${from} ~ ${to}${attRangeLabel ? `（${attRangeLabel}）` : ''}；校园跑区间统计 = ${runFrom} ~ ${runTo}（终点 = min(看板区间终点, 今天)，避免本周/本月把未来天数算进达标率分母）。`,
+    `统计窗口：考勤 / 五模块累计扣分 / 班超分 = ${from} ~ ${to}${attRangeLabel ? `（${attRangeLabel}）` : ''}；校园跑区间统计 = ${runFrom} ~ ${runTo}（终点 = min(看板区间终点, 今天)，避免本周/本月把未来天数算进达标率分母）。`,
     `累计扣分：取看板 attendance.deductDetail[].totalDeduct（窗口累计，与看板同源），无记录的模块记 0；不在导出里重新聚合扣分。`,
+    `班超分：取看板 attendance.score（唯一实现算好的值，导出不重算）= 10 − 卫生/查宿/晚自习/早操累计扣分 × 10% − 缺勤人次加权（普通/早八每人 0.02，病假/事假/公假 0.01），clamp 到 0~10；区间内没有检查记录写空。`,
     `校园跑达标：生效目标 = 个人计划优先、否则全局默认；目标 ≤ 0 视为已达标，判定一律为「步数 ≥ 目标」。日达标率 = 当日达标人数 ÷ 学生数；日平均达标率 = 各日达标率的平均（1 位小数）；日达标次数 = 达标率 100% 的天数；日达标最低值 = 各日最低达标率。周按 ISO 周（周一~周日）切分，周步数 = 窗口内该周每日步数之和，周平均 / 次数 / 最低值同上。窗口内没有有效日 / 周时对应单元格写空。`,
     `缺勤口径：班级明细 sheet 的应到 / 实到 / 名单取自 check_records.details（早操、晚自习用 shouldCount / actualCount / absentList；查宿用 shouldStay / actualCount / absentList，语义为未归；早八只有迟到名单，应到 / 实到留空）；名单写「姓名(假别) · 姓名」。`,
     `行数 / 张数上限：总标最多 ${SUMMARY_ROW_LIMIT} 行、班级明细 sheet 最多 ${CLASS_SHEET_LIMIT} 张、区间考勤明细单次最多 ${ATTENDANCE_ROW_LIMIT} 条，超出截断（详见「字段说明」sheet）。`,
   ];
 
   const sheets = [SUMMARY_SHEET, ...classSheets.map((s) => s.sheetName), DICT_SHEET];
+  // 标题（用户 2026-11-20 第五轮）：
+  //   「2026年11月16日至2026年11月22日（本周）2026级-2025级班级状态总表」
+  // 年级段只在**有年级筛选**时出现（多选按年份降序、用「级-」连接；单选就是「2026级」）。
+  const cnDate = (dayKey) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dayKey || ''));
+    if (!m) return String(dayKey || '');
+    return `${m[1]}年${Number(m[2])}月${Number(m[3])}日`;
+  };
+  const gradeList = (Array.isArray(filter.grades) ? filter.grades : [])
+    .map((g) => String(g || '').trim())
+    .filter((g) => /^(19|20)\d{2}$/.test(g))
+    .sort((a, b) => Number(b) - Number(a));
+  const gradesText = gradeList.length ? `${gradeList.map((g) => `${g}级`).join('-')}` : '';
+  const title = `${cnDate(from)}至${cnDate(to)}${attRangeLabel ? `（${attRangeLabel}）` : ''}${gradesText}班级状态总表`;
 
   return {
     columns: SUMMARY_COLUMNS,
@@ -757,7 +780,7 @@ async function buildExport({ board } = {}) {
     classSheetsTruncated: rows.length > CLASS_SHEET_LIMIT,
     sheets,
     meta: {
-      title: '班级状态总标',
+      title,
       subtitle,
       note,
       noteLines,

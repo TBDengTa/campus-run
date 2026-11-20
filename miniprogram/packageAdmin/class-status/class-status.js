@@ -32,10 +32,20 @@
 //  ② 「班超分范围（本日/本周/本月）+ 口径（日均/合计）」次级筛选行：
 //     只在班超分列打开时渲染；口径切换**不重发请求**（两个数服务端都已下发，
 //     前端只重新 decorate）；attRange=day 时隐藏口径（合计≡日均）。
-//  ③ 行结构重排：左列 班名/学生数·系部/扣分 chips/达标横条，右列 班超分大字+口径副行；
-//     班超分列关掉时右列与全部扣分信息都不渲染。单条横条更大、两条更紧凑。
+//  ③ 行结构重排：左列 班名/学生数·系部/扣分 chips/指标块，右列不再单独放大字。
 //  ④ 删除 COPY_SCOPES / copyScopeIndex / copyScopeLabel / onCopyScopePick /
 //     attRangeText 及对应 picker、旧「考勤统计」行、独立区间条。
+//
+// ===== 第五轮（用户 2026-11-20 截图语义：去掉进度条，改成矩形块）=====
+//  ① 指标不再画进度条：每行横排 2~3 个「矩形块」（日达标 / 周达标；显示班超分列时
+//     补第三块班超分），块内上面小标签、下面大数值（num-font）。
+//     decorate 一次性算好 metricBlocks（数组），模板零运算 —— 进度条相关的
+//     runBars/runSingle/runbarsClass/buildRunBar 全部删除，不留死代码。
+//  ② 卫生等模块的扣分 chips 展开到**受检类型**（服务端 targets 的 name 就是
+//     「卫生-宿舍」这种）：同一模块最多 3 条、整行最多 4 条，其余折成「+N」；
+//     模块有 targets 就不再单独占一条模块级 chip，targets 全 0/缺失才退回模块名。
+//  ③ 转发图片同步改块状版式：每行按块数（2/3）重算列宽，块内上标签下数值、
+//     矩形描边 + 浅底；画布行高随块高变大，高度预算按 rowH 现算（不再画任何条）。
 //
 // ===== 筛选与文案都在服务端 =====
 // 可复制文案必须服务端单点生成（前端各拼一次必然漂移成「列表 87%、文案 88%」，
@@ -140,11 +150,11 @@ const EXPORT_RANGES = [
   { key: 'month', label: '本月考勤表' },
 ];
 
-// 扣分来源 chips 的折叠阈值（用户 2026-11-20「各班中如有减分情况要写哪个考察项」）：
-// 同一模块最多展开 2 条（卫生底下可能有一堆受检类型，全展开会把一行撑爆）、整行最多 3 条，
-// 其余折成「+N」（纯文本，故意不做成可点按钮）。
-const DEDUCT_CHIP_MAX = 3;
-const DEDUCT_CHIP_PER_MODULE = 2;
+// 扣分来源 chips 的折叠阈值（用户 2026-11-20 第五轮「卫生等模块要显示到受检类型」）：
+// 每个模块优先展开 targets 受检类型（服务端 name 形如「卫生-宿舍」），同一模块最多 3 条、
+// 整行最多 4 条，其余折成「+N」（纯文本，故意不做成可点按钮）。
+const DEDUCT_CHIP_MAX = 4;
+const DEDUCT_CHIP_PER_MODULE = 3;
 
 // ===== 生成图片的底部规则块布局常量（逻辑像素，画布按 ×2 出图）=====
 // 字符预算 = (画布宽 750 − 左右内距 28×2) ÷ 20px 字号 ≈ 34 个汉字。
@@ -161,6 +171,22 @@ const rateLevel = (v) => (v === null || v === undefined ? 'none' : v >= 100 ? 'o
 // 阈值是原百分制档位（90/70）等比 ÷10，判定结果与换刻度前一致 —— 换的是刻度，不是标准。
 const attScoreLevel = (v) => (v === null || v === undefined ? 'none' : v >= 9 ? 'ok' : v >= 7 ? 'warn' : 'bad');
 const rateText = (v) => (v === null || v === undefined ? '—' : `${v}%`);
+// 数值档位 → 颜色（页面 .cs-lv-* 与画布块内数值共用同一套判定，画布没有 CSS 变量）
+const levelColorOf = (lv, palette) =>
+  lv === 'ok' ? palette.ok : lv === 'warn' ? palette.warn : lv === 'bad' ? palette.bad : palette.sub;
+// 画布没有 ellipsis：按字符估算宽度截断班名（汉字≈字号宽、ASCII≈0.58×字号），
+// 估算只会**提前**截断，不会溢出所在列（画布高度要先于 ctx 算出来，这里也用不了 measureText）。
+const fitCanvasText = (text, maxW, fontSize) => {
+  const raw = String(text || '');
+  let width = 0;
+  for (let i = 0; i < raw.length; i += 1) {
+    const ch = raw[i];
+    const chW = /[\x00-\xff]/.test(ch) ? fontSize * 0.58 : fontSize;
+    if (width + chW > maxW - fontSize) return `${raw.slice(0, i)}…`;
+    width += chW;
+  }
+  return raw;
+};
 // '2026-11-17' → '11-17'：区间条只显示月-日（完整日期在上面的日期选择器与脚注里，不重复占宽）
 const md = (dateKey) => String(dateKey || '').slice(5);
 // 分数一律两位小数，且「没有考勤数据」显「—」而不是 0.00 分（0 分是最严重的差评，
@@ -574,7 +600,7 @@ Page({
   decorate(r, view = {}) {
     const cols = (view && view.columns) || this.data.columns || {};
     const deductMode = (view && view.deductMode) || this.data.deductMode || 'avg';
-    // 班超分列关掉时：chips / 无扣分文案 / 口径行 / 右列**全部不产出**
+    // 班超分列关掉时：chips / 无扣分文案 / 口径行 / 第三块**全部不产出**
     // （用户明确要求「不显示班超分时不显示任何扣分信息」）。
     const showAtt = !!cols.attendance;
     const run = r.run || {};
@@ -583,30 +609,46 @@ Page({
     // 出勤率仍下发但不在这行重复显示：分数就是它的折算结果，
     // 同一行给两个数只会让人去核对「9.5 分和 95% 是不是一个意思」。
     const attScoreText = scoreText(att.score);
-    // 没有检查记录 ≠ 0 分（0 分是最严重的差评）：右列写人话「无检查记录」而不是「—」
+    // 没有检查记录 ≠ 0 分（0 分是最严重的差评）：块里写人话「无检查记录」而不是「—」
     const hasScore = att.score !== null && att.score !== undefined && att.score !== '';
-    // 扣分来源 chips（用户 2026-11-20「各班中如有减分情况要写哪个考察项检查扣分」）：
-    // 生成规则见 buildDeductChips —— 同一模块最多 2 条、整行最多 3 条，其余折成 +N。
+    // 扣分来源 chips（用户 2026-11-20 第五轮「要显示到受检类型」）：
+    // 生成规则见 buildDeductChips —— 同一模块最多 3 条、整行最多 4 条，其余折成 +N。
     const allChips = showAtt ? this.buildDeductChips(att, deductMode) : [];
     const deductChips = allChips.slice(0, DEDUCT_CHIP_MAX).map((c) => ({ key: c.key, text: c.text }));
     const attSub = this.buildAttSub(att);
     const detail = att.deductDetail || [];
-    const custom = !!this.data.selectedDate;
-    // 达标横条（单/多数据不同排版，见 WXML）：只做**显示出来的**那两列，
-    // 不参跑的班不出条（「0%」会被误读成没完成，实际是本班不用跑）。
-    const runBars = [];
-    if (run.enabled !== false) {
-      if (cols.daily) runBars.push(this.buildRunBar('daily', '日达标', run.dailyRate));
-      if (cols.weekly) runBars.push(this.buildRunBar('weekly', '周达标', run.weeklyRate));
+    // 指标矩形块（用户 2026-11-20 第五轮「去掉进度条，改成矩形块」）：
+    // 日达标 / 周达标 / 班超分各一块；块与「显示内容」的列开关一致（关掉的列不出现块，
+    // 与复制口径同一套开关 —— 否则会出现「列关了、块还在」的两种显示口径）。
+    // 默认三列全开 = 三块；关班超分 = 两块（用户截图）；关日/周同理只剩两块或一块。
+    // 不参跑/无数据沿用现有文案语义（「不参跑」/「—」）。
+    // 预计算成数组，WXML 只渲染（模板零运算），图片 drawShareImage 也直接读同一份。
+    const runEnabled = run.enabled !== false;
+    const rateBlock = (key, label, rate) => ({
+      key,
+      label,
+      value: runEnabled ? rateText(rate) : '不参跑',
+      level: runEnabled ? rateLevel(rate) : 'none',
+    });
+    const metricBlocks = [];
+    if (cols.daily) metricBlocks.push(rateBlock('daily', '日达标', run.dailyRate));
+    if (cols.weekly) metricBlocks.push(rateBlock('weekly', '周达标', run.weeklyRate));
+    if (showAtt) {
+      metricBlocks.push({
+        key: 'att',
+        label: '班超分',
+        // 有记录显示两位小数分数；没有检查记录写「无检查记录」（块里放得下，见 WXSS）
+        value: hasScore ? attScoreText : '无检查记录',
+        level: hasScore ? attScoreLevel(att.score) : 'none',
+      });
     }
-    const runSingle = runBars.length === 1;
     // 第一行右侧的次要信息（人数 / 系部 / 不参跑）：整句预拼，模板不拼表达式
     const metaParts = [`${r.studentCount || 0}人`];
     if (r.departmentName) metaParts.push(r.departmentName);
-    if (run.enabled === false) metaParts.push('不参跑');
+    if (!runEnabled) metaParts.push('不参跑');
     // chips 为空时的替代文案（有记录但没扣分 → 「无扣分」弱文案）。
     // 旧服务不下发 deductDetail 但给了迟到人数时，说「迟到 N 人」比说「无扣分」真实。
-    // 没有检查记录时左列留空（右列已经写「无检查记录」，重复两遍反而像两件事）。
+    // 没有检查记录时左列留空（第三块已经写「无检查记录」，重复两遍反而像两件事）。
     let deductEmptyText = '';
     if (showAtt && !deductChips.length) {
       deductEmptyText = hasScore ? (detail.length ? '无扣分' : attSub || '无扣分') : '';
@@ -615,51 +657,31 @@ Page({
       className: r.className,
       studentCount: r.studentCount || 0,
       metaText: metaParts.join(' · '),
-      // ---- 旧字段一个不删：分享图片 drawShareImage 直接读 dailyText/weeklyText/attText 与 level ----
+      // ---- 旧字段保留：块内数值/档位与口径副行的判定来源，脚本断言也用 ----
       dailyText: rateText(run.dailyRate),
       dailyLevel: rateLevel(run.dailyRate),
       weeklyText: rateText(run.weeklyRate),
       weeklyLevel: rateLevel(run.weeklyRate),
-      // 今日/本周达标（选了非今天就说「当日/当周」—— 说「今日」是在说谎）
-      dailyRateText: `${custom ? '当日' : '今日'} ${rateText(run.dailyRate)}`,
-      weeklyRateText: `${custom ? '当周' : '本周'} ${rateText(run.weeklyRate)}`,
       attText: attScoreText,
       attLevel: attScoreLevel(att.score),
-      // 班超分大字：有记录才显示数值；没有记录时右列写「无检查记录」（hasScore 由模板判定）
       hasScore,
       scoreEmptyText: showAtt && !hasScore ? '无检查记录' : '',
-      // ---- 本轮新增派生字段（WXML 只渲染，不做任何运算）----
-      runBars,
-      runSingle,
-      // 单/多数据的排版开关：模板不做三元拼接，这里预算成类名
-      runbarsClass: runSingle ? 'is-single' : 'is-multi',
+      // ---- 指标矩形块（2 块 = 日/周；班超分列打开时 3 块）----
+      metricBlocks: metricBlocks,
       deductChips,
       deductMore: allChips.length > DEDUCT_CHIP_MAX ? allChips.length - DEDUCT_CHIP_MAX : 0,
       deductEmptyText,
-      // 右列副行：「日均扣 1.60」/「合计扣 8.00」；扣分为 0 或没有检查记录时为空串
+      // 班超分块下方的口径副行：「日均扣 1.60」/「合计扣 8.00」；扣分为 0 或无记录时为空串
       deductLine: showAtt ? this.buildDeductLine(att, deductMode, hasScore) : '',
-      // 扣分明细整句（旧实现保留：分享图/脚本断言用，服务端旧版不下发 targets 时的兜底说明）
+      // 扣分明细整句（旧实现保留：脚本断言用，服务端旧版不下发 targets 时的兜底说明）
       attSub,
       // 不参跑的班要标出来：否则「0%」会被误读成没完成，而实际上本班不用跑
-      runDisabled: run.enabled === false,
-    };
-  },
-
-  // 单条达标横条：{key,label,text,percent,level}。
-  // percent 只用于内联宽度（WXML 不做运算）；text 是给右值的「20%」/「—」。
-  buildRunBar(key, label, rate) {
-    const n = Number(rate);
-    return {
-      key,
-      label,
-      text: rateText(rate),
-      percent: Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : 0,
-      level: rateLevel(rate),
+      runDisabled: !runEnabled,
     };
   },
 
   /**
-   * 班超分右列副行（用户 2026-11-20 第三轮「合计或日均」）：
+   * 班超分块下的口径副行（用户 2026-11-20 第三轮「合计或日均」）：
    *   · 日均 → 服务端 attendance.deduct（与 score 同一个分母）
    *   · 合计 → 服务端 attendance.deductTotal（窗口累计扣分）
    * 数值**不在这里重算**：合计 ÷ 天数再 round 会与后端口径差 0.01，老师当场就能算出来。
@@ -686,16 +708,18 @@ Page({
 
   /**
    * 扣分来源 chips（用户 2026-11-20「各班中如有减分情况要写哪个考察项检查扣分，
-   * 如卫生-宿舍、晚自习这样，重新设计各班条的UI样式」）。
+   * 如卫生-宿舍、晚自习这样，重新设计各班条的UI样式」；第五轮「要显示到受检类型」）。
    *
    * 服务端 attendance.deductDetail = [{ key, name, deduct }]（name=模块名、deduct=模块日均扣分），
    * 并新增 targets = [{ key, name, avgDeduct, count }]（name 形如「卫生-宿舍」= 具体受检类型）。
    * 2026-11-20 第三轮再新增 totalDeduct（模块与每个 target 的**窗口合计**扣分）：
-   * mode='total' 时 chips 全部改用合计口径，与右列副行「合计扣 8.00」对得上；
+   * mode='total' 时 chips 全部改用合计口径，与班超分块下方的「合计扣 8.00」对得上；
    * 两套数字都由服务端算好（Σtargets 已调平），前端只挑口径，绝不自己乘天数。
    * 生成规则（三条都是为了让一行既装得下、又说得清）：
-   *   ① 有 targets 的模块**展开成多条**（同一模块最多取 2 条最重的 —— 卫生底下受检类型很多）；
-   *   ② 没有 targets 的老服务/模块退回「模块名 -0.20」；
+   *   ① **每个模块优先展开 targets 受检类型**（如「卫生-宿舍 -0.40」「卫生-教室 -0.20」），
+   *      模块级总数**不再单独占一条 chip**；同一模块最多取 3 条最重的（卫生底下类型很多）；
+   *   ② 没有 targets 的老服务/模块退回「模块名 -0.20」；若某模块 targets 全为 0 但模块有扣分
+   *      （异常数据），同样退回模块名一条 —— 不能因为「没有正数子项」就把这块扣分吞掉；
    *   ③ 全部按扣分从大到小排，整行最多显示 DEDUCT_CHIP_MAX 条（在 decorate 里切），其余折 +N。
    * 返回的 weight 只用于排序，decorate 只把 { key, text } 下发给模板。
    */
@@ -715,6 +739,7 @@ Page({
       if (!mod) continue;
       const modDeduct = pick(mod.deduct, mod.totalDeduct);
       const modKey = String(mod.key || mod.name || '');
+      // 当前口径下扣分 > 0 的受检类型才算一条 chip（合计口径下 0 值子项不展示）
       const targets = (Array.isArray(mod.targets) ? mod.targets : [])
         .map((t) => ({
           key: String((t && t.key) || (t && t.name) || ''),
@@ -725,6 +750,7 @@ Page({
         .sort((a, b) => b.value - a.value)
         .slice(0, DEDUCT_CHIP_PER_MODULE);
       if (targets.length) {
+        // 有受检类型就全部展开，模块级总数不再单独占一条（同一模块最多 3 条）
         for (const t of targets) {
           chips.push({
             key: `${modKey}:${t.key}:${chips.length}`,
@@ -733,6 +759,7 @@ Page({
           });
         }
       } else if (modDeduct > 0 && mod.name) {
+        // 老服务没有 targets / 异常数据下 targets 全 0：退回模块名一条，不吞掉模块扣分
         chips.push({
           key: `${modKey}:${chips.length}`,
           weight: modDeduct,
@@ -1082,8 +1109,9 @@ Page({
 
   // ===== 生成图片转发（2026-11-03「文本太多被直接发会折叠」）=====
   // 画的是「当前筛选后的展示行表格」（所见即所转）：标题带服务端下发的筛选标签
-  // 与班数，数值颜色与列表同一套 level 口径 —— 纯文本报告仍走「复制」（copyText
-  // 服务端生成），图片负责不被微信折叠。
+  // 与班数，指标区画与页面同一份 metricBlocks 的矩形块（2026-11-20 第五轮），
+  // 颜色与列表同一套 level 口径 —— 纯文本报告仍走「复制」（copyText 服务端生成），
+  // 图片负责不被微信折叠。
   //
   // 表格下面必须附**考勤计算规则**（用户 2026-11-12「要在图片下面标注考勤计算规则，
   // 如迟到缺勤等逻辑」）：图片是要发进工作群的，群里的人看不到页面脚注，
@@ -1094,7 +1122,7 @@ Page({
       wx.showToast({ title: this.data.errorText || '没有可生成的数据', icon: 'none' });
       return;
     }
-    const MAX_ROWS = 45; // 43 个班一屏装得下；超出的截断并注明，画布高度也有上限
+    const MAX_ROWS = 45; // 43 个班装得下；超出的截断并注明，画布高度也有上限
     const shownRows = rows.slice(0, MAX_ROWS);
     const omitted = rows.length - shownRows.length;
 
@@ -1110,12 +1138,15 @@ Page({
     // 图片生成成功、发出去才发现规则被切掉半行，而这图是要进工作群的。
     const foot = this.planShareFooter({ omitted, wrapped });
 
-    // 布局（逻辑像素，node 尺寸 ×2 保清晰）
+    // 版式常量（逻辑像素，画布 node 尺寸 ×2 保清晰）。
+    // 2026-11-20 第五轮：指标区改成矩形块，行高从纯文字时代的一行 54 提到 72
+    //（块高 56 + 上下留白 8×2）；画布总高由 rowH 现算，行数预算自动跟着走。
     const W = 750;
     const PAD = 28;
     const titleH = 118;
     const headH = 56;
-    const rowH = 54;
+    const rowH = 72;
+    const blockH = 56;
     const footH = foot.footH;
     const H = titleH + headH + shownRows.length * rowH + footH;
 
@@ -1131,7 +1162,7 @@ Page({
       canvas.height = H * 2;
       const ctx = canvas.getContext('2d');
       ctx.scale(2, 2);
-      this.drawShareImage(ctx, { W, PAD, titleH, headH, rowH, footH, shownRows, foot });
+      this.drawShareImage(ctx, { W, PAD, titleH, headH, rowH, blockH, footH, shownRows, foot });
       wx.canvasToTempFilePath({
         canvas,
         success: (r) => {
@@ -1213,11 +1244,17 @@ Page({
   },
 
   // 真正的绘制（拆出来便于阅读；颜色与列表 level 口径一致）
-  drawShareImage(ctx, { W, PAD, titleH, headH, rowH, footH, shownRows, foot }) {
-    const cols = this.data.columns;
+  //
+  // 2026-11-20 第五轮：指标区**不再画文字列的百分比**，改成与页面同样的「矩形块」：
+  // 每行 2 块（日达标/周达标）或 3 块（显示班超分列时补班超分），块内上标签下数值，
+  // 矩形描边 + 浅橙底。块数决定列宽（三列块更窄、两列块更宽），行高由 onShareImage 传进来。
+  drawShareImage(ctx, { W, PAD, titleH, headH, rowH, blockH, footH, shownRows, foot }) {
+    const cols = this.data.columns || {};
     const C = {
       text: '#1f2329', sub: '#8a919f', line: '#e4e7ec', zebra: '#fafbfc',
       ok: '#16a34a', warn: '#d97706', bad: '#dc2626', brand: '#ff6b00',
+      // 矩形块：浅橙底 + 橙调描边（画布没有 CSS 变量，取与 --tt-brand-soft / -soft-2 一致的色值）
+      blockBg: '#fff4ec', blockLine: '#ffe6d2',
     };
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, W, titleH + headH + shownRows.length * rowH + footH);
@@ -1233,22 +1270,24 @@ Page({
     ctx.fillStyle = C.brand;
     ctx.fillText(`${filterText} · ${scope.classCount || 0} 个班 / ${scope.studentCount || 0} 人`, PAD, 88);
 
-    // 列定义（按「显示内容」）：班级左对齐，其余右对齐定宽
-    const numCols = [];
-    if (cols.daily) numCols.push({ key: 'daily', head: '日达标', w: 108 });
-    if (cols.weekly) numCols.push({ key: 'weekly', head: '周达标', w: 108 });
+    // 指标块列（每行 2~3 块）：日达标/周达标恒在，显示班超分列时补第三块。
+    // 列宽随块数重算 —— 三列块收窄到 114，两列块放到 150（块里「无检查记录」也放得下）。
+    const blockCols = [{ key: 'daily', head: '日达标' }, { key: 'weekly', head: '周达标' }];
     // 「班超分」与页面表头逐字一致（同一列在页面与图片里叫不同名字，看图的人会以为是两个指标）
-    if (cols.attendance) numCols.push({ key: 'att', head: '班超分', w: 100 });
-    const stuW = 78;
-    const xOf = [];
-    let x = W - PAD;
-    for (let i = numCols.length - 1; i >= 0; i -= 1) {
-      x -= numCols[i].w;
-      xOf[i] = x;
-    }
-    const stuX = x - stuW;
+    if (cols.attendance) blockCols.push({ key: 'att', head: '班超分' });
+    const colCount = blockCols.length;
+    const blockW = colCount >= 3 ? 114 : 150;
+    const blockGap = colCount >= 3 ? 8 : 10;
+    const blockAreaW = colCount * blockW + (colCount - 1) * blockGap;
+    const blockStart = W - PAD - blockAreaW;
+    // 学生数列贴在块区左侧；班名列吃掉剩余宽度（宽度按字号估算截断，只会提前截）
+    const stuW = 64;
+    const stuX = blockStart - stuW - 10;
+    const nameX = PAD + 12;
+    const nameMaxW = stuX - nameX - 8;
+    const xOfBlock = (i) => blockStart + i * (blockW + blockGap);
 
-    // 表头
+    // 表头（列头「日达标/周达标/班超分」仍照旧画，块内标签与列头一致）
     const headY = titleH;
     ctx.fillStyle = '#f5f6f8';
     ctx.fillRect(PAD, headY, W - PAD * 2, headH);
@@ -1257,12 +1296,13 @@ Page({
     ctx.textAlign = 'left';
     ctx.fillText('班级', PAD + 12, headY + headH / 2);
     ctx.fillText('学生', stuX, headY + headH / 2);
-    numCols.forEach((c, i) => {
-      ctx.fillText(c.head, xOf[i], headY + headH / 2);
+    ctx.textAlign = 'center';
+    blockCols.forEach((c, i) => {
+      ctx.fillText(c.head, xOfBlock(i) + blockW / 2, headY + headH / 2);
     });
+    ctx.textAlign = 'left';
 
-    // 数据行（隔行浅底，数值按 level 着色，与列表同一套判定）
-    const levelColor = (lv) => (lv === 'ok' ? C.ok : lv === 'warn' ? C.warn : lv === 'bad' ? C.bad : C.sub);
+    // 数据行（隔行浅底；指标区画矩形块，不参跑/无数据沿用块内文案）
     shownRows.forEach((r, idx) => {
       const y = headY + headH + idx * rowH;
       if (idx % 2 === 1) {
@@ -1272,30 +1312,28 @@ Page({
       ctx.textAlign = 'left';
       ctx.font = '24px sans-serif';
       ctx.fillStyle = C.text;
-      // 班名过长截断（画布上没有 ellipsis，手动截）
-      const name = r.className && r.className.length > 13 ? `${r.className.slice(0, 12)}…` : r.className || '';
-      ctx.fillText(name, PAD + 12, y + rowH / 2);
+      // 班名过长截断（画布上没有 ellipsis，按估算宽度手动截）
+      ctx.fillText(fitCanvasText(r.className, nameMaxW, 24), nameX, y + rowH / 2);
       ctx.fillStyle = r.runDisabled ? C.sub : C.text;
       ctx.fillText(r.runDisabled ? '—' : String(r.studentCount || 0), stuX, y + rowH / 2);
-      numCols.forEach((c, i) => {
-        let text = '—';
-        let lv = 'none';
-        if (r.runDisabled) {
-          text = '不参跑';
-          lv = 'none';
-        } else if (c.key === 'daily') {
-          text = r.dailyText;
-          lv = r.dailyLevel;
-        } else if (c.key === 'weekly') {
-          text = r.weeklyText;
-          lv = r.weeklyLevel;
-        } else {
-          text = r.attText;
-          lv = r.attLevel;
-        }
-        ctx.fillStyle = levelColor(lv);
-        ctx.fillText(text, xOf[i], y + rowH / 2);
-      });
+      // 指标块：直接读 decorate 预计算的 metricBlocks（页面与图片同一份文案/档位）
+      const blocks = r.metricBlocks || [];
+      for (let i = 0; i < colCount; i += 1) {
+        const item = blocks[i] || { label: '', value: '—', level: 'none' };
+        this.drawMetricBlock(
+          ctx,
+          {
+            x: xOfBlock(i),
+            y: y + (rowH - blockH) / 2,
+            w: blockW,
+            h: blockH,
+            label: item.label,
+            value: item.value,
+            level: item.level,
+          },
+          C
+        );
+      }
     });
 
     // 底部：达标口径 + 截断说明 + **考勤计算规则**（用户 2026-11-12）+ 落款。
@@ -1324,10 +1362,43 @@ Page({
     ctx.stroke();
   },
 
+  /**
+   * 画一个指标矩形块（上小标签 + 下大数值）—— 页面 metricBlocks 与图片共用同一份数据。
+   * 数值字号按文本长度自适应：「100%」「9.20」放得下 20px，「无检查记录」缩到 15px，
+   * 否则窄块（三列块宽 114）会被文字顶出描边框。颜色由 levelColorOf 按档位给。
+   */
+  drawMetricBlock(ctx, { x, y, w, h, label, value, level }, C) {
+    // 矩形描边 + 浅橙底（白橙设计系统；画布常量集中在 drawShareImage 的 C 里）
+    ctx.fillStyle = C.blockBg;
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = C.blockLine;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x, y, w, h);
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    // 上：小标签（次要灰字）
+    ctx.font = '17px sans-serif';
+    ctx.fillStyle = C.sub;
+    ctx.fillText(label, x + 10, y + 16);
+    // 下：大数值（档位色，num-font 的 canvas 等价物 = 粗体）
+    const text = String(value);
+    const valueSize = text.length >= 5 ? 15 : text.length >= 4 ? 20 : 24;
+    ctx.font = `bold ${valueSize}px sans-serif`;
+    ctx.fillStyle = levelColorOf(level, C);
+    ctx.fillText(text, x + 10, y + 40);
+  },
+
   openClass(e) {
     const className = (e.currentTarget.dataset || {}).name;
     if (!className) return;
-    wx.navigateTo({ url: `/packageAdmin/class/class?className=${encodeURIComponent(className)}&scope=admin` });
+    // 带上本页的统计窗口（range）与所选日期（date）：看板看的是本周/本月，点进「我的班级」
+    // 必须落到同一区间 —— 否则默认「今日」而今日恰好没有记录时，检查记录/出勤率整块空白，
+    // 用户看到的就是「明明有数据却显示 0」（用户 2026-11-20 第五轮图3）。
+    const range = ['day', 'week', 'month'].includes(this.data.attRange) ? this.data.attRange : 'week';
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(String(this.data.today || '')) ? this.data.today : '';
+    const query =
+      `className=${encodeURIComponent(className)}&scope=admin&tab=attendance&range=${range}` + (date ? `&date=${date}` : '');
+    wx.navigateTo({ url: `/packageAdmin/class/class?${query}` });
   },
 
   retry() {

@@ -4,7 +4,7 @@
 //
 // 实现：
 //   · GET /api/admin/class/status-export（routes/admin/class-profile.js，只做鉴权/取参）
-//   · services/class-status-export.js（工作簿的唯一实现：总标 22 列 + 每班一张详细数据 + 字段说明）
+//   · services/class-status-export.js（工作簿的唯一实现：总标 23 列 + 每班一张详细数据 + 字段说明）
 //
 // 这个脚本真连库、真挂 routes/admin/index.js（auth 中间件按 header 打桩成指定账号），
 // 造一个临时班 + 已知检查/跑步/目标数据，然后：
@@ -110,6 +110,7 @@ const SUMMARY_HEADER = [
   '查宿累计扣分',
   '早操累计扣分',
   '早八累计扣分',
+  '班超分',
   '校园跑班级日目标平均达标率',
   '校园跑班级周目标平均达标率',
   '校园跑班级日目标达标次数',
@@ -518,16 +519,16 @@ function expectedRunStats({ board, students, seeds, studentCount }) {
     assert(rowW && rowW.studentCount === 3, '看板学生数 = 3（教师不计入）', rowW && rowW.studentCount);
     const expW = expectedRunStats({ board: boardW, students: goalStudents, seeds: RUN_SEEDS, studentCount: 3 });
 
-    // ---- 3) 总标：CSV 22 列、行数 = 看板行数、临时班逐格手算 ----
-    console.log('\n[1] 总标（CSV 22 列 / 逐格手算）');
+    // ---- 3) 总标：CSV 23 列、行数 = 看板行数、临时班逐格手算 ----
+    console.log('\n[1] 总标（CSV 23 列 / 逐格手算）');
     const csvW = await call('admin', `/api/admin/class/status-export?attRange=week&today=${DAY}&format=csv`);
     assert(csvW.status === 200, 'csv 导出 → 200', csvW.status);
     assert(/text\/csv/.test(csvW.headers.get('content-type') || ''), 'Content-Type = text/csv', csvW.headers.get('content-type'));
     assert(/attachment/.test(csvW.headers.get('content-disposition') || ''), 'Content-Disposition = attachment', csvW.headers.get('content-disposition'));
     assert(csvW.bytes[0] === 0xef && csvW.bytes[1] === 0xbb && csvW.bytes[2] === 0xbf, 'CSV 以 UTF-8 BOM 开头', [...csvW.bytes.slice(0, 3)]);
     const csvParsed = parseCsv(csvW.text);
-    assert(JSON.stringify(csvParsed.header) === JSON.stringify(SUMMARY_HEADER), '表头 22 列逐字一致且顺序固定', csvParsed.header);
-    assert(csvParsed.rows.every((r) => r.length === 22), '每行 22 列（不错列）', csvParsed.rows.filter((r) => r.length !== 22).length);
+    assert(JSON.stringify(csvParsed.header) === JSON.stringify(SUMMARY_HEADER), '表头 23 列逐字一致且顺序固定', csvParsed.header);
+    assert(csvParsed.rows.every((r) => r.length === 23), '每行 23 列（不错列）', csvParsed.rows.filter((r) => r.length !== 23).length);
     const boardRowCount = Math.min(500, (boardW.rows || []).length);
     assert(csvParsed.rows.length === boardRowCount, 'CSV 行数 = 看板行数（≤500 不截断）', { csv: csvParsed.rows.length, board: boardRowCount });
 
@@ -602,17 +603,29 @@ function expectedRunStats({ board, students, seeds, studentCount }) {
     assert(JSON.stringify(wb.SheetNames) === JSON.stringify(wantSheets), 'sheet 顺序 = 总标 + 每班详细数据 + 字段说明', wb.SheetNames);
 
     const summary = sheetRows(wb, '总标');
-    assert(String((summary[0] || [])[0]) === '班级状态总标', '总标第 1 行是标题', (summary[0] || [])[0]);
+    // 标题（用户 2026-11-20 第五轮）：2026年11月16日至2026年11月22日（本周）2026级-2025级班级状态总表
+    //   没有年级筛选时年级段整段省略；有筛选时按年份降序用「级-」连接（下面再用 json 预览验带年级的标题）。
+    assert(
+      /^\d{4}年\d{1,2}月\d{1,2}日至\d{4}年\d{1,2}月\d{1,2}日（本周）(?:\d{4}级(?:-\d{4}级)*)?班级状态总表$/.test(
+        String((summary[0] || [])[0] || '')
+      ),
+      '总标第 1 行标题 = 日期段（本周）+ 可选年级段 + 班级状态总表',
+      (summary[0] || [])[0]
+    );
+    assert(!/\d{4}级/.test(String((summary[0] || [])[0] || '')), '无年级筛选时标题不带年级段', (summary[0] || [])[0]);
     const subtitle = String((summary[1] || [])[0] || '');
     assert(/统计区间：/.test(subtitle) && /筛选：/.test(subtitle) && /共 1 个班/.test(subtitle) && /导出时间/.test(subtitle), '第 2 行 = 区间/筛选/班数人数/导出时间', subtitle);
     assert(subtitle.includes(`${boardW.from} ~ ${boardW.to}`), '本周区间 = 周一 ~ 周日（完整周）', subtitle);
-    const sumHeader = summary.find((r) => r[0] === '序号' && r.length === 22) || [];
-    assert(JSON.stringify(sumHeader) === JSON.stringify(SUMMARY_HEADER), '总标表头 22 列逐字一致', sumHeader);
-    // 总标没有「班级」列（22 列是需求定的），keyword 筛到 1 个班时数据行序号一定是 1
-    const sumDataRow = summary.find((r) => Number(r[0]) === 1 && r.length === 22) || [];
-    assert(sumDataRow.length === 22, '总标含临时班数据行（序号 1）', summary.length);
+    const sumHeader = summary.find((r) => r[0] === '序号' && r.length === 23) || [];
+    assert(JSON.stringify(sumHeader) === JSON.stringify(SUMMARY_HEADER), '总标表头 23 列逐字一致', sumHeader);
+    // 总标没有「班级」列（23 列是需求定的），keyword 筛到 1 个班时数据行序号一定是 1
+    const sumDataRow = summary.find((r) => Number(r[0]) === 1 && r.length === 23) || [];
+    assert(sumDataRow.length === 23, '总标含临时班数据行（序号 1）', summary.length);
     assert(Number(sumDataRow[5]) === 3 && Number(sumDataRow[8]) === 1, '总标数据行学生数/学生会成员数 = 手算', [sumDataRow[5], sumDataRow[8]]);
-    assert(Number(sumDataRow[20]) === expW.totalSteps, '总标累计步数与 CSV 一致', sumDataRow[20]);
+    // 班超分紧跟早八累计扣分（index 14）：值必须 = 看板行 attendance.score（不是导出里重算的）
+    const wantScore = boardW.rows.find((r) => r.className === CLS).attendance.score;
+    assert(Number(sumDataRow[14]) === wantScore, '班超分 = 看板 attendance.score（与页面同源，导出不重算）', [sumDataRow[14], wantScore]);
+    assert(Number(sumDataRow[21]) === expW.totalSteps, '总标累计步数与 CSV 一致（列右移 1）', sumDataRow[21]);
     const tailText = summary.map((r) => String((r || [])[0] || '')).join('\n');
     assert(/口径说明/.test(tailText), '总标表尾带「口径说明」', tailText.slice(-80));
     assert(/累计扣分/.test(tailText) && /校园跑达标/.test(tailText) && /缺勤口径/.test(tailText) && /统计窗口/.test(tailText), '表尾覆盖累计扣分/达标/缺勤/统计窗口', tailText.slice(-200));
@@ -716,7 +729,7 @@ function expectedRunStats({ board, students, seeds, studentCount }) {
     const mCsv = await call('admin', `/api/admin/class/status-export?attRange=month&today=${DAY}&format=csv&keyword=${encodeURIComponent(CLS)}`);
     const mRow = (parseCsv(mCsv.text).rows || [])[0] || [];
     const mCol = (title) => mRow[SUMMARY_HEADER.indexOf(title)];
-    assert(mCsv.status === 200 && mRow.length === 22 && Number(mRow[0]) === 1, '本月导出 200 且能定位临时班', mCsv.status);
+    assert(mCsv.status === 200 && mRow.length === 23 && Number(mRow[0]) === 1, '本月导出 200 且能定位临时班', mCsv.status);
     assert(Number(mCol('校园跑累计步数')) === expM.totalSteps, '本月累计步数 = 本月窗口手算', { got: mCol('校园跑累计步数'), want: expM.totalSteps });
     assert(String(mCol('校园跑班级日目标平均达标率')) === pctCell(expM.dailyAvg), '本月日平均达标率 = 本月窗口手算', {
       got: mCol('校园跑班级日目标平均达标率'),
@@ -732,21 +745,29 @@ function expectedRunStats({ board, students, seeds, studentCount }) {
       assert(Number(mCol('校园跑累计步数')) === Number(col('校园跑累计步数')), '本周/本月窗口相同时累计步数一致', mCol('校园跑累计步数'));
     }
 
-    // ---- 6) JSON 预览：列定义 22 + 截断行 + total + sheets，且不下发明细 ----
+    // ---- 6) JSON 预览：列定义 23 + 截断行 + total + sheets，且不下发明细 ----
     console.log('\n[6] JSON 预览');
     const j = await call('admin', `/api/admin/class/status-export?attRange=week&today=${DAY}&format=json&preview=1&limit=1`);
     const jd = (j.json && j.json.data) || {};
     assert(j.status === 200 && jd.preview === true, 'json 预览 → 200 + preview=true', j.status);
-    assert(Array.isArray(jd.columns) && jd.columns.length === 22 && jd.columns[0].title === '序号', '预览列定义 22 列且首列序号', jd.columns && jd.columns.length);
+    assert(Array.isArray(jd.columns) && jd.columns.length === 23 && jd.columns[0].title === '序号', '预览列定义 23 列且首列序号', jd.columns && jd.columns.length);
+    assert(jd.columns[14].title === '班超分', '预览第 15 列（早八累计扣分之后）是班超分', jd.columns[14] && jd.columns[14].title);
     assert(jd.columns.every((c) => typeof c.wch === 'number'), '每列带 Excel 字符宽（wch）', jd.columns.slice(0, 2));
     assert(Array.isArray(jd.rows) && jd.rows.length === Math.min(1, jd.total) && jd.rows.length <= 1, '预览 rows 截断到 limit=1', { rows: jd.rows && jd.rows.length, total: jd.total });
     assert(jd.total === boardRowCount, '预览 total = 总标行数', { total: jd.total, board: boardRowCount });
     assert(Array.isArray(jd.sheets) && jd.sheets.includes('总标') && jd.sheets.includes(`${CLS}详细数据`), 'sheets 名单含总标与班级明细名', jd.sheets);
     assert(jd.sheets[jd.sheets.length - 1] === '字段说明', 'sheets 名单最后是字段说明', jd.sheets && jd.sheets.slice(-2));
-    assert(!jd.classSheets && !jd.detailSheets && Array.isArray(jd.rows[0]) && jd.rows[0].length === 22, '预览不下发明细行（只有总标行）', Object.keys(jd));
+    assert(!jd.classSheets && !jd.detailSheets && Array.isArray(jd.rows[0]) && jd.rows[0].length === 23, '预览不下发明细行（只有总标行）', Object.keys(jd));
     assert(/统计区间：/.test(jd.subtitle || '') && /导出时间/.test(jd.subtitle || ''), '预览副标题含区间/导出时间', jd.subtitle);
     // 预览里不传 keyword 时，首个数据行的序号仍是全局行序（不是 1..N 重排）
     assert(Number(jd.rows[0] && jd.rows[0][0]) === 1, '预览首行序号 = 1', jd.rows[0] && jd.rows[0][0]);
+    // 带年级筛选时的标题：2026年11月16日至2026年11月22日（本周）2026级-2025级班级状态总表
+    const jg = await call('admin', `/api/admin/class/status-export?attRange=week&today=${DAY}&format=json&preview=1&limit=1&grades=2026,2025`);
+    const jgd = (jg.json && jg.json.data) || {};
+    assert(/（本周）2026级-2025级班级状态总表$/.test(jgd.title || ''), '带年级筛选的标题 = …（本周）2026级-2025级班级状态总表（年份降序）', jgd.title);
+    const jg1 = await call('admin', `/api/admin/class/status-export?attRange=week&today=${DAY}&format=json&preview=1&limit=1&grades=2026`);
+    const jg1d = (jg1.json && jg1.json.data) || {};
+    assert(/（本周）2026级班级状态总表$/.test(jg1d.title || ''), '单年级筛选标题 = …（本周）2026级班级状态总表', jg1d.title);
 
     // ---- 7) 缺省格式（旧客户端）仍是 CSV ----
     const def = await call('admin', `/api/admin/class/status-export?attRange=week&today=${DAY}`);

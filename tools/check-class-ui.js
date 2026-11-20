@@ -196,13 +196,13 @@ ok(
   ok('导出复用 applyBoardFilter（筛选与页面同源）', /board\.applyBoardFilter\(full, q\.filter\)/.test(seg));
   const SUMMARY_COLUMNS = [
     '序号', '院校', '系部', '专业', '年级', '学生数', '住宿数', '班委数', '学生会成员数',
-    '卫生累计扣分', '晚自习累计扣分', '查宿累计扣分', '早操累计扣分', '早八累计扣分',
+    '卫生累计扣分', '晚自习累计扣分', '查宿累计扣分', '早操累计扣分', '早八累计扣分', '班超分',
     '校园跑班级日目标平均达标率', '校园跑班级周目标平均达标率',
     '校园跑班级日目标达标次数', '校园跑班级周目标达标次数',
     '校园跑班级日目标达标最低值', '校园跑班级周目标达标最低值',
     '校园跑累计步数', '校园跑人均累计步数',
   ];
-  ok('总标 = 用户指定的 22 列（逐字 + 顺序）',
+  ok('总标 = 用户指定的 23 列（逐字 + 顺序，班超分紧跟早八累计扣分）',
     SUMMARY_COLUMNS.every((t) => exportSvcSrc.includes(`'${t}'`)) &&
       SUMMARY_COLUMNS.reduce((acc, t) => {
         const i = exportSvcSrc.indexOf(`'${t}'`);
@@ -225,9 +225,9 @@ ok(
   ok('XLSX：xlsx 库写 buffer + 正确 MIME + .xlsx 附件名',
     /require\('xlsx'\)/.test(exportSvcSrc) && /bookType: 'xlsx'/.test(exportSvcSrc) &&
       /spreadsheetml\.sheet/.test(exportSvcSrc) && /class-status-\$\{safeDay\}\.xlsx/.test(exportSvcSrc));
-  ok('CSV：只出总标 22 列 + BOM + attachment（旧脚本兼容）',
+  ok('CSV：只出总标 23 列 + BOM + attachment（旧脚本兼容）',
     /sendCsv/.test(exportSvcSrc) && /\\uFEFF/.test(exportSvcSrc) && /attachment/.test(exportSvcSrc) && /class-status-\$\{safeDay\}\.csv/.test(exportSvcSrc));
-  ok('JSON 预览：22 列定义 + 截断行 + total + sheets（生成文件前先看表格/工作簿结构）',
+  ok('JSON 预览：23 列定义 + 截断行 + total + sheets（生成文件前先看表格/工作簿结构）',
     /jsonPreview/.test(exportSvcSrc) && /sheets/.test(exportSvcSrc) && /total/.test(exportSvcSrc) && /slice\(0,/.test(exportSvcSrc));
   ok('上限常量：总标 500 / 班级 sheet 500 / 区间明细 5000',
     /SUMMARY_ROW_LIMIT = 500/.test(exportSvcSrc) && /CLASS_SHEET_LIMIT = 500/.test(exportSvcSrc) && /ATTENDANCE_ROW_LIMIT = 5000/.test(exportSvcSrc));
@@ -410,12 +410,23 @@ ok(
   /err\.code === 401/.test(csJs) && /err\.code === 403/.test(csJs) && /err\.stage === 'save'/.test(csJs) && /err\.stage === 'open'/.test(csJs) && /err\.network/.test(csJs)
 );
 ok(
-  '扣分 chips：从 targets 展开、每模块≤2、整行≤3、其余 +N',
-  /const DEDUCT_CHIP_MAX = 3/.test(csJs) &&
-    /const DEDUCT_CHIP_PER_MODULE = 2/.test(csJs) &&
+  '扣分 chips：从 targets 展开到受检类型、每模块≤3、整行≤4、其余 +N（第五轮）',
+  /const DEDUCT_CHIP_MAX = 4/.test(csJs) &&
+    /const DEDUCT_CHIP_PER_MODULE = 3/.test(csJs) &&
     /Array\.isArray\(mod\.targets\)/.test(csJs) &&
     /\.slice\(0, DEDUCT_CHIP_PER_MODULE\)/.test(csJs)
 );
+{
+  const body = fnBody(csJs, 'buildDeductChips(att, mode) {');
+  ok(
+    '有 targets 的模块展开子项、模块级总数不再单独占 chip；无 targets / targets 全 0 才退回模块名（不吞扣分）',
+    /for \(const t of targets\) \{/.test(body) &&
+      /text: `\$\{t\.name\} -\$\{scoreText\(t\.value\)\}`/.test(body) &&
+      // 模块名 chip 只在 else 分支（targets 为空时才走到）：有 targets 时不重复占一条
+      /else if \(modDeduct > 0 && mod\.name\) \{/.test(body) &&
+      /text: `\$\{mod\.name\} -\$\{scoreText\(modDeduct\)\}`/.test(body)
+  );
+}
 {
   const body = fnBody(csJs, 'decorate(r, view = {}) {');
   ok(
@@ -430,13 +441,27 @@ ok(
       /const allChips = showAtt \? this\.buildDeductChips\(att, deductMode\) : \[\]/.test(body) &&
       /if \(showAtt && !deductChips\.length\)/.test(body)
   );
+  // 第五轮：指标区从「进度条」改成「矩形块」，且只在班超分列打开时补第三块
+  ok(
+    'decorate 预计算 metricBlocks（日/周/班超分各一块，与显示列开关一致：默认三块、关班超分两块）',
+    /const metricBlocks = \[\]/.test(body) &&
+      /if \(cols\.daily\) metricBlocks\.push\(rateBlock\('daily'/.test(body) &&
+      /if \(cols\.weekly\) metricBlocks\.push\(rateBlock\('weekly'/.test(body) &&
+      /if \(showAtt\) \{/.test(body) &&
+      /metricBlocks\.push\(\{\s*\n\s*key: 'att'/.test(body) &&
+      /metricBlocks: metricBlocks/.test(body)
+  );
+  ok(
+    '块内文案沿用旧语义：不参跑 → 「不参跑」、无记录 → 「无检查记录」、无数据 → 「—」',
+    /value: runEnabled \? rateText\(rate\) : '不参跑'/.test(body) && /value: hasScore \? attScoreText : '无检查记录'/.test(body)
+  );
 }
 ok(
   'chips 在 WXML 渲染（循环 deductChips.chip.text + deductMore「+N」）',
   /wx:for="\{\{item\.deductChips\}\}"/.test(csWxml) && /chip\.text/.test(csWxml) && /item\.deductMore/.test(csWxml)
 );
 ok('班超分统计区间可见（periodText 来自服务端 from/to，并写明新公式：四模块累计扣分×10% − 缺勤人次×0.02）', /periodText: d\.from/.test(csJs) && /periodText/.test(csWxml) && /累计扣分×10%/.test(csJs) && /缺勤人次×0.02/.test(csJs));
-ok('班超分大字走 num-font（数字排版约定）', /cs-score num-font/.test(csWxml));
+ok('块内数值走 num-font（数字排版约定）', /cs-mblock-v num-font/.test(csWxml));
 
 // ---- 第三轮（用户 2026-11-20）：复制 autodetect + 班超分范围/口径 + 单多数据排版 ----
 ok(
@@ -486,16 +511,52 @@ ok(
     /合计扣 \$\{scoreText\(total\)\}/.test(csJs)
 );
 ok(
-  '达标单/多数据不同排版（is-single / is-multi，模板不拼三元）',
-  /runbarsClass: runSingle \? 'is-single' : 'is-multi'/.test(csJs) &&
-    /item\.runBars/.test(csWxml) &&
-    /\.cs-runbars\.is-single/.test(csWxss) &&
-    /\.cs-runbars\.is-multi/.test(csWxss)
+  '进度条已彻底移除（runBars/runSingle/runbarsClass/buildRunBar 与旧样式槽全部删除）',
+  !/runBars/.test(csCode) &&
+    !/runSingle/.test(csCode) &&
+    !/runbarsClass/.test(csCode) &&
+    !/buildRunBar/.test(csCode) &&
+    !/cs-runbar/.test(csWxml) &&
+    !/cs-runbar/.test(csWxss) &&
+    !/cs-bar-track|cs-bar-fill/.test(csWxss)
 );
 ok(
-  '右列（班超分大字 + 口径副行）只在显示班超分列时渲染',
-  /class="cs-side" wx:if="\{\{columns\.attendance\}\}"/.test(csWxml) &&
-    /扣分为 0 或没有检查记录时为空串/.test(csJs)
+  '行指标 = 矩形块（flex 等分、边框+浅底、块内上标签下数值 num-font），WXML/JS/WXSS 三处接线',
+  /class="cs-mblocks"/.test(csWxml) &&
+    /wx:for="\{\{item\.metricBlocks\}\}"/.test(csWxml) &&
+    /class="cs-mblock"/.test(csWxml) &&
+    /cs-mblock-k/.test(csWxml) &&
+    /\.cs-mblocks \{/.test(csWxss) &&
+    /\.cs-mblock \{/.test(csWxss) &&
+    /border: 1rpx solid var\(--tt-brand-soft-2\)/.test(csWxss) &&
+    /background: var\(--tt-brand-soft\)/.test(csWxss) &&
+    /\.cs-mblock-v \{/.test(csWxss)
+);
+ok(
+  '班超分第三块 + 口径副行只在显示班超分列时出现（关列 = 不渲染任何扣分信息）',
+  /item\.deductLine/.test(csWxml) &&
+    /cs-row-note/.test(csWxss) &&
+    // 旧右列整块已并入第三块，不再有独立的班超分大字列
+    !/class="cs-side"/.test(csWxml) &&
+    !/cs-score/.test(csWxml)
+);
+ok(
+  '转发图片同步改块状：drawMetricBlock 画「描边+浅底」矩形块，块数决定列宽，无任何进度条绘制',
+  /drawMetricBlock\(/.test(csCode) &&
+    /blockCols\.length/.test(csCode) &&
+    /const blockW = colCount >= 3 \?/.test(csCode) &&
+    /C\.blockBg/.test(csCode) &&
+    /C\.blockLine/.test(csCode) &&
+    /strokeRect\(x, y, w, h\)/.test(csCode) &&
+    // 图片里也不许再出现进度条/百分比条相关标识
+    !/runBars|runbar|percent/i.test(csCode)
+);
+ok(
+  '图片行高随块高更新（rowH 由文字行 54 提到块式 72，画布总高按 rowH 现算）',
+  /const rowH = 72;/.test(csCode) &&
+    /const blockH = 56;/.test(csCode) &&
+    /const H = titleH \+ headH \+ shownRows\.length \* rowH \+ footH;/.test(csCode) &&
+    /const footH = foot\.footH;/.test(csCode)
 );
 ok(
   '旧控件已彻底移除（attRangeText / cs-bar-days / 独立 cs-period 条）',
@@ -518,6 +579,29 @@ ok(
   ok(`班级状态 WXML 用到的 cs-* 类都在 class-status.wxss 定义（${tokens.size} 个）`, missing.length === 0, missing);
 }
 ok('两页 WXSS 不硬编码旧品牌蓝 #0052d9', !/#0052d9/i.test(classWxss) && !/#0052d9/i.test(csWxss));
+
+// 第五轮 BUG：班级状态点班级必须带上看板的区间与日期，否则「我的班级」默认今日 →
+// 今日恰好没记录时检查记录/出勤率整块空白（用户 2026-11-20 图3「无数据但实际有数据」）。
+{
+  const openBody = fnBody(csJs, 'openClass(e) {');
+  ok(
+    '看板点班级带上 tab=attendance + range + date（与看板同窗口，不退回「今日」）',
+    /tab=attendance/.test(openBody) && /range=\$\{range\}/.test(openBody) && /date=\$\{date\}/.test(openBody)
+  );
+  const loadBody = fnBody(classJs, 'onLoad(options) {');
+  ok(
+    '我的班级 onLoad 接受 range 白名单 + date（并只消费一次 _entryDate）',
+    /\['day', 'week', 'month'\]\.includes\(wantedRange\)/.test(loadBody) &&
+      /this\._entryDate = String\(options\.date\)/.test(loadBody)
+  );
+  const initBody = fnBody(classJs, 'initPeriod() {');
+  ok(
+    'initPeriod 首次按看板日期定位（_entryDate 用后清空，刷新/切周期不会被拉回）',
+    /const base = this\._entryDate \|\| today/.test(initBody) &&
+      /this\._entryDate = ''/.test(initBody) &&
+      /banchaoDate: base/.test(initBody)
+  );
+}
 
 console.log('\n=== 八、前端：下载能力（utils/request.js）===');
 ok('downloadAndOpen 已导出（页面用 auth.downloadAndOpen 调用）', /downloadAndOpen,/.test(reqJs));

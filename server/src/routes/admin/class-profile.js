@@ -1263,7 +1263,11 @@ router.get(
     const exportSvc = require('../../services/class-status-export');
     const q = boardQuery(req);
     const full = await board.classStatusBoard({ today: q.today, attRange: q.attRange });
-    const payload = await exportSvc.buildExport({ board: board.applyBoardFilter(full, q.filter) });
+    const payload = await exportSvc.buildExport({
+      board: board.applyBoardFilter(full, q.filter),
+      // 年级筛选要出现在总标标题里（「2026年11月16日至…（本周）2026级-2025级班级状态总表」）
+      filter: q.filter,
+    });
     exportSvc.respond(res, payload, {
       format: req.query.format,
       preview: req.query.preview,

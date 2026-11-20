@@ -477,8 +477,20 @@ Page({
   onLoad(options) {
     if (!getApp().requireLogin()) return;
     if (options.className) this.setData({ className: decodeURIComponent(options.className) });
+    // 从「班级状态」看板点进来时，把看板的统计窗口一起带过来（用户 2026-11-20 第五轮
+    // 「图3 中无数据但实际上是有数据的」）：看板看的是本周/本月，进来却默认「今日」，
+    // 今日没有检查记录时两半（检查记录 + 出勤率）全空，像功能坏了。
+    // 约定：range 只认白名单；date 是看板所选「今天」，周/月据此定位到同一窗口。
+    const wantedRange = String(options.range || '');
+    if (['day', 'week', 'month'].includes(wantedRange)) {
+      this.setData({ range: wantedRange, rangeWord: RANGE_WORD[wantedRange] || '今日' });
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(String(options.date || ''))) {
+      // 只在本页第一次 initPeriod 时消费（见 initPeriod），之后用户自己切周期不再被拉回
+      this._entryDate = String(options.date);
+    }
     // 入口 tab 自动适配：
-    //   · 显式带 ?tab= 的（「班超联赛 ›」、班超排名点班级）尊重参数；
+    //   · 显式带 ?tab= 的（「班超联赛 ›」、班超排名点班级、班级状态点班级）尊重参数；
     //   · 其余（管理中枢 / 我的页 / 首页「我的班级」）按身份落到最常用的那个：
     //     默认落「学生名单」—— 这页的入口名就叫「我的班级」，日常第一件事是看名单；
     //     班超数据从首页班超块 / 班超排名点进来时会显式带 tab=attendance，不受这里影响。
@@ -778,17 +790,20 @@ Page({
     };
   },
 
-  // 初始化周期选择器的值（进页面 / 换班时都按「今天」重算一次）
+  // 初始化周期选择器的值（进页面 / 换班时都按「今天」重算一次；
+  // 从班级状态看板点进来时按看板所选日期定位一次 —— `_entryDate` 只在首次消费，之后用户自己切）
   initPeriod() {
     const today = fmt.todayKey();
-    const [y, m] = today.split('-').map(Number);
-    const weekNo = period.weekNoOfDate(y, m, today);
+    const base = this._entryDate || today;
+    this._entryDate = ''; // 只消费一次：刷页面/切周期不再把用户拉回看板日期
+    const [y, m] = base.split('-').map(Number);
+    const weekNo = period.weekNoOfDate(y, m, base);
     const weekOptions = period.monthWeekOptions(y, m);
     this.setData(
       {
-        banchaoToday: today,
-        banchaoDate: today,
-        banchaoDateText: period.md(today),
+        banchaoToday: today, // picker 上限恒为今天
+        banchaoDate: base,
+        banchaoDateText: period.md(base),
         banchaoYear: y,
         month: m,
         monthIndex: m - 1,

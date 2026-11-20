@@ -1075,30 +1075,39 @@ const TARGETS = [
       await flush();
       ok(p2.data.columns.attendance === true, '重新打开班超分列（为口径切换用例恢复前提）', p2.data.columns);
 
-      // ===== 扣分来源 chips（具体考察项；仅在显示班超分时产出）=====
+      // ===== 扣分来源 chips（具体受检类型；仅在显示班超分时产出）=====
+      // 第五轮：每个模块优先展开 targets（卫生 3 条全展开），同一模块 ≤3、整行 ≤4，其余 +N。
       const chipRow = d({
         className: 'F',
         studentCount: 40,
         run: { enabled: true, dailyRate: 50, weeklyRate: 60 },
         attendance: rowWithAtt.attendance,
       });
-      ok(chipRow.deductChips.length === 3, '整行最多 3 条扣分 chip', chipRow.deductChips);
+      ok(chipRow.deductChips.length === 4, '整行最多 4 条扣分 chip（第五轮放开到 4）', chipRow.deductChips);
       ok(
-        chipRow.deductChips.map((c) => c.text).join('|') === '卫生-宿舍 -0.35|晚自习-教室 -0.20|卫生-教室 -0.15',
-        'chip 文案 = 具体考察项 + 两位小数扣分，按扣分降序（同模块最多 2 条）',
+        chipRow.deductChips.map((c) => c.text).join('|') ===
+          '卫生-宿舍 -0.35|晚自习-教室 -0.20|卫生-教室 -0.15|卫生-卫生区 -0.10',
+        'chip 展开到受检类型（卫生-宿舍/卫生-教室/卫生-卫生区）+ 两位小数，按扣分降序（同模块最多 3 条）',
         chipRow.deductChips.map((c) => c.text)
       );
-      // 来源共 4 条（卫生 2 + 晚自习 1 + 查宿 1）→ 显示 3 + 「+1」；卫生第 3 条已被「同模块最多 2 条」截掉
-      ok(chipRow.deductMore === 1, '其余折成 +N（4 条来源 → 显示 3 + 「+1」）', chipRow.deductMore);
-      ok(chipRow.deductLine === '日均扣 0.80', '右列副行默认「日均扣 0.80」', chipRow.deductLine);
+      // 来源共 5 条（卫生 3 + 晚自习 1 + 查宿 1）→ 显示 4 + 「+1」（查宿被折进 +N）
+      ok(chipRow.deductMore === 1, '其余折成 +N（5 条来源 → 显示 4 + 「+1」）', chipRow.deductMore);
+      ok(chipRow.deductLine === '日均扣 0.80', '班超分块下口径副行默认「日均扣 0.80」', chipRow.deductLine);
       // 合计口径：chips 改用 totalDeduct（不乘天数），副行写「合计扣」
       const chipTotal = d(rowWithAtt, { columns: { daily: true, weekly: true, attendance: true }, deductMode: 'total' });
       ok(
-        chipTotal.deductChips.map((c) => c.text).join('|') === '卫生-宿舍 -1.75|晚自习-教室 -1.00|卫生-教室 -0.75',
+        chipTotal.deductChips.map((c) => c.text).join('|') ===
+          '卫生-宿舍 -1.75|晚自习-教室 -1.00|卫生-教室 -0.75|卫生-卫生区 -0.50',
         '合计口径的 chips 用服务端 totalDeduct（不是日均 × 天数）',
         chipTotal.deductChips.map((c) => c.text)
       );
       ok(chipTotal.deductLine === '合计扣 4.00', '合计口径副行「合计扣 4.00」', chipTotal.deductLine);
+      // 用户 2026-11-20 第五轮：切换日均/合计时 chips 必须跟着变（同一份数据两个口径）
+      ok(
+        chipRow.deductChips[0].text === '卫生-宿舍 -0.35' && chipTotal.deductChips[0].text === '卫生-宿舍 -1.75',
+        '切日均/合计 chips 数值真的变化（不是同一份日均数挂两个标签）',
+        [chipRow.deductChips[0].text, chipTotal.deductChips[0].text]
+      );
       const chipLegacy = d(
         {
           className: 'G',
@@ -1113,6 +1122,37 @@ const TARGETS = [
         '无 targets 的老服务退回「模块名 -0.40」（不显示空白）',
         chipLegacy.deductChips
       );
+      // 异常数据：模块有扣分、但 targets 全是 0 → 退回模块名一条，不能把这块扣分吞掉
+      const chipZeroTargets = d(
+        {
+          className: 'G2',
+          studentCount: 40,
+          run: { enabled: true, dailyRate: 50, weeklyRate: 60 },
+          attendance: {
+            score: 9.6,
+            ratePercent: 96,
+            lateCount: 0,
+            hasData: true,
+            deduct: 0.4,
+            deductTotal: 2.0,
+            deductDetail: [
+              {
+                key: 'hygiene',
+                name: '卫生',
+                deduct: 0.4,
+                totalDeduct: 2.0,
+                targets: [{ key: 'hygiene:dorm_room', name: '卫生-宿舍', avgDeduct: 0, totalDeduct: 0 }],
+              },
+            ],
+          },
+        },
+        VIEW_ATT
+      );
+      ok(
+        chipZeroTargets.deductChips.length === 1 && chipZeroTargets.deductChips[0].text === '卫生 -0.40',
+        '某模块 targets 全为 0 但模块有扣分 → 退回模块名一条（扣分不被吞掉）',
+        chipZeroTargets.deductChips
+      );
       const chipNone = d(
         {
           className: 'H',
@@ -1124,52 +1164,230 @@ const TARGETS = [
       );
       ok(chipNone.deductChips.length === 0 && chipNone.deductEmptyText === '无扣分', '没有扣分时给「无扣分」弱文案', chipNone.deductEmptyText);
 
-      // ===== 单数据 / 多数据不同排版（用户 2026-11-20 第三轮）=====
-      const singleBar = d(rowWithAtt, { columns: { daily: true, weekly: false, attendance: false }, deductMode: 'avg' });
+      // ===== 指标矩形块（用户 2026-11-20 第五轮「去掉进度条，改成矩形块」）=====
+      const withAtt = d(rowWithAtt, VIEW_ATT);
+      ok(withAtt.metricBlocks.length === 3, '显示班超分列：3 个指标块（日/周/班超分）', withAtt.metricBlocks);
       ok(
-        singleBar.runBars.length === 1 && singleBar.runSingle === true && singleBar.runbarsClass === 'is-single',
-        '只显示日达标：单条横条（is-single）',
-        [singleBar.runBars.length, singleBar.runbarsClass]
+        withAtt.metricBlocks.map((b) => b.label).join('|') === '日达标|周达标|班超分',
+        '块标签顺序 = 日达标/周达标/班超分',
+        withAtt.metricBlocks.map((b) => b.label)
       );
       ok(
-        singleBar.runBars[0].label === '日达标' && singleBar.runBars[0].text === '50%' && singleBar.runBars[0].percent === 50,
-        '横条字段完整（label/text/percent/level）',
-        singleBar.runBars[0]
+        withAtt.metricBlocks.map((b) => b.value).join('|') === '50%|60%|9.20',
+        '块数值 = 服务端百分比 + 班超分两位小数',
+        withAtt.metricBlocks.map((b) => b.value)
       );
-      const multiBar = d(rowWithAtt, { columns: { daily: true, weekly: true, attendance: false }, deductMode: 'avg' });
       ok(
-        multiBar.runBars.length === 2 && multiBar.runSingle === false && multiBar.runbarsClass === 'is-multi',
-        '日+周：两条横条（is-multi）',
-        [multiBar.runBars.length, multiBar.runbarsClass]
+        withAtt.metricBlocks.map((b) => b.level).join('|') === 'bad|warn|ok',
+        '块档位沿用 rateLevel/attScoreLevel（50%→bad / 60%→warn / 9.20→ok）',
+        withAtt.metricBlocks.map((b) => b.level)
       );
-      // 不显示班超分：chips / 无扣分 / 右列副行 / 分数空态 全部不产出（用户明确要求）
+      // 班超分列关掉：只有日/周两块，且所有扣分信息不产出
+      const noAtt = d(rowWithAtt, { columns: { daily: true, weekly: true, attendance: false }, deductMode: 'avg' });
       ok(
-        singleBar.deductChips.length === 0 && singleBar.deductEmptyText === '' && singleBar.deductLine === '' && singleBar.scoreEmptyText === '',
+        noAtt.metricBlocks.length === 2 && noAtt.metricBlocks.map((b) => b.label).join('|') === '日达标|周达标',
+        '班超分列关掉时只有 2 块（日/周）',
+        noAtt.metricBlocks
+      );
+      ok(
+        noAtt.deductChips.length === 0 && noAtt.deductEmptyText === '' && noAtt.deductLine === '' && noAtt.scoreEmptyText === '',
         '不显示班超分时没有任何扣分信息（chips/无扣分/口径副行都不产出）',
-        [singleBar.deductChips.length, singleBar.deductEmptyText, singleBar.deductLine, singleBar.scoreEmptyText]
+        [noAtt.deductChips.length, noAtt.deductEmptyText, noAtt.deductLine, noAtt.scoreEmptyText]
       );
-      // 没有检查记录：右列写「无检查记录」而不是 0 分
+      // 无数据 / 不参跑：沿用旧文案语义（— / 不参跑），不落成 0%
+      const noneRun = d(
+        {
+          className: 'J',
+          studentCount: 40,
+          run: { enabled: true, dailyRate: null, weeklyRate: null },
+          attendance: { score: null, deductDetail: [], hasData: false },
+        },
+        VIEW_ATT
+      );
+      ok(
+        noneRun.metricBlocks[0].value === '—' && noneRun.metricBlocks[1].value === '—' && noneRun.metricBlocks[0].level === 'none',
+        '无数据块显示「—」而不是 0%',
+        noneRun.metricBlocks
+      );
+      const disabledRun = d(
+        {
+          className: 'K',
+          studentCount: 40,
+          run: { enabled: false, dailyRate: 0, weeklyRate: 0 },
+          attendance: { score: null, deductDetail: [], hasData: false },
+        },
+        VIEW_ATT
+      );
+      ok(
+        disabledRun.metricBlocks[0].value === '不参跑' && disabledRun.metricBlocks[1].value === '不参跑' && disabledRun.runDisabled === true,
+        '不参跑的班块文案是「不参跑」（不会被误读成 0%）',
+        disabledRun.metricBlocks
+      );
+      // 没有检查记录：第三块写「无检查记录」而不是 0 分
       const noScore = d(
         { className: 'I', studentCount: 40, run: { enabled: true, dailyRate: 0, weeklyRate: 0 }, attendance: { score: null, deduct: null, deductTotal: null, dayCount: 0, deductDetail: [], hasData: false } },
         VIEW_ATT
       );
-      ok(noScore.hasScore === false && noScore.scoreEmptyText === '无检查记录', '无检查记录时右列写「无检查记录」（不是 0 分）', noScore.scoreEmptyText);
+      ok(
+        noScore.hasScore === false && noScore.scoreEmptyText === '无检查记录' && noScore.metricBlocks[2].value === '无检查记录' && noScore.metricBlocks[2].level === 'none',
+        '无检查记录时第三块写「无检查记录」（不是 0 分）',
+        [noScore.scoreEmptyText, noScore.metricBlocks[2]]
+      );
 
-      // 口径切换不重发请求：onDeductMode 只重排已有行
+      // 口径切换不重发请求：onDeductMode 只重排已有行（chips 与口径副行同步变化）
       const beforeMode = calls.length;
-      p2.onDeductMode({ currentTarget: { dataset: { key: 'total' } } });
+      p2.onDeductMode({ currentTarget: { dataset: { key: 'avg' } } });
       await flush();
       ok(calls.length === beforeMode, '切日均/合计不重发请求（服务端两个数都已下发）', calls.length - beforeMode);
       ok(
+        p2.data.shown[0].deductChips.map((c) => c.text).join('|') ===
+          '卫生-宿舍 -0.35|晚自习-教室 -0.20|卫生-教室 -0.15|卫生-卫生区 -0.10',
+        '切到日均后 chips 立刻改用 avgDeduct（与口径同一份数）',
+        p2.data.shown[0].deductChips
+      );
+      ok(p2.data.shown[0].deductLine === '日均扣 0.80', '日均口径副行「日均扣 0.80」', p2.data.shown[0].deductLine);
+      p2.onDeductMode({ currentTarget: { dataset: { key: 'total' } } });
+      await flush();
+      ok(
+        p2.data.shown[0].deductChips.map((c) => c.text).join('|') ===
+          '卫生-宿舍 -1.75|晚自习-教室 -1.00|卫生-教室 -0.75|卫生-卫生区 -0.50',
+        '切到合计后 chips 改用 totalDeduct（与口径副行对得上）',
+        p2.data.shown[0].deductChips
+      );
+      ok(
         p2.data.shown[0].deductLine === '合计扣 4.00',
-        '切到合计后右列副行立刻变「合计扣 4.00」',
+        '切到合计后口径副行立刻变「合计扣 4.00」',
         p2.data.shown[0].deductLine
       );
-      p2.onDeductMode({ currentTarget: { dataset: { key: 'avg' } } });
-      await flush();
-      ok(p2.data.shown[0].deductLine === '日均扣 0.80', '切回日均副行恢复', p2.data.shown[0].deductLine);
 
-      // ===== 图片底部布局 + 失败路径（沿用上一轮）=====
+      // ===== 生成图片：指标区画矩形块（第五轮），不再画进度条 =====
+      // 桩一个 2d ctx 记录每次 fillText/fillRect/strokeRect：
+      //  · 断言块内文字（日达标/周达标/班超分 + 数值）都画了；
+      //  · 断言没有任何「细长条」绘制（旧进度条形态）；
+      //  · 用 2 行 / 45 行两次绘制核对画布高度预算真的跟着新行高走。
+      const shot = () => {
+        const rec = { texts: [], rects: [], strokes: [] };
+        const ctx = {
+          font: '',
+          fillStyle: '',
+          strokeStyle: '',
+          textAlign: '',
+          textBaseline: '',
+          lineWidth: 1,
+          scale() {},
+          fillText: (t, x, y) => rec.texts.push({ t: String(t), x, y }),
+          fillRect: (x, y, w, h) => rec.rects.push({ x, y, w, h }),
+          strokeRect: (x, y, w, h) => rec.strokes.push({ x, y, w, h }),
+          beginPath() {},
+          moveTo() {},
+          lineTo() {},
+          stroke() {},
+        };
+        const node = { width: 0, height: 0, getContext: () => ctx };
+        // 与真实 SelectorQuery 同链式语义：in()/select().fields() 都回到同一个 query，exec 挂在 query 上
+        selectorQueryImpl = () => {
+          const q = { in: () => q, select: () => ({ fields: () => q }), exec: (cb) => cb([{ node }]) };
+          return q;
+        };
+        // 输出失败即可（这里只验绘制；真实分享链路不涉及）
+        canvasToTempFilePathImpl = (o) => o && o.fail && o.fail({ errMsg: 'check-page-runtime 桩' });
+        return { rec, canvas: node };
+      };
+      const shareRow = (name) =>
+        d(
+          {
+            className: name,
+            studentCount: 40,
+            run: { enabled: true, dailyRate: 50, weeklyRate: 60 },
+            attendance: rowWithAtt.attendance,
+          },
+          VIEW_ATT
+        );
+      const newSharePage = (columns, shown, withRules) => {
+        const pg = makePage(def);
+        pg.data.columns = columns;
+        pg.data.shown = shown;
+        pg.data.rows = shown;
+        pg.data.filtered = { classCount: shown.length, studentCount: shown.length * 40 };
+        pg.data.today = '2026-11-12';
+        pg.data.from = '2026-11-09';
+        pg.data.attTo = '2026-11-15';
+        pg.data.attRangeLabel = '本周';
+        pg.data.attRuleLines = withRules ? ['卫生按评价扣分'] : [];
+        return pg;
+      };
+      const ROW_ATT = { daily: true, weekly: true, attendance: true };
+      const pShare = newSharePage(ROW_ATT, [shareRow('A班'), shareRow('B班')], true);
+      const shot2 = shot();
+      pShare.onShareImage();
+      ok(shot2.canvas.width === 1500 && shot2.canvas.height % 2 === 0, '画布按 750 逻辑宽 ×2 出图（高度为偶数物理像素）', [shot2.canvas.width, shot2.canvas.height]);
+      const isBlockRect = (r) => r.h >= 40 && r.h <= 70 && r.w >= 90 && r.w <= 220;
+      const blockRects = shot2.rec.rects.filter(isBlockRect);
+      ok(blockRects.length === 6, '每行画 3 个矩形块（2 行 × 3 块）', blockRects.length);
+      ok(
+        blockRects.every((r) => shot2.rec.strokes.some((s) => s.x === r.x && s.y === r.y && s.w === r.w && s.h === r.h)),
+        '每个块既有浅底填充也有矩形描边（描边 + 浅底）',
+        shot2.rec.strokes.length
+      );
+      const texts2 = shot2.rec.texts.map((x) => x.t);
+      ok(
+        texts2.includes('日达标') && texts2.includes('周达标') && texts2.includes('班超分'),
+        '图片画了块标签/列头：日达标 · 周达标 · 班超分',
+        texts2.slice(0, 20)
+      );
+      ok(
+        texts2.includes('50%') && texts2.includes('60%') && texts2.includes('9.20'),
+        '图片画了块内数值（百分比 + 两位小数分数），不再只画文字列',
+        texts2.filter((t) => /%|9\.20/.test(t))
+      );
+      ok(!shot2.rec.rects.some((r) => r.h <= 16 && r.w >= 60), '没有任何细长条绘制（旧进度条形态已删除）', shot2.rec.rects.filter((r) => r.h <= 16));
+      ok(
+        texts2.includes('唐唐快跑 · 班级状态') && texts2.some((t) => /考勤计算规则/.test(t)),
+        '规则文本 / 底部品牌仍由现有逻辑画'
+      );
+      // 行高从块矩形间距反推（块 y 差 = 行高），45 行时画布高度必须按它线性增长
+      const stride = blockRects[3].y - blockRects[0].y;
+      ok(stride >= 60, '块式行高比旧文字行（54）更高', stride);
+      const many = Array.from({ length: 45 }, (_, i) => shareRow(`C${i}班`));
+      const pShare45 = newSharePage(ROW_ATT, many, true);
+      const shot45 = shot();
+      pShare45.onShareImage();
+      ok(
+        shot45.canvas.height - shot2.canvas.height === 2 * 43 * stride,
+        '45 行画布高度 = 2 行高度 + 43 × 行高（高度预算跟着新行高走，不会重叠）',
+        [shot45.canvas.height, shot2.canvas.height, stride]
+      );
+      ok(
+        shot45.rec.texts.filter((x) => x.t === '日达标').length === 46,
+        '文本绘制次数随行数线性（日达标 = 45 行各 1 次 + 列头 1 次）',
+        shot45.rec.texts.filter((x) => x.t === '日达标').length
+      );
+      const blocks45 = shot45.rec.rects.filter(isBlockRect);
+      ok(blocks45.length === 135, '45 行 × 3 块全部画进画布', blocks45.length);
+      const maxBlockBottom = Math.max(...blocks45.map((r) => r.y + r.h));
+      ok(
+        maxBlockBottom < shot45.canvas.height / 2 - 20,
+        '最后一行块底仍留出规则/落款区（内容不被裁）',
+        [maxBlockBottom, shot45.canvas.height / 2]
+      );
+      // 班超分列关掉：每行只画 2 块，且不画任何扣分信息（第三轮约束）
+      const pShareNoAtt = newSharePage({ daily: true, weekly: true, attendance: false }, [shareRow('A班')], false);
+      const shotNoAtt = shot();
+      pShareNoAtt.onShareImage();
+      const blocksNoAtt = shotNoAtt.rec.rects.filter(isBlockRect);
+      const textsNoAtt = shotNoAtt.rec.texts.map((x) => x.t);
+      ok(blocksNoAtt.length === 2, '班超分列关掉时每行只画 2 块（日/周）', blocksNoAtt.length);
+      ok(
+        !textsNoAtt.includes('班超分') && !textsNoAtt.some((t) => /卫生-|晚自习-|查宿|合计扣|日均扣/.test(t)),
+        '班超分列关掉时图片里不画任何扣分信息',
+        textsNoAtt.filter((t) => /卫生|晚自习|查宿|扣/.test(t))
+      );
+      // 还原共享桩（后面的水印相机 target 会自己设置 selectorQuery）
+      selectorQueryImpl = () => {
+        const q = { in: () => q, select: () => ({ fields: () => q }), exec: (cb) => cb([]) };
+        return q;
+      };
+      canvasToTempFilePathImpl = (o) => o && o.fail && o.fail({ errMsg: 'canvasToTempFilePath:fail 桩未配置' });
 
       // ===== 用户 2026-11-20 第三轮：导出改成 Excel(.xlsx) + 生成前先预览 =====
       //
@@ -1185,7 +1403,7 @@ const TARGETS = [
         sheet = o;
         o.success({ tapIndex: 0 });
       };
-      // 预览接口 stub：列/行形态与后端 format=json 一致（总标 22 列 + sheets 名单）
+      // 预览接口 stub：列/行形态与后端 format=json 一致（总标 23 列 + sheets 名单；班超分紧跟早八扣分）
       const previewColumns = [
         { title: '序号', wch: 6 },
         { title: '院校', wch: 16 },
@@ -1201,6 +1419,7 @@ const TARGETS = [
         { title: '查宿累计扣分', wch: 12 },
         { title: '早操累计扣分', wch: 12 },
         { title: '早八累计扣分', wch: 12 },
+        { title: '班超分', wch: 9 },
         { title: '校园跑班级日目标平均达标率', wch: 24 },
         { title: '校园跑班级周目标平均达标率', wch: 24 },
         { title: '校园跑班级日目标达标次数', wch: 22 },
@@ -1211,8 +1430,8 @@ const TARGETS = [
         { title: '校园跑人均累计步数', wch: 17 },
       ];
       const previewRows = [
-        [1, '北校区', '计财系', '信息安全技术应用', '2026', 48, 46, 3, 5, 8, 4, 2, 1, 1, '92.3%', '88.5%', 6, 3, '85.7%', '80%', 168000, 3500],
-        [2, '北校区', '机电建工系', '电气自动化技术', '2025', 52, 50, 2, 4, 6, 3, 1, 2, 1, '88.1%', '84.0%', 5, 2, '81.4%', '76.2%', 175000, 3365],
+        [1, '北校区', '计财系', '信息安全技术应用', '2026', 48, 46, 3, 5, 8, 4, 2, 1, 1, 9.2, '92.3%', '88.5%', 6, 3, '85.7%', '80%', 168000, 3500],
+        [2, '北校区', '机电建工系', '电气自动化技术', '2025', 52, 50, 2, 4, 6, 3, 1, 2, 1, 8.7, '88.1%', '84.0%', 5, 2, '81.4%', '76.2%', 175000, 3365],
       ];
       let previewParams = null;
       const pageLoadGet = state.get;
@@ -1220,7 +1439,7 @@ const TARGETS = [
         if (url === '/api/admin/class/status-export') {
           previewParams = params;
           return {
-            title: '班级状态考勤表',
+            title: '2026年11月17日至2026年11月23日（本周）班级状态总表',
             subtitle: '统计区间：2026-11-01 ~ 2026-11-30（本月） ｜ 筛选：全校 ｜ 共 43 个班 / 2263 人 ｜ 导出时间：2026-11-20 15:30',
             note: '总标 = 看板同源数据；校园跑为区间独立聚合；明细见每班「详细数据」sheet。',
             columns: previewColumns,
@@ -1245,10 +1464,14 @@ const TARGETS = [
         previewParams
       );
       ok(p4.data.previewVisible === true && p4.data.previewLoading === false, '预览弹层打开且 loading 收尾', p4.data.previewVisible);
-      ok(p4.data.previewTitle === '班级状态考勤表' && /共 43 个班/.test(p4.data.previewSubtitle), '预览标题/副标题来自服务端（区间/筛选/班数/时间）', p4.data.previewSubtitle);
       ok(
-        p4.data.previewCols.length === 22 && p4.data.previewRows.length === 2 && p4.data.previewRows[0].cells.length === 22,
-        '预览总标 22 列 × 前 2 行（cells 在 JS 预计算，模板零运算）',
+        /班级状态总表$/.test(p4.data.previewTitle) && /共 43 个班/.test(p4.data.previewSubtitle),
+        '预览标题（新格式：日期段+年级段+班级状态总表）/副标题来自服务端',
+        p4.data.previewSubtitle
+      );
+      ok(
+        p4.data.previewCols.length === 23 && p4.data.previewRows.length === 2 && p4.data.previewRows[0].cells.length === 23,
+        '预览总标 23 列 × 前 2 行（cells 在 JS 预计算，模板零运算）',
         [p4.data.previewCols.length, p4.data.previewRows.length]
       );
       ok(

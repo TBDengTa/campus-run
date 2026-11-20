@@ -1,6 +1,6 @@
 <!-- 班级状态总览（用户 2026-10-30 第二轮：
      「这太难看了…可以查看显示内容与复制内容，如只需要日达标这种的，
-       而且考勤回看是什么，并且没有院系筛选」；2026-11-20 第三轮再重排）
+       而且考勤回看是什么，并且没有院系筛选」；2026-11-20 第五轮再改指标区）
 
      结构（自上而下）：
      ① 指标条 → 口径说明 → 筛选工具条（日期/院校/系部/搜索 → 年级 → 快捷 chip+动作 → 达标档位）
@@ -8,10 +8,10 @@
         （JS autoCopy），不再有独立「复制」picker —— 看什么就复制什么。
      ③ 班超分范围（本日/本周/本月）+ 口径（日均/合计）次级筛选行：
         只在班超分列打开时渲染；口径切换不重发请求；下方一行小字说明区间与公式。
-     ④ 列表「各班条」：左列 班名/学生数·系部/扣分来源 chips/日周达标横条；
-        右列（仅班超分列开）班超分大字 + 日均扣/合计扣副行，无记录显示「无检查记录」。
-        班超分列关掉时右列与全部扣分信息都不渲染（用户明确要求）。
-     所有展示字段由 JS 预计算，模板里不做表达式拼接（仓库约定）。 -->
+     ④ 列表「各班条」：班名/学生数·系部/扣分来源 chips/指标矩形块；
+        指标块 = 日达标 + 周达标（无数据「—」、不参跑「不参跑」），显示班超分列时补第三块；
+        班超分列关掉时不渲染任何扣分信息（用户明确要求）。
+        旧版进度条已删除，块内文案/数值全部由 JS decorate 预计算（模板零运算）。 -->
 <view class="tt-page cs-page">
   <!-- ===== 指标条 ===== -->
   <!-- 加载失败时整条隐藏：留一条四个 0 的指标条会被读成「今天真没一个班达标」 -->
@@ -194,11 +194,12 @@
     <text class="cs-empty-s" wx:if="{{hasFilter}}" bind:tap="resetFilters">点此清除筛选</text>
   </view>
 
-  <!-- ===== 各班条（用户 2026-11-20 第三轮重排）=====
-       左列：班名（主）→ 学生数 · 系部（次）→ 扣分来源 chips（仅班超分列）→ 达标横条；
-       右列（仅班超分列开）：班超分大字 + 口径副行（日均扣/合计扣）；无记录写「无检查记录」。
+  <!-- ===== 各班条（用户 2026-11-20 第五轮：指标改矩形块）=====
+       班名（主）→ 学生数 · 系部（次）→ 扣分来源 chips（仅班超分列）→ 指标矩形块；
+       块 = 上一行小标签 + 下一行大数值（日/周恒在，显示班超分列时第三块是班超分）；
+       班超分列关掉时 chips/无扣分文案/口径副行全部不产出，块也只有 2 个。
        所有文案与数值由 JS decorate 预计算，模板零运算（不拼三元/字符串）；
-       chips/横条都是纯展示元素，不做成看起来可点的按钮。 -->
+       chips / 块都是纯展示元素，不做成看起来可点的按钮。 -->
   <view class="cs-list" wx:else>
     <view class="cs-thead">
       <text class="cs-thead-l" wx:if="{{columns.attendance}}">班级 · 扣分来源</text>
@@ -218,22 +219,15 @@
           <view class="cs-dchip cs-dchip-more" wx:if="{{item.deductMore}}">+{{item.deductMore}}</view>
         </view>
         <text class="cs-nodeduct" wx:elif="{{item.deductEmptyText}}">{{item.deductEmptyText}}</text>
-        <!-- 达标横条：只显示开着的列（日/周），单条时更大、两条时更紧凑 -->
-        <view class="cs-runbars {{item.runbarsClass}}" wx:if="{{item.runBars.length}}">
-          <view class="cs-runbar" wx:for="{{item.runBars}}" wx:for-item="bar" wx:key="key">
-            <text class="cs-runbar-k">{{bar.label}}</text>
-            <view class="cs-runbar-track">
-              <view class="cs-runbar-fill cs-att-bar cs-lv-{{bar.level}}" style="width:{{bar.percent}}%;"></view>
-            </view>
-            <text class="cs-runbar-v num-font cs-lv-{{bar.level}}">{{bar.text}}</text>
+        <!-- 指标矩形块：2 块（日/周）或 3 块（显示班超分列时），flex 等分 -->
+        <view class="cs-mblocks">
+          <view class="cs-mblock" wx:for="{{item.metricBlocks}}" wx:for-item="blk" wx:key="key">
+            <text class="cs-mblock-k">{{blk.label}}</text>
+            <text class="cs-mblock-v num-font cs-lv-{{blk.level}}">{{blk.value}}</text>
           </view>
         </view>
-      </view>
-      <!-- 右列只在班超分列开时存在：关列时整块不渲染（用户「不显示班超分时不显示任何扣分信息」） -->
-      <view class="cs-side" wx:if="{{columns.attendance}}">
-        <text class="cs-score num-font cs-lv-{{item.attLevel}}" wx:if="{{item.hasScore}}">{{item.attText}}</text>
-        <text class="cs-score-empty" wx:else>{{item.scoreEmptyText}}</text>
-        <text class="cs-side-sub" wx:if="{{item.deductLine}}">{{item.deductLine}}</text>
+        <!-- 班超分口径副行（「日均扣 1.60」/「合计扣 8.00」）：仅班超分列打开、且有扣分时出现 -->
+        <text class="cs-row-note" wx:if="{{item.deductLine}}">{{item.deductLine}}</text>
       </view>
     </view>
   </view>
