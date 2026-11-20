@@ -1,14 +1,14 @@
 # 唐唐快跑 · 校园跑小程序 2.0
 
 > 面向高校的校园运动记录与管理平台。微信小程序端（用户端 + 管理端同包）+ Node.js 后端。
-> **当前版本：v2.0.13**
+> **当前版本：v2.0.11**
 
 <p>
   <img alt="platform" src="https://img.shields.io/badge/platform-WeChat%20MiniProgram-07C160">
   <img alt="backend" src="https://img.shields.io/badge/backend-Node.js%20%7C%20Express-339933">
   <img alt="database" src="https://img.shields.io/badge/database-MongoDB-47A248">
   <img alt="ui" src="https://img.shields.io/badge/UI-TDesign-0052D9">
-  <img alt="version" src="https://img.shields.io/badge/version-2.0.13-FF6B00">
+  <img alt="version" src="https://img.shields.io/badge/version-2.0.11-FF6B00">
 </p>
 
 ---
@@ -331,5 +331,5 @@ node tools/verify-identity-e2e.js       # 旧令牌 401 自愈、一键登录身
 
 <p align="center">
   由 <b>河北唐博科技有限公司</b> 设计与开发<br>
-  <sub>校园运动记录与管理平台 · v2.0.13</sub>
+  <sub>校园运动记录与管理平台 · v2.0.11</sub>
 </p>
