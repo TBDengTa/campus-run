@@ -36,6 +36,7 @@ const RunRecord = require(path.join(serverDir, 'src', 'models', 'run-record'));
 const dates = require(path.join(serverDir, 'src', 'utils', 'dates'));
 const boardSvc = require(path.join(serverDir, 'src', 'services', 'class-status-board'));
 const scoreScale = require(path.join(serverDir, 'src', 'services', 'score-scale'));
+const XLSX = require(path.join(serverDir, 'node_modules', 'xlsx'));
 
 let failed = 0;
 function assert(cond, label, extra) {
@@ -215,7 +216,7 @@ function parseCsv(text) {
 
     // ---- 2) HTTP 形状 ----
     console.log('\n[1] HTTP 形状与表头');
-    const res = await call('admin', `/api/admin/class/status-export?attRange=week&today=${today}`);
+    const res = await call('admin', `/api/admin/class/status-export?attRange=week&today=${today}&format=csv`);
     assert(res.status === 200, '导出 → 200', res.status);
     assert(/text\/csv/.test(res.headers.get('content-type') || ''), 'Content-Type = text/csv', res.headers.get('content-type'));
     const dispo = res.headers.get('content-disposition') || '';
@@ -255,16 +256,16 @@ function parseCsv(text) {
       board: (full.rows || []).length,
     });
     // 同一份取参下，带筛选的导出必须只剩筛选结果（证明参数进了服务端，不是前端假筛）
-    const fRes = await call('admin', `/api/admin/class/status-export?attRange=week&today=${today}&keyword=${encodeURIComponent(CLS)}`);
+    const fRes = await call('admin', `/api/admin/class/status-export?attRange=week&today=${today}&format=csv&keyword=${encodeURIComponent(CLS)}`);
     const f = parseCsv(fRes.text);
     assert(fRes.status === 200 && f.rows.length === 1, 'keyword 筛出恰好 1 行（临时班）', f.rows.length);
     assert(f.rows[0] && f.rows[0][1] === CLS, '筛出的就是临时班', f.rows[0] && f.rows[0][1]);
     // 非法筛选值不得把全表筛成空（与看板同一条回落口径）
-    const badRes = await call('admin', `/api/admin/class/status-export?attRange=week&today=${today}&quick=notARealFilter`);
+    const badRes = await call('admin', `/api/admin/class/status-export?attRange=week&today=${today}&format=csv&quick=notARealFilter`);
     const bad = parseCsv(badRes.text);
     assert(badRes.status === 200 && bad.rows.length === rows.length, '非法筛选被忽略而非筛空', bad.rows.length);
     // 工号 / 注入口径：attRange 非法回落本周
-    const badRange = await call('admin', `/api/admin/class/status-export?attRange=quarter&today=${today}`);
+    const badRange = await call('admin', `/api/admin/class/status-export?attRange=quarter&today=${today}&format=csv`);
     const br = parseCsv(badRange.text);
     assert(
       badRange.status === 200 && br.rows[0] && br.rows[0][0] === `${MON} ~ ${dates.addDays(MON, 6)}`,
@@ -313,17 +314,67 @@ function parseCsv(text) {
 
     // ---- 5) 窗口跟随 attRange（本月）----
     console.log('\n[4] 本月窗口');
-    const mRes = await call('admin', `/api/admin/class/status-export?attRange=month&today=${today}`);
+    const mRes = await call('admin', `/api/admin/class/status-export?attRange=month&today=${today}&format=csv`);
     const mm = parseCsv(mRes.text);
     assert(mRes.status === 200 && mm.rows.length === rows.length, '本月导出同样 200 且行数一致', mm.rows.length);
     const mRow = mm.rows.find((r) => r[1] === CLS);
     assert(!!mRow && mRow[0].startsWith(`${monthFirst} ~`), '本月日期区间从 1 号起', mRow && mRow[0]);
 
+    // ---- 5b) XLSX / JSON 预览（用户 2026-11-20 真机「CSV 本机无法打开、转发也失败」）----
+    // 微信 wx.openDocument 不支持 csv，导出必须给真 Excel；同时 json 预览让用户在生成文件前
+    // 看到表格长什么样。两种格式必须与 CSV **同一份数据**（同一 builder），不能各自重算。
+    console.log('\n[5] XLSX / JSON 预览');
+    {
+      const x = await call('admin', `/api/admin/class/status-export?attRange=week&today=${today}&format=xlsx`);
+      assert(x.status === 200, 'xlsx 导出 → 200', x.status);
+      assert(/spreadsheetml/.test(x.headers.get('content-type') || ''), 'xlsx Content-Type 是 spreadsheetml', x.headers.get('content-type'));
+      assert(/class-status-\d{4}-\d{2}-\d{2}\.xlsx/.test(x.headers.get('content-disposition') || ''), 'xlsx 附件名 .xlsx', x.headers.get('content-disposition'));
+      assert(x.bytes[0] === 0x50 && x.bytes[1] === 0x4b, 'xlsx 是合法 zip（PK 头）', [...x.bytes.slice(0, 2)]);
+      const wb = XLSX.read(x.bytes, { type: 'buffer' });
+      assert(wb.SheetNames.join(',') === '班级状态,字段说明', 'xlsx 两个 sheet：班级状态 + 字段说明', wb.SheetNames);
+      const sheetRows = XLSX.utils.sheet_to_json(wb.Sheets['班级状态'], { header: 1 });
+      assert(String(sheetRows[0] && sheetRows[0][0]) === '班级状态考勤表', 'xlsx 第 1 行是标题', sheetRows[0]);
+      assert(/统计区间：/.test(String((sheetRows[1] || [])[0])) && /导出时间/.test(String((sheetRows[1] || [])[0])), 'xlsx 第 2 行是区间/筛选/班数/导出时间', (sheetRows[1] || [])[0]);
+      // 表头与 CSV 逐字一致（同一份 exportColumns）
+      const xHead = sheetRows[3] || [];
+      assert(JSON.stringify(xHead) === JSON.stringify(wantHeader), 'xlsx 表头与 CSV 逐字一致（18 列）', xHead);
+      const xRow = sheetRows.find((r) => r[1] === CLS);
+      assert(!!xRow, 'xlsx 含临时班数据行', sheetRows.length);
+      if (xRow) {
+        assert(xRow[0] === `${MON} ~ ${dates.addDays(MON, 6)}`, 'xlsx 日期区间与 CSV 一致（完整周）', xRow[0]);
+        assert(String(xRow[6]) === EXP_SCORE, `xlsx 班超分 = ${EXP_SCORE}（与 CSV/看板同一口径）`, xRow[6]);
+        // 模块列顺序：[8]早操 [9]早八 [10]晚自习 [11]查宿
+        assert(String(xRow[10]) === '应到30/实到27/率90%', 'xlsx 晚自习列 = 应到30/实到27/率90%', xRow[10]);
+        assert(String(xRow[12]).includes('卫生-宿舍 -0.40') && String(xRow[12]).includes('晚自习-教室 -0.20'), 'xlsx 扣分明细含具体考察项（卫生-宿舍 / 晚自习-教室）', xRow[12]);
+        assert(String(xRow[17]) === '1500', 'xlsx 当日人均步数与 CSV 一致', xRow[17]);
+      }
+      const tailText = sheetRows.map((r) => String((r || [])[0] || '')).join('\n');
+      assert(/考勤计算规则/.test(tailText), 'xlsx 表尾带考勤计算规则', tailText.slice(-120));
+      assert(/班超分 = 10 − 日均扣分/.test(tailText), 'xlsx 表尾带口径说明', tailText.slice(-160));
+      assert((wb.Sheets['班级状态']['!merges'] || []).length >= 3, 'xlsx 标题/副标题/说明做了合并单元格', (wb.Sheets['班级状态']['!merges'] || []).length);
+      const dict = XLSX.utils.sheet_to_json(wb.Sheets['字段说明'], { header: 1 }).map((r) => String((r || [])[0] || ''));
+      assert(dict.includes('班超分') && dict.includes('扣分明细') && dict.includes('筛选'), '字段说明 sheet 覆盖关键列与筛选口径', dict.slice(0, 6));
+
+      // json 预览：列定义 + 前 N 行 + total；与 CSV 同源（筛选到临时班只剩 1 行）
+      const j = await call('admin', `/api/admin/class/status-export?attRange=week&today=${today}&format=json&preview=1&limit=2&keyword=${encodeURIComponent(CLS)}`);
+      const jd = (j.json && j.json.data) || {};
+      assert(j.status === 200 && jd.preview === true, 'json 预览 → 200 + preview=true', j.status);
+      assert(Array.isArray(jd.columns) && jd.columns.length === wantHeader.length && jd.columns[0].title === '日期区间', 'json 列定义 18 列且首列日期区间', jd.columns && jd.columns.length);
+      assert(Array.isArray(jd.rows) && jd.rows.length === 1 && jd.total === 1, 'json 预览按筛选只回 1 行（total=1）', [jd.rows && jd.rows.length, jd.total]);
+      assert(jd.rows && jd.rows[0][1] === CLS && String(jd.rows[0][6]) === EXP_SCORE, 'json 预览行与 CSV/xlsx 同一份数据', jd.rows && jd.rows[0] && jd.rows[0].slice(0, 8));
+      assert(jd.columns.every((c) => typeof c.wch === 'number'), 'json 每列带 Excel 字符宽（前端预览按它折算列宽）', jd.columns.slice(0, 2));
+      assert(/统计区间：/.test(jd.subtitle || '') && /导出时间/.test(jd.subtitle || ''), 'json 副标题含区间/导出时间（预览弹层标题用）', jd.subtitle);
+
+      // 缺省 format 仍是 CSV（旧客户端/脚本行为不变）
+      const def = await call('admin', `/api/admin/class/status-export?attRange=week&today=${today}`);
+      assert(/text\/csv/.test(def.headers.get('content-type') || ''), '不传 format 默认仍是 CSV（向后兼容）', def.headers.get('content-type'));
+    }
+
     // ---- 6) 权限与只读 ----
-    console.log('\n[5] 权限与只读');
-    const noperm = await call('noperm', `/api/admin/class/status-export?attRange=week&today=${today}`);
+    console.log('\n[6] 权限与只读');
+    const noperm = await call('noperm', `/api/admin/class/status-export?attRange=week&today=${today}&format=csv`);
     assert(noperm.status === 403, '无 class.view → 403', noperm.status);
-    const anon = await call('anon', `/api/admin/class/status-export?attRange=week&today=${today}`);
+    const anon = await call('anon', `/api/admin/class/status-export?attRange=week&today=${today}&format=csv`);
     assert(anon.status === 401, '未登录 → 401', anon.status);
     const cnt = await CheckRecord.countDocuments({ className: CLS });
     assert(cnt === 2, '导出是只读的（记录数仍为 2）', cnt);
@@ -343,7 +394,7 @@ function parseCsv(text) {
       records: await CheckRecord.countDocuments({ className: CLS }),
       runs: await RunRecord.countDocuments({ openid: { $in: openids } }),
     };
-    console.log(`\n[6] 清理：残留 用户 ${left.users} / 班级配置 ${left.profiles} / 检查记录 ${left.records} / 跑步记录 ${left.runs}`);
+    console.log(`\n[7] 清理：残留 用户 ${left.users} / 班级配置 ${left.profiles} / 检查记录 ${left.records} / 跑步记录 ${left.runs}`);
     assert(Object.values(left).every((n) => n === 0), '临时数据清理干净', left);
     await mongoose.disconnect();
     console.log(failed ? `\n${failed} 项失败` : '\n全部通过');

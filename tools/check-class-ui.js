@@ -178,7 +178,7 @@ ok(
   /avgSteps: run\.studentCount \? Math\.round\(\(run\.stepsToday \|\| 0\) \/ run\.studentCount\) : 0/.test(boardSrc)
 );
 
-console.log('\n=== 四、服务端：考勤表导出 CSV（需求 4）===');
+console.log('\n=== 四、服务端：考勤表导出（xlsx/csv/json，需求 4）===');
 ok('新增 GET /status-export', /router\.get\(\s*\n\s*'\/status-export'/.test(adminClsSrc));
 ok(
   '看板与导出共用 boardQuery（取参唯一，杜绝「页面 12 个班、导出 15 个班」）',
@@ -186,16 +186,36 @@ ok(
   countOf(adminClsSrc, /boardQuery\(req\)/g)
 );
 {
-  // 导出段内禁止自己聚合/查库：数字必须来自 classStatusBoard + applyBoardFilter 的同一份行数据
-  const at = adminClsSrc.indexOf("'/status-export'");
-  const seg = adminClsSrc.slice(at, at + 5000);
+  // 导出段 = 从「班级状态导出」注释到 module.exports 之前（helper 在路由之前，必须整段看）
+  const exportStart = adminClsSrc.indexOf('// ===== 班级状态导出');
+  const exportEnd = adminClsSrc.indexOf('module.exports = router');
+  const seg = adminClsSrc.slice(exportStart, exportEnd);
+  ok('导出段定位成功（整段包含 columns/CSV/xlsx/JSON 四个 helper）', exportStart > 0 && exportEnd > exportStart);
   ok('导出只读：不重做聚合、不直接查 check_records（只有看板服务一份口径）', !/\.aggregate\(|CheckRecord\./.test(seg), seg.slice(0, 200));
   ok('导出复用 applyBoardFilter（筛选与页面同源）', /board\.applyBoardFilter\(full, q\.filter\)/.test(seg));
+  ok('三种格式白名单：xlsx / csv / json（缺省 csv 保持旧客户端行为）', /EXPORT_FORMATS = \['xlsx', 'csv', 'json'\]/.test(seg) && /: 'csv'; \/\/ 缺省 csv/.test(seg));
   ok(
-    'CSV：BOM + text/csv + attachment 附件名',
+    'CSV：BOM + text/csv + attachment 附件名（旧格式逐字保留）',
     /\\uFEFF/.test(seg) && /text\/csv; charset=utf-8/.test(seg) && /Content-Disposition.*attachment/.test(seg) && /class-status-\$\{safeDay\}\.csv/.test(seg)
   );
-  ok('导出行数上限 500', /\.slice\(0, 500\)/.test(seg));
+  ok(
+    'XLSX：用 xlsx 库写 zip + 正确 MIME + .xlsx 附件名（微信可预览，CSV 不行）',
+    /require\('xlsx'\)/.test(seg) &&
+      /XLSX\.write\(wb, \{ type: 'buffer', bookType: 'xlsx' \}\)/.test(seg) &&
+      /spreadsheetml\.sheet/.test(seg) &&
+      /class-status-\$\{safeDay\}\.xlsx/.test(seg)
+  );
+  ok(
+    'XLSX 版式：标题/副标题/表头/数据/考勤规则/口径说明 + 字段说明 sheet + 列宽 + 合并',
+    /meta\.title/.test(seg) &&
+      /meta\.subtitle/.test(seg) &&
+      /考勤计算规则/.test(seg) &&
+      /'字段说明'/.test(seg) &&
+      /!cols/.test(seg) &&
+      /!merges/.test(seg)
+  );
+  ok('JSON 预览：列定义 + 前 N 行 + total（生成文件前先看表格长什么样）', /format === 'json'/.test(seg) && /const preview = \['1', 'true', 'yes'\]/.test(seg) && /total: payload\.tableRows\.length/.test(seg));
+  ok('导出行数上限 500（三种格式共用同一份行数据）', /\.slice\(0, 500\)/.test(seg));
   ok(
     '导出表头含校园跑列（今日/本周达标人数、达标率、当日人均步数）',
     /'今日达标人数'/.test(seg) && /'本周达标人数'/.test(seg) && /'当日人均步数'/.test(seg)
@@ -337,8 +357,41 @@ ok(
   );
 }
 ok(
-  '下载走 utils/request.downloadAndOpen → /api/admin/class/status-export',
-  /auth\.downloadAndOpen\('\/api\/admin\/class\/status-export'/.test(csJs)
+  '下载走 utils/request.downloadAndOpen → /api/admin/class/status-export（**xlsx**，不是 csv）',
+  /auth\.downloadAndOpen\('\/api\/admin\/class\/status-export'/.test(csJs) &&
+    /fileType: 'xlsx'/.test(csJs) &&
+    /format: 'xlsx'/.test(csJs) &&
+    // 微信 wx.openDocument 不支持 csv：页面里不允许再出现 fileType: 'csv' 这条死路
+    !/fileType: 'csv'/.test(csJs)
+);
+// 第三轮（用户真机「CSV 本机无法打开、转发也失败」）：导出前先预览表格样式
+{
+  const body = fnBody(csJs, 'openExportPreview(rangeKey) {');
+  ok(
+    '导出前先拉「预览数据」：format=json + preview=1 + limit 小样本（预览=最终文件同一实现）',
+    /format: 'json'/.test(body) && /preview: '1'/.test(body) && /limit: 5/.test(body),
+    body.slice(0, 240)
+  );
+  ok(
+    '预览列宽按 Excel 字符宽折算 + 行转成 {key,cells}（WXML 零运算、可直接 wx:for）',
+    /previewCols/.test(body) && /wch/.test(body) && /cells:/.test(body)
+  );
+}
+ok(
+  '预览弹层：标题/区间标签/副标题/表格/总行数提示/生成 Excel 按钮齐全',
+  /cs-prev-mask/.test(csWxml) &&
+    /cs-prev-title/.test(csWxml) &&
+    /previewCols/.test(csWxml) &&
+    /previewRows/.test(csWxml) &&
+    /previewMoreText/.test(csWxml) &&
+    /bind:tap="confirmExport"|catch:tap="confirmExport"/.test(csWxml) &&
+    /catch:tap="closeExportPreview"/.test(csWxml)
+);
+ok(
+  '预览失败/导出失败都有文案，且导出失败给「复制表格文本」兜底（这是用户真正能发进群的东西）',
+  /title: '预览失败'/.test(csJs) &&
+    /showExportFailure\(e\)/.test(csJs) &&
+    /confirmText: canCopy \? '复制文本' : '知道了'/.test(csJs)
 );
 ok(
   '失败文案分档：登录过期 / 无权限 / 网络 / 保存 / 打开',

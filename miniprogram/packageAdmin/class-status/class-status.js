@@ -260,6 +260,21 @@ Page({
     // 导出（2026-11-20）：exporting 同时用于禁用重复点击与按钮文案（导出中）
     exporting: false,
     exportLabel: '导出',
+    // ===== 导出预览（2026-11-20 第三轮）=====
+    // 用户真机报「CSV 本机无法打开、转发也失败」：微信 wx.openDocument **不支持 csv**，
+    // 所以改成生成真正的 Excel(.xlsx)；并且在**生成文件之前**先给一张表格预览，
+    // 让用户知道这张表长什么样（列、示例行、总行数、区间），再决定导出。
+    // 预览数据直接取服务端同一条导出链路的 `format=json&preview=1`，保证预览=最终文件。
+    previewVisible: false,
+    previewLoading: false,
+    previewTitle: '',
+    previewSubtitle: '',
+    previewNote: '',
+    previewCols: [], // [{ key, title, style }]
+    previewRows: [], // [{ key, cells: [{ key, v, style }] }]
+    previewMoreText: '',
+    previewRangeKey: 'week',
+    previewRangeLabel: '',
   },
 
   onLoad() {
@@ -877,9 +892,13 @@ Page({
     });
   },
 
-  // ===== 导出考勤表（用户 2026-11-20「本周/本月考勤表可导出」）=====
-  // 导出的 CSV 由服务端按**与看板完全一致的筛选参数**生成（attRange 用用户刚选的窗口），
-  // 所以「屏幕上的筛选口径 = 导出的表」；前端只负责挑窗口、传参、给反馈。
+  // ===== 导出考勤表（用户 2026-11-20「本周/本月考勤表可导出」；第三轮改 Excel + 先预览）=====
+  // 服务端按**与看板完全一致的筛选参数**生成表格（attRange 用用户刚选的窗口），
+  // 所以「屏幕上的筛选口径 = 导出的表」；前端只负责挑窗口、预览、生成文件与反馈。
+  //
+  // 为什么不再用 CSV：微信 wx.openDocument 不支持 csv，真机上只有「本机无法打开」一个结果，
+  // 降级「发送文件」在部分机型/微信版本也失败（用户 2026-11-20 截图即此）。
+  // 现在导出 **xlsx**：微信可直接预览，右上角还能转发/用其他应用打开。
   onExport() {
     if (this.data.exporting) return;
     if (this.data.loading) {
@@ -895,11 +914,80 @@ Page({
       itemList,
       success: (res) => {
         const picked = list[Number(res.tapIndex) || 0];
-        if (picked) this.exportAttendance(picked.key);
+        // 不直接下载：先拉「预览数据」给用户看表格长什么样（见 openExportPreview）
+        if (picked) this.openExportPreview(picked.key);
       },
       // 用户取消浮动菜单：静默（取消不是失败，弹提示反而像出错了）
       fail: () => {},
     });
+  },
+
+  /**
+   * 打开导出预览（第三轮新增）：取服务端 `format=json&preview=1` 的列定义 + 前 5 行，
+   * 用底部弹层画一张小表格。用户点「生成 Excel」才真正下载，避免「导出失败却不知道表长什么样」。
+   */
+  async openExportPreview(rangeKey) {
+    const key = rangeKey === 'month' ? 'month' : 'week';
+    const label = key === 'month' ? '本月' : '本周';
+    this.setData({ previewLoading: true, previewVisible: true, previewRangeKey: key, previewRangeLabel: label });
+    wx.showLoading({ title: '生成预览…', mask: true });
+    try {
+      const d =
+        (await auth.get('/api/admin/class/status-export', {
+          ...this.buildExportQuery(key),
+          format: 'json',
+          preview: '1',
+          limit: 5,
+        })) || {};
+      // 列宽：服务端给的是 Excel 字符宽（wch），按 1 字符 ≈ 14rpx 折算；下限 96rpx 保证数字列可读。
+      const previewCols = ((d.columns || []) || []).map((c, i) => ({
+        key: `c${i}`,
+        title: String(c.title || ''),
+        style: `width:${Math.max(96, Math.round((Number(c.wch) || 12) * 14))}rpx;`,
+      }));
+      const styleOf = (ci) => (previewCols[ci] ? previewCols[ci].style : '');
+      const previewRows = ((d.rows || []) || []).map((row, ri) => ({
+        key: `r${ri}`,
+        cells: (row || []).map((cell, ci) => ({
+          key: `${ri}-${ci}`,
+          v: cell === null || cell === undefined ? '' : String(cell),
+          style: styleOf(ci),
+        })),
+      }));
+      const total = Number(d.total) || previewRows.length;
+      this.setData({
+        previewLoading: false,
+        previewTitle: d.title || '班级状态考勤表',
+        previewSubtitle: d.subtitle || '',
+        previewNote: d.note || '',
+        previewCols,
+        previewRows,
+        // 截断提示：预览只有前 5 行，导出的是全量（用户要知道「预览≠全表」）
+        previewMoreText: previewRows.length < total ? `预览前 ${previewRows.length} 行 · 导出含全部 ${total} 个班` : `共 ${total} 个班`,
+      });
+    } catch (e) {
+      this.setData({ previewLoading: false, previewVisible: false });
+      wx.showModal({
+        title: '预览失败',
+        content: this.exportErrorText(e),
+        showCancel: false,
+        confirmText: '知道了',
+      });
+    } finally {
+      wx.hideLoading();
+    }
+  },
+
+  closeExportPreview() {
+    this.setData({ previewVisible: false, previewLoading: false });
+  },
+
+  // 预览弹层里点「生成 Excel」：关掉预览并下载 xlsx
+  confirmExport() {
+    if (this.data.previewLoading) return;
+    const key = this.data.previewRangeKey === 'month' ? 'month' : 'week';
+    this.setData({ previewVisible: false });
+    this.exportAttendance(key);
   },
 
   // 导出参数 = 当前已生效的筛选条件原样带上（与看板同一份 buildQuery），
@@ -922,43 +1010,60 @@ Page({
     const label = key === 'month' ? '本月' : '本周';
     this.setData({ exporting: true, exportLabel: '导出中…' });
     // showLoading 带 mask：遮住整页，重复点击根本点不到（setData 的 exporting 是第二道保险）
-    wx.showLoading({ title: '导出中…', mask: true });
+    wx.showLoading({ title: '生成 Excel…', mask: true });
     try {
       const day = (this.data.today || fmt.todayKey() || '').replace(/-/g, '');
-      const fileName = `班级考勤-${label}${day ? `-${day}` : ''}.csv`;
+      const fileName = `班级考勤-${label}${day ? `-${day}` : ''}.xlsx`;
       const res = await auth.downloadAndOpen('/api/admin/class/status-export', {
-        query: this.buildExportQuery(key),
+        query: { ...this.buildExportQuery(key), format: 'xlsx' },
         fileName,
-        fileType: 'csv',
+        fileType: 'xlsx',
       });
       this.setData({ exporting: false, exportLabel: '导出' });
       wx.hideLoading();
-      // via='share' = CSV 本机打不开、已降级成「发送文件」→ 也算成功（用 Excel/WPS 打开）
+      // via='share' = 本机预览器打不开、已降级成「发送文件」→ 也算成功（Excel/WPS 打开）
       if (res && res.via === 'share') {
         wx.showToast({
-          title: '已保存考勤表，发送到文件传输助手后用 Excel/WPS 打开',
+          title: 'Excel 已保存，可发到文件传输助手用 Excel/WPS 打开',
           icon: 'none',
           duration: 3200,
         });
       } else {
-        wx.showToast({ title: `已导出${label}考勤表`, icon: 'none' });
+        wx.showToast({ title: `已生成${label} Excel，右上角可转发/保存`, icon: 'none', duration: 3000 });
       }
     } catch (e) {
       this.setData({ exporting: false, exportLabel: '导出' });
       wx.hideLoading();
-      wx.showModal({ title: '导出失败', content: this.exportErrorText(e), showCancel: false, confirmText: '知道了' });
+      // 打不开/转发失败时给「复制表格文本」这条兜底路（老师真正要的是能发进群的内容）：
+      // 复制走服务端已有的 copyText（与筛选口径同源），不另拼一份。
+      this.showExportFailure(e);
     }
   },
 
-  // 失败文案分档（网络 / 无权限 / 登录过期 / 保存 / 打开降级失败）—— 页面直接展示
+  /** 导出失败的兜底弹窗：确认=复制表格文本（copyText），取消=知道了 */
+  showExportFailure(e) {
+    const canCopy = !!this.data.copyText;
+    wx.showModal({
+      title: '导出失败',
+      content: this.exportErrorText(e) + (canCopy ? '\n可改用「复制表格文本」，直接粘到 Excel/微信里。' : ''),
+      showCancel: true,
+      confirmText: canCopy ? '复制文本' : '知道了',
+      cancelText: '关闭',
+      success: (r) => {
+        if (r.confirm && canCopy) this.copyText();
+      },
+    });
+  },
+
+  // 失败文案分档（网络 / 无权限 / 登录过期 / 保存 / 打开）—— 页面直接展示
   exportErrorText(e) {
     const err = e || {};
     const status = Number(err.statusCode) || 0;
     if (err.code === 401 || status === 401) return '登录已过期，请重新登录后再导出。';
     if (err.code === 403 || status === 403) return '没有导出权限（需要 class.view 班级状态查看权限）。';
-    if (err.stage === 'save') return err.message || '考勤表已下载，但保存到本机失败，请重试。';
+    if (err.stage === 'save') return err.message || 'Excel 已下载，但保存到本机失败，请重试。';
     if (err.stage === 'open') {
-      return err.message || '考勤表已下载，但本机无法打开（CSV 需要 Excel / WPS）。请安装后重试，或转发到电脑打开。';
+      return err.message || 'Excel 已生成，但本机预览器打不开，转发也失败了。可改用「复制表格文本」。';
     }
     if (err.network) return err.message || '网络异常，导出失败。请检查网络后重试。';
     return err.message || '导出失败，请稍后重试。';

@@ -917,17 +917,27 @@
   avgDeduct**（尾差记到扣分最大的真实项 —— 老师拿子项一加就能发现「加起来对不上」）。
   看板专用的 `aggregateTargetsLite`（className×moduleKey×targetType）**另起一次聚合**、与
   `aggregateScoresLite` 共用 `liteMatch`；**不许**把 targetType 塞进主聚合（看板 60 秒被反复刷新）。
-  ④ **导出考勤表**：`GET /api/admin/class/status-export?attRange=week|month&…`（`class.view`，
+  ④ **导出考勤表（第三轮改为 xlsx + 先预览，改这里之前必读）**：
+  `GET /api/admin/class/status-export?attRange=week|month&format=xlsx|csv|json&…`（`class.view`，
   随 `/api/admin/class` 前缀挂载）。取参与筛选**完全复用看板**
   （`boardQuery` + `classStatusBoard` + `applyBoardFilter`），**禁止在导出里重算分数/出勤率/
-  达标率或直接查 check_records**；CSV 带 BOM、`text/csv`、`attachment` 文件名、行上限 500；
+  达标率或直接查 check_records**；三种格式共用同一份 `tableRows`（唯一 builder），行上限 500。
+  ⚠️ **微信 `wx.openDocument` 不支持 csv**（用户 2026-11-20 真机：「文件已下载，但本机无法打开
+  （CSV 需要 Excel/WPS），转发也失败了」）—— 小程序导出**必须给 xlsx**（`format=xlsx`，
+  `fileType:'xlsx'`）；CSV 只保留给旧客户端/脚本（不传 format 时缺省 csv，行为与改造前一致）。
+  xlsx 版式：第 1 行标题、第 2 行「统计区间 ｜ 筛选 ｜ 班数人数 ｜ 导出时间」、第 4 行表头、
+  数据行、表尾考勤规则+口径说明（跨列合并）+「字段说明」sheet；列宽 `!cols`、合并 `!merges`
+  （社区版 SheetJS 不支持字体/底色，**不要把样式当契约**，主次只靠行高与列宽）。
+  `format=json&preview=1&limit=N` 回 `{columns[{title,wch}], rows, total}` 给小程序「导出预览」弹层：
+  **生成文件之前先展示列 + 前 5 行 + 总班数 + 区间**（预览与最终文件同一 builder，预览≠全表必须提示）。
   列含各考勤模块「应到N/实到M/率P%」、扣分明细（targets 文案）、校园跑今日/本周达标与
   当日人均步数（看板行 `run.avgSteps`，学生数 0 给 0 不产生 NaN）。
   ⑤ **小程序下载能力**放在 `utils/request.js::downloadAndOpen`（域名只来自 `env.BASE_URL`、
   token 与 `request()` 同源 `getToken()`）：`wx.downloadFile`（120s）→ `saveFile` 到
   `wx.env.USER_DATA_PATH`（**临时文件会被系统清理**，水印相机的教训）→ `openDocument`；
-  CSV 在部分平台打不开时降级 `wx.shareFileMessage`，**降级成功 = 导出成功**（不能报错，
-  否则用户以为导出坏了）；错误带 `stage`(download/save/open)+statusCode/network，页面按档分文案；
+  xlsx 本机预览器仍打不开时降级 `wx.shareFileMessage`，**降级成功 = 导出成功**（不能报错，
+  否则用户以为导出坏了）；两条都失败时页面弹窗给「**复制表格文本**」兜底（服务端 `copyText`，
+  同一筛选口径，不另拼一份）；错误带 `stage`(download/save/open)+statusCode/network，页面按档分文案；
   导出按钮 `exporting` + showLoading 双保险，菜单里当前窗口排第一并标「（当前）」。
   ⑥ **行 UI 与卡片文案单点预计算**：扣分 chips 由 `buildDeductChips` 生成（同模块最多 2 条、
   整行 3 条、其余 `+N` 纯文本不可点；无 targets 的老服务退回「模块名 -0.40」）；班超分统计区间

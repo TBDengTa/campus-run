@@ -1171,54 +1171,141 @@ const TARGETS = [
 
       // ===== 图片底部布局 + 失败路径（沿用上一轮）=====
 
-      // ===== 用户 2026-11-20：导出本周/本月考勤表（选窗口 → 下载 → 降级分享）=====
+      // ===== 用户 2026-11-20 第三轮：导出改成 Excel(.xlsx) + 生成前先预览 =====
+      //
+      // 用户真机报「CSV 本机无法打开，转发也失败」——微信 wx.openDocument 不支持 csv。
+      // 新链路：选窗口 → 拉 json 预览（列 + 前 5 行 + total）→ 用户确认 → 生成 xlsx。
       const p4 = makePage(def);
       p4.data.attRange = 'month';
       p4.data.loading = false;
       p4.data.today = '2026-11-12';
+      p4.data.copyText = '可复制的表格文本';
       let sheet = null;
       showActionSheetImpl = (o) => {
         sheet = o;
         o.success({ tapIndex: 0 });
       };
-      state.downloads = [];
-      state.downloadResult = { filePath: 'wxfile://usr/x.csv', fileName: 'x.csv', saved: true, via: 'open' };
+      // 预览接口 stub：列/行形态与后端 format=json 一致（18 列）
+      const previewColumns = [
+        { title: '日期区间', wch: 24 },
+        { title: '班级', wch: 30 },
+        { title: '院校', wch: 16 },
+        { title: '系部', wch: 16 },
+        { title: '年级', wch: 8 },
+        { title: '学生数', wch: 8 },
+        { title: '班超分', wch: 9 },
+        { title: '综合出勤率', wch: 11 },
+        { title: '早操', wch: 20 },
+        { title: '早八', wch: 20 },
+        { title: '晚自习', wch: 20 },
+        { title: '查宿', wch: 20 },
+        { title: '扣分明细', wch: 46 },
+        { title: '今日达标人数', wch: 12 },
+        { title: '今日达标率', wch: 11 },
+        { title: '本周达标人数', wch: 12 },
+        { title: '本周达标率', wch: 11 },
+        { title: '当日人均步数', wch: 13 },
+      ];
+      const previewRows = [
+        ['2026-11-01 ~ 2026-11-30', '26级信息安全技术应用', '北校区', '计财系', '2026', 48, '8.72', '92%', '', '', '应到30/实到27/率90%', '应到40/实到38/率95%', '卫生-宿舍 -0.35', 42, '87%', 39, '81%', 1500],
+        ['2026-11-01 ~ 2026-11-30', '25级电气自动化技术', '北校区', '机电建工系', '2025', 52, '9.85', '98%', '', '', '应到28/实到28/率100%', '', '卫生-教室 -0.10', 45, '86%', 40, '76%', 1600],
+      ];
+      let previewParams = null;
+      const pageLoadGet = state.get;
+      state.get = async (url, params) => {
+        if (url === '/api/admin/class/status-export') {
+          previewParams = params;
+          return {
+            title: '班级状态考勤表',
+            subtitle: '统计区间：2026-11-01 ~ 2026-11-30（本月） ｜ 筛选：全校 ｜ 共 43 个班 / 2263 人 ｜ 导出时间：2026-11-20 15:30',
+            note: '班超分 = 10 − 日均扣分（含卫生/查宿等全部检查）。',
+            columns: previewColumns,
+            rows: previewRows,
+            total: 43,
+            preview: true,
+          };
+        }
+        return pageLoadGet(url, params);
+      };
       p4.onExport();
       ok(
         !!sheet && sheet.itemList[0] === '本月考勤表（当前）',
         '导出菜单：当前窗口排第一并标注「（当前）」（选本月时本月在前）',
         sheet && sheet.itemList
       );
-      const flush2 = () => new Promise((r) => setTimeout(r, 0));
-      await flush2();
+      await flush();
+      ok(
+        !!previewParams && previewParams.format === 'json' && previewParams.preview === '1' && previewParams.attRange === 'month',
+        '点导出先拉预览数据（format=json + preview=1 + 当前窗口）',
+        previewParams
+      );
+      ok(p4.data.previewVisible === true && p4.data.previewLoading === false, '预览弹层打开且 loading 收尾', p4.data.previewVisible);
+      ok(p4.data.previewTitle === '班级状态考勤表' && /共 43 个班/.test(p4.data.previewSubtitle), '预览标题/副标题来自服务端（区间/筛选/班数/时间）', p4.data.previewSubtitle);
+      ok(
+        p4.data.previewCols.length === 18 && p4.data.previewRows.length === 2 && p4.data.previewRows[0].cells.length === 18,
+        '预览 18 列 × 前 2 行（cells 在 JS 预计算，模板零运算）',
+        [p4.data.previewCols.length, p4.data.previewRows.length]
+      );
+      ok(
+        p4.data.previewCols[0].style === 'width:336rpx;' && p4.data.previewRows[0].cells[0].style === 'width:336rpx;',
+        '列宽按 Excel 字符宽折算（wch 24 → 336rpx），行单元格复用同一列宽',
+        [p4.data.previewCols[0].style, p4.data.previewRows[0].cells[0].style]
+      );
+      ok(
+        p4.data.previewRows[0].cells[6].v === '8.72' && /预览前 2 行 · 导出含全部 43 个班/.test(p4.data.previewMoreText),
+        '预览内容用服务端行数据 + 明确提示「预览≠全表」',
+        [p4.data.previewRows[0].cells[6], p4.data.previewMoreText]
+      );
+
+      // 确认导出：生成 **xlsx**（不是 csv），参数里带 format=xlsx
+      state.downloads = [];
+      state.downloadResult = { filePath: 'wxfile://usr/x.xlsx', fileName: 'x.xlsx', saved: true, via: 'open' };
+      lastToast = null;
+      p4.data.exporting = false;
+      p4.confirmExport();
+      await flush();
+      ok(p4.data.previewVisible === false, '确认生成后关闭预览弹层', p4.data.previewVisible);
       const dl0 = (state.downloads || [])[0];
       ok(!!dl0 && dl0.url === '/api/admin/class/status-export', '导出真的请求了服务端导出接口', dl0 && dl0.url);
+      ok(
+        !!dl0 && dl0.opts.fileType === 'xlsx' && dl0.opts.query.format === 'xlsx' && /\.xlsx$/.test(dl0.opts.fileName || ''),
+        '生成 Excel：fileType/format/文件名都是 xlsx（微信 openDocument 只认 Office 格式）',
+        dl0 && { fileType: dl0.opts.fileType, format: dl0.opts.query.format, name: dl0.opts.fileName }
+      );
       ok(
         !!dl0 && dl0.opts.query.attRange === 'month' && !('copy' in dl0.opts.query) && dl0.opts.query.today === '2026-11-12',
         '导出参数：换窗口 + 去掉 copy + 带上服务端回显的 today',
         dl0 && dl0.opts.query
       );
-      ok(dl0 && dl0.opts.fileType === 'csv' && /\.csv$/.test(dl0.opts.fileName || ''), '文件名与类型是 CSV', dl0 && dl0.opts.fileName);
       ok(p4.data.exporting === false, '导出完成后复位 exporting', p4.data.exporting);
-      ok(!!lastToast && /已导出本月考勤表/.test(lastToast.title || ''), '成功 toast 说明导出了哪个窗口', lastToast && lastToast.title);
+      ok(!!lastToast && /已生成本月 Excel/.test(lastToast.title || ''), '成功 toast 说明生成了 Excel（可转发/保存）', lastToast && lastToast.title);
 
-      // 降级分享成功 = 导出成功（CSV 在部分平台打不开，不能报错）
+      // 降级分享成功 = 导出成功（本机预览器打不开时降级发送文件，不能报错）
       lastToast = null;
-      state.downloadResult = { filePath: 'wxfile://usr/x.csv', fileName: 'x.csv', saved: true, via: 'share' };
+      state.downloadResult = { filePath: 'wxfile://usr/x.xlsx', fileName: 'x.xlsx', saved: true, via: 'share' };
       await p4.exportAttendance('week');
-      ok(!!lastToast && /Excel\/WPS/.test(lastToast.title || ''), 'via=share 算成功并提示用 Excel/WPS 打开', lastToast && lastToast.title);
+      ok(!!lastToast && /Excel 已保存/.test(lastToast.title || ''), 'via=share 算成功并提示用 Excel/WPS 打开', lastToast && lastToast.title);
 
-      // 失败分档：无权限 / 网络 → 弹窗文案不同（修法不同，不能只说「导出失败」）
+      // 失败分档：无权限 / 网络 / 打不开 → 弹窗文案不同；打不开时给「复制文本」兜底
       lastModal = null;
       state.downloadFail = Object.assign(new Error('没有下载权限'), { code: 403, statusCode: 403 });
       p4.data.exporting = false;
       await p4.exportAttendance('week');
-      ok(!!lastModal && /没有导出权限/.test(lastModal.content || ''), '403 → 「没有导出权限」', lastModal && lastModal.content);
+      ok(
+        !!lastModal && /没有导出权限/.test(lastModal.content || '') && lastModal.confirmText === '复制文本',
+        '403 → 「没有导出权限」且提供「复制文本」兜底',
+        lastModal && lastModal.content
+      );
       lastModal = null;
       state.downloadFail = Object.assign(new Error('网络异常'), { network: true, stage: 'download' });
       p4.data.exporting = false;
       await p4.exportAttendance('week');
       ok(!!lastModal && /网络/.test(lastModal.content || ''), '网络失败 → 提示检查网络', lastModal && lastModal.content);
+      lastModal = null;
+      state.downloadFail = Object.assign(new Error('本机无法预览'), { stage: 'open' });
+      p4.data.exporting = false;
+      await p4.exportAttendance('week');
+      ok(!!lastModal && /复制表格文本/.test(lastModal.content || ''), '打不开（stage=open）→ 明确引导「复制表格文本」', lastModal && lastModal.content);
       // 导出中重复点击不再弹菜单（showLoading 遮罩 + exporting 双保险）
       state.downloadFail = null;
       p4.data.exporting = true;
@@ -1226,6 +1313,17 @@ const TARGETS = [
       p4.onExport();
       ok(sheet === null, '导出中重复点击不弹第二次菜单', !!sheet);
       p4.data.exporting = false;
+      // 预览请求失败：关弹层 + 明确错误文案（不能留一个空白弹层）
+      state.get = async () => {
+        throw Object.assign(new Error('预览炸了'), { code: 500 });
+      };
+      lastModal = null;
+      await p4.openExportPreview('week');
+      ok(
+        p4.data.previewVisible === false && !!lastModal && lastModal.title === '预览失败',
+        '预览请求失败 → 关闭弹层并提示失败（不留空白弹层）',
+        lastModal && lastModal.title
+      );
       // 复位共享桩（后面的 target 也会用到 ActionSheet 默认行为）
       showActionSheetImpl = (o) => o && o.fail && o.fail({ errMsg: 'showActionSheet:fail cancel' });
     },

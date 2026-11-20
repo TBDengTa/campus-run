@@ -240,6 +240,52 @@
 
   <view class="tt-footer" wx:if="{{shown.length && !errorText}}">{{footerText}}</view>
 
+  <!-- ===== 导出预览（2026-11-20 第三轮）=====
+       用户真机报「CSV 本机无法打开、转发也失败」（微信 wx.openDocument 不支持 csv），
+       所以：① 导出格式改成真正的 Excel(.xlsx)，可直接预览/转发；
+             ② 生成文件**之前**先给这张预览——列、前 5 行示例、总班数、统计区间都在这里，
+                用户能先确认「表格长什么样」，再决定生成。
+       预览数据来自服务端同一条导出链路（format=json&preview=1），所以预览 = 最终文件内容。 -->
+  <view class="cs-prev-mask" wx:if="{{previewVisible}}" catch:tap="closeExportPreview"></view>
+  <view class="cs-prev" wx:if="{{previewVisible}}">
+    <view class="cs-prev-head">
+      <view class="cs-prev-title-wrap">
+        <text class="cs-prev-title">{{previewTitle}}</text>
+        <text class="cs-prev-tag">{{previewRangeLabel}} · Excel</text>
+      </view>
+      <text class="cs-prev-close" catch:tap="closeExportPreview">关闭</text>
+    </view>
+    <text class="cs-prev-sub" wx:if="{{previewSubtitle}}">{{previewSubtitle}}</text>
+
+    <view class="cs-prev-loading" wx:if="{{previewLoading}}">
+      <t-loading theme="circular" size="32rpx" text="生成预览…" />
+    </view>
+
+    <block wx:else>
+      <scroll-view class="cs-prev-scroll" scroll-x enable-flex>
+        <view class="cs-prev-table">
+          <view class="cs-prev-tr cs-prev-tr-head">
+            <text class="cs-prev-td" wx:for="{{previewCols}}" wx:key="key" style="{{item.style}}">{{item.title}}</text>
+          </view>
+          <view class="cs-prev-tr" wx:for="{{previewRows}}" wx:key="key">
+            <text class="cs-prev-td" wx:for="{{item.cells}}" wx:for-item="cell" wx:key="key" style="{{cell.style}}">{{cell.v}}</text>
+          </view>
+        </view>
+      </scroll-view>
+
+      <view class="cs-prev-tips">
+        <text class="cs-prev-more">{{previewMoreText}}</text>
+        <text class="cs-prev-note" wx:if="{{previewNote}}">{{previewNote}}</text>
+      </view>
+
+      <view class="cs-prev-actions">
+        <view class="cs-prev-btn is-ghost" catch:tap="closeExportPreview">取消</view>
+        <view class="cs-prev-btn is-primary {{exporting ? 'is-busy' : ''}}" catch:tap="confirmExport">{{exporting ? '生成中…' : '生成 Excel'}}</view>
+      </view>
+      <text class="cs-prev-copy" catch:tap="copyText">或：复制表格文本（可直接粘到 Excel / 微信）</text>
+    </block>
+  </view>
+
   <!-- 生成转发图片用的隐藏画布（2026-11-03）：尺寸由 JS 按内容行数设置，
        CSS 只需保证存在且不占版面 —— 移出屏幕而不是 display:none（部分机型
        display:none 的 canvas 2d 拿不到节点） -->

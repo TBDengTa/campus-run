@@ -2752,11 +2752,25 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
     /function boardQuery\(req\)/.test(adminClsSrc2) && (adminClsSrc2.match(/boardQuery\(req\)/g) || []).length >= 2
   );
   {
-    // 导出段内禁止自己聚合/查库：数字必须来自 classStatusBoard + applyBoardFilter 的同一份行数据
-    const at = adminClsSrc2.indexOf("'/status-export'");
-    const seg = adminClsSrc2.slice(at, at + 6000);
+    // 导出段 = 注释起点 → module.exports（helper 在路由之前，必须整段看）
+    const exportStart = adminClsSrc2.indexOf('// ===== 班级状态导出');
+    const exportEnd = adminClsSrc2.indexOf('module.exports = router');
+    const seg = adminClsSrc2.slice(exportStart, exportEnd);
     ok('导出不重算分数/出勤率（无现场聚合、无 CheckRecord 查询）', !/\.aggregate\(|CheckRecord\./.test(seg));
-    ok('导出 CSV 带 BOM + attachment + 行数上限 500', /\\uFEFF/.test(seg) && /attachment/.test(seg) && /\.slice\(0, 500\)/.test(seg));
+    ok('导出段含三种序列化（csv / xlsx / json），共享同一份 tableRows', /sendStatusCsv|sendStatusXlsx|buildStatusXlsx|format === 'json'/.test(seg));
+    ok(
+      '导出默认 csv（旧客户端不带 format 仍拿到原格式）+ xlsx/json 显式可选',
+      /EXPORT_FORMATS = \['xlsx', 'csv', 'json'\]/.test(seg) && /: 'csv';/.test(seg) && /format === 'xlsx'/.test(seg) && /format === 'json'/.test(seg)
+    );
+    ok('CSV 带 BOM + attachment + 行数上限 500（旧格式逐字保留）', /\\uFEFF/.test(seg) && /attachment/.test(seg) && /\.slice\(0, 500\)/.test(seg));
+    ok(
+      'XLSX 用 xlsx 库写缓冲 + 正确 MIME + .xlsx 附件名（微信 openDocument 只认 Office 格式）',
+      /require\('xlsx'\)/.test(seg) &&
+        /bookType: 'xlsx'/.test(seg) &&
+        /spreadsheetml\.sheet/.test(seg) &&
+        /class-status-\$\{safeDay\}\.xlsx/.test(seg)
+    );
+    ok('JSON 预览只回列定义 + 截断行 + total（不把全量行下发到小程序）', /const rows = preview \? payload\.tableRows\.slice\(0, limit\) : payload\.tableRows/.test(seg) && /total: payload\.tableRows\.length/.test(seg));
   }
 
   // ===== 第三轮（用户 2026-11-20）：范围行消失根因 + 合计口径 + 显示驱动复制 =====

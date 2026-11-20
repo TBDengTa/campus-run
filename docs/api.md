@@ -310,23 +310,29 @@
 若筛选在前端、文案在服务端，两者用的是不同行集合，复制出去仍是全量报告；
 ⑤ **次级筛选与显示联动**（2026-11-20 第三轮）：「班超分范围」（本日/本周/本月）与「口径」（日均/合计）只在**显示班超分列**时出现，数据全部来自服务端 `attRange` 窗口与 `deductTotal/dayCount`；本日窗口下合计=日均，前端隐藏口径开关。范围行是否可用由全局 `hasAnyCheck` 决定，**不随筛选行集变化**。
 
-### GET /api/admin/class/status-export（导出考勤表 CSV）
+### GET /api/admin/class/status-export（导出考勤表：xlsx / csv / json 预览）
 
 用户 2026-11-20「班级状态中增加导出考勤表格本周、本月的各班考勤详细信息(包括校园跑)」。
 权限：`class.view`（只读，不写库）。参数与 `status-board` **完全一致**（`attRange=week|month`、
-`today`、院校/系部/年级/档位/关键词等），取参共用 `boardQuery`、筛选共用 `applyBoardFilter`。
+`today`、院校/系部/年级/档位/关键词等），取参共用 `boardQuery`、筛选共用 `applyBoardFilter`，
+三种格式共用同一份 `tableRows`（**导出不在路由里重算任何数字**，与页面同一行数据）。
 
-- 返回 **CSV（UTF-8 BOM，Excel 双击不乱码）**：`Content-Type: text/csv` +
-  `Content-Disposition: attachment; filename="class-status-<today>.csv"`，行数上限 500。
-- 列：日期区间 / 班级 / 院校 / 系部 / 年级 / 学生数 / 班超分 / 综合出勤率 /
+| `format` | 返回 | 用途 |
+|---|---|---|
+| `xlsx`（推荐） | 真 Excel 文件（`application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`，附件名 `class-status-<today>.xlsx`） | 小程序默认。**微信 `wx.openDocument` 不支持 csv**（真机报「本机无法打开/转发失败」），必须给 Office 格式才能直接预览、右上角转发/保存 |
+| `csv`（缺省，向后兼容） | UTF-8 BOM CSV（`text/csv`） | 旧版小程序 / 脚本 / Web 控制台；不传 `format` 时行为与改造前逐字一致 |
+| `json&preview=1&limit=5` | `{ title, subtitle, note, columns[{title,wch}], rows, total, preview }` | 小程序「导出预览」弹层：生成文件**之前**先看列、前 5 行示例、总班数、区间（预览与最终文件同一实现） |
+
+- 列（18 列）：日期区间 / 班级 / 院校 / 系部 / 年级 / 学生数 / 班超分 / 综合出勤率 /
   各考勤模块（单元格「应到N/实到M/率P%」，早八只记迟到故留空）/
   **扣分明细**（`卫生-宿舍 -0.40 · 晚自习 -0.20`，来自 `deductDetail.targets`）/
-  今日达标人数 / 今日达标率 / 本周达标人数 / 本周达标率 / 当日人均步数。
-- **导出不在路由里重算任何数字**：全部来自 `class-status-board` 的同一份行数据，
-  否则 CSV 与页面必然出现两个互相矛盾的数（本仓库反复报障类型）。
+  今日达标人数 / 今日达标率 / 本周达标人数 / 本周达标率 / 当日人均步数。行数上限 500。
+- **xlsx 版式**：第 1 行标题、第 2 行「统计区间 ｜ 筛选 ｜ 班数人数 ｜ 导出时间」、第 4 行表头、
+  数据行（顺序 = 页面行序：年级升序 → 班级名）、表尾「考勤计算规则」+ 口径说明（跨列合并）；
+  另带 **「字段说明」sheet**（每列含义，报表发出去后读的人不用回来问）。
 - 小程序端走 `utils/request.js::downloadAndOpen`：downloadFile → 保存到用户目录 →
-  `openDocument`；CSV 无法直接打开时降级 `shareFileMessage`（用 Excel/WPS 打开），
-  降级成功按导出成功处理。
+  `openDocument(fileType:'xlsx')`；若本机预览器仍打不开则降级 `shareFileMessage`，
+  降级成功按导出成功处理；两条都失败时页面给「复制表格文本」兜底。
 
 ### 班级域（用户端 `/api/class/*`）的日期回看与当日全部检查记录（2026-11-20）
 
