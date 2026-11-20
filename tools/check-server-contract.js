@@ -2670,5 +2670,97 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('前端不再写死「请先完成学生认证」', !/请先完成学生认证/.test(rankJs));
 }
 
+// ===== 我的班级 / 班级状态的日期回看 + 全部检查记录 + 扣分来源 + 导出（用户 2026-11-20）=====
+//
+// 这一轮四个需求都落在「接口契约」上，任何一处接线写错都不会报错，只会静默失效：
+//   · 校园跑日期参数没进查询 → 页面日期换了、数字不动；
+//   · dayRecords 没复用 presentRecord → 卡片缺检查人/照片，或把 details 整份名单拖下来；
+//   · 扣分来源没单点实现 → 页面/导出两处叫法漂移；
+//   · 导出自己重算 → CSV 与看板的数字对不上（本仓库最反复的报障类型）。
+{
+  const routeClassSrc = readSrc(path.join(SERVER, 'routes/class.js'), 'utf8');
+  ok(
+    '校园跑三个出口共用 queryDate 取参（白名单 + 回落今天）',
+    /function queryDate\(req\)/.test(routeClassSrc) &&
+      (routeClassSrc.match(/loadClassStats\(scope\.className, queryDate\(req\)\)/g) || []).length === 3
+  );
+  ok(
+    'loadClassStats 的「今日」由第二参决定，周起点同步取该日所在 ISO 周',
+    /async function loadClassStats\(className, dateKey\)/.test(routeClassSrc) &&
+      /const today = dates\.isValidDateKey\(String\(dateKey \|\| ''\)\) \? String\(dateKey\) : dates\.todayKey\(\);/.test(routeClassSrc) &&
+      /dates\.weekRange\(today\)/.test(routeClassSrc)
+  );
+
+  const unionSrc2 = readSrc(path.join(SERVER, 'routes/union.js'), 'utf8');
+  ok(
+    '班超全景下发 dayRecords / dayRecordsTotal / dayRecordsRange（所选区间全部记录）',
+    /dayRecords: dayRows\.map\(presentRow\)/.test(unionSrc2) &&
+      /dayRecordsTotal,/.test(unionSrc2) &&
+      /dayRecordsRange: \{ from: scopeRange\.from, to: scopeRange\.to \}/.test(unionSrc2)
+  );
+  ok(
+    'dayRecords 与 recent 共用同一份 presentRecord 映射（photoLimit 3 + roster）',
+    /const presentRow = \(r\) => \(\{/.test(unionSrc2) &&
+      /presentRecord\(r, \{ withDetails: false, viewer, photoLimit: 3 \}\)/.test(unionSrc2) &&
+      /recent: recent\.map\(presentRow\)/.test(unionSrc2)
+  );
+  ok(
+    'dayRecords 单次上限 50、总数用 countDocuments（前端显示「共 N 条」）',
+    /\.limit\(50\)\.lean\(\)/.test(unionSrc2) && /CheckRecord\.countDocuments\(dayMatch\)/.test(unionSrc2)
+  );
+
+  const bandSrc2 = readSrc(path.join(SERVER, 'services/band-chao.js'), 'utf8');
+  ok(
+    '受检类型中文名（班级/教室/宿舍/卫生区）只有 band-chao 一份且已导出',
+    /const TARGET_TYPE_TEXT = \{/.test(bandSrc2) &&
+      /classroom: '教室'/.test(bandSrc2) &&
+      /dorm_room: '宿舍'/.test(bandSrc2) &&
+      /area: '卫生区'/.test(bandSrc2) &&
+      /TARGET_TYPE_TEXT,/.test(bandSrc2)
+  );
+  ok(
+    'targets 上限 3 项 + 「其他」折叠、Σ 与模块日均扣分调平（能对上账）',
+    /list\.slice\(0, 3\)/.test(bandSrc2) &&
+      /-其他`/.test(bandSrc2) &&
+      /const diff = round2\(moduleAvgDeduct - sum\)/.test(bandSrc2)
+  );
+  ok(
+    '看板「模块×受检类型」聚合另起一次，且与主聚合共用 liteMatch（口径不分叉）',
+    /async function aggregateTargetsLite\(/.test(bandSrc2) &&
+      (bandSrc2.match(/const match = liteMatch\(\{ from, to, classNames \}\);/g) || []).length === 2
+  );
+
+  const boardSrc2 = readSrc(path.join(SERVER, 'services/class-status-board.js'), 'utf8');
+  ok(
+    '看板行 attendance.deductDetail 透传 targets（缺省空数组）',
+    /targets: modDeduct\[k\]\.targets \|\| \[\]/.test(boardSrc2)
+  );
+  ok(
+    '看板行新增校园跑当日人均步数（学生数 0 不产生 NaN）',
+    /avgSteps: run\.studentCount \? Math\.round\(\(run\.stepsToday \|\| 0\) \/ run\.studentCount\) : 0/.test(boardSrc2)
+  );
+
+  const adminClsSrc2 = readSrc(path.join(SERVER, 'routes/admin/class-profile.js'), 'utf8');
+  ok(
+    '导出路由是 GET（只读）且挂在 /api/admin/class 的 class.view 之下',
+    /router\.get\(\s*\n\s*'\/status-export'/.test(adminClsSrc2) &&
+      !/router\.(post|put|delete)\(\s*\n\s*'\/status-export'/.test(adminClsSrc2) &&
+      /router\.use\('\/class', requirePermission\('class\.view'\), require\('\.\/class-profile'\)\)/.test(
+        readSrc(path.join(SERVER, 'routes/admin/index.js'), 'utf8')
+      )
+  );
+  ok(
+    '看板与导出共用同一份取参 boardQuery（筛选口径不许两处各解析一遍）',
+    /function boardQuery\(req\)/.test(adminClsSrc2) && (adminClsSrc2.match(/boardQuery\(req\)/g) || []).length >= 2
+  );
+  {
+    // 导出段内禁止自己聚合/查库：数字必须来自 classStatusBoard + applyBoardFilter 的同一份行数据
+    const at = adminClsSrc2.indexOf("'/status-export'");
+    const seg = adminClsSrc2.slice(at, at + 6000);
+    ok('导出不重算分数/出勤率（无现场聚合、无 CheckRecord 查询）', !/\.aggregate\(|CheckRecord\./.test(seg));
+    ok('导出 CSV 带 BOM + attachment + 行数上限 500', /\\uFEFF/.test(seg) && /attachment/.test(seg) && /\.slice\(0, 500\)/.test(seg));
+  }
+}
+
 console.log(`\n契约自检：${checked} 项，失败 ${failed}`);
 process.exit(failed ? 1 : 0);

@@ -3,10 +3,10 @@
  * 用户 2026-10-30 第二轮「这太难看了」—— 对照截图的具体毛病：
  *   ① 筛选区 4 行且每行一套控件（5 个大圆角 chip 占满一行 + 一排天数 pill + 一行搜索），
  *      视觉上极碎：现在压成紧凑的 4 行「工具条」，每行 40~56rpx 高，字号统一 22~24rpx；
- *   ② 列表表头「日 / 本周 / 考勤」与数据列没对齐（截图里"今日"在列中间）；
- *      列宽按 display 开关动态分配（cs-list-1/2/3），数字列定宽右对齐；
- *   ③ 考勤列永远是「—」。整块考勤控件（含天数选择）在当前无数据时隐藏，
- *      不留一排点了没反应的按钮。
+ *   ② 列表 2026-11-20 再重做一遍：四列表格 → 各班条（班名/系部 + 扣分来源 chips + 班超分大字），
+ *      扣了哪一项（卫生-宿舍、晚自习…）一眼可见；chips 由 JS 预计算，样式只用令牌；
+ *   ③ 班超分统计区间固定显示在列表上方（用户「选择了班超分要有查看日期」）；
+ *      考勤控件仍在无数据时整块隐藏，不留点了没反应的按钮。
  *
  * 配色/间距一律用 app.wxss 的 --tt-* 令牌与 TDesign 色板，不硬编码品牌色。
  */
@@ -213,6 +213,15 @@
 .cs-copy text {
   margin-left: 6rpx;
 }
+/* 导出按钮（2026-11-20）：与「复制 / 图片」同组，但弱一档（浅底 + 品牌深色），
+   避免三个实心橙按钮挤在一起抢视觉；exporting 时置灰（另有 showLoading 遮罩防重复点） */
+.cs-copy-ghost {
+  color: var(--tt-brand-deep);
+  background: var(--tt-brand-soft);
+}
+.cs-copy-ghost.is-busy {
+  opacity: 0.55;
+}
 
 /* 日/周 分段器：决定档位筛选作用在哪一列 */
 .cs-seg {
@@ -300,7 +309,38 @@
   color: var(--tt-text-3);
 }
 
-/* ===== 列表：表格化，行高压到 72rpx ===== */
+/* ===== 班超分统计区间（用户 2026-11-20「选择了班超分要有查看日期」）=====
+   一条独立的信息条：左侧品牌短竖条 + 区间文案，让「班超分是哪段时间的」始终可见。 */
+.cs-period {
+  display: flex;
+  align-items: center;
+  margin: 14rpx 14rpx 0;
+  padding: 10rpx 20rpx;
+  border-radius: 12rpx;
+  font-size: 20rpx;
+  line-height: 1.4;
+  color: var(--tt-text-2);
+  background: var(--tt-card);
+  box-shadow: var(--tt-card-shadow);
+}
+.cs-period::before {
+  content: '';
+  flex: none;
+  width: 6rpx;
+  height: 22rpx;
+  margin-right: 10rpx;
+  border-radius: 6rpx;
+  background: var(--tt-brand);
+}
+.cs-period-t {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ===== 列表（2026-11-20 改成「各班条」：一条 = 班名/系部 + 扣分来源 chips + 右侧班超分）=====
+   旧版是四列表格：班名被挤成一行小字，扣了什么都看不见。
+   新版每条两行：第一行班名 + 弱化的「人数 · 系部」；第二行扣分来源 chips；
+   右侧班超分大字（.num-font）+ 今日/本周达标，一屏能看出「谁扣分、扣在哪」。 */
 .cs-list {
   margin: 12rpx 14rpx 0;
   border-radius: 14rpx;
@@ -308,64 +348,107 @@
   overflow: hidden;
   box-shadow: var(--tt-card-shadow);
 }
-.cs-thead,
-.cs-row {
+.cs-thead {
   display: flex;
   align-items: center;
-  padding: 0 16rpx;
-}
-.cs-thead {
-  height: 44rpx;
+  justify-content: space-between;
+  height: 48rpx;
+  padding: 0 20rpx;
   font-size: 19rpx;
   color: var(--tt-text-3);
   background: var(--tt-bg-page);
 }
+.cs-thead-l {
+  flex: 1;
+  min-width: 0;
+}
+.cs-thead-r {
+  flex: none;
+}
 .cs-row {
-  height: 72rpx;
+  display: flex;
+  align-items: flex-start;
+  gap: 12rpx;
+  padding: 16rpx 20rpx;
   border-top: 1rpx solid var(--tt-line);
 }
-/* 班级名列吃剩余宽度；数值列定宽右对齐（表头与数据行同一套类名，
-   否则数字会错位 —— 这是表格化最容易错的地方） */
-.cs-c1 {
+.cs-row-main {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  gap: 6rpx;
 }
-.cs-cn {
-  flex: none;
-  width: 108rpx;
-  text-align: right;
-}
-/* 只有三列（勾掉考勤）时数值列加宽，避免右侧大片空白 */
-.cs-list-2 .cs-cn {
-  width: 150rpx;
-}
-.cs-list-1 .cs-cn {
-  width: 200rpx;
+.cs-row-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10rpx;
+  min-width: 0;
 }
 .cs-name {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-size: 25rpx;
-  font-weight: 500;
+  font-size: 27rpx;
+  font-weight: 600;
   line-height: 1.25;
   color: var(--tt-text-1);
 }
-/* 副行：人数 · 系部 · 不参跑。只占一行高，不换行（换行会让 43 行的表格看起来歪） */
-.cs-sub {
+/* 学生数 · 系部：次要信息弱化（用户 2026-11-20「系部（次要信息弱化）」） */
+.cs-meta {
+  flex: none;
+  max-width: 52%;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-size: 18rpx;
-  line-height: 1.25;
+  font-size: 19rpx;
   color: var(--tt-text-3);
 }
-.cs-num {
-  font-size: 24rpx;
-  font-weight: 600;
+/* 扣分来源 chips：扁平小标签（不是按钮），换行也不撑破行宽 */
+.cs-dchips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8rpx;
+}
+.cs-dchip {
+  max-width: 100%;
+  padding: 2rpx 10rpx;
+  border-radius: 6rpx;
+  font-size: 19rpx;
+  line-height: 1.5;
+  color: var(--td-error-color-6, #d54941);
+  background: var(--tt-bg-page);
+}
+/* 「+N」只是折叠计数，弱化成灰字（点它没有任何动作，不该看起来可点） */
+.cs-dchip-more {
+  color: var(--tt-text-3);
+}
+/* 无扣分 / 旧服务只有迟到人数时的弱文案 */
+.cs-nodeduct {
+  font-size: 19rpx;
+  line-height: 1.5;
+  color: var(--tt-text-3);
+}
+.cs-row-side {
+  flex: none;
+  min-width: 104rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2rpx;
+}
+/* 班超分大字（.num-font 提供数字字体）；颜色由 cs-lv-* 决定 */
+.cs-score {
+  font-size: 40rpx;
+  font-weight: 700;
+  line-height: 1.1;
+}
+/* 今日/本周达标：颜色同样由 cs-lv-* 决定，这里只管字号行高 */
+.cs-rate {
+  font-size: 19rpx;
+  line-height: 1.35;
 }
 
 /* ===== 加载 / 错误 / 空态 ===== */

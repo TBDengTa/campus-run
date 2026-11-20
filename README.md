@@ -1,14 +1,14 @@
 # 唐唐快跑 · 校园跑小程序 2.0
 
 > 面向高校的校园运动记录与管理平台。微信小程序端（用户端 + 管理端同包）+ Node.js 后端。
-> **当前版本：v2.0.11**
+> **当前版本：v2.0.12**
 
 <p>
   <img alt="platform" src="https://img.shields.io/badge/platform-WeChat%20MiniProgram-07C160">
   <img alt="backend" src="https://img.shields.io/badge/backend-Node.js%20%7C%20Express-339933">
   <img alt="database" src="https://img.shields.io/badge/database-MongoDB-47A248">
   <img alt="ui" src="https://img.shields.io/badge/UI-TDesign-0052D9">
-  <img alt="version" src="https://img.shields.io/badge/version-2.0.11-FF6B00">
+  <img alt="version" src="https://img.shields.io/badge/version-2.0.12-FF6B00">
 </p>
 
 ---
@@ -307,6 +307,7 @@ node tools/verify-identity-e2e.js       # 旧令牌 401 自愈、一键登录身
 
 | 版本 | 日期 | 内容 |
 |---|---|---|
+| **v2.0.12** | 2026-11 | 我的班级 / 班级状态 UI 重构与导出：**校园跑支持日期回看**（`/api/class/overview|students|ranking` 接 `?date=`，周起点随所选日取 ISO 周，名单保持今天语义）+ 班超**紧凑排版**与记录卡片重做（检查人 / 复核人 / 实际数据 / 照片预览）+ 班级考勤按**所选区间全部检查记录**分组（`dayRecords`，不下发整份 details）+ 班级状态扣分来源 **targets**（`卫生-宿舍 -0.20 · 晚自习 -0.12`，唯一中文映射、Σ 与模块日均严格对平）+ **导出本周/本月考勤表 CSV**（含校园跑与扣分明细，取参与筛选与看板同源、绝不重算；小程序新增 downloadFile → 用户目录 → openDocument → 降级分享） |
 | **v2.0.11** | 2026-11 | 班级状态与班超同源「一个窗口 + 一份分数」（卫生等全部模块进公式，修掉同一班同一周班超 8.40 / 看板 9.74；日/周/月窗口改为完整周与整月）+ 检查记录筛选与卡片（班级/系部/院校/楼栋真进查询、与身份范围取交集、缺勤名单预览与照片、总管 `*` 通配放行）+ 解封后不再被重复封禁（线索按人/日/来源唯一、解封留痕闸门、自动处置幂等、次日反证）+ 班级考勤「未显示记录」三层修复（summary.modules 摊平、早八无出勤率口径不画 0%、有迟到人数不再当空值灰掉） |
 | **v2.0.9** | 2026-11 | 宿舍「楼名·房号」唯一解析口径（白名单最长前缀优先，修掉洋河校区「女宿女宿…301」叠层污染）+ 房间归属按在住名单实时推导（不再用建房间那一刻的快照，修掉分院范围两向失真/越权）+ 学生会成员列表真按筛选查库（院校/部门/学年/关键词四项进条件 + 分页 + 学年选项不自我引用）+ 样本量两口径（rows 训练上限 vs totalRows 真实数据量，修掉「一直是 20000」）+ 组织归属单点解析与检查录入水印相机 |
 | **v2.0.7** | 2026-11 | 唐跑AI数据模型阶段性自升级：三级阶梯（0 无监督 → 1 影子辅助 → 2 有监督主判，阶段持久化到 `anticheat_model_states`）；有监督逻辑回归（纯 JS 零依赖，分层 K 折交叉验证，按覆盖率剔除老标注缺的新特征）；闸门量化（样本量/类别平衡/AUC 均值与折间波动/精度/影子实测精度），**影子阶段分数封顶在自动封禁线以下、绝不单独封号**；线上精度掉线自动降级；手动锁定后自动评估只写建议；Web 状态台与小程序异常记录页同款阶梯卡片 + 立即评估/手动指定；`goal_config.anticheat.autoUpgrade/autoDemote` 开关 |
@@ -329,5 +330,5 @@ node tools/verify-identity-e2e.js       # 旧令牌 401 自愈、一键登录身
 
 <p align="center">
   由 <b>河北唐博科技有限公司</b> 设计与开发<br>
-  <sub>校园运动记录与管理平台 · v2.0.11</sub>
+  <sub>校园运动记录与管理平台 · v2.0.12</sub>
 </p>

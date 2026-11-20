@@ -542,6 +542,236 @@ function uploadCheckPhoto(filePath, options = {}) {
   });
 }
 
+// ===== 下载并打开文件（管理端「导出考勤表」等，2026-11-20）=====
+//
+// 为什么必须放在本文件：服务器地址只允许来自 config/env.js 的 BASE_URL（AGENTS.md 红线），
+// 页面里不许自己拼域名；token 读法也与 request() 同源（getToken + Bearer）。
+//
+// 完整链路（每一步的失败语义都不同，页面要能分开提示）：
+//   ① wx.downloadFile（带 Authorization）→ 临时文件；
+//   ② getFileSystemManager().saveFile 到 wx.env.USER_DATA_PATH（**临时文件会被系统清理**，
+//      这是水印相机踩过的教训：临时路径「当下能用、过一会儿就没了」）；
+//   ③ wx.openDocument 打开；CSV 在部分平台/机型 openDocument 不支持 →
+//      降级 wx.shareFileMessage（发给文件传输助手，用 Excel/WPS 打开）。
+//      ⚠️ 降级分享成功 = **导出成功**，绝不能当整体失败：那会让用户以为导出坏了。
+//
+// reject 的 Error 带：
+//   · message —— 中文、可直接展示
+//   · stage   —— 'download' / 'save' / 'open'（页面据此分文案）
+//   · statusCode（download 阶段有 HTTP 响应时）、network（wx.downloadFile 网络层失败时）
+const DOWNLOAD_FALLBACK_PREFIX = 'tt-export-';
+const FILE_NAME_ILLEGAL = /[\\/:*?"<>|\r\n\t]/g;
+
+// 文件名 sanitize：去掉路径分隔符与非法字符，不允许出现 .. 之类的路径穿越片段；
+// 没有可用文件名时用时间戳兜底（否则会写到一个空文件名上）。
+function sanitizeFileName(name, ext) {
+  let base = String(name || '')
+    .replace(FILE_NAME_ILLEGAL, '_')
+    .replace(/^[.\s]+|[.\s]+$/g, '');
+  if (!base) base = `${DOWNLOAD_FALLBACK_PREFIX}${Date.now()}`;
+  const fileExt = String(ext || '').replace(/^\./, '').toLowerCase();
+  // 调用方没带扩展名时补上（打开器要靠它认文件类型）
+  if (fileExt && !/\.[a-z0-9]{1,5}$/i.test(base)) base += `.${fileExt}`;
+  return base.slice(0, 120);
+}
+
+// 与服务端地址拼装同源（BASE_URL 来自 config/env.js）；query 逐项编码，空值不传
+function buildDownloadUrl(path, query) {
+  const p = String(path || '');
+  const url = /^https?:\/\//i.test(p) ? p : `${env.BASE_URL || ''}${p}`;
+  const pairs = [];
+  const q = query || {};
+  for (const k of Object.keys(q)) {
+    const v = q[k];
+    if (v === undefined || v === null || v === '') continue;
+    pairs.push(`${encodeURIComponent(k)}=${encodeURIComponent(v)}`);
+  }
+  if (!pairs.length) return url;
+  return `${url}${url.indexOf('?') >= 0 ? '&' : '?'}${pairs.join('&')}`;
+}
+
+function downloadError(message, extra) {
+  const err = new Error(message);
+  err.stage = 'download';
+  if (extra && typeof extra === 'object') Object.assign(err, extra);
+  return err;
+}
+
+// 单次下载（不重登）
+function downloadOnce(url, header) {
+  return new Promise((resolve, reject) => {
+    wx.downloadFile({
+      url,
+      timeout: 120000,
+      header: {
+        Authorization: getToken() ? `Bearer ${getToken()}` : '',
+        ...(header || {}),
+      },
+      success: (res) => {
+        const status = Number(res && res.statusCode) || 0;
+        // 老基础库可能不下发 statusCode（=0），此时有 tempFilePath 就算成功
+        if (res && res.tempFilePath && (!status || (status >= 200 && status < 300))) {
+          resolve(res.tempFilePath);
+          return;
+        }
+        if (status === 401) {
+          reject(downloadError('登录已过期，请重新登录后再试', { statusCode: 401, code: 401 }));
+          return;
+        }
+        if (status === 403) {
+          reject(downloadError('没有下载权限（需要 class.view 班级状态查看权限）', { statusCode: 403, code: 403 }));
+          return;
+        }
+        reject(downloadError(status ? `下载失败（HTTP ${status}），请稍后重试` : '下载失败，请稍后重试', { statusCode: status }));
+      },
+      fail: (e) => {
+        const msg = String((e && e.errMsg) || '');
+        // 少数平台把 4xx 走 fail 通道（errMsg 里带状态码）：不能误报成「网络异常」，
+        // 否则用户看到的是「检查网络」而不是「没有权限」——两种修法完全相反。
+        const m = /(?:^|[^0-9])(401|403)(?:[^0-9]|$)/.exec(msg);
+        const code = m ? Number(m[1]) : 0;
+        if (code === 401) {
+          reject(downloadError('登录已过期，请重新登录后再试', { statusCode: 401, code: 401 }));
+          return;
+        }
+        if (code === 403) {
+          reject(downloadError('没有下载权限（需要 class.view 班级状态查看权限）', { statusCode: 403, code: 403 }));
+          return;
+        }
+        const timeout = /timeout/i.test(msg);
+        reject(
+          downloadError(timeout ? '下载超时，请检查网络后重试' : '网络异常，下载失败，请检查网络后重试', {
+            network: true,
+            cause: e,
+          })
+        );
+      },
+    });
+  });
+}
+
+// 401 与 request() 同语义：静默重登一次再试（用户主动退出过就不再静默重登）
+async function downloadToTemp(url, header) {
+  try {
+    return await downloadOnce(url, header);
+  } catch (e) {
+    if (e.statusCode === 401 && !isLoggedOut()) {
+      try {
+        await login();
+      } catch (err) {
+        throw e;
+      }
+      return downloadOnce(url, header);
+    }
+    throw e;
+  }
+}
+
+// 临时文件 → 用户目录。saveFile 是「移动」，临时路径随即失效；
+// **失败回退临时路径**（当下能打开比让用户重来一遍更实用，临时文件只在被系统清理后才失效）。
+function saveToUserData(tempFilePath, fileName) {
+  return new Promise((resolve) => {
+    const fsm = wx.getFileSystemManager && wx.getFileSystemManager();
+    const dir = (wx.env && wx.env.USER_DATA_PATH) || '';
+    if (!tempFilePath || !fsm || !fsm.saveFile || !dir) {
+      resolve({ filePath: tempFilePath, saved: false });
+      return;
+    }
+    const filePath = `${dir}/${fileName}`;
+    const doSave = () => {
+      fsm.saveFile({
+        tempFilePath,
+        filePath,
+        success: () => resolve({ filePath, saved: true }),
+        fail: () => resolve({ filePath: tempFilePath, saved: false }),
+      });
+    };
+    // 同一区间重复导出时目标文件已存在，saveFile 会直接失败 → 先删旧文件再存
+    if (fsm.unlink) fsm.unlink({ filePath, success: doSave, fail: doSave });
+    else doSave();
+  });
+}
+
+function openError(message, extra) {
+  const err = new Error(message);
+  err.stage = 'open';
+  if (extra && typeof extra === 'object') Object.assign(err, extra);
+  return err;
+}
+
+// 打开 → 打不开就降级「发送文件」；两条都失败才 reject（CSV 不是所有平台都能直接打开）
+function openOrShare(filePath, fileName, fileType) {
+  return new Promise((resolve, reject) => {
+    const share = () => {
+      if (typeof wx.shareFileMessage !== 'function') {
+        reject(
+          openError('文件已下载，但本机无法打开（CSV 需要 Excel / WPS），当前微信版本也不支持「发送文件」', {
+            filePath,
+          })
+        );
+        return;
+      }
+      try {
+        wx.shareFileMessage({
+          filePath,
+          fileName,
+          success: () => resolve({ via: 'share' }),
+          fail: (e) => {
+            reject(
+              openError('文件已下载，但本机无法打开（CSV 需要 Excel / WPS），转发也失败了，请稍后重试', {
+                filePath,
+                cause: e,
+              })
+            );
+          },
+        });
+      } catch (e) {
+        reject(openError('文件已下载，但本机无法打开，请改用 Excel / WPS 查看', { filePath, cause: e }));
+      }
+    };
+    if (typeof wx.openDocument !== 'function') {
+      share();
+      return;
+    }
+    wx.openDocument({
+      filePath,
+      fileType,
+      showMenu: true,
+      success: () => resolve({ via: 'open' }),
+      // CSV 在部分平台 openDocument 直接报「不支持该文件类型」→ 这不是导出失败，
+      // 只是「不能直接打开」，降级成发送文件让用户用 Excel/WPS 打开。
+      fail: () => share(),
+    });
+  });
+}
+
+/**
+ * 下载文件并在本机打开（打不开时降级为「发送文件」）。
+ *
+ * @param {string} path 接口路径（如 '/api/admin/class/status-export'），也可传完整 URL
+ * @param {{query?:Object, fileName?:string, fileType?:string, header?:Object}} [options]
+ * @returns {Promise<{filePath:string, fileName:string, saved:boolean, via:'open'|'share'}>}
+ *   via='share' 表示已降级成「发送文件」（**算成功**，CSV 用 Excel/WPS 打开）
+ */
+async function downloadAndOpen(path, { query, fileName, fileType, header } = {}) {
+  const type = String(fileType || 'csv').replace(/^\./, '').toLowerCase() || 'csv';
+  const name = sanitizeFileName(fileName, type);
+  const url = buildDownloadUrl(path, query);
+  const tempFilePath = await downloadToTemp(url, header);
+  let saved;
+  try {
+    saved = await saveToUserData(tempFilePath, name);
+  } catch (e) {
+    // saveToUserData 自己不会 reject，这里是兜底：文件系统异常时仍要带 stage 给页面
+    const err = new Error('文件已下载，但保存到本机失败，请重试');
+    err.stage = 'save';
+    err.cause = e;
+    throw err;
+  }
+  const opened = await openOrShare(saved.filePath, name, type);
+  return { filePath: saved.filePath, fileName: name, saved: !!saved.saved, via: opened.via };
+}
+
 module.exports = {
   env,
   login,
@@ -555,6 +785,8 @@ module.exports = {
   del,
   uploadFile,
   uploadCheckPhoto,
+  // 下载能力（管理端导出考勤表等，2026-11-20）：页面只传接口路径与参数，域名/token 收敛在本文件
+  downloadAndOpen,
   getToken,
   setAuth,
   getUser,

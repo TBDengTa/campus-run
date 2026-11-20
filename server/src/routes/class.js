@@ -145,6 +145,14 @@ async function loadScopedStudent(user, userId, rawClassName) {
 const escapeRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const round = (n) => Math.round(Number(n) || 0);
 
+// 校园跑回看的日期参数：只认合法日历键（YYYY-MM-DD），非法 / 缺省回落今天。
+// 与 /api/union/class/:className 的 date 参数同口径（白名单校验，不抛 400）：
+// 前端日期选择器给的一定是合法值，回落到今天只是防御脏链接。
+function queryDate(req) {
+  const raw = String((req.query && req.query.date) || '').trim();
+  return dates.isValidDateKey(raw) ? raw : dates.todayKey();
+}
+
 // ISO 周（周一起始）→ { start, end } 日历键；与 admin/users.js::isoWeekRange 同口径
 function isoWeekRange(isoYear, isoWeek) {
   const jan4 = new Date(Date.UTC(isoYear, 0, 4));
@@ -158,14 +166,18 @@ function isoWeekRange(isoYear, isoWeek) {
 }
 
 // ===== 班级数据装载：一次聚合供概况 / 列表 / 榜单共用 =====
-
-async function loadClassStats(className) {
+//
+// 「今日」不再是硬编码的 dates.todayKey()：校园跑 tab 支持回看历史日期
+// （用户 2026-11-20「我的班级中校园跑要跟班超联赛中同样拥有日期选择」）。
+// 传了合法日历键就把它当作「今日」，周起点随之取该日所在 ISO 周周一；
+// 缺省 / 非法值一律回落真实今天 —— 前端不传参数时行为与改前逐字一致。
+async function loadClassStats(className, dateKey) {
   const students = await User.find({ className, role: { $ne: 'teacher' } })
     .select(STUDENT_FIELDS)
     .limit(MAX_STUDENTS)
     .lean();
   const openids = students.map((s) => s.openid).filter(Boolean);
-  const today = dates.todayKey();
+  const today = dates.isValidDateKey(String(dateKey || '')) ? String(dateKey) : dates.todayKey();
   const { startKey: weekStart } = dates.weekRange(today);
 
   // 跑分配置（可选）：与其它查询并行走，关闭/服务缺失时不展示跑分
@@ -801,7 +813,7 @@ router.get(
   '/overview',
   wrap(async (req, res) => {
     const scope = resolveScope(req.user, req.query.className);
-    const stats = await loadClassStats(scope.className);
+    const stats = await loadClassStats(scope.className, queryDate(req));
     const classRank = await globalClassRank(scope.className, stats.weekStart, stats.today);
     ok(res, {
       className: stats.className,
@@ -824,7 +836,7 @@ router.get(
   wrap(async (req, res) => {
     const scope = resolveScope(req.user, req.query.className);
     const { page, limit, skip } = parsePagination(req.query, { page: 1, limit: 20 });
-    const stats = await loadClassStats(scope.className);
+    const stats = await loadClassStats(scope.className, queryDate(req));
 
     let list = stats.list;
     const keyword = String(req.query.keyword || '').trim();
@@ -899,7 +911,7 @@ router.get(
   '/ranking',
   wrap(async (req, res) => {
     const scope = resolveScope(req.user, req.query.className);
-    const stats = await loadClassStats(scope.className);
+    const stats = await loadClassStats(scope.className, queryDate(req));
     const classRank = await globalClassRank(scope.className, stats.weekStart, stats.today);
 
     // 班委视角排除「不参与排名」的同学（与公开排行榜一致）；班主任仍可看到全部。

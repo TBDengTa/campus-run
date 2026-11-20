@@ -41,6 +41,22 @@ const round1 = (n) => Math.round((Number(n) || 0) * 10) / 10;
 // 就变成「没扣分」—— 百分制时 0.5 分粒度看不出这个问题，刻度换小后必须跟着改。
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
+// ===== 受检类型中文名（**全仓唯一一份**，本文件导出给看板 / 导出 / 复制文案复用）=====
+// check_records.targetType 的取值域见 models/check-record.js（classroom / dorm_room / area / class）。
+// 为什么必须单点：班级状态看板的扣分明细、CSV 导出、复制文案都要拼「卫生-宿舍」这种**具体考察项**，
+// 三处各写一份映射必然漂移（「宿舍」vs「寝室」、「教室」vs「教室区」），
+// 而本轮要消灭的正是这类「两个数字 / 两种叫法互相对不上」的问题。
+const TARGET_TYPE_TEXT = {
+  class: '班级',
+  classroom: '教室',
+  dorm_room: '宿舍',
+  area: '卫生区',
+  // 预留：check_records 目前不落 building，建筑维度一旦落库即可直接显示中文
+  building: '楼栋',
+  // 历史脏数据缺 targetType 的兜底（正常记录必填，理论上不会出现）
+  unknown: '其他',
+};
+
 // 「当月第 N 周」：1-7 为第 1 周，8-14 为第 2 周，最后一周截到月末。
 // 与 ISO 周不同，排名页的周选择要落在同一个月内，避免跨月把两周混在一起。
 // 「10月8日至10月14日」：周选择器要显示日期段（用户要求「第2周(10月8日至10月14日)」）。
@@ -166,6 +182,72 @@ async function aggregateScores({ from, to, className, departmentIds, classNames 
 }
 
 /**
+ * 把「模块 × 受检类型」的聚合行组装成扣分来源子项（targets）。
+ *
+ * 目标（用户 2026-11-20「班级状态看板每行的扣分要能写成『卫生-宿舍 -0.20 · 晚自习 -0.12』」）：
+ * 让老师看到扣分来自哪个模块的**哪类受检对象**，而不是只有一个模块名。
+ *
+ * ⚠️ 硬约束（本仓库反复报障的「两个数字互相矛盾」类问题）：
+ *    `round2(Σ targets.avgDeduct)` **必须严格等于** `moduleDeduct[k].avgDeduct`。
+ *    逐项 round2 后再相加，与整项 round2 可能差 0.01（0.005 的舍入方向不同），
+ *    所以这里把尾差记到**扣分最大的那一项**上 —— 宁可让最大项偏 0.01，
+ *    也不能让「子项加起来 ≠ 模块扣分」被老师当场算出来。
+ *
+ * @param {string} moduleKey 模块 key
+ * @param {string} moduleName 模块短名（与 deductDetail 的模块名同一口径，如「卫生」「晚自习」）
+ * @param {Map<string,{deduct:number,count:number}>|null} byType 该模块按 targetType 的聚合
+ * @param {number} dayCount 有记录天数（与 avgDeduct 同一个分母）
+ * @param {number} moduleAvgDeduct 该模块日均扣分（round2 后的值，硬约束的目标）
+ * @returns {Array<{key:string,name:string,avgDeduct:number,count:number}>}
+ *   按 avgDeduct 降序（并列按 name 稳定排序）；最多 3 项，其余并入一项「<模块名>-其他」。
+ */
+function buildTargetItems(moduleKey, moduleName, byType, dayCount, moduleAvgDeduct) {
+  // 没有受检类型聚合（如 classSummary 走 aggregateScores、或该模块零记录）→ 空数组，
+  // 消费方无需判空（前端/导出把空数组当「没有更细的来源」处理）。
+  if (!byType || !byType.size || !(dayCount > 0)) return [];
+  const list = [];
+  for (const [rawType, hit] of byType) {
+    const type = String(rawType || 'unknown');
+    list.push({
+      // key 带模块前缀：同一 targetType（如宿舍）会出现在多个模块下，不能只用类型做 key
+      key: `${moduleKey}:${type}`,
+      name: `${moduleName}-${TARGET_TYPE_TEXT[type] || TARGET_TYPE_TEXT.unknown}`,
+      // 与模块 avgDeduct 同一个分母（有记录天数），这样各子项之和 ≈ 该模块的日均扣分
+      avgDeduct: round2((hit.deduct || 0) / dayCount),
+      count: hit.count || 0,
+    });
+  }
+  // 按日均扣分降序、并列按中文名稳定排序（前端展示顺序即此顺序，不依赖 Map 插入序）
+  list.sort((a, b) => b.avgDeduct - a.avgDeduct || a.name.localeCompare(b.name, 'zh-CN'));
+  // 最多 3 项：第 4 项起并入「其他」（其余之和 / 其余条数之和）——
+  // 卫生一个模块就有教室 / 宿舍 / 卫生区三类对象，全铺开会挤爆一行扣分明细。
+  // top 保留参与排序的真实项；other 是分组汇总，恒排在最后（不参与下面的调平与重排）。
+  const top = list.slice(0, 3);
+  let other = null;
+  if (list.length > 3) {
+    const rest = list.slice(3);
+    other = {
+      // key 用 `<moduleKey>:other`（不会与真实 targetType 冲突，见 models/check-record.js 的 enum）
+      key: `${moduleKey}:other`,
+      name: `${moduleName}-其他`,
+      avgDeduct: round2(rest.reduce((a, x) => a + x.avgDeduct, 0)),
+      count: rest.reduce((a, x) => a + x.count, 0),
+    };
+  }
+  // 调平尾差（见函数头硬约束）：只允许动**扣分最大的真实项**，
+  // 合计必须与模块日均扣分严格对上（不把尾差塞给「其他」：它只是分组汇总）。
+  const sum = round2(top.concat(other ? [other] : []).reduce((a, x) => a + x.avgDeduct, 0));
+  const diff = round2(moduleAvgDeduct - sum);
+  if (diff !== 0) {
+    top[0].avgDeduct = round2(top[0].avgDeduct + diff);
+    // 调平后最大项可能与第二项互换（0.01 的临界情况）：重排一次，
+    // 保证「按 avgDeduct 降序」这条展示契约不被调平破坏。
+    top.sort((a, b) => b.avgDeduct - a.avgDeduct || a.name.localeCompare(b.name, 'zh-CN'));
+  }
+  return other ? top.concat([other]) : top;
+}
+
+/**
  * 「一个班在某区间的班超分」的**唯一组装实现**
  *（用户 2026-11-19「班级状态日周月考勤不一致，并且卫生、查宿等相关内容没有被减分」）。
  *
@@ -182,7 +264,10 @@ async function aggregateScores({ from, to, className, departmentIds, classNames 
  * ⚠️ 没有记录的班返回 score=null（前端显示「—」），**不是 0 分** ——
  *    0 分是最严重的差评，会被当成真实成绩复制发进工作群。
  *
- * @param {object|undefined} cls aggregateScores() Map 里该班的那一项
+ * @param {object|undefined} cls aggregateScores() / aggregateScoresLite() Map 里该班的那一项；
+ *   若调用方另把「模块 × 受检类型」聚合挂到 `cls.byTarget`
+ *   （形状：Map<moduleKey, {name, byType: Map<targetType, {deduct,count}>}>），
+ *   则 moduleDeduct[k] 会多下发 targets（扣分来源子项，见 buildTargetItems）。
  * @param {Array} [moduleList] 模块定义列表：传了则按它的 key 与顺序输出 moduleDeduct
  *   （classSummary 要用它列出**全部**模块，含没记录的）；
  *   不传则按该班实际有记录的模块输出（班级状态看板用它 —— 那里不想为了一行文案再拉模块字典）。
@@ -195,10 +280,15 @@ function scoreOfAggregate(cls, moduleList) {
     ? moduleList.map((m) => m.key)
     : [...(cls.byModule ? cls.byModule.keys() : [])];
   const dayCount = cls.byDate.size;
+  // 「扣分来源」聚合（模块 × targetType）：由调用方挂到 cls.byTarget 上（可选，老调用方没有）
+  const byTarget = cls.byTarget && typeof cls.byTarget.get === 'function' ? cls.byTarget : null;
   const moduleDeduct = {};
   for (const k of keys) {
     const hit = cls.byModule && cls.byModule.get(k);
     if (!hit) continue;
+    // 该模块的受检类型聚合：模块短名也放在这里（与 deductDetail 的模块名同一份数据，
+    // 不再为了一行文案去拉模块字典 —— 看板每 60 秒被反复刷新）
+    const tmod = byTarget ? byTarget.get(k) : null;
     moduleDeduct[k] = {
       deduct: round2(hit.deduct),
       // 日均扣分（**与区间得分同一个分母 dayCount**）：
@@ -208,6 +298,16 @@ function scoreOfAggregate(cls, moduleList) {
       avgDeduct: round2((hit.deduct || 0) / dayCount),
       score: scoreScale.scoreOf(hit.deduct),
       count: hit.count || 0,
+      // 向后兼容的**增量**字段：扣分来源子项（模块 × 受检类型）。
+      // 没有 target 聚合（如 classSummary 用的 aggregateScores）时给空数组，而不是 undefined。
+      // ⚠️ Σ targets.avgDeduct 必须严格等于上面的 avgDeduct（见 buildTargetItems 的调平）。
+      targets: buildTargetItems(
+        k,
+        (tmod && tmod.name) || k,
+        tmod && tmod.byType,
+        dayCount,
+        round2((hit.deduct || 0) / dayCount)
+      ),
     };
   }
   return {
@@ -217,6 +317,22 @@ function scoreOfAggregate(cls, moduleList) {
     recordCount: cls.recordCount || 0,
     moduleDeduct,
   };
+}
+
+/**
+ * 看板两个轻量聚合（score / targets）共用的 match。
+ *
+ * ⚠️ 必须是**同一份**：两边的 COUNTED 状态集合、voided 过滤、className 范围一旦不同，
+ * 就会出现「主聚合某模块扣 0.20、targets 子项加起来 0.18」这种硬约束被打破的情况。
+ */
+function liteMatch({ from, to, classNames }) {
+  const match = {
+    date: { $gte: from, $lte: to },
+    status: { $in: COUNTED },
+    voided: { $ne: true },
+  };
+  if (Array.isArray(classNames)) match.className = { $in: classNames };
+  return match;
 }
 
 /**
@@ -233,12 +349,7 @@ function scoreOfAggregate(cls, moduleList) {
  *   形状与 aggregateScores() 的返回值**兼容**，可直接喂 scoreOfAggregate()
  */
 async function aggregateScoresLite({ from, to, classNames }) {
-  const match = {
-    date: { $gte: from, $lte: to },
-    status: { $in: COUNTED },
-    voided: { $ne: true },
-  };
-  if (Array.isArray(classNames)) match.className = { $in: classNames };
+  const match = liteMatch({ from, to, classNames });
   const rows = await CheckRecord.aggregate([
     { $match: match },
     {
@@ -269,6 +380,60 @@ async function aggregateScoresLite({ from, to, classNames }) {
     mod.deduct += r.deduct || 0;
     mod.count += r.count || 0;
     cls.byModule.set(mk, mod);
+  }
+  return byClass;
+}
+
+/**
+ * 班级状态看板专用的「模块 × 受检类型」轻量聚合（className × moduleKey × targetType）。
+ *
+ * 为什么**另起一次聚合**、不把 targetType 塞进 aggregateScoresLite 的 `$group`：
+ *   看板要的是「卫生-宿舍扣了 0.20」这种**具体考察项**。把 targetType 加进主聚合的 _id，
+ *   分组行数会翻几倍（每个 className×date×moduleKey 再乘受检类型数），
+ *   而看板每 60 秒被多个老师反复刷新 —— 主聚合必须保持最轻。
+ *   这次聚合只按 className×moduleKey×targetType 分组（**不带 date**，看板只用到「日均」），
+ *   行数上限同样是 MAX_ROWS（与主聚合同一个「单次区间扫描上限」语义）。
+ *
+ * @returns {Promise<Map<string, Map<string, {name: string, byType: Map<string, {deduct:number,count:number}>}>>>}
+ *   className → moduleKey → { name（模块短名，与 deductDetail 同口径）, byType }
+ *   调用方把它挂到主聚合的 cls.byTarget 上，scoreOfAggregate 就会产出 moduleDeduct[k].targets。
+ */
+async function aggregateTargetsLite({ from, to, classNames }) {
+  const match = liteMatch({ from, to, classNames });
+  const rows = await CheckRecord.aggregate([
+    { $match: match },
+    {
+      $group: {
+        _id: { className: '$className', moduleKey: '$moduleKey', targetType: '$targetType' },
+        deduct: { $sum: '$deduct' },
+        count: { $sum: 1 },
+      },
+    },
+    { $limit: MAX_ROWS },
+  ]);
+  // 模块短名（「卫生」而不是「卫生检查」）：与 deductDetail / CSV 导出用同一个口径，
+  // listModules 自带 30 秒缓存，看板这一路不会额外打库。
+  const modules = await checkModules.listModules();
+  const nameOf = new Map(modules.map((m) => [m.key, m.shortName || m.name]));
+  const byClass = new Map();
+  for (const r of rows) {
+    const cn = r._id.className || '未分班';
+    const mk = r._id.moduleKey;
+    let mods = byClass.get(cn);
+    if (!mods) {
+      mods = new Map();
+      byClass.set(cn, mods);
+    }
+    let mod = mods.get(mk);
+    if (!mod) {
+      mod = { name: nameOf.get(mk) || mk, byType: new Map() };
+      mods.set(mk, mod);
+    }
+    const type = String(r._id.targetType || 'unknown');
+    const hit = mod.byType.get(type) || { deduct: 0, count: 0 };
+    hit.deduct += r.deduct || 0;
+    hit.count += r.count || 0;
+    mod.byType.set(type, hit);
   }
   return byClass;
 }
@@ -1084,12 +1249,16 @@ function clearRankCache() {
 
 module.exports = {
   BASE_SCORE,
+  // 受检类型中文名的**唯一一份**：看板扣分明细 / CSV 导出 / 复制文案都从这里取
+  TARGET_TYPE_TEXT,
   classSummary,
   classRanking,
   clearRankCache,
   entryTargets,
   aggregateScores,
   aggregateScoresLite,
+  // 「模块 × 受检类型」轻量聚合：看板把结果挂到 cls.byTarget 上，scoreOfAggregate 产出 targets
+  aggregateTargetsLite,
   scoreOfAggregate,
   metricText,
   rangeOf,

@@ -817,6 +817,127 @@ function assert(cond, label, extra) {
     await board.classStatusBoard({ force: true });
   }
 
+  // ---- [12] 扣分来源细化 targets（用户 2026-11-20「减分要写明考察项」）----
+  //
+  // 需求原文：「班级状态中选择了班超分要有查看日期并且还要给各班中如有减分情况要写
+  //          哪个考察项检查扣分如卫生-宿舍、晚自习这样」。
+  // 实现：band-chao.scoreOfAggregate 给每个模块产出 targets（模块 × 受检类型），
+  // 看板把它透传到 attendance.deductDetail[i].targets。
+  // 这一节既检查「全库不变式」，也**造一个 4 种受检类型的临时班**验证拆分与「其他」折叠
+  //（不造数的话线上卫生类可能只有 dorm_room 一种，超过 3 项的折叠分支永远测不到）。
+  console.log('\n[12] 扣分明细 targets（模块 × 受检类型）');
+  {
+    // 全库不变式：每项 targets 都是数组；Σ targets = 模块日均扣分（必须能对上账）
+    const allDetail = r.rows.flatMap((row) => (row.attendance && row.attendance.deductDetail) || []);
+    assert(allDetail.length > 0, '本周有扣分明细可用于核对', allDetail.length);
+    const notArray = allDetail.filter((d) => !Array.isArray(d.targets));
+    assert(notArray.length === 0, 'deductDetail 每项都带 targets 数组（不是 undefined）', notArray.slice(0, 2));
+    const badSum = allDetail.filter((d) => {
+      const sum = d.targets.reduce((a, t) => a + (Number(t.avgDeduct) || 0), 0);
+      return Math.abs(sum - (Number(d.deduct) || 0)) > 0.011;
+    });
+    assert(badSum.length === 0, 'Σ targets.avgDeduct = 模块日均扣分（全库逐项对账）', badSum.slice(0, 2));
+    const tooMany = allDetail.filter((d) => d.targets.length > 4);
+    assert(tooMany.length === 0, '每个模块最多 4 个子项（前 3 + 「其他」）', tooMany.slice(0, 2));
+    const badName = allDetail.filter((d) => d.targets.some((t) => !t.name.startsWith(`${d.name}-`)));
+    assert(badName.length === 0, '子项名称 = 「模块名-受检类型」（如 卫生-宿舍）', badName.slice(0, 2));
+
+    // 造数：卫生 4 种受检类型 + 晚自习 1 种 → 验证拆分 / 排序 / 折叠 / 中文映射
+    const TS3 = String(Date.now());
+    const CLST = `verify目标_${TS3}班`;
+    await ClassProfile.create({ className: CLST, status: 'normal' });
+    const mkHyg = (type, deduct, i) => ({
+      moduleKey: 'hygiene',
+      date: day,
+      period: '',
+      targetType: type,
+      targetId: `${CLST}_${type}`,
+      targetName: `${CLST}_${type}`,
+      className: CLST,
+      // 用手写的 deduct（独立于被测实现），details 只作展示字段
+      deduct,
+      details: { grade: ['良'], score: 8 },
+      metrics: { values: { score: 8 } },
+      status: 'submitted',
+    });
+    await CheckRecord.insertMany([
+      mkHyg('dorm_room', 0.4, 1),
+      mkHyg('classroom', 0.1, 2),
+      mkHyg('area', 0.05, 3),
+      mkHyg('class', 0.02, 4),
+      {
+        moduleKey: 'study_evening',
+        date: day,
+        period: '',
+        targetType: 'classroom',
+        targetId: CLST,
+        targetName: CLST,
+        className: CLST,
+        deduct: 0.2,
+        details: { shouldCount: 30, actualCount: 27, absentCount: 3 },
+        metrics: { ratios: { rate: 0.9 } },
+        status: 'submitted',
+      },
+    ]);
+    try {
+      const rb = await board.classStatusBoard({ force: true });
+      const rowT = rb.rows.find((x) => x.className === CLST);
+      assert(!!rowT, '临时班出现在看板行里', rb.rows.length);
+      if (rowT) {
+        const detail = rowT.attendance.deductDetail || [];
+        const hyg = detail.find((d) => d.key === 'hygiene');
+        assert(!!hyg && hyg.targets.length === 4, '卫生 4 种受检类型 → 3 项 + 「其他」共 4 项', hyg && hyg.targets);
+        if (hyg) {
+          const names = hyg.targets.map((t) => t.name);
+          // 排序契约：按日均扣分降序（0.4 > 0.1 > 0.05 > 0.02），「其他」恒在最后
+          assert(
+            JSON.stringify(names) === JSON.stringify(['卫生-宿舍', '卫生-教室', '卫生-卫生区', '卫生-其他']),
+            '受检类型中文名与降序（卫生-宿舍/教室/卫生区/其他）',
+            names
+          );
+          const byName = new Map(hyg.targets.map((t) => [t.name, t]));
+          assert(
+            Math.abs(byName.get('卫生-宿舍').avgDeduct - 0.4) < 0.011 &&
+              Math.abs(byName.get('卫生-教室').avgDeduct - 0.1) < 0.011 &&
+              Math.abs(byName.get('卫生-其他').avgDeduct - 0.02) < 0.011,
+            '各子项日均扣分 = 该受检类型的扣分（手写值）',
+            hyg.targets
+          );
+          const sumT = hyg.targets.reduce((a, t) => a + t.avgDeduct, 0);
+          assert(Math.abs(sumT - hyg.deduct) < 0.011, `Σ 子项 = 卫生模块日均扣分（${sumT.toFixed(2)} vs ${hyg.deduct}）`, {
+            sumT,
+            module: hyg.deduct,
+          });
+          assert(
+            hyg.targets.every((t) => t.count === 1),
+            '子项条数 = 该受检类型记录数（各 1 条）',
+            hyg.targets.map((t) => t.count)
+          );
+          assert(hyg.targets.every((t) => t.key.startsWith('hygiene:')), '子项 key 带模块前缀（同类型可跨模块复用）', hyg.targets.map((t) => t.key));
+        }
+        const even = detail.find((d) => d.key === 'study_evening');
+        assert(
+          !!even && even.targets.length === 1 && even.targets[0].name === '晚自习-教室',
+          '晚自习只有一个受检类型时也带 targets（晚自习-教室）',
+          even && even.targets
+        );
+        // 分数仍然可由扣分明细还原：10 − Σ 各模块日均扣分
+        const totalDeduct = detail.reduce((a, d) => a + d.deduct, 0);
+        assert(
+          Math.abs(10 - totalDeduct - rowT.attendance.score) < 0.02,
+          `看板分数 = 10 − Σ 模块日均扣分（${rowT.attendance.score}）`,
+          { score: rowT.attendance.score, totalDeduct }
+        );
+      }
+    } finally {
+      await CheckRecord.deleteMany({ className: CLST });
+      await ClassProfile.deleteOne({ className: CLST });
+      await board.classStatusBoard({ force: true }).catch(() => {});
+      const leftT = await CheckRecord.countDocuments({ className: CLST });
+      assert(leftT === 0, '临时 targets 造数清理干净', leftT);
+    }
+  }
+
   await mongoose.disconnect();
   console.log(failed ? `\n${failed} 项失败` : '\n全部通过');
   process.exit(failed ? 1 : 0);

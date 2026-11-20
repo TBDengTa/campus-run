@@ -895,6 +895,51 @@
   + **有卫生扣分的班分数必须更低**）、[10]（造数含卫生记录，期望值由测试自己手算 deduct）、
   [11]（窗口起止 = 完整周/月）+ `check-server-contract.js` 的「分数/窗口同源」一节。
 
+- **我的班级「班超紧凑 + 当日全部检查记录 + 校园跑日期回看」与班级状态「扣分来源 + 导出」
+  （用户 2026-11-20，改这块前必读）**：五条需求一起做的这一轮，六条硬约束如下。
+  ① **校园跑日期回看**：`GET /api/class/overview|students|ranking` 接受 `?date=YYYY-MM-DD`
+  （`class.js::queryDate(req)` 白名单校验、非法回落今天），`loadClassStats(className, dateKey)`
+  把所选日当「今日」、周起点取该日所在 ISO 周（本周窗口 = 周一..所选日，未来记录不串进来）。
+  前端 `runDate`（默认今天）+ `runToday`（picker 上限**必须恒为今天** —— 用 runDate 当上限
+  选了过去就再也选不回今天）；`onRunDate` 必须**同时**刷新概况与班内榜单；**学生名单 tab 保持
+  今天语义（`/students` 不传 date）**，否则「名单是今天的、达标人数是昨天的」两个口径混一行；
+  回看态禁用督促名单（抽屉走 /students），切班时 `runDate` 重置今天（不串班回看）。
+  ② **班级考勤 = 所选区间全部检查记录**：`GET /api/union/class/:className` 新增 `dayRecords`
+  （按 `scopeRange.from ~ to` + `COUNTED_STATUS` + `voided≠true`，limit 50）、`dayRecordsTotal`
+  （countDocuments，前端显示「共 N 条」）、`dayRecordsRange`；卡片映射**只写一份 `presentRow`**
+  （`presentRecord({withDetails:false, viewer, photoLimit:3}) + moduleName + roster`），
+  `recent` 与 `dayRecords` 共用它；**绝不下发 `details`**（整份名单会撑爆首屏）。
+  前端按模块分组展示，切周期/切班先 `clearBanchaoDayRecords()`（请求失败也不能残留旧区间记录）。
+  ③ **扣分来源 targets（唯一实现）**：`band-chao.js::TARGET_TYPE_TEXT` 是受检类型中文名的
+  **唯一一份**（class/classroom/dorm_room/area），`buildTargetItems` 产出
+  `moduleDeduct[k].targets = [{ key, name: '卫生-宿舍', avgDeduct, count }]`：按日均扣分降序、
+  **每模块最多 3 项 + 其余折「<模块>-其他」**，且 **Σ targets.avgDeduct 必须严格等于模块
+  avgDeduct**（尾差记到扣分最大的真实项 —— 老师拿子项一加就能发现「加起来对不上」）。
+  看板专用的 `aggregateTargetsLite`（className×moduleKey×targetType）**另起一次聚合**、与
+  `aggregateScoresLite` 共用 `liteMatch`；**不许**把 targetType 塞进主聚合（看板 60 秒被反复刷新）。
+  ④ **导出考勤表**：`GET /api/admin/class/status-export?attRange=week|month&…`（`class.view`，
+  随 `/api/admin/class` 前缀挂载）。取参与筛选**完全复用看板**
+  （`boardQuery` + `classStatusBoard` + `applyBoardFilter`），**禁止在导出里重算分数/出勤率/
+  达标率或直接查 check_records**；CSV 带 BOM、`text/csv`、`attachment` 文件名、行上限 500；
+  列含各考勤模块「应到N/实到M/率P%」、扣分明细（targets 文案）、校园跑今日/本周达标与
+  当日人均步数（看板行 `run.avgSteps`，学生数 0 给 0 不产生 NaN）。
+  ⑤ **小程序下载能力**放在 `utils/request.js::downloadAndOpen`（域名只来自 `env.BASE_URL`、
+  token 与 `request()` 同源 `getToken()`）：`wx.downloadFile`（120s）→ `saveFile` 到
+  `wx.env.USER_DATA_PATH`（**临时文件会被系统清理**，水印相机的教训）→ `openDocument`；
+  CSV 在部分平台打不开时降级 `wx.shareFileMessage`，**降级成功 = 导出成功**（不能报错，
+  否则用户以为导出坏了）；错误带 `stage`(download/save/open)+statusCode/network，页面按档分文案；
+  导出按钮 `exporting` + showLoading 双保险，菜单里当前窗口排第一并标「（当前）」。
+  ⑥ **行 UI 与卡片文案单点预计算**：扣分 chips 由 `buildDeductChips` 生成（同模块最多 2 条、
+  整行 3 条、其余 `+N` 纯文本不可点；无 targets 的老服务退回「模块名 -0.40」）；班超分统计区间
+  显示服务端 `from ~ to`（**前端不自算周/月起点**）；记录卡片检查人空→「—」、复核人空→
+  「待复核」、照片 `catch:tap` + `wx.previewImage({urls, current})`（`bind` 会冒泡进详情）。
+  回归：`tools/check-class-ui.js`（静态：五条接线 + WXML/WXSS 类名交叉核对）、
+  `check-server-contract.js` 本轮新增「日期回看 / dayRecords / targets / 导出」一节、
+  `check-page-runtime.js` 的「我的班级 / 班级状态」用例（分组、回看日期、chips、导出降级与
+  失败分档）、`verify-class-date.js`（真连库三日期交叉核对）、`verify-class-export.js`
+  （CSV 逐格对账 + 权限 + 只读）、`verify-class-status.js` [12]（targets 造数折叠与求和）、
+  `verify-union-review.js` [9]（dayRecords 形状 / photoLimit=3 / month 窗口 / 范围闸门）。
+
 - **检查记录筛选与卡片（用户 2026-11-19「有学生会总管的权限查看检查记录没有办法筛选与查看
   所有记录，增加筛选如班级、系部、院校、楼栋」「卡片增加缺勤人的显示、照片显示」）**：
   ① **总裁判必须识别 `*` 通配**（`routes/union.js::hasWildcard`）：超管组有效权限是 `['*']`，

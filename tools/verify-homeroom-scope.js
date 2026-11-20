@@ -175,8 +175,13 @@ const TMP_TAG = `homeroom_verify_${Date.now()}`;
     assert(dormAfter.data.roomText === dormRoomLabel, '宿舍已落库（再读得到同一间）', dormAfter.data.roomText);
 
     // 用户 2026-10-23：「班委有本班的学生宿舍管理权限」——班委现在**可以**改本班宿舍
-    const offDorm = await call('officer', 'PUT', `/api/class/student/${tmp._id}/dorm${q()}`, { roomLabel: '1号楼·999' });
-    assert(offDorm.status === 200, '班委改本班宿舍 → 200（用户 2026-10-23 放开）', offDorm);
+    // ⚠️ 不能写死「1号楼·999」：该房间已被 fix-dorm-room-dup-prefix 停用（enabled:false），
+    //   而 findOrCreateRoom 只复用 enabled≠false 的房间 → 先查不到再新建，撞
+    //   dorm_rooms 的 (buildingId, roomNo) 唯一索引 → 400（2026-11-20 全量跑真实踩到）。
+    //   改用时间戳派生的唯一门号：不撞真实房间，也天然满足唯一约束。
+    const offRoomLabel = `${dormBuilding}·测试${String(Date.now()).slice(-4)}B`;
+    const offDorm = await call('officer', 'PUT', `/api/class/student/${tmp._id}/dorm${q()}`, { roomLabel: offRoomLabel });
+    assert(offDorm.status === 200 && offDorm.data.room === offRoomLabel, '班委改本班宿舍 → 200（用户 2026-10-23 放开）', offDorm);
     // 但跨班仍不行：用别的班名请求
     const offCross = await call(
       'officer',
@@ -372,7 +377,8 @@ const TMP_TAG = `homeroom_verify_${Date.now()}`;
     const DormRoom = require(path.join(serverDir, 'src', 'models', 'dorm-room'));
     const classProfilesSvc = require(path.join(serverDir, 'src', 'services', 'class-profiles'));
     await DormAssignment.deleteMany({ openid: { $regex: `^${TMP_TAG}` } });
-    const roomRe = /^测试\d{4}$/;
+    // 门号尾部的 B 是本轮班委改房自动建的（offRoomLabel），一并清掉（正则放宽一位字母）
+    const roomRe = /^测试\d{4}[A-Z]?$/;
     const rooms = await DormRoom.find({ roomNo: roomRe }).select('_id').lean();
     if (rooms.length) await DormRoom.deleteMany({ _id: { $in: rooms.map((r) => r._id) } });
     try {

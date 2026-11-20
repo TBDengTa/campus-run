@@ -2409,33 +2409,59 @@ router.get(
     const date = dates.isValidDateKey(String(req.query.date || '')) ? String(req.query.date) : dates.todayKey();
     const modules = await checkModules.listModules({ force: true });
 
-    const summary = await bandChao.classSummary({
-      className,
-      date,
-      range,
-      weekStartKey: req.query.weekStart ? String(req.query.weekStart) : '',
-      monthKey: req.query.month ? String(req.query.month) : '',
-      // 周口径与 /ranking 同源（services/band-chao.js::rangeOf 的第 5 个参数）：
-      // 「当月第 N 周」，不传则回落到 ISO 本周 —— 班超页与排名页的周区间必须一致
-      weekNo: req.query.weekNo ? String(req.query.weekNo) : '',
-      modules,
-    });
+    // 所选区间（range=day 时就是所选那一天；week/month 是**完整**周/月）：
+    // 与 classSummary 内部走的是同一个 rangeOf，保证「汇总区间」与「明细区间」逐字一致。
     const scopeRange = bandChao.rangeOf(range, date, req.query.weekStart, req.query.month, req.query.weekNo);
     const deptIds = identity.level === 'school' ? [] : identity.departmentIds;
-    const ranking = await bandChao.classRanking({
-      from: scopeRange.from,
-      to: scopeRange.to,
-      departmentIds: deptIds,
+    // 「所选区间内的全部检查记录」（用户 2026-11-20）：班超门户页不只要最近 10 条，
+    // 还要能看到所选区间的全部模块记录（最多 50 条 + 总数，前端显示「共 N 条」）。
+    // match 与 recent **完全同口径**（COUNTED 状态 + 非 voided），只是把窗口收窄到 scopeRange。
+    const dayMatch = {
       className,
-    });
-    const recent = await CheckRecord.find({ className, voided: { $ne: true }, status: { $in: CheckRecord.COUNTED_STATUS } })
-      .sort({ date: -1, createdAt: -1 })
-      .limit(10)
-      .lean();
+      voided: { $ne: true },
+      status: { $in: CheckRecord.COUNTED_STATUS },
+      date: { $gte: scopeRange.from, $lte: scopeRange.to },
+    };
+    // 一次 Promise.all：汇总 / 排名 / 最近记录 / 区间记录 / 区间计数**并行**，
+    // 不要串行 —— 这个接口同时被首页班超块与班超门户页调用，串行会白白多几个往返。
+    const [summary, ranking, recent, dayRows, dayRecordsTotal] = await Promise.all([
+      bandChao.classSummary({
+        className,
+        date,
+        range,
+        weekStartKey: req.query.weekStart ? String(req.query.weekStart) : '',
+        monthKey: req.query.month ? String(req.query.month) : '',
+        // 周口径与 /ranking 同源（services/band-chao.js::rangeOf 的第 5 个参数）：
+        // 「当月第 N 周」，不传则回落到 ISO 本周 —— 班超页与排名页的周区间必须一致
+        weekNo: req.query.weekNo ? String(req.query.weekNo) : '',
+        modules,
+      }),
+      bandChao.classRanking({
+        from: scopeRange.from,
+        to: scopeRange.to,
+        departmentIds: deptIds,
+        className,
+      }),
+      // recent 保持现状不动：全时间线最近 10 条（**不按**所选区间收窄）
+      CheckRecord.find({ className, voided: { $ne: true }, status: { $in: CheckRecord.COUNTED_STATUS } })
+        .sort({ date: -1, createdAt: -1 })
+        .limit(10)
+        .lean(),
+      CheckRecord.find(dayMatch).sort({ date: -1, createdAt: -1 }).limit(50).lean(),
+      CheckRecord.countDocuments(dayMatch),
+    ]);
     const nameOf = new Map(modules.map((m) => [m.key, m.shortName || m.name]));
     const moduleMap = new Map(modules.map((m) => [m.key, m]));
     // 与 /records：viewer 在 map 外算一次（identity 不随记录变化，避免 N 次 resolve）
     const viewer = { openid: req.user.openid || '', role: req.user.role || '', identity, isSteward: isClassSteward };
+
+    // 卡片映射**只写这一份**：recent 与 dayRecords 同口径（前 3 张照片 + 名单预览 + 模块名），
+    // 另写第二套必然出现「最近记录有照片、当日记录没有」这类静默漂移。
+    const presentRow = (r) => ({
+      ...presentRecord(r, { withDetails: false, viewer, photoLimit: 3 }),
+      moduleName: nameOf.get(r.moduleKey) || r.moduleKey,
+      roster: rosterFor(r, moduleMap.get(r.moduleKey), req, viewer),
+    });
 
     ok(res, {
       className,
@@ -2444,12 +2470,13 @@ router.get(
       ...summary,
       ranking: { rank: ranking.me ? ranking.me.rank : null, total: ranking.total, score: ranking.me ? ranking.me.score : null },
       rankingTop: ranking.top,
-      recent: recent.map((r) => ({
-        // 班超页「最近记录」卡片同口径：前 3 张照片 + 名单预览（用户 2026-11-19）
-        ...presentRecord(r, { withDetails: false, viewer, photoLimit: 3 }),
-        moduleName: nameOf.get(r.moduleKey) || r.moduleKey,
-        roster: rosterFor(r, moduleMap.get(r.moduleKey), req, viewer),
-      })),
+      // 最近记录（全时间线，不随日期/区间筛选变化）：保持原有语义不动
+      recent: recent.map(presentRow),
+      // 所选区间内的**全部**检查记录（最多 50 条；超出部分用 dayRecordsTotal 显示「共 N 条」）
+      dayRecords: dayRows.map(presentRow),
+      dayRecordsTotal,
+      // 明细区间（前端展示「from ~ to」，与服务端实际统计窗口同源，不在前端自己算周/月）
+      dayRecordsRange: { from: scopeRange.from, to: scopeRange.to },
     });
   })
 );

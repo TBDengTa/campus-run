@@ -402,8 +402,16 @@ async function classStatusBoard({ today, attRange, days, force } = {}) {
   //   卫生（扣分最大的那一项，实测某班一周扣 4.00 分）完全不在公式里，
   //   于是「班超 8.40 分、本页 9.74 分」这种两个页面对不上的情况必然出现。
   //   现在分数一律走 bandChao.scoreOfAggregate（班超页用的是同一个函数）。
-  // 与上面的应到加权聚合并行：两次聚合都下推 Mongo，不增加往返。
-  const deductBy = await bandChao.aggregateScoresLite({ from, to: attTo, classNames: activeNames });
+  //
+  // 两次轻量聚合并行下发：
+  //   · aggregateScoresLite  —— className × date × moduleKey（分数的主聚合，保持最轻）
+  //   · aggregateTargetsLite —— className × moduleKey × targetType（扣分来源子项）
+  //     刻意**不**把 targetType 塞进主聚合的 $group：那会让分组行数翻几倍，
+  //     而看板每 60 秒被多个老师反复刷新。两聚合共用 liteMatch，口径逐字一致。
+  const [deductBy, targetBy] = await Promise.all([
+    bandChao.aggregateScoresLite({ from, to: attTo, classNames: activeNames }),
+    bandChao.aggregateTargetsLite({ from, to: attTo, classNames: activeNames }),
+  ]);
   // 模块名（给「卫生 -4.00」这类扣分明细用）：listModules 自带 30 秒缓存
   const allModules = await checkModules.listModules();
   const moduleNameBy = new Map(allModules.map((m) => [m.key, m.shortName || m.name]));
@@ -414,8 +422,12 @@ async function classStatusBoard({ today, attRange, days, force } = {}) {
     const att = attBy.get(p.className) || {};
 
     const modules = {};
-    // 该班的班超扣分聚合（含卫生）：scoreOfAggregate 与班超页同一个函数
-    const agg = bandChao.scoreOfAggregate(deductBy.get(p.className));
+    // 该班的班超扣分聚合（含卫生）：scoreOfAggregate 与班超页同一个函数。
+    // 「扣分来源」挂到聚合结构 cls.byTarget 上（scoreOfAggregate 读它产出 moduleDeduct[k].targets）；
+    // 挂的是本次请求内的一次性对象，不会污染 boardCache（缓存的是组装后的最终结果）。
+    const deductCls = deductBy.get(p.className);
+    if (deductCls && targetBy.has(p.className)) deductCls.byTarget = targetBy.get(p.className);
+    const agg = bandChao.scoreOfAggregate(deductCls);
     const modDeduct = agg.moduleDeduct || {};
     for (const mDef of MODULES) {
       const m = att[mDef.key];
@@ -468,9 +480,18 @@ async function classStatusBoard({ today, attRange, days, force } = {}) {
     // ⚠️ 用的是**日均扣分 avgDeduct**（与分数同一个分母），不是窗口累计 ——
     //   各模块日均扣分之和 ≈ 10 − 分数，老师能当场把账算平；
     //   写成窗口累计就会出现「10 − 10.00 ≠ 8.45」这种自相矛盾（本轮实测差点踩进去）。
+    // 新增 targets（用户 2026-11-20「扣分要能写成『卫生-宿舍 -0.20 · 晚自习 -0.12』」）：
+    //   直接搬 scoreOfAggregate 产出的子项（模块 × 受检类型），**不在这里重算**；
+    //   Σ targets.avgDeduct 已由 band-chao 调平为严格等于本项的 deduct，前端怎么加都对得上。
+    //   没有 targets 时给**空数组**而不是 undefined —— 前端/导出对 undefined 调 .map 会直接报错。
     const deductDetail = Object.keys(modDeduct)
       .filter((k) => modDeduct[k].avgDeduct > 0)
-      .map((k) => ({ key: k, name: moduleNameBy.get(k) || k, deduct: modDeduct[k].avgDeduct }))
+      .map((k) => ({
+        key: k,
+        name: moduleNameBy.get(k) || k,
+        deduct: modDeduct[k].avgDeduct,
+        targets: modDeduct[k].targets || [],
+      }))
       .sort((a, b) => b.deduct - a.deduct || String(a.key).localeCompare(String(b.key)));
 
     return {
@@ -486,6 +507,10 @@ async function classStatusBoard({ today, attRange, days, force } = {}) {
         dailyRate: pct(run.achievedToday, run.studentCount),
         achievedWeek: run.achievedWeek || 0,
         weeklyRate: pct(run.achievedWeek, run.studentCount),
+        // 当日人均步数（用户 2026-11-20 导出 CSV 的「当日人均步数」列）：
+        // 只做「今日步数 ÷ 学生数」，不另算「有效步数 / 达标」口径 —— 那就是第二套算法了。
+        // 空班（studentCount=0）给 0，避免导出出现 NaN / Infinity。
+        avgSteps: run.studentCount ? Math.round((run.stepsToday || 0) / run.studentCount) : 0,
       },
       attendance: {
         modules,

@@ -391,6 +391,58 @@
   color: var(--tt-brand-deep);
 }
 
+/* ===== 校园跑 tab：日期回看（用户 2026-11-20「校园跑要跟班超联赛中同样拥有日期选择」）=====
+   日期胶囊与班超 tab 的周期胶囊同款视觉；回看态右侧出现「回看 10月19日」标签 + 「今天」按钮。 */
+.cls-rundate {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10rpx;
+  margin: 0 var(--tt-gap) 14rpx;
+}
+
+.cls-rundate-chip {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  padding: 10rpx 18rpx;
+  border-radius: 999rpx;
+  font-size: 25rpx;
+  color: var(--tt-text-1);
+  background: var(--tt-card);
+  box-shadow: var(--tt-card-shadow);
+}
+
+.cls-rundate-chip:active {
+  background: var(--tt-brand-soft);
+}
+
+.cls-rundate-date {
+  font-weight: 600;
+}
+
+.cls-rundate-tag {
+  padding: 4rpx 16rpx;
+  border-radius: 999rpx;
+  font-size: 21rpx;
+  color: var(--tt-brand-deep);
+  background: var(--tt-brand-soft);
+}
+
+.cls-rundate-today {
+  margin-left: auto;
+  padding: 8rpx 24rpx;
+  border-radius: 999rpx;
+  font-size: 23rpx;
+  font-weight: 600;
+  color: #ffffff;
+  background: linear-gradient(135deg, #ff9a3d, var(--tt-brand));
+}
+
+.cls-rundate-today:active {
+  opacity: 0.86;
+}
+
 /* ===== 5. 学生运动明细入口 ===== */
 .tt-card.cls-entries {
   padding: 4rpx 22rpx;
@@ -508,10 +560,16 @@
   background: var(--tt-brand-soft);
 }
 
-/* 总评 hero（紧凑：上下内边距收一档，得分与说明左右同行） */
+/* 班超 tab 的 section 间距收一档（用户 2026-11-20「紧凑排版」）：只压留白，字号不动 */
+.cls-page .tt-section.cls-bc-section {
+  margin: 2rpx var(--tt-gap) 10rpx;
+}
+
+/* 总评 hero（紧凑：分数与名次同行，上下内边距收一档） */
 .cls-bc-hero {
-  padding: 26rpx 28rpx 24rpx;
+  padding: 18rpx 24rpx 16rpx;
   border-radius: var(--tt-radius);
+  margin-bottom: 16rpx;
 }
 
 .cls-bc-hero-top {
@@ -522,7 +580,7 @@
 }
 
 .cls-bc-hero-name {
-  font-size: 30rpx;
+  font-size: 28rpx;
   font-weight: 600;
   color: #ffffff;
   max-width: 400rpx;
@@ -537,11 +595,12 @@
   color: rgba(255, 255, 255, 0.9);
 }
 
+/* 分数 + 名次同一行：左边大号分数，右边两行（名次 / 平均说明） */
 .cls-bc-hero-main {
   display: flex;
   align-items: center;
-  gap: 20rpx;
-  margin-top: 14rpx;
+  gap: 18rpx;
+  margin-top: 8rpx;
 }
 
 .cls-bc-hero-score {
@@ -552,89 +611,95 @@
 }
 
 .cls-bc-hero-score-v {
-  font-size: 60rpx;
+  font-size: 52rpx;
   font-weight: 700;
   color: #ffffff;
   line-height: 1;
 }
 
 .cls-bc-hero-score-u {
-  font-size: 24rpx;
+  font-size: 22rpx;
   color: rgba(255, 255, 255, 0.85);
 }
 
 .cls-bc-hero-info {
   display: flex;
   flex-direction: column;
-  gap: 6rpx;
+  gap: 4rpx;
   min-width: 0;
 }
 
 .cls-bc-hero-meta {
-  font-size: 23rpx;
+  font-size: 21rpx;
+  line-height: 28rpx;
   color: rgba(255, 255, 255, 0.85);
 }
 
 .cls-bc-hero-rank {
-  font-size: 23rpx;
+  font-size: 22rpx;
+  line-height: 30rpx;
   font-weight: 500;
   color: rgba(255, 255, 255, 0.95);
 }
 
-/* 检查明细：单行「名 + 部门 ｜ 值 + 说明」 */
-.cls-bc-modules {
-  margin: 0 var(--tt-gap) var(--tt-gap);
-  padding: 6rpx var(--tt-pad);
+/* 检查明细：两列网格（用户 2026-11-20「由竖排改两列网格，行高收紧」）。
+   每个格子 = 模块名 + 得分 / 扣分 / 指标，信息一条不少，只是不再一人一行。 */
+.tt-card.cls-bc-modules {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  padding: 14rpx;
 }
 
 .cls-bc-module {
+  width: calc(50% - 6rpx);
+  box-sizing: border-box;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12rpx;
-  padding: 16rpx 0;
-  border-bottom: 1rpx solid var(--tt-line);
+  flex-direction: column;
+  gap: 2rpx;
+  padding: 12rpx 14rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-bg-page);
 }
 
-.cls-bc-module:last-child {
-  border-bottom: none;
-}
-
-.cls-bc-module-main {
+.cls-bc-module-head {
   display: flex;
   align-items: baseline;
-  gap: 10rpx;
+  justify-content: space-between;
+  gap: 8rpx;
   min-width: 0;
 }
 
 .cls-bc-module-name {
-  font-size: 27rpx;
-  color: var(--tt-text-1);
+  flex: 1;
+  min-width: 0;
+  font-size: 25rpx;
   font-weight: 500;
+  color: var(--tt-text-1);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .cls-bc-module-dept {
-  font-size: 20rpx;
+  font-size: 19rpx;
+  line-height: 26rpx;
   color: var(--tt-text-3);
-}
-
-.cls-bc-module-right {
-  display: flex;
-  align-items: center;
-  gap: 12rpx;
-  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .cls-bc-module-score {
   flex-shrink: 0;
-  font-size: 30rpx;
+  font-size: 26rpx;
   font-weight: 600;
   color: var(--tt-brand);
 }
 
 .cls-bc-module-score.cls-bc-module-missing {
   color: var(--tt-text-3);
-  font-size: 25rpx;
+  font-size: 22rpx;
 }
 
 .cls-bc-module-score.cls-bc-module-warn {
@@ -643,136 +708,291 @@
 
 .cls-bc-module-score.cls-bc-module-skip {
   color: var(--tt-text-3);
-  font-size: 25rpx;
+  font-size: 22rpx;
 }
 
 .cls-bc-module-metric {
-  min-width: 0;
-  font-size: 21rpx;
-  color: var(--tt-text-3);
+  font-size: 20rpx;
+  line-height: 28rpx;
+  color: var(--tt-text-2);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 
-/* 得分趋势 */
-.cls-bc-trend {
-  margin: 0 var(--tt-gap) var(--tt-gap);
-  padding: var(--tt-pad);
-}
-
-.cls-bc-trend-row {
-  display: flex;
-  align-items: center;
-  gap: 16rpx;
-  margin-bottom: 14rpx;
-}
-
-.cls-bc-trend-row:last-child {
-  margin-bottom: 0;
-}
-
-.cls-bc-trend-label {
-  width: 72rpx;
-  font-size: 22rpx;
+.cls-bc-module-deduct {
+  font-size: 19rpx;
+  line-height: 26rpx;
   color: var(--tt-text-3);
 }
 
-.cls-bc-trend-track {
+/* 检查明细为空态：占满整行（两列网格下不能只占半格） */
+.cls-bc-modules .cls-bc-empty {
+  width: 100%;
+}
+
+/* 得分趋势：单行迷你条形（最近 7 天，用户 2026-11-20「压成单行迷你条形」）。
+   每一列 = 分数文案 + 竖向迷你条（高度 = 得分 ÷ 满分）+ 日期。 */
+.cls-bc-trend {
+  padding: 14rpx 18rpx 12rpx;
+}
+
+.cls-bc-trend-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 6rpx;
+}
+
+.cls-bc-trend-col {
   flex: 1;
-  height: 14rpx;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4rpx;
+}
+
+.cls-bc-trend-value {
+  font-size: 20rpx;
+  line-height: 26rpx;
+  color: var(--tt-text-1);
+}
+
+.cls-bc-trend-track {
+  width: 100%;
+  height: 56rpx;
   border-radius: 8rpx;
   background: var(--tt-line);
+  display: flex;
+  align-items: flex-end;
   overflow: hidden;
 }
 
 .cls-bc-trend-fill {
-  height: 100%;
+  width: 100%;
   border-radius: 8rpx;
-  background: var(--tt-brand);
+  background: linear-gradient(180deg, #ff9a3d, var(--tt-brand));
 }
 
-.cls-bc-trend-value {
-  width: 64rpx;
-  text-align: right;
-  font-size: 24rpx;
-  color: var(--tt-text-1);
+.cls-bc-trend-label {
+  font-size: 18rpx;
+  line-height: 24rpx;
+  color: var(--tt-text-3);
+  white-space: nowrap;
 }
 
-/* 最近记录 */
+/* 最近记录 / 班级考勤 · 检查记录：卡片重做（用户 2026-11-20）
+   每条 = 模块名 + 状态 + 扣分 ｜ 受检对象 + 日期 ｜ 检查人 + 复核人 ｜ 实际数据摘要 ｜ 照片缩略图。
+   间距收紧（行内 12rpx），一屏内可读多条。 */
 .cls-bc-records {
-  margin: 0 var(--tt-gap) var(--tt-gap);
-  padding: 6rpx var(--tt-pad) var(--tt-pad);
+  margin: 0 var(--tt-gap) 16rpx;
+  padding: 0 var(--tt-pad);
 }
 
 .cls-bc-record {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12rpx;
-  padding: 18rpx 0;
+  flex-direction: column;
+  gap: 6rpx;
+  padding: 14rpx 0;
   border-bottom: 1rpx solid var(--tt-line);
 }
 
-.cls-bc-record-main {
-  display: flex;
-  flex-direction: column;
-  gap: 6rpx;
-  min-width: 0;
+.cls-bc-record:last-child {
+  border-bottom: none;
 }
 
-.cls-bc-record-title {
+.cls-bc-record:active {
+  opacity: 0.85;
+}
+
+.cls-bc-record-head {
   display: flex;
-  align-items: center;
+  align-items: baseline;
+  justify-content: space-between;
   gap: 12rpx;
   min-width: 0;
 }
 
 .cls-bc-record-module {
-  flex-shrink: 0;
+  min-width: 0;
   font-size: 27rpx;
+  font-weight: 600;
   color: var(--tt-text-1);
-  font-weight: 500;
-}
-
-.cls-bc-record-target {
-  font-size: 22rpx;
-  color: var(--tt-text-3);
-  max-width: 320rpx;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 
-.cls-bc-record-sub {
+.cls-bc-record-tags {
+  flex-shrink: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 12rpx;
+}
+
+.cls-bc-record-status {
+  padding: 2rpx 12rpx;
+  border-radius: 999rpx;
+  font-size: 19rpx;
+  color: var(--tt-text-2);
+  background: var(--td-bg-color-component);
+}
+
+/* scoreText 已经带负号（-0.05 / 0.00），模板不再加前缀（否则会显示成「--5」与「-0」） */
+.cls-bc-record-deduct {
+  font-size: 26rpx;
+  color: var(--td-error-color-6, #d54941);
+}
+
+.cls-bc-record-meta {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  min-width: 0;
   font-size: 21rpx;
   color: var(--tt-text-3);
 }
 
-.cls-bc-record-deduct {
-  flex-shrink: 0;
-  font-size: 28rpx;
-  color: var(--td-error-color-6, #d54941);
+.cls-bc-record-target {
+  max-width: 420rpx;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
+.cls-bc-record-date {
+  flex-shrink: 0;
+}
+
+.cls-bc-record-people {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8rpx 20rpx;
+}
+
+.cls-bc-record-person {
+  font-size: 21rpx;
+  line-height: 30rpx;
+  color: var(--tt-text-2);
+}
+
+/* 复核人为空 = 「待复核」：用弱化色，未复核的记录一眼能扫出来 */
+.cls-bc-record-person.is-pending {
+  color: var(--tt-text-3);
+}
+
+.cls-bc-record-metric {
+  font-size: 21rpx;
+  line-height: 30rpx;
+  color: var(--tt-text-2);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 照片缩略图：前 3 张（88rpx 方图），超出用 +N；点开预览（catch:tap） */
+.cls-bc-photos {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  margin-top: 2rpx;
+}
+
+.cls-bc-photo {
+  width: 88rpx;
+  height: 88rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-bg-page);
+}
+
+.cls-bc-photo-more {
+  flex-shrink: 0;
+  padding: 2rpx 12rpx;
+  border-radius: 999rpx;
+  font-size: 19rpx;
+  color: var(--tt-text-2);
+  background: var(--tt-bg-page);
+}
+
+/* 宿舍照片被裁剪：给可读原因，不占空白 */
+.cls-bc-photo-mask {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  font-size: 19rpx;
+  line-height: 28rpx;
+  color: var(--tt-text-3);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cls-bc-record-appeal {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  font-size: 19rpx;
+  color: var(--tt-brand-deep);
+}
+
+/* ===== 班级考勤 · 检查记录（按模块分组，卡片与最近记录共用 .cls-bc-record）===== */
+.cls-bc-day-note {
+  margin: 0 var(--tt-gap) 8rpx;
+  padding: 0 2rpx;
+  font-size: 21rpx;
+  line-height: 30rpx;
+  color: var(--tt-text-3);
+}
+
+.cls-bc-day-group {
+  margin-bottom: 14rpx;
+}
+
+.cls-bc-day-head {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin: 0 var(--tt-gap) 6rpx;
+}
+
+.cls-bc-day-title {
+  font-size: 24rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.cls-bc-day-count {
+  margin-left: auto;
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+}
+
+/* 分组卡片只留左右内边距，行间距交给 .cls-bc-record，避免「每组一张厚卡片」把页面撑长 */
+.tt-card.cls-bc-day-card {
+  padding: 0 var(--tt-pad);
+  margin-bottom: 0;
+}
+
+/* 最近记录底部的申诉提示 */
 .cls-bc-appeal-tip {
-  margin-top: 16rpx;
+  margin-top: 10rpx;
   font-size: 21rpx;
   color: var(--tt-text-3);
   text-align: center;
 }
 
-/* 班级榜前三 */
+/* 班级榜前三（间距收紧：行高 10rpx，卡片不再有额外上下留白） */
 .cls-bc-top {
-  margin: 0 var(--tt-gap) var(--tt-gap);
-  padding: 6rpx var(--tt-pad);
+  margin: 0 var(--tt-gap) 16rpx;
+  padding: 2rpx var(--tt-pad);
 }
 
 .cls-bc-top-row {
   display: flex;
   align-items: center;
   gap: 16rpx;
-  padding: 16rpx 0;
+  padding: 10rpx 0;
   border-bottom: 1rpx solid var(--tt-line);
 }
 

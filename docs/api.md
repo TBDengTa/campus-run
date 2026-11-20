@@ -261,7 +261,7 @@
 | 广告 | `/ads/sponsors | /ads/slots | /ads/contents | /ads/pages` 的增删改查；`GET /ads/stats?contentId&sponsorId&start&end`；`GET /ads/pages-link/:id` |
 | 内容 | `/content/announcements | /content/changelogs | /content/holidays | /content/organizations | /content/badges` 的增删改查 |
 | 配置 | `GET|PUT /config`（目标/分时段/反作弊/激励视频） |
-| 班级 | `GET /class/profiles`（台账列表） · `GET|PUT /class/:className/profile` · **`GET /class/status-board?days=7&quick&department&keyword`**（全校班级状态总览，见下） |
+| 班级 | `GET /class/profiles`（台账列表） · `GET|PUT /class/:className/profile` · **`GET /class/status-board?attRange=week&quick&department&keyword`**（全校班级状态总览，见下） · **`GET /class/status-export?attRange=week|month&…`**（导出考勤 CSV，同下筛选参数） |
 | 上传 | `POST /upload`（multipart，字段 file，返回图片 URL；`POST /upload/check-photo` 检查照片**不限体积 / 张数**） |
 
 ### GET /api/admin/class/status-board（班级状态总览）
@@ -274,7 +274,8 @@
 
 | 参数 | 说明 |
 |---|---|
-| `days` | 考勤回看天数（默认 7） |
+| `days` | **已废弃**（2026-11-12 起不再参与计算，传了也回退 `attRange=week`；旧的「考勤回看 N 天」口径已被用户否掉） |
+| `attRange` | 考勤统计窗口：`day` 本日 / `week` 本周（缺省）/ `month` 本月。起止由服务端 `attWindow` 按所选日锚定（本周 = ISO 周一起至周日；本月 = 1 号至月末），**前端不许自算周/月起点** |
 | `today` | 统计日 `YYYY-MM-DD`（默认今天） |
 | `school` | 院校（**与 `department` 成对使用**：实测多校区都有「计财系」，只按系部筛会跨校区混出） |
 | `department` | 系部。未传 `school` 时按同名全筛，`activeFilters` 会标注「各校区同名」如实提示 |
@@ -289,9 +290,9 @@
 
 | 字段 | 说明 |
 |---|---|
-| `today` / `from` / `weekStart` / `days` | 统计日、考勤回看区间、本周起点（ISO 周一）、区间天数 |
+| `today` / `from` / `to` / `weekStart` / `attRange` | 统计日、考勤窗口起止（`to` 是**完整周/月窗口终点**，不是所选日）、本周起点（ISO 周一）、窗口 key |
 | `totals` | **全校口径**（不随筛选变）：`classCount / studentCount / achievedToday / achievedWeek / dailyRate / weeklyRate / skippedClasses` |
-| `rows[]` | 逐班：`className / schoolName / departmentName / grade / studentCount`、`run{achievedToday,dailyRate,achievedWeek,weeklyRate,enabled}`、`attendance{modules,ratePercent,hasData}`、`flags`。**有筛选时只含筛出的行**；行序 = 年级升序 → 班级名（2026-11-03，空年级排末尾） |
+| `rows[]` | 逐班：`className / schoolName / departmentName / grade / studentCount`、`run{achievedToday,dailyRate,achievedWeek,weeklyRate,enabled,avgSteps}`、`attendance{modules,ratePercent,score,deduct,deductDetail[],lateCount,hasData,hasAnyCheck}`、`flags`。**有筛选时只含筛出的行**；行序 = 年级升序 → 班级名（2026-11-03，空年级排末尾）。⚠️ `attendance.score` = 班超分（与班超总评同一实现，**含卫生/查宿**）；`deductDetail[]` 每项 `{key,name,deduct,targets[]}`，`targets` 是「模块 × 受检类型」的日均扣分明细（如 `卫生-宿舍 -0.20`，2026-11-20 新增，见 AGENTS.md） |
 | `schools[]` / `departments[]` / `grades[]` | 院校 / 系部 / 年级候选（取自实际有数据的班，不查组织架构；年级已含班名解析兜底） |
 | `filtered` | **筛选后小计**（与 `rows` 同集合）；未筛选时等于 `totals` |
 | `activeFilters[]` | 生效的筛选标签（如 `['北校区','计财系','日达标零达标']`）；空数组 = 未筛选 |
@@ -307,6 +308,34 @@
 若筛选在前端、文案在服务端，两者用的是不同行集合，复制出去仍是全量报告；
 ⑤ 「考勤统计 N 天」只在区间内**确有考勤记录**时展示（`rows` 里任一 `attendance.hasData`）：
 当前 `check_records` 里没有早操/早八/晚自习/查宿数据，整块控件隐藏，不留一排点了没反应的按钮。
+
+### GET /api/admin/class/status-export（导出考勤表 CSV）
+
+用户 2026-11-20「班级状态中增加导出考勤表格本周、本月的各班考勤详细信息(包括校园跑)」。
+权限：`class.view`（只读，不写库）。参数与 `status-board` **完全一致**（`attRange=week|month`、
+`today`、院校/系部/年级/档位/关键词等），取参共用 `boardQuery`、筛选共用 `applyBoardFilter`。
+
+- 返回 **CSV（UTF-8 BOM，Excel 双击不乱码）**：`Content-Type: text/csv` +
+  `Content-Disposition: attachment; filename="class-status-<today>.csv"`，行数上限 500。
+- 列：日期区间 / 班级 / 院校 / 系部 / 年级 / 学生数 / 班超分 / 综合出勤率 /
+  各考勤模块（单元格「应到N/实到M/率P%」，早八只记迟到故留空）/
+  **扣分明细**（`卫生-宿舍 -0.40 · 晚自习 -0.20`，来自 `deductDetail.targets`）/
+  今日达标人数 / 今日达标率 / 本周达标人数 / 本周达标率 / 当日人均步数。
+- **导出不在路由里重算任何数字**：全部来自 `class-status-board` 的同一份行数据，
+  否则 CSV 与页面必然出现两个互相矛盾的数（本仓库反复报障类型）。
+- 小程序端走 `utils/request.js::downloadAndOpen`：downloadFile → 保存到用户目录 →
+  `openDocument`；CSV 无法直接打开时降级 `shareFileMessage`（用 Excel/WPS 打开），
+  降级成功按导出成功处理。
+
+### 班级域（用户端 `/api/class/*`）的日期回看与当日全部检查记录（2026-11-20）
+
+- **`GET /api/class/overview|students|ranking` 接受 `?date=YYYY-MM-DD`**：把所选日当作「今日」，
+  周起点取该日所在 ISO 周（本周窗口 = 周一..所选日）。白名单校验，非法/缺省回落今天。
+  `/students` 前端**不传** date（名单保持今天语义）。
+- **`GET /api/union/class/:className` 新增** `dayRecords`（所选区间内全部模块记录，
+  `status ∈ COUNTED`、`voided≠true`，单次上限 50）、`dayRecordsTotal`（同条件总数）、
+  `dayRecordsRange{from,to}`；每条 = 列表版 `presentRecord`（**不含 `details`**、照片前 3 张）+
+  `moduleName` + `roster`。`recent`（最近 10 条，全时间线）语义不变。
 
 ## 其他
 

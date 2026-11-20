@@ -123,6 +123,111 @@ function md(dateKey) {
   return `${Number(dateKey.slice(5, 7))}月${Number(dateKey.slice(8, 10))}日`;
 }
 
+// ===== 校园跑 tab：日期回看（用户 2026-11-20「校园跑要跟班超联赛中同样拥有日期选择」）=====
+// 口径：runDate = 所选日期（YYYY-MM-DD），runToday = picker 的**上限**（恒为今天）。
+// ⚠️ 上限不能用 runDate —— 选了过去的日子后上限跟着退回，就再也选不回今天（班超 tab 的 banchaoToday 同理）。
+// runDateText / runIsPast / runDateTip 全部在这里预算好，模板只渲染、不拼三元。
+// 另外 runPastTip 是「回看模式」整句说明：督促未达标与未达标名单只针对今天（学生名单 tab 保持今天语义）。
+function runDateView(date, today) {
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) ? String(date) : today;
+  const isPast = d !== today;
+  const text = period.md(d);
+  return {
+    runDate: d,
+    runDateText: text,
+    runToday: today,
+    runIsPast: isPast,
+    runDateTip: isPast ? `回看 ${text}` : '',
+    runPastTip: isPast
+      ? `回看模式：概况与榜单按 ${text} 统计；督促未达标与未达标名单只针对今天，点「今天」可切回。`
+      : '',
+  };
+}
+
+// ===== 检查记录卡片（班超 tab 的「最近记录」与「班级考勤 · 检查记录」共用一套 DOM/文案）=====
+// 照片 URL 由服务端下发**绝对地址**（server/src/utils/uploader.js::publicUploadUrl 拼了 BASE_URL），
+// 前端与 packageUnion/records、packageUnion/review 一样**原样使用**，不在这里再拼域名
+//（宿舍照片被裁剪时服务端给 photos=[] + photosBlurred，前端只渲染占位说明，见 records.js 同款处理）。
+const PHOTO_MASK_FALLBACK = '宿舍照片仅检查人 / 主席团 / 所属部门部长 / 教师可见';
+// 派生指标 key → 中文名（与服务端 check_modules 内置模块的 metrics 定义同名）。
+// 只用于「记录没有 metricText」时的兜底摘要；不认识的 key 直接跳过 —— 不猜名字，免得把
+// 「vacancyCount 3」这种英文 key 或错名字摆到老师面前。
+const METRIC_META = {
+  rate: { name: '出勤率', unit: '%' },
+  lateCount: { name: '迟到', unit: '人' },
+  vacancyCount: { name: '未归', unit: '人' },
+  score: { name: '得分', unit: '分' },
+};
+
+// 单条记录的实际数据摘要：优先 metricText，缺失时由 metrics 快照（{ratios, values}）拼一段。
+// 都没有时再退回名单人数 / 备注（不让卡片留一块说不清数据的空白）。返回整句，空串 = 无可展示数据。
+function recordMetricSummary(r) {
+  const direct = String((r && r.metricText) || '').trim();
+  if (direct) return direct;
+  const metrics = (r && r.metrics) || {};
+  const ratios = metrics.ratios || {};
+  const values = metrics.values || {};
+  const parts = [];
+  for (const key of Object.keys(METRIC_META)) {
+    const meta = METRIC_META[key];
+    if (meta.unit === '%') {
+      const v = Number(ratios[key]);
+      if (!Number.isFinite(v)) continue;
+      // 与班级考勤组件的 ratePercent 同口径：百分比保留 1 位小数
+      parts.push(`${meta.name} ${Math.round(v * 1000) / 10}%`);
+    } else {
+      const v = Number(values[key]);
+      if (!Number.isFinite(v)) continue;
+      // 得分是 10 分制两位小数（与服务端 band-chao.metricText 同口径）；人数类取整
+      parts.push(meta.unit === '人' ? `${meta.name} ${Math.round(v)} 人` : `${meta.name} ${Math.round(v * 100) / 100} 分`);
+    }
+  }
+  if (!parts.length) {
+    const roster = (r && r.roster) || null;
+    const count = Number(roster && roster.count) || ((roster && roster.names) || []).length;
+    if (count > 0) parts.push(`${(roster && roster.label) || '异常'} ${count} 人`);
+  }
+  if (!parts.length) {
+    const remark = String((r && r.remark) || '').trim();
+    if (remark) parts.push(remark.length > 24 ? `${remark.slice(0, 24)}…` : remark);
+  }
+  return parts.join(' · ');
+}
+
+// 记录 → 卡片展示字段（模板不拼任何三元 / 字符串表达式，字段名与 wxml 的 template 一一对应）
+function decorateBanchaoRecord(r) {
+  const dateKey = String((r && r.date) || '');
+  const hasDate = /^\d{4}-\d{2}-\d{2}/.test(dateKey);
+  const photoCount = Number(r && r.photoCount) || ((r && r.photos) || []).length;
+  const photos = ((r && r.photos) || []).slice(0, 3);
+  const reviewedBy = String((r && r.reviewedByName) || '').trim();
+  const appeal = r && r.appeal;
+  const appealStatus = (appeal && appeal.status) || '';
+  return {
+    id: r.id,
+    moduleKey: r.moduleKey || '',
+    moduleName: r.moduleName || '',
+    targetName: r.targetName || '',
+    dateText: hasDate ? `${Number(dateKey.slice(5, 7))}/${Number(dateKey.slice(8, 10))}` : '',
+    statusText: r.statusText || '',
+    // 检查人 / 复核人：空值在这里就落成可读文案，模板不写 ?:（用户 2026-11-20「复核人空显示待复核」）
+    inspectorText: String((r && r.inspectorName) || '').trim() || '—',
+    reviewerText: reviewedBy || '待复核',
+    reviewerClass: `cls-bc-record-person${reviewedBy ? '' : ' is-pending'}`,
+    metricSummary: recordMetricSummary(r),
+    // 照片：只取前 3 张（服务端 photoLimit=3，这里再兜一层），多出的用 +N 提示
+    photos,
+    hasPhotos: photos.length > 0,
+    photoMoreText: photoCount > photos.length ? `+${photoCount - photos.length}` : '',
+    photosBlurred: !!(r && r.photosBlurred),
+    photoMaskText: r && r.photosBlurred ? r.photoNote || PHOTO_MASK_FALLBACK : '',
+    appealText:
+      appealStatus === 'pending' ? '申诉中' : appealStatus === 'approved' ? '申诉成立' : appealStatus ? '申诉未通过' : '',
+    // 扣分固定两位小数（10 分制下 0.05 也要看得见），带负号；0 分显示 0.00
+    scoreText: r && r.deduct ? `-${scoreText(r.deduct)}` : scoreText(0),
+  };
+}
+
 // 页码条：页数少时全列，多时首尾 + 当前页附近，间隔用省略号（与用户明细分页同一语言）
 function buildPageItems(current, total) {
   const out = [];
@@ -253,8 +358,19 @@ Page({
     topStudents: [], // 班内榜单前三（本周步数；本周不足 3 人有效时回退今日步数，见 loadRanking）
     topModeText: '', // 回退今日榜时显示的说明句（整句 JS 预计算，模板不拼三元）
     nudgeCount: 0, // 今日未达标人数（校园跑 tab 的督促入口副文案）：取自 overview，不另发请求
+    nudgeSubText: '正在统计当日达标情况…', // 督促入口副文案（整句预计算；回看日期时口径写「当日」）
     pointsText: '—', // 本班本周跑分（未启用跑分时显示 —）
     runExcluded: false, // 已读到的配置里 hasMorningRun === false（本班不参加校园跑）
+    // ===== 校园跑 tab：日期回看（用户 2026-11-20）=====
+    // runDate 默认今天；runToday 恒为今天（picker 上限，不能等于 runDate，否则选不回今天）；
+    // runIsPast → 显示「回看」标签与「今天」快捷按钮；realToday 用于**今天语义**的文案（督促名单）。
+    runDate: fmt.todayKey(),
+    runDateText: period.md(fmt.todayKey()),
+    runToday: fmt.todayKey(),
+    runIsPast: false,
+    runDateTip: '',
+    runPastTip: '',
+    realToday: fmt.todayKey(),
     // ===== 学生名单 tab =====
     students: [],
     page: 1,
@@ -293,8 +409,15 @@ Page({
     banchao: null, // 总评（服务端 /api/union/class/:className 的 summary）
     banchaoModules: [], // 检查明细（5 个模块）
     banchaoDays: [], // 得分趋势（按日）
-    banchaoRecent: [], // 最近记录
+    banchaoRecent: [], // 最近记录（跨日期，服务端取最近 10 条；卡片字段见 decorateBanchaoRecord）
     banchaoRankingTop: [], // 班级榜前三
+    // 「班级考勤 · 检查记录」：所选区间内的全部检查记录（服务端 dayRecords，按模块分组展示）
+    // 这四个字段名是前端契约的一部分（用户 2026-11-20）：dayGroups / total / truncated / rangeText
+    banchaoDayGroups: [], // [{ moduleName, countText, items: [记录卡片字段] }]
+    banchaoDayTotal: 0, // 同条件总数（可能大于数组长度，服务端单次最多 50 条）
+    banchaoDayTruncated: false, // 数组被截断（显示「仅显示前 50 条」）
+    banchaoDayRangeText: '', // dayRecordsRange 的中文区间（「11月20日」/「11月17日至11月20日」）
+    banchaoDayTruncateText: '', // 截断提示整句（「仅显示前 50 条」）
     banchaoLoading: false,
     banchaoPeriodLabel: '', // 服务端回显的区间文案（「10月8日至10月14日」）
     // 班级考勤组件的驱动区间（与上面周期选择器同一个区间）
@@ -441,11 +564,14 @@ Page({
       });
       this.syncProfileCapability(); // role 已知 → 班主任 / 班委现在可以走班级域自助路径
       this.initPeriod(); // 周期选择器按「今天」初始化（换班 / 首次进入都要重来一次）
+      this.syncRunDate(); // 校园跑回看：刷新 picker 上限「今天」，但**保留**用户已选的回看日期
       // 页面标题叫「我的班级」（**不跟着 tab 改名** —— 用户明确：入口与页面仍叫我的班级，
       // 只有页面内那个「班级考勤」tab 改叫「班超联赛」）；
       // 「班级管理」留给管理员管全校台账的那一页（packageAdmin/class-manage）。
       wx.setNavigationBarTitle({ title: `${className || '班级'} · 我的班级` });
-      await Promise.all([this.loadOverview(), this.loadRanking(), this.loadStudents(1), this.loadBanchao()]);
+      // 学生名单 tab 的「今日达标」是今天口径（名单本身不传 date）：回看态下拉刷新也不能把它换成回看日期
+      const overviewDate = this.data.tab === 'students' && this.data.runIsPast ? fmt.todayKey() : undefined;
+      await Promise.all([this.loadOverview(overviewDate), this.loadRanking(), this.loadStudents(1), this.loadBanchao()]);
       // 当前 tab 需要配置数据时顺手加载（校园跑要先知道「本班参不参加校园跑」）
       if (this.data.canViewProfile && (this.data.tab === 'run' || this.data.tab === 'profile')) this.ensureProfile();
       // 下拉刷新时如果正停在「班超（含班级考勤）」，让挂着的考勤组件重新取数（首次加载不用，attached 时自己会拉）
@@ -473,22 +599,34 @@ Page({
         if (this.data.canViewAreas) this.loadAreas();
       }
     } else if (tab === 'run') {
+      // 回看日期跨天（页面挂了一夜）时要重算「今天」与回看标签，再按所选日期刷新
+      this.syncRunDate();
       this.loadOverview();
       this.loadRanking();
       this.loadStudents(1);
     } else {
-      this.loadOverview();
+      // 学生名单 tab：名单是**今天**语义（/students 不传 date），所以概况也按今天重取 ——
+      // 否则从校园跑 tab 回看过历史日期再切回来，「今日达标 N/M」会沿用回看日期的数据。
+      this.loadOverview(this.data.runIsPast ? fmt.todayKey() : undefined);
       this.loadStudents(this.data.page);
     }
   },
 
-  async loadOverview() {
+  // 班级概况。/overview 支持 ?date=：默认取校园跑 tab 所选回看日期；
+  // 传参 dateKey 可指定（学生名单 tab 的「今日达标」必须用**今天**口径 —— 名单本身不传 date，
+  // 若这里沿用回看日期，会出现「名单是今天的、达标人数是昨天的」两个口径混在一行）。
+  async loadOverview(dateKey) {
     const className = this.data.className;
     if (!className) return;
-    const ov = await auth.get('/api/class/overview', { className });
+    const date = dateKey || this.data.runDate || fmt.todayKey();
+    // 日期回看：date = 用户在校园跑 tab 选的日期（默认今天）。服务端会把它当作「今日」，
+    // weekStart 随之取该日所在 ISO 周一（契约见 server/src/routes/class.js::loadClassStats）。
+    const ov = await auth.get('/api/class/overview', { className, date });
     const rank = ov.classRank || null;
+    const nudgeCount = Math.max(0, (ov.studentCount || 0) - (ov.achievedToday || 0));
     this.setData({
-      today: ov.date || fmt.todayKey(),
+      // 服务端回显所选日期（非法值会回落今天）；没有回显时用请求日期兜底，绝不写死今天
+      today: ov.date || date,
       weekStart: ov.weekStart || '',
       overview: {
         ...ov,
@@ -507,7 +645,12 @@ Page({
         weekRangeText: ov.weekStart ? `${md(ov.weekStart)} 起` : '',
       },
       classRank: rank,
-      nudgeCount: Math.max(0, (ov.studentCount || 0) - (ov.achievedToday || 0)),
+      nudgeCount,
+      // 副文案口径写「当日」而不是「今日」：校园跑 tab 可以回看历史日期，
+      // 写死「今日」会让人以为看的是今天的数据（督促抽屉本身仍只针对今天，见 runPastTip）。
+      nudgeSubText: nudgeCount
+        ? `当日 ${nudgeCount} 人未达标 · 生成名单后可复制到班级群`
+        : '当日全员达标，不用督促',
       // 跑分未启用时不显示 0，避免误解成「本班得 0 分」
       pointsText: ov.pointsEnabled ? fmt.formatNumber(ov.pointsWeek) : '—',
     });
@@ -522,7 +665,7 @@ Page({
     if (!className) return;
     const medals = ['is-1', 'is-2', 'is-3'];
     try {
-      const res = await auth.get('/api/class/ranking', { className });
+      const res = await auth.get('/api/class/ranking', { className, date: this.data.runDate });
       const students = res.students || [];
       const week = students.filter((s) => Number(s.weekSteps) > 0);
       const day = students
@@ -541,11 +684,41 @@ Page({
       }));
       this.setData({
         topStudents: top,
-        topModeText: useDay ? '本周数据还少，先按今日步数排名' : '',
+        // 回看日期时「今日」不成立，统一说「当日」（= 所选日期）；模板只渲染整句
+        topModeText: useDay ? '本周数据还少，先按当日步数排名' : '',
       });
     } catch (e) {
       this.setData({ topStudents: [], topModeText: '' });
     }
+  },
+
+  // ===== 校园跑 tab：日期回看 =====
+  // syncRunDate：刷新 picker 上限（今天）与派生文案，**保留**用户已选的 runDate。
+  // 只更新「今天」相关的字段，不重发请求（调用方自己决定要不要 loadOverview/loadRanking）。
+  syncRunDate() {
+    const today = fmt.todayKey();
+    this.setData({ realToday: today, ...runDateView(this.data.runDate, today) });
+  },
+
+  // 选日期：切换后只刷概况与班内榜单（学生名单 tab 保持今天语义，/students **不传** date）。
+  onRunDate(e) {
+    const date = String((e && e.detail && e.detail.value) || '');
+    if (!date || date === this.data.runDate) return;
+    const today = fmt.todayKey();
+    this.setData(runDateView(date, today), () => {
+      this.loadOverview();
+      this.loadRanking();
+    });
+  },
+
+  // 「今天」快捷按钮：只在回看态渲染（回到今天 = 清掉回看标签）
+  onRunToday() {
+    const today = fmt.todayKey();
+    if (this.data.runDate === today) return;
+    this.setData(runDateView(today, today), () => {
+      this.loadOverview();
+      this.loadRanking();
+    });
   },
 
   // ===== 班超 tab（原 pages/banchao/banchao）=====
@@ -609,6 +782,7 @@ Page({
   },
 
   // 拉班超总评 + 模块 + 趋势 + 最近记录 + 榜单（原班超详细页的全部数据，接口与口径都不变）
+  // 本轮（用户 2026-11-20）增补：dayRecords（所选区间全部检查记录，按模块分组）与得分趋势压成最近 7 天。
   async loadBanchao() {
     const className = this.data.className;
     if (!className) return;
@@ -627,29 +801,48 @@ Page({
         skippedReason: m.skippedReason || '',
         // 未录文案：早八这类「只记异常人」的模块显示「无迟到」（服务端 noRecordText），不是「未录」
         scoreText: m.skipped ? '无' : m.score === null || m.score === undefined ? m.noRecordText || '未录' : scoreText(m.score),
-        metricText: m.metricText || '',
+        // 两列网格里的「指标」整句：模板只渲染，不在 wxml 里拼三元（用户 2026-11-20 紧凑排版）
+        metricLine: m.skipped
+          ? m.skippedReason || ''
+          : !m.entered
+            ? '暂无记录'
+            : m.metricText || '已录入',
+        // 「扣分」与「得分」同时保留（不删信息）：得分看等级、扣分看差在哪
+        deductText: m.skipped || !m.entered ? '' : Number(m.deduct) > 0 ? `扣分 ${scoreText(m.deduct)}` : '未扣分',
+        // 趋势条宽度 = 得分占满分的比例（满分由服务端 data.fullScore 下发）。
+        // 10 分制下直接把 score 当百分数会画成 9.5% 宽的条（看着像只得了 9.5%）。
         state: m.skipped ? 'skip' : !m.entered ? 'missing' : m.deduct > 0 ? 'warn' : 'done',
       }));
-      const days = (data.days || []).map((d) => ({
+      // 得分趋势：接口返回的是区间内全部日期（本月最多 31 条），页面只展示**最近 7 天**的单行迷你条。
+      // 服务端 days 已按日期倒序，slice(0,7) 即最近 7 天。
+      const days = (data.days || []).slice(0, 7).map((d) => ({
         date: d.date,
         label: `${Number(d.date.slice(5, 7))}/${Number(d.date.slice(8, 10))}`,
         scoreText: scoreText(d.score),
-        // 趋势条宽度 = 得分占满分的比例（满分由服务端 data.fullScore 下发）。
-        // 10 分制下直接把 score 当百分数会画成 9.5% 宽的条（看着像只得了 9.5%）。
         percent: barPercent(d.score, data.fullScore),
       }));
-      const recent = (data.recent || []).map((r) => ({
-        id: r.id,
-        moduleName: r.moduleName || '',
-        targetName: r.targetName || '',
-        dateText: `${Number(r.date.slice(5, 7))}/${Number(r.date.slice(8, 10))}`,
-        statusText: r.statusText,
-        // 单条记录显示**扣分**（不是得分）：10 分制下 0.05 也要显出来，
-        // 所以固定两位小数；以前 `-${r.deduct}` 会把 0.05 打成 "-0.05"、把 undefined 打成 "0"，
-        // 数字本身没错但和总评的位数不一致（同页两种位数最容易被当成算错了）。
-        scoreText: r.deduct ? `-${scoreText(r.deduct)}` : scoreText(0),
-        appeal: r.appeal,
-      }));
+      // 最近记录 + 当日全部检查记录共用同一套卡片字段（decorateBanchaoRecord），视觉不分叉
+      const recent = (data.recent || []).map(decorateBanchaoRecord);
+      const dayRecords = Array.isArray(data.dayRecords) ? data.dayRecords : [];
+      const dayGroups = [];
+      const groupBy = new Map();
+      for (const raw of dayRecords) {
+        const rec = decorateBanchaoRecord(raw);
+        const groupName = rec.moduleName || '其他检查';
+        let group = groupBy.get(groupName);
+        if (!group) {
+          group = { moduleName: groupName, countText: '', items: [] };
+          groupBy.set(groupName, group);
+          dayGroups.push(group);
+        }
+        group.items.push(rec);
+      }
+      for (const group of dayGroups) group.countText = `${group.items.length} 条`;
+      const dayTotalRaw = Number(data.dayRecordsTotal);
+      const dayTotal = Number.isFinite(dayTotalRaw) ? Math.max(dayTotalRaw, dayRecords.length) : dayRecords.length;
+      const dayRange = (data.dayRecordsRange && data.dayRecordsRange.from && data.dayRecordsRange.to)
+        ? period.dateRangeText(String(data.dayRecordsRange.from).slice(0, 10), String(data.dayRecordsRange.to).slice(0, 10))
+        : '';
       // 区间回显：日/周/月都用服务端的 from～to（比本地算的权威），周还额外带「第N周」说明
       const from = String(data.from || '').slice(0, 10);
       const to = String(data.to || '').slice(0, 10);
@@ -673,6 +866,12 @@ Page({
         // 服务端给的是数字（9.5 / 9.55），直接渲染会出现「同列两种位数」，
         // 而这一列正是要和上面的总评比对的。
         banchaoRankingTop: (data.rankingTop || []).map((r, i) => ({ ...r, rankNo: i + 1, scoreText: scoreText(r.score) })),
+        // 「班级考勤 · 检查记录」：按模块分组 + 头部总数 + 截断提示 + 区间回显（整句预计算）
+        banchaoDayGroups: dayGroups,
+        banchaoDayTotal: dayTotal,
+        banchaoDayTruncated: dayRecords.length < dayTotal,
+        banchaoDayRangeText: dayRange,
+        banchaoDayTruncateText: dayRecords.length < dayTotal ? `仅显示前 ${dayRecords.length} 条` : '',
         banchaoPeriodLabel: spanText,
         rangeWord: RANGE_WORD[this.data.range] || '今日',
         attendanceFrom: from,
@@ -685,10 +884,48 @@ Page({
     }
   },
 
+  // 清空「班级考勤 · 检查记录」的旧数据：切班级 / 切周期时先清，避免旧区间记录挂在新区间标题下。
+  // 清空后即使新请求失败，页面也只会显示空态「所选区间暂无检查记录」，不会残留脏数据。
+  clearBanchaoDayRecords() {
+    this.setData({
+      banchaoDayGroups: [],
+      banchaoDayTotal: 0,
+      banchaoDayTruncated: false,
+      banchaoDayRangeText: '',
+      banchaoDayTruncateText: '',
+    });
+  },
+
+  // 照片预览（用户 2026-11-20：最近记录 / 检查记录卡片都要能点开看照片）：
+  // catch:tap 阻止冒泡到卡片（卡片根节点是 goBanchaoRecord，不 catch 会同时进详情）。
+  // 与 packageUnion/records、packageUnion/review 同一套：服务端下发**绝对 URL**，直接交给 wx.previewImage。
+  previewPhoto(e) {
+    const ds = (e && e.currentTarget && e.currentTarget.dataset) || {};
+    const row = this.findBanchaoRecord(ds.id);
+    const index = Number(ds.index) || 0;
+    const urls = (row && row.photos) || [];
+    if (!urls.length) return;
+    wx.previewImage({ urls, current: urls[index] || urls[0] });
+  },
+
+  // 卡片 id → 记录（最近记录与分组检查记录是两个列表，预览时两处都找）
+  findBanchaoRecord(id) {
+    if (!id) return null;
+    const inRecent = (this.data.banchaoRecent || []).find((r) => r.id === id);
+    if (inRecent) return inRecent;
+    for (const group of this.data.banchaoDayGroups || []) {
+      const hit = (group.items || []).find((r) => r.id === id);
+      if (hit) return hit;
+    }
+    return null;
+  },
+
   // 切周期（今日 / 本周 / 本月）：同时刷新班超与班级考勤（两者共用同一个区间）
   onBanchaoRange(e) {
     const range = e.currentTarget.dataset.range;
     if (!range || range === this.data.range) return;
+    // 旧区间的检查记录先清掉：新请求回来前不残留（失败时只会是空态，不会挂着别的区间）
+    this.clearBanchaoDayRecords();
     const rangeWord = RANGE_WORD[range] || '今日';
     // 切到「本周」时把周序号对齐到当前选中的月（避免「2月 + 第6周」这种越界组合）
     if (range === 'week') {
@@ -717,6 +954,7 @@ Page({
   onBanchaoDate(e) {
     const date = e.detail.value;
     if (!date || date === this.data.banchaoDate) return;
+    this.clearBanchaoDayRecords();
     this.setData({ banchaoDate: date, banchaoDateText: period.md(date) }, () => {
       this.syncAttendanceRange();
       this.loadBanchao();
@@ -727,6 +965,7 @@ Page({
   onBanchaoMonth(e) {
     const idx = Number(e.detail.value) || 0;
     const month = (this.data.monthOptions[idx] || {}).value || 1;
+    this.clearBanchaoDayRecords();
     const weekOptions = period.monthWeekOptions(this.data.banchaoYear, month);
     const weekNo = Math.min(this.data.weekNo, weekOptions.length);
     this.setData({ month, monthIndex: idx, weekOptions, weekNo, weekIndex: weekNo - 1 }, () => {
@@ -739,6 +978,7 @@ Page({
   onBanchaoWeek(e) {
     const idx = Number(e.detail.value) || 0;
     const weekNo = (this.data.weekOptions[idx] || {}).value || 1;
+    this.clearBanchaoDayRecords();
     this.setData({ weekNo, weekIndex: idx }, () => {
       this.syncAttendanceRange();
       this.loadBanchao();
@@ -813,6 +1053,19 @@ Page({
     // 换 tab 相当于换一屏内容，回到页面顶部（否则会停在上一屏的滚动位置）
     wx.pageScrollTo({ scrollTop: 0, duration: 200, fail: () => {} });
     if (tab === 'run' || tab === 'profile') this.ensureProfile();
+    // 校园跑 tab：保留已选的回看日期，但要刷新「今天」（跨天 / 从别的日期回来时标签才正确）。
+    // 回看态下概况与班内榜单要按所选日期**重新取** —— 学生名单 tab 会把概况换成今天口径
+    //（见 refreshCurrentTab），切回来不重取就会「日期写着 10月19日、数字是今天的」。
+    if (tab === 'run') {
+      const wasPast = this.data.runIsPast;
+      this.syncRunDate();
+      if (wasPast || this.data.runIsPast) {
+        this.loadOverview();
+        this.loadRanking();
+      }
+    }
+    // 切到学生名单 tab：名单是今天语义，概况也要回到今天（仅回看态需要，非回看时两者本就相同）
+    if (tab === 'students' && this.data.runIsPast) this.loadOverview(fmt.todayKey());
     // 「班超」tab 的班超数据是本页自己取的（考勤组件 attached 时会自拉）：
     // 首次进入 tab 时数据可能已被 onLoad 拉过，但切周期 / 切班后失效过，这里确保是最新的
     if (tab === 'attendance') this.loadBanchao();
@@ -837,7 +1090,9 @@ Page({
   },
 
   // 校园跑 tab 的入口：切到名单 tab 并只看今日未达标（只读查看；督促请用校园跑 tab 的入口）
+  // ⚠️ 这是**今天语义**（/students 不传 date）：回看历史日期时入口在 wxml 里就不渲染，这里再挡一道。
   openUnachieved() {
+    if (this.data.runIsPast) return;
     this.setData({ achieved: '0', nudgeVisible: false });
     this.switchTab('students');
     this.syncFilterState();
@@ -874,12 +1129,19 @@ Page({
   switchClass(e) {
     const className = e.currentTarget.dataset.class;
     if (!className || className === this.data.className) return;
+    // 换班把校园跑回看日期重置为今天（避免串班回看：上个班选的历史日期对新班没有意义）
+    const runToday = fmt.todayKey();
     this.setData({
       className,
       students: [],
       topStudents: [],
+      topModeText: '',
       overview: null,
       classRank: null,
+      nudgeCount: 0,
+      nudgeSubText: '正在统计当日达标情况…',
+      // 校园跑 tab 的日期回看：换班回今天（runToday 也一起刷新成今天）
+      ...runDateView(runToday, runToday),
       page: 1,
       pagesTotal: 1,
       pageItems: [],
@@ -916,6 +1178,12 @@ Page({
       banchaoRecent: [],
       banchaoRankingTop: [],
       banchaoPeriodLabel: '',
+      // 「班级考勤 · 检查记录」同理：旧班的记录不能挂在新班标题下
+      banchaoDayGroups: [],
+      banchaoDayTotal: 0,
+      banchaoDayTruncated: false,
+      banchaoDayRangeText: '',
+      banchaoDayTruncateText: '',
     });
     this.syncProfileCapability();
     // 换班后周期选择器按「今天」重算（周选项依赖月份/年份），并顺势把区间交给考勤组件。
@@ -1393,8 +1661,10 @@ Page({
   // 不为了督促多开一次请求；抽屉里的明细才打 GET /students?achievedToday=0（复用既有筛选参数，
   // 服务端没有督促专用接口 —— 它只生成剪贴板文案，没有任何写入）。
   async openNudge() {
-    // 双重门控：入口只在校园跑 tab 渲染，这里再挡一道（直接调方法 / 别的 tab 上残留的点击也不会打开）
-    if (!this.data.canNudge || this.data.tab !== 'run') return;
+    // 双重门控：入口只在校园跑 tab 渲染，这里再挡一道（直接调方法 / 别的 tab 上残留的点击也不会打开）。
+    // 第三条：回看历史日期时**不督促** —— 抽屉里的名单走 /students（今天语义），
+    // 拿它去对「昨天的达标情况」会张冠李戴；入口在 wxml 里也已隐藏。
+    if (!this.data.canNudge || this.data.tab !== 'run' || this.data.runIsPast) return;
     // 防重复：入口整行 + 右侧按钮绑的是同一个动作（按钮用 catch:tap 阻断冒泡），
     // 再加一道 nudgeLoading 判定，连点也不会打两次 /students
     if (this.data.nudgeLoading) return;
@@ -1416,8 +1686,10 @@ Page({
         syncText: syncText(s.lastSyncAt),
       }));
       const cn = this.data.className;
+      // 文案里的日期用 realToday（**真实今天**）：督促名单走 /students 的今天语义，
+      // 不能用 this.data.today（那是校园跑 tab 所选回看日期的回显）。
       const text = list.length
-        ? `【${cn}】今日步数未达标 ${list.length} 人（${this.data.today}）：\n` +
+        ? `【${cn}】今日步数未达标 ${list.length} 人（${this.data.realToday}）：\n` +
           list.map((s) => `${s.no}. ${s.name} ${s.todaySteps} / ${s.todayTarget} 步`).join('\n')
         : `【${cn}】今日全员达标，很棒！`;
       this.setData({ nudgeList: list, nudgeText: text, nudgeLoading: false });

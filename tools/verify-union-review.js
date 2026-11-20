@@ -333,6 +333,74 @@ const TAG = `rv_verify_${TS}`;
     assert(minSelf.ok === false && /不能复核自己提交的记录/.test(minSelf.reason), '部长不可自审（同一口径）', minSelf);
     // 结果对象里也带节目
     assert(typeof q.data.data.list[0].summary === 'string' || q.data.data.list.length === 0, 'summary 是字符串');
+    // ---- 11) 班超门户「所选区间全部检查记录」dayRecords（用户 2026-11-20）----
+    //
+    // 需求：「我的班级中班超联赛-最近记录、班级考勤中UI板块要重新设计如检查人、复核人、
+    //       实际数据、照片等信息（班级考勤中要写当日的所有检查记录）」。
+    // recent 只是全时间线最近 10 条、且不按区间收窄；「班级考勤」区需要的是
+    // **所选区间内全部模块**的记录，所以服务端新增 dayRecords（与 recent 共用同一份卡片映射）。
+    console.log('\n[9] 班超门户 dayRecords（区间全部检查记录）');
+    {
+      // 造一条 5 张照片的记录：验证列表出口 photoLimit=3 会截断 photos、但 photoCount 保留总数
+      //（照片全量下发会让首页班超块 / 班级页一次拖十几张 URL）
+      const recPhotos = await mkRec({
+        deduct: 0.2,
+        inspector: presidium.openid,
+        inspectorName: '复审-主席团',
+        deptKey: 'presidium',
+        slot: 'photos',
+        extra: { photos: ['/uploads/a.jpg', '/uploads/b.jpg', '/uploads/c.jpg', '/uploads/d.jpg', '/uploads/e.jpg'] },
+      });
+      const clsUrl = `/api/union/class/${encodeURIComponent(`${TAG}_C`)}?range=day&date=${date}`;
+      const clsRes = await call('pres', 'GET', clsUrl);
+      assert(clsRes.status === 200, '主席团读本班全景 → 200', clsRes.status);
+      const d = clsRes.data.data || {};
+      assert(Array.isArray(d.dayRecords), '下发 dayRecords 数组', typeof d.dayRecords);
+      // 当天的临时记录：recLow / recMid / recHigh 已复核（approved 计入），recFull 已退回（rejected 不计），
+      // 加上刚造的照片记录 → 4 条。
+      assert(d.dayRecords.length === 4, '区间内全部模块记录 4 条（已退回的不算）', d.dayRecords.length);
+      assert(d.dayRecordsTotal === d.dayRecords.length, 'dayRecordsTotal = 区间记录数', d.dayRecordsTotal);
+      assert(
+        d.dayRecordsRange && d.dayRecordsRange.from === date && d.dayRecordsRange.to === date,
+        'range=day 时 dayRecordsRange 就是所选那一天',
+        d.dayRecordsRange
+      );
+      // 卡片要显示的字段必须都在；同时**不下发 details**（列表轻量化，避免整份名单撑大首屏）
+      const bad = d.dayRecords.filter((r) => !r.moduleName || !Array.isArray(r.photos) || r.details !== undefined);
+      assert(bad.length === 0, '每条带 moduleName / photos 数组、不下发 details', bad.slice(0, 2));
+      const photoRow = d.dayRecords.find((r) => r.id === String(recPhotos._id));
+      assert(
+        !!photoRow && photoRow.photos.length === 3 && photoRow.photoCount === 5,
+        '照片按 photoLimit=3 截断、photoCount 保留总数 5',
+        photoRow && { photos: photoRow.photos.length, photoCount: photoRow.photoCount }
+      );
+      assert(!!photoRow && photoRow.inspectorName === '复审-主席团', 'dayRecords 带检查人', photoRow && photoRow.inspectorName);
+      // 已复核的记录要带复核人（卡片显示「检查人 / 复核人」）
+      const reviewedRow = d.dayRecords.find((r) => r.id === String(recLow._id));
+      assert(
+        !!reviewedRow && reviewedRow.reviewedByName === '复审-部长',
+        'dayRecords 带复核人',
+        reviewedRow && reviewedRow.reviewedByName
+      );
+      // recent 保持原有语义（最近 10 条，不随区间收窄）
+      assert(Array.isArray(d.recent) && d.recent.length >= 4, 'recent 仍然下发（最近记录区）', d.recent && d.recent.length);
+      // range=month：区间必须真的变大（from 早于所选日），不是把 date 当唯一区间
+      const monthRes = await call('pres', 'GET', `/api/union/class/${encodeURIComponent(`${TAG}_C`)}?range=month&date=${date}`);
+      const dm = monthRes.data.data || {};
+      assert(
+        dm.dayRecordsRange && dm.dayRecordsRange.from <= date && dm.dayRecordsRange.to >= date,
+        'range=month 的区间覆盖所选日期',
+        dm.dayRecordsRange
+      );
+      assert(
+        dm.dayRecordsTotal >= d.dayRecordsTotal,
+        'month 区间记录数 ≥ day 区间（窗口真的换了）',
+        { month: dm.dayRecordsTotal, day: d.dayRecordsTotal }
+      );
+      // 范围闸门不因新增字段而松动：非成员（教师）仍读不到本班全景
+      const teaRes = await call('tea', 'GET', clsUrl);
+      assert(teaRes.status === 403, '非成员读班级全景仍 403', teaRes.status);
+    }
   } finally {
     // ---- 清理：临时数据一条不留（按 tag 兜底删，不依赖 try 内的变量）----
     await CheckRecord.deleteMany({ $or: [{ targetId: new RegExp(`^${TAG}`) }, { className: `${TAG}_C` }] });

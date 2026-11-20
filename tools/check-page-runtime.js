@@ -83,6 +83,17 @@ function makeRequire(state = { get: async () => ({}) }) {
           if (opts && opts.onProgress) opts.onProgress(100);
           return { url: `https://files.test/${state.uploads.length}.jpg` };
         },
+        // 下载并打开文件（2026-11-20 班级状态导出）：记录 (url, opts)；
+        // 用例可注入 state.downloadResult / state.downloadFail 覆盖成功与各失败分支。
+        downloadAndOpen: async (url, opts) => {
+          state.downloads = state.downloads || [];
+          state.downloads.push({ url, opts });
+          if (state.downloadFail) {
+            const f = state.downloadFail;
+            throw f instanceof Error ? f : Object.assign(new Error(String(f)), f);
+          }
+          return state.downloadResult || { filePath: 'wxfile://usr/tt-export.csv', fileName: 'tt-export.csv', saved: true, via: 'open' };
+        },
       };
     }
     if (p.includes('utils/format')) return require(path.join(M, 'utils/format.js'));
@@ -114,6 +125,13 @@ function makeRequire(state = { get: async () => ({}) }) {
 
 // 最近一次 toast：用例要断言「提示文案是服务端下发的」就必须看到它
 let lastToast = null;
+// 最近一次 wx.previewImage（2026-11-20 班超记录卡片照片预览）：用例要断言 urls/current 两参
+let lastPreviewImage = null;
+// 最近一次 wx.showModal（导出失败的分档文案：无权限 / 网络 / 保存 / 打开）
+let lastModal = null;
+// showActionSheet 桩（2026-11-20 班级状态导出的窗口选择）：默认「用户取消」，
+// 这是真实会发生的分支（取消不是失败，不能弹错）。用例内部替换成「选第 N 项」。
+let showActionSheetImpl = (o) => o && o.fail && o.fail({ errMsg: 'showActionSheet:fail cancel' });
 
 // 相机 / 导航 / 文件系统桩（水印相机用例）：默认 no-op，用例临时替换
 // （WX_STUB 是全部 target 共享的单例，不能整体换掉 —— 换成 hook 委托互不干扰）
@@ -144,6 +162,7 @@ const WX_STUB = {
   // showModal 必须回调 success：wcamera 合成失败走「弹窗确认 → 退回原图入托盘」，
   // 桩不回调 success 这条降级路径就永远测不到（上面 2026-11-12 事故同类：桩缺行为 = 假绿灯）
   showModal(o) {
+    lastModal = o || null;
     if (o && o.success) o.success({ confirm: true });
   },
   showLoading() {},
@@ -157,6 +176,16 @@ const WX_STUB = {
   pageScrollTo() {},
   vibrateShort() {},
   setClipboardData() {},
+  // 页面切换班级时会改标题（class.js::switchClass）；缺桩会 TypeError，被误报成页面 bug
+  setNavigationBarTitle() {},
+  // 2026-11-20：班超记录卡片照片预览（catch:tap → previewPhoto）
+  previewImage(o) {
+    lastPreviewImage = o || null;
+  },
+  // 2026-11-20：班级状态「导出」的窗口选择（本周/本月）
+  showActionSheet(o) {
+    showActionSheetImpl(o);
+  },
   chooseMedia(o) {
     chooseMediaImpl(o);
   },
@@ -666,6 +695,119 @@ const TARGETS = [
       } catch (e) {
         ok(false, '缺 fullScore 时不崩', e.message);
       }
+
+      // ===== 用户 2026-11-20：dayRecords（班级考勤 · 检查记录）+ 记录卡片字段 =====
+      //
+      // 这里验的是**行为**而不是静态接线：服务端下发的 dayRecords 能不能被正确分组、
+      // 检查人/复核人空值有没有落成可读文案、照片 +N 与 metric 兜底摘要有没算出来。
+      // 这些写错都不会报错，只会让卡片空一块或显示 [object Object]。
+      const p4 = makePage(def);
+      p4.data.className = '26级信息安全技术应用';
+      state.get = async () => ({
+        fullScore: 10,
+        score: 9.5,
+        deduct: 0.5,
+        rangeLabel: '今日',
+        periodLabel: '11月12日',
+        recordCount: 3,
+        ranking: { rank: 7, total: 43, score: 9.5 },
+        rankingTop: [],
+        modules: [],
+        days: [],
+        from: '2026-11-12',
+        to: '2026-11-12',
+        recent: [
+          { id: 'r1', moduleName: '早八', targetName: '本班', date: '2026-11-12', deduct: 0.05, inspectorName: '李老师', reviewedByName: '王部长', photos: ['a'], photoCount: 1 },
+        ],
+        dayRecords: [
+          { id: 'd1', moduleName: '晚自习', targetName: '本班', date: '2026-11-12', statusText: '已提交', deduct: 0.05, inspectorName: '', reviewedByName: '', photos: ['p1', 'p2'], photoCount: 4, metrics: { ratios: { rate: 0.9 } } },
+          { id: 'd2', moduleName: '晚自习', targetName: '本班', date: '2026-11-12', statusText: '已提交', deduct: 0, inspectorName: '张老师', reviewedByName: '李部长', photos: [], photoCount: 0 },
+          { id: 'd3', moduleName: '卫生', targetName: '1号楼201', date: '2026-11-12', statusText: '已复核', deduct: 0.4, inspectorName: '张老师', reviewedByName: '李部长', photos: ['p3'], photoCount: 1, metrics: { values: { score: 8 } } },
+        ],
+        dayRecordsTotal: 5,
+        dayRecordsRange: { from: '2026-11-12', to: '2026-11-12' },
+      });
+      await p4.loadBanchao();
+      ok(p4.data.banchaoDayGroups.length === 2, 'dayRecords 按模块分组（晚自习 2 条 + 卫生 1 条 → 2 组）', p4.data.banchaoDayGroups.length);
+      const g0 = p4.data.banchaoDayGroups[0] || { items: [] };
+      ok(g0.moduleName === '晚自习' && g0.items.length === 2 && g0.countText === '2 条', '分组保持服务端顺序且带条数文案', g0 && [g0.moduleName, g0.items.length, g0.countText]);
+      ok(
+        p4.data.banchaoDayTotal === 5 && p4.data.banchaoDayTruncated === true && p4.data.banchaoDayTruncateText === '仅显示前 3 条',
+        '总数 5 > 返回 3 → 截断提示（文案在 JS 里拼好，模板不拼三元）',
+        [p4.data.banchaoDayTotal, p4.data.banchaoDayTruncated, p4.data.banchaoDayTruncateText]
+      );
+      ok(/11月12日/.test(p4.data.banchaoDayRangeText), '区间文案来自服务端 dayRecordsRange', p4.data.banchaoDayRangeText);
+      const d1 = g0.items[0] || {};
+      ok(d1.inspectorText === '—' && d1.reviewerText === '待复核', '检查人空 → 「—」、复核人空 → 「待复核」', [d1.inspectorText, d1.reviewerText]);
+      ok(d1.photos.length === 2 && d1.photoMoreText === '+2', '照片前 3 张 + 多出的显示 +N（photoCount 4 → +2）', [d1.photos.length, d1.photoMoreText]);
+      ok(/出勤率 90%/.test(d1.metricSummary), '记录没下发 metricText 时由 metrics 兜底出「实际数据」摘要', d1.metricSummary);
+      const d3 = (p4.data.banchaoDayGroups[1] || { items: [] }).items[0] || {};
+      ok(d3.reviewerText === '李部长' && /得分 8/.test(d3.metricSummary), '已复核记录显示复核人 + 得分摘要', [d3.reviewerText, d3.metricSummary]);
+      lastPreviewImage = null;
+      p4.previewPhoto({ currentTarget: { dataset: { id: 'd1', index: 1 } } });
+      ok(
+        !!lastPreviewImage && lastPreviewImage.urls.length === 2 && lastPreviewImage.current === lastPreviewImage.urls[1],
+        'previewPhoto 传 { urls, current }（点第 2 张就从第 2 张开始）',
+        lastPreviewImage
+      );
+
+      // ===== 用户 2026-11-20：校园跑日期回看（/overview /ranking 带 date）=====
+      const ovCalls = [];
+      state.get = async (url, params) => {
+        ovCalls.push({ url, params });
+        return { students: [], classRank: null, date: params && params.date, list: [], total: 0 };
+      };
+      const p5 = makePage(def);
+      p5.data.className = '26级信息安全技术应用';
+      p5.data.runDate = '2026-11-10';
+      await p5.loadOverview();
+      await p5.loadRanking();
+      const ovCall = ovCalls.find((c) => c.url === '/api/class/overview');
+      const rkCall = ovCalls.find((c) => c.url === '/api/class/ranking');
+      ok(!!ovCall && ovCall.params.date === '2026-11-10', '回看时 /overview 带所选日期', ovCall && ovCall.params);
+      ok(!!rkCall && rkCall.params.date === '2026-11-10', '回看时 /ranking 带所选日期', rkCall && rkCall.params);
+      // 选日期后两个接口都要按新日期重取（只刷概况会让「榜单还是昨天的」）
+      ovCalls.length = 0;
+      p5.onRunDate({ detail: { value: '2026-11-12' } });
+      await new Promise((r) => setTimeout(r, 0));
+      ok(
+        p5.data.runDate === '2026-11-12' && p5.data.runIsPast === true && /回看/.test(p5.data.runDateTip),
+        '选过去日期进入回看态（runIsPast + 回看标签）',
+        [p5.data.runDate, p5.data.runIsPast, p5.data.runDateTip]
+      );
+      ok(
+        ovCalls.some((c) => c.url === '/api/class/overview' && c.params.date === '2026-11-12') &&
+          ovCalls.some((c) => c.url === '/api/class/ranking' && c.params.date === '2026-11-12'),
+        'onRunDate 同时按新日期刷新概况与榜单',
+        ovCalls.map((c) => `${c.url}:${c.params && c.params.date}`)
+      );
+      // 切回学生名单：概况回**今天**口径（名单本身是今天语义，回看只作用于校园跑 tab）
+      ovCalls.length = 0;
+      p5.data.tab = 'run'; // 默认 tab 是 students，不先切到 run 的话 switchTab 会直接 return
+      p5.switchTab('students');
+      await new Promise((r) => setTimeout(r, 0));
+      const ovToday = ovCalls.find((c) => c.url === '/api/class/overview');
+      const realToday = require(path.join(M, 'utils/format.js')).todayKey();
+      ok(!!ovToday && ovToday.params.date === realToday, '切到学生名单 tab 时概况回到今天口径', ovToday && ovToday.params);
+      // 切回校园跑：保留回看日期并按它重取
+      ovCalls.length = 0;
+      p5.switchTab('run');
+      await new Promise((r) => setTimeout(r, 0));
+      ok(
+        p5.data.runDate === '2026-11-12' && ovCalls.some((c) => c.params && c.params.date === '2026-11-12'),
+        '切回校园跑 tab 保留回看日期（不悄悄跳回今天）',
+        ovCalls.map((c) => c.params && c.params.date)
+      );
+      // 切班级：回看日期重置为今天（不能把 A 班的回看日期带到 B 班）
+      const p6 = makePage(def);
+      p6.data.className = '26级信息安全技术应用';
+      p6.data.classes = [{ className: '26级信息安全技术应用' }, { className: '25级大数据技术' }];
+      p6.data.runDate = '2026-11-10';
+      p6.data.runIsPast = true;
+      p6.data.runDateText = '11月10日';
+      // 注意 dataset 的键是短名 class（WXML 里 data-class），不是 className
+      p6.switchClass({ currentTarget: { dataset: { class: '25级大数据技术' } } });
+      ok(p6.data.runDate === realToday && p6.data.runIsPast === false, '切换班级时回看日期重置为今天', [p6.data.runDate, p6.data.runIsPast]);
     },
   },
   {
@@ -811,6 +953,126 @@ const TARGETS = [
       await p3.load();
       ok(p3.data.attRuleLines.length === 0 && p3.data.footerText === '', '加载失败清空规则与脚注', [p3.data.attRuleLines, p3.data.footerText]);
       ok(!!p3.data.errorText, '失败有显式错误文案', p3.data.errorText);
+
+      // ===== 用户 2026-11-20：扣分来源 chips（具体考察项，如「卫生-宿舍 -0.35」）=====
+      const chipRow = d({
+        className: 'F',
+        studentCount: 40,
+        run: { enabled: true, dailyRate: 50, weeklyRate: 60 },
+        attendance: {
+          score: 9.2,
+          ratePercent: 92,
+          lateCount: 0,
+          hasData: true,
+          deductDetail: [
+            {
+              key: 'hygiene',
+              name: '卫生',
+              deduct: 0.6,
+              targets: [
+                { key: 'hygiene:dorm_room', name: '卫生-宿舍', avgDeduct: 0.35, count: 2 },
+                { key: 'hygiene:classroom', name: '卫生-教室', avgDeduct: 0.15, count: 1 },
+                { key: 'hygiene:area', name: '卫生-卫生区', avgDeduct: 0.1, count: 1 },
+              ],
+            },
+            {
+              key: 'study_evening',
+              name: '晚自习',
+              deduct: 0.2,
+              targets: [{ key: 'study_evening:classroom', name: '晚自习-教室', avgDeduct: 0.2, count: 1 }],
+            },
+            // 老服务 / 无受检类型字聚合的模块：退回「模块名 - 扣分」
+            { key: 'night_dorm', name: '查宿', deduct: 0.1 },
+          ],
+        },
+      });
+      ok(chipRow.deductChips.length === 3, '整行最多 3 条扣分 chip', chipRow.deductChips);
+      ok(
+        chipRow.deductChips.map((c) => c.text).join('|') === '卫生-宿舍 -0.35|晚自习-教室 -0.20|卫生-教室 -0.15',
+        'chip 文案 = 具体考察项 + 两位小数扣分，按扣分降序（同模块最多 2 条）',
+        chipRow.deductChips.map((c) => c.text)
+      );
+      // 来源共 4 条（卫生 2 + 晚自习 1 + 查宿 1）→ 显示 3 + 「+1」；卫生第 3 条已被「同模块最多 2 条」截掉
+      ok(chipRow.deductMore === 1, '其余折成 +N（4 条来源 → 显示 3 + 「+1」）', chipRow.deductMore);
+      const chipLegacy = d({
+        className: 'G',
+        studentCount: 40,
+        run: { enabled: true, dailyRate: 50, weeklyRate: 60 },
+        attendance: { score: 9.6, ratePercent: 96, lateCount: 0, hasData: true, deductDetail: [{ key: 'hygiene', name: '卫生', deduct: 0.4 }] },
+      });
+      ok(
+        chipLegacy.deductChips.length === 1 && chipLegacy.deductChips[0].text === '卫生 -0.40',
+        '无 targets 的老服务退回「模块名 -0.40」（不显示空白）',
+        chipLegacy.deductChips
+      );
+      const chipNone = d({
+        className: 'H',
+        studentCount: 40,
+        run: { enabled: true, dailyRate: 100, weeklyRate: 100 },
+        attendance: { score: 10, ratePercent: 100, lateCount: 0, hasData: true, deductDetail: [] },
+      });
+      ok(chipNone.deductChips.length === 0 && chipNone.deductEmptyText === '无扣分', '没有扣分时给「无扣分」弱文案', chipNone.deductEmptyText);
+
+      // 班超分统计区间：用服务端 from/to，不许用所选日顶替（窗口是完整周/月）
+      ok(/本周 .*11-09.*至.*11-15.*班超分口径/.test(p2.data.periodText), '班超分统计区间来自服务端窗口（from~to）', p2.data.periodText);
+
+      // ===== 用户 2026-11-20：导出本周/本月考勤表（选窗口 → 下载 → 降级分享）=====
+      const p4 = makePage(def);
+      p4.data.attRange = 'month';
+      p4.data.loading = false;
+      p4.data.today = '2026-11-12';
+      let sheet = null;
+      showActionSheetImpl = (o) => {
+        sheet = o;
+        o.success({ tapIndex: 0 });
+      };
+      state.downloads = [];
+      state.downloadResult = { filePath: 'wxfile://usr/x.csv', fileName: 'x.csv', saved: true, via: 'open' };
+      p4.onExport();
+      ok(
+        !!sheet && sheet.itemList[0] === '本月考勤表（当前）',
+        '导出菜单：当前窗口排第一并标注「（当前）」（选本月时本月在前）',
+        sheet && sheet.itemList
+      );
+      const flush2 = () => new Promise((r) => setTimeout(r, 0));
+      await flush2();
+      const dl0 = (state.downloads || [])[0];
+      ok(!!dl0 && dl0.url === '/api/admin/class/status-export', '导出真的请求了服务端导出接口', dl0 && dl0.url);
+      ok(
+        !!dl0 && dl0.opts.query.attRange === 'month' && !('copy' in dl0.opts.query) && dl0.opts.query.today === '2026-11-12',
+        '导出参数：换窗口 + 去掉 copy + 带上服务端回显的 today',
+        dl0 && dl0.opts.query
+      );
+      ok(dl0 && dl0.opts.fileType === 'csv' && /\.csv$/.test(dl0.opts.fileName || ''), '文件名与类型是 CSV', dl0 && dl0.opts.fileName);
+      ok(p4.data.exporting === false, '导出完成后复位 exporting', p4.data.exporting);
+      ok(!!lastToast && /已导出本月考勤表/.test(lastToast.title || ''), '成功 toast 说明导出了哪个窗口', lastToast && lastToast.title);
+
+      // 降级分享成功 = 导出成功（CSV 在部分平台打不开，不能报错）
+      lastToast = null;
+      state.downloadResult = { filePath: 'wxfile://usr/x.csv', fileName: 'x.csv', saved: true, via: 'share' };
+      await p4.exportAttendance('week');
+      ok(!!lastToast && /Excel\/WPS/.test(lastToast.title || ''), 'via=share 算成功并提示用 Excel/WPS 打开', lastToast && lastToast.title);
+
+      // 失败分档：无权限 / 网络 → 弹窗文案不同（修法不同，不能只说「导出失败」）
+      lastModal = null;
+      state.downloadFail = Object.assign(new Error('没有下载权限'), { code: 403, statusCode: 403 });
+      p4.data.exporting = false;
+      await p4.exportAttendance('week');
+      ok(!!lastModal && /没有导出权限/.test(lastModal.content || ''), '403 → 「没有导出权限」', lastModal && lastModal.content);
+      lastModal = null;
+      state.downloadFail = Object.assign(new Error('网络异常'), { network: true, stage: 'download' });
+      p4.data.exporting = false;
+      await p4.exportAttendance('week');
+      ok(!!lastModal && /网络/.test(lastModal.content || ''), '网络失败 → 提示检查网络', lastModal && lastModal.content);
+      // 导出中重复点击不再弹菜单（showLoading 遮罩 + exporting 双保险）
+      state.downloadFail = null;
+      p4.data.exporting = true;
+      sheet = null;
+      p4.onExport();
+      ok(sheet === null, '导出中重复点击不弹第二次菜单', !!sheet);
+      p4.data.exporting = false;
+      // 复位共享桩（后面的 target 也会用到 ActionSheet 默认行为）
+      showActionSheetImpl = (o) => o && o.fail && o.fail({ errMsg: 'showActionSheet:fail cancel' });
     },
   },
   {

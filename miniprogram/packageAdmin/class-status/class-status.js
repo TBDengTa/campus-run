@@ -88,6 +88,20 @@ const ATT_RANGE_OPTIONS = [
 ];
 const DEFAULT_ATT_RANGE = 'week';
 
+// ===== 导出考勤表（用户 2026-11-20「导出本周/本月考勤表」）=====
+// 导出接口与看板**同参**（GET /api/admin/class/status-export），只是窗口只支持本周/本月。
+// 当前选中的窗口排第一并标注「（当前）」—— 用户点开浮动菜单时一眼知道默认导哪个。
+const EXPORT_RANGES = [
+  { key: 'week', label: '本周考勤表' },
+  { key: 'month', label: '本月考勤表' },
+];
+
+// 扣分来源 chips 的折叠阈值（用户 2026-11-20「各班中如有减分情况要写哪个考察项」）：
+// 同一模块最多展开 2 条（卫生底下可能有一堆受检类型，全展开会把一行撑爆）、整行最多 3 条，
+// 其余折成「+N」（纯文本，故意不做成可点按钮）。
+const DEDUCT_CHIP_MAX = 3;
+const DEDUCT_CHIP_PER_MODULE = 2;
+
 // ===== 生成图片的底部规则块布局常量（逻辑像素，画布按 ×2 出图）=====
 // 字符预算 = (画布宽 750 − 左右内距 28×2) ÷ 20px 字号 ≈ 34 个汉字。
 // 见 wrapCanvasLines 的注释：宁可提前换行，也不能溢出画布（measureText 拿不到，
@@ -103,6 +117,8 @@ const rateLevel = (v) => (v === null || v === undefined ? 'none' : v >= 100 ? 'o
 // 阈值是原百分制档位（90/70）等比 ÷10，判定结果与换刻度前一致 —— 换的是刻度，不是标准。
 const attScoreLevel = (v) => (v === null || v === undefined ? 'none' : v >= 9 ? 'ok' : v >= 7 ? 'warn' : 'bad');
 const rateText = (v) => (v === null || v === undefined ? '—' : `${v}%`);
+// '2026-11-17' → '11-17'：区间条只显示月-日（完整日期在上面的日期选择器与脚注里，不重复占宽）
+const md = (dateKey) => String(dateKey || '').slice(5);
 // 分数一律两位小数，且「没有考勤数据」显「—」而不是 0.00 分（0 分是最严重的差评，
 // 会被截图发进工作群）—— 统一走 utils/format.js::scoreText，与班级页同一口径。
 const scoreText = fmt.scoreText;
@@ -137,6 +153,10 @@ Page({
     // 考勤窗口终点（服务端 d.to 回显；缺失时退回所选日）
     attTo: '',
     attRangeText: '',
+    // 班超分统计区间（用户 2026-11-20「选择了班超分要有查看日期」）：
+    // 形如「本周 11-17 至 11-23 · 班超分口径」，由服务端回显的窗口起止拼好再下发，
+    // 模板不做字符串拼接。列被关掉时不渲染（没有班超分就没有这个口径要解释）。
+    periodText: '',
     // 显示内容（列表列）：默认日+周，考勤有数据时才自动加上
     columns: { daily: true, weekly: true, attendance: false },
     // 复制内容：默认只复制日达标（用户「如只需要日达标这种的」）
@@ -186,8 +206,10 @@ Page({
     hasFilter: false,
     emptyTitle: '没有班级数据',
     footerText: '',
-    colCount: 3,
     canView: false,
+    // 导出（2026-11-20）：exporting 同时用于禁用重复点击与按钮文案（导出中）
+    exporting: false,
+    exportLabel: '导出',
   },
 
   onLoad() {
@@ -290,6 +312,11 @@ Page({
             ? `${d.from}（仅当日，早操/早八/晚自习/查宿）`
             : `${d.from} ~ ${d.to || d.today || ''}（${d.attRangeLabel || ''}，含卫生/查宿等全部检查）`
           : '',
+        // 班超分统计区间（用户 2026-11-20「选择了班超分要有查看日期」）：
+        // 起止只用服务端回显的 from/to（窗口由服务端按所选日算，前端自算必然与班超漂移）。
+        periodText: d.from
+          ? `${d.attRangeLabel ? `${d.attRangeLabel} ` : ''}${md(d.from)} 至 ${md(d.to || d.today)} · 班超分口径`
+          : '',
         gradeChips: (grades.length ? grades : []).map((g) => ({
           key: g,
           label: `${g}级`,
@@ -303,7 +330,6 @@ Page({
         columns,
         rows,
         shown: rows.map((r) => this.decorate(r)),
-        colCount: (columns.daily ? 1 : 0) + (columns.weekly ? 1 : 0) + (columns.attendance ? 1 : 0),
         // 院校/系部候选（服务端给的是**当前筛选后**的行，所以候选会随选择收窄）
         ...this.buildDeptOptions(d),
         metrics: this.buildMetrics(scope, d),
@@ -338,6 +364,8 @@ Page({
         // 规则说明也要清：失败时留着上一次的规则文案，会被当成「数据是新的、只是没刷新」
         attRuleLines: [],
         attRuleText: '',
+        // 区间条同属派生展示：失败后留着它，页面会顶着上一次的统计区间（而数据已空）
+        periodText: '',
         attRangeText: '',
         // 窗口终点同属派生展示：失败后留着它，图片标题会顶着一个不存在的区间
         attTo: '',
@@ -449,29 +477,93 @@ Page({
     // 出勤率仍下发但不在这行重复显示：分数就是它的折算结果，
     // 同一行给两个数只会让人去核对「9.5 分和 95% 是不是一个意思」。
     const attScoreText = scoreText(att.score);
+    // 扣分来源 chips（用户 2026-11-20「各班中如有减分情况要写哪个考察项检查扣分」）：
+    // 生成规则见 buildDeductChips —— 同一模块最多 2 条、整行最多 3 条，其余折成 +N。
+    const allChips = this.buildDeductChips(att);
+    const deductChips = allChips.slice(0, DEDUCT_CHIP_MAX).map((c) => ({ key: c.key, text: c.text }));
+    const attSub = this.buildAttSub(att);
+    const detail = att.deductDetail || [];
+    const custom = !!this.data.selectedDate;
+    // 第一行右侧的次要信息（人数 / 系部 / 不参跑）：整句预拼，模板不拼表达式
+    const metaParts = [`${r.studentCount || 0}人`];
+    if (r.departmentName) metaParts.push(r.departmentName);
+    if (run.enabled === false) metaParts.push('不参跑');
     return {
       className: r.className,
-      departmentName: r.departmentName || '',
-      schoolName: r.schoolName || '',
       studentCount: r.studentCount || 0,
+      metaText: metaParts.join(' · '),
       dailyText: rateText(run.dailyRate),
       dailyLevel: rateLevel(run.dailyRate),
       weeklyText: rateText(run.weeklyRate),
       weeklyLevel: rateLevel(run.weeklyRate),
+      // 今日/本周达标（选了非今天就说「当日/当周」—— 说「今日」是在说谎）
+      dailyRateText: `${custom ? '当日' : '今日'} ${rateText(run.dailyRate)}`,
+      weeklyRateText: `${custom ? '当周' : '本周'} ${rateText(run.weeklyRate)}`,
       attText: attScoreText,
       attLevel: attScoreLevel(att.score),
-      // 分数下面那行小字：**扣分明细**（含卫生、查宿、晚自习、早八，按扣分从大到小）。
-      // 用户 2026-11-19「卫生、查宿等相关内容相应没有被减分」—— 光给一个总分说不服人，
-      // 必须看得见「分是被哪一项扣掉的」。最多列 2 项，其余折成「等」，不撑破行高。
-      attSub: this.buildAttSub(att),
+      deductChips,
+      deductMore: allChips.length > DEDUCT_CHIP_MAX ? allChips.length - DEDUCT_CHIP_MAX : 0,
+      // chips 为空时的替代文案（总扣分 0 / 无记录 → 「无扣分」弱文案）。
+      // 旧服务不下发 deductDetail 但给了迟到人数时，说「迟到 N 人」比说「无扣分」真实。
+      deductEmptyText: deductChips.length ? '' : detail.length ? '无扣分' : attSub || '无扣分',
+      // 扣分明细整句（旧实现保留：服务端旧版不下发 targets 时给一条可读的兜底说明）
+      attSub,
       // 不参跑的班要标出来：否则「0%」会被误读成没完成，而实际上本班不用跑
       runDisabled: run.enabled === false,
     };
   },
 
-  // 扣分明细文案（整句在 JS 拼，模板不做三元拼接 —— 仓库约定）
+  /**
+   * 扣分来源 chips（用户 2026-11-20「各班中如有减分情况要写哪个考察项检查扣分，
+   * 如卫生-宿舍、晚自习这样，重新设计各班条的UI样式」）。
+   *
+   * 服务端 attendance.deductDetail = [{ key, name, deduct }]（name=模块名、deduct=模块日均扣分），
+   * 并新增 targets = [{ key, name, avgDeduct, count }]（name 形如「卫生-宿舍」= 具体受检类型）。
+   * 生成规则（三条都是为了让一行既装得下、又说得清）：
+   *   ① 有 targets 的模块**展开成多条**（同一模块最多取 2 条最重的 —— 卫生底下受检类型很多）；
+   *   ② 没有 targets 的老服务/模块退回「模块名 -0.20」；
+   *   ③ 全部按扣分从大到小排，整行最多显示 DEDUCT_CHIP_MAX 条（在 decorate 里切），其余折 +N。
+   * 返回的 weight 只用于排序，decorate 只把 { key, text } 下发给模板。
+   */
+  buildDeductChips(att) {
+    const detail = (att && att.deductDetail) || [];
+    const chips = [];
+    for (const mod of detail) {
+      if (!mod) continue;
+      const modDeduct = Number(mod.deduct) || 0;
+      const modKey = String(mod.key || mod.name || '');
+      const targets = (Array.isArray(mod.targets) ? mod.targets : [])
+        .map((t) => ({
+          key: String((t && t.key) || (t && t.name) || ''),
+          name: String((t && t.name) || ''),
+          avg: Number(t && t.avgDeduct) || 0,
+        }))
+        .filter((t) => t.name && t.avg > 0)
+        .sort((a, b) => b.avg - a.avg)
+        .slice(0, DEDUCT_CHIP_PER_MODULE);
+      if (targets.length) {
+        for (const t of targets) {
+          chips.push({
+            key: `${modKey}:${t.key}:${chips.length}`,
+            weight: t.avg,
+            text: `${t.name} -${scoreText(t.avg)}`,
+          });
+        }
+      } else if (modDeduct > 0 && mod.name) {
+        chips.push({
+          key: `${modKey}:${chips.length}`,
+          weight: modDeduct,
+          text: `${mod.name} -${scoreText(modDeduct)}`,
+        });
+      }
+    }
+    return chips.sort((a, b) => b.weight - a.weight);
+  },
+
+  // 扣分明细兜底文案（2026-11-20 重做行 UI 后它不再独占一行：chips 为空时用它的结果
+  // 兜住「旧服务不下发 targets、只有迟到人数」这种场景；模板不做三元拼接 —— 仓库约定）
   // 「卫生 -1.33 · 晚自习 -0.24」 / 超过 2 项时「卫生 -10.00 · 查宿 -0.84 等」
-  // 没有明细（满分班）时退回迟到人数；两者都没有就是空串（不显示副行）。
+  // 没有明细（满分班）时退回迟到人数；两者都没有就是空串。
   buildAttSub(att) {
     const detail = att.deductDetail || [];
     if (detail.length) {
@@ -508,9 +600,8 @@ Page({
     if (!columns.daily && !columns.weekly && !columns.attendance) columns.daily = true;
     // 用户手动改过就不再自动勾考勤（否则每次请求都被强制打开，改不动）
     this._touchedColumns = true;
-    const colCount = (columns.daily ? 1 : 0) + (columns.weekly ? 1 : 0) + (columns.attendance ? 1 : 0);
     // 传新 columns（不是 {}）：buildMetrics 里若退读 this.data 会拿到 setData 前的旧值
-    this.setData({ columns, colCount, metrics: this.buildMetrics(this.data.filtered || this.data.totals, columns) });
+    this.setData({ columns, metrics: this.buildMetrics(this.data.filtered || this.data.totals, columns) });
   },
 
   // 复制内容（picker）：传给服务端，文案按它生成（前端不拼一个字）
@@ -608,6 +699,91 @@ Page({
       },
       fail: () => wx.showToast({ title: '复制失败，请重试', icon: 'none' }),
     });
+  },
+
+  // ===== 导出考勤表（用户 2026-11-20「本周/本月考勤表可导出」）=====
+  // 导出的 CSV 由服务端按**与看板完全一致的筛选参数**生成（attRange 用用户刚选的窗口），
+  // 所以「屏幕上的筛选口径 = 导出的表」；前端只负责挑窗口、传参、给反馈。
+  onExport() {
+    if (this.data.exporting) return;
+    if (this.data.loading) {
+      wx.showToast({ title: '数据加载中，请稍后再导出', icon: 'none' });
+      return;
+    }
+    const cur = this.data.attRange;
+    // 当前窗口排第一并标注「（当前）」；导出接口只支持本周/本月，
+    // 当前是「本日」时没有可标注的，本周排第一。
+    const list = cur === 'month' ? EXPORT_RANGES.slice().reverse() : EXPORT_RANGES.slice();
+    const itemList = list.map((r) => (r.key === cur ? `${r.label}（当前）` : r.label));
+    wx.showActionSheet({
+      itemList,
+      success: (res) => {
+        const picked = list[Number(res.tapIndex) || 0];
+        if (picked) this.exportAttendance(picked.key);
+      },
+      // 用户取消浮动菜单：静默（取消不是失败，弹提示反而像出错了）
+      fail: () => {},
+    });
+  },
+
+  // 导出参数 = 当前已生效的筛选条件原样带上（与看板同一份 buildQuery），
+  // 只换 attRange（用户刚选的窗口）并去掉 copy（导出接口不生成复制文案）。
+  buildExportQuery(rangeKey) {
+    const q = this.buildQuery();
+    delete q.copy;
+    q.attRange = rangeKey === 'month' ? 'month' : 'week';
+    // 屏幕上的「今天」若来自服务端（用户没手选日期），导出也显式带上：
+    // 避免跨零点导出与屏幕统计的不是同一天。
+    if (!q.today && this.data.today) q.today = this.data.today;
+    return q;
+  },
+
+  async exportAttendance(rangeKey) {
+    if (this.data.exporting) return;
+    const key = rangeKey === 'month' ? 'month' : 'week';
+    const label = key === 'month' ? '本月' : '本周';
+    this.setData({ exporting: true, exportLabel: '导出中…' });
+    // showLoading 带 mask：遮住整页，重复点击根本点不到（setData 的 exporting 是第二道保险）
+    wx.showLoading({ title: '导出中…', mask: true });
+    try {
+      const day = (this.data.today || fmt.todayKey() || '').replace(/-/g, '');
+      const fileName = `班级考勤-${label}${day ? `-${day}` : ''}.csv`;
+      const res = await auth.downloadAndOpen('/api/admin/class/status-export', {
+        query: this.buildExportQuery(key),
+        fileName,
+        fileType: 'csv',
+      });
+      this.setData({ exporting: false, exportLabel: '导出' });
+      wx.hideLoading();
+      // via='share' = CSV 本机打不开、已降级成「发送文件」→ 也算成功（用 Excel/WPS 打开）
+      if (res && res.via === 'share') {
+        wx.showToast({
+          title: '已保存考勤表，发送到文件传输助手后用 Excel/WPS 打开',
+          icon: 'none',
+          duration: 3200,
+        });
+      } else {
+        wx.showToast({ title: `已导出${label}考勤表`, icon: 'none' });
+      }
+    } catch (e) {
+      this.setData({ exporting: false, exportLabel: '导出' });
+      wx.hideLoading();
+      wx.showModal({ title: '导出失败', content: this.exportErrorText(e), showCancel: false, confirmText: '知道了' });
+    }
+  },
+
+  // 失败文案分档（网络 / 无权限 / 登录过期 / 保存 / 打开降级失败）—— 页面直接展示
+  exportErrorText(e) {
+    const err = e || {};
+    const status = Number(err.statusCode) || 0;
+    if (err.code === 401 || status === 401) return '登录已过期，请重新登录后再导出。';
+    if (err.code === 403 || status === 403) return '没有导出权限（需要 class.view 班级状态查看权限）。';
+    if (err.stage === 'save') return err.message || '考勤表已下载，但保存到本机失败，请重试。';
+    if (err.stage === 'open') {
+      return err.message || '考勤表已下载，但本机无法打开（CSV 需要 Excel / WPS）。请安装后重试，或转发到电脑打开。';
+    }
+    if (err.network) return err.message || '网络异常，导出失败。请检查网络后重试。';
+    return err.message || '导出失败，请稍后重试。';
   },
 
   // ===== 生成图片转发（2026-11-03「文本太多被直接发会折叠」）=====

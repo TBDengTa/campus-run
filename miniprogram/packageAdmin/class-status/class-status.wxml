@@ -8,7 +8,10 @@
      ② 院校/系部**两级**下拉（同名系部跨校区，见 JS 注释）。
      ③ 「考勤统计 N 天」只在**真有考勤数据**时出现（当前全库 4 条且都不是考勤模块，
         那个永远为空的控件是"难看"的主要来源）。
-     ④ 列宽随「显示内容」变化：勾掉考勤，剩下的列自动变宽，不再留大片空白。
+     ④ 2026-11-20 再改（用户「选择了班超分要有查看日期并且还要给各班中如有减分情况
+        要写哪个考察项检查扣分如卫生-宿舍、晚自习这样，重新设计各班条的UI样式」）：
+        列表从四列表格改成「各班条」——班名/系部 + 扣分来源 chips + 右侧班超分大字；
+        列表上方固定显示班超分统计区间，右侧按钮组加「导出」（本周/本月考勤表 CSV）。
      所有展示字段由 JS 预计算，模板里不做表达式拼接（仓库约定）。 -->
 <view class="tt-page cs-page">
   <!-- ===== 指标条 ===== -->
@@ -89,6 +92,13 @@
         <t-icon name="file-copy" size="22rpx" color="#ffffff" />
         <text>{{copyLabel}}</text>
       </view>
+      <!-- 导出考勤表（用户 2026-11-20）：与「复制 / 生成图片」同组。
+           用弱一档的浅底样式 —— 导出是次要动作，不能和主按钮抢视觉；
+           exporting 时文案变「导出中…」并置灰（另有 showLoading 遮罩防重复点）。 -->
+      <view class="cs-copy cs-copy-ghost {{exporting ? 'is-busy' : ''}}" bind:tap="onExport">
+        <t-icon name="download" size="22rpx" color="var(--tt-brand-deep)" />
+        <text>{{exportLabel}}</text>
+      </view>
     </view>
   </view>
 
@@ -152,6 +162,13 @@
     <text class="cs-bar-s">{{attRangeText}}</text>
   </view>
 
+  <!-- 班超分统计区间（用户 2026-11-20「选择了班超分要有查看日期并且…重新设计各班条的UI样式」）：
+       区间起止用服务端回显的窗口（页面不自算），与右侧大字「班超分」同一口径。
+       用户点开列表第一眼就知道「这个分是哪段时间的」，不用去猜本周/本月。 -->
+  <view class="cs-period" wx:if="{{periodText && columns.attendance && !errorText}}">
+    <text class="cs-period-t">{{periodText}}</text>
+  </view>
+
   <!-- ===== 列表 ===== -->
   <view class="cs-loading" wx:if="{{loading}}">
     <t-loading theme="circular" size="36rpx" text="统计中…" />
@@ -171,23 +188,33 @@
     <text class="cs-empty-s" wx:if="{{hasFilter}}" bind:tap="resetFilters">点此清除筛选</text>
   </view>
 
-  <view class="cs-list cs-list-{{colCount}}" wx:else>
+  <!-- ===== 各班条（用户 2026-11-20 重做 UI）=====
+       一条 = 第一行「班名 + 学生数 · 系部（弱化）」+ 第二行「扣分来源 chips」+ 右侧「班超分大字 + 今日/本周达标」。
+       chips 全部由 JS 预计算（deductChips = [{ key, text }]），模板里不拼表达式、不做字符串运算；
+       「+N」是纯文本标签，故意不做成看起来可点的按钮（点了没有动作，不该给可点的暗示）。 -->
+  <view class="cs-list" wx:else>
     <view class="cs-thead">
-      <text class="cs-c1">班级</text>
-      <text class="cs-cn" wx:if="{{columns.daily}}">日</text>
-      <text class="cs-cn" wx:if="{{columns.weekly}}">周</text>
-      <text class="cs-cn" wx:if="{{columns.attendance}}">班超分</text>
+      <text class="cs-thead-l">班级 · 扣分来源</text>
+      <text class="cs-thead-r" wx:if="{{columns.attendance}}">班超分</text>
+      <text class="cs-thead-r" wx:else>达标</text>
     </view>
     <view class="cs-row" wx:for="{{shown}}" wx:key="className" data-name="{{item.className}}" bind:tap="openClass">
-      <view class="cs-c1">
-        <text class="cs-name">{{item.className}}</text>
-        <text class="cs-sub">{{item.studentCount}}人<text wx:if="{{item.departmentName}}"> · {{item.departmentName}}</text><text wx:if="{{item.attSub}}"> · {{item.attSub}}</text><text wx:if="{{item.runDisabled}}"> · 不参跑</text></text>
+      <view class="cs-row-main">
+        <view class="cs-row-head">
+          <text class="cs-name">{{item.className}}</text>
+          <text class="cs-meta">{{item.metaText}}</text>
+        </view>
+        <view class="cs-dchips" wx:if="{{item.deductChips.length}}">
+          <view class="cs-dchip" wx:for="{{item.deductChips}}" wx:for-item="chip" wx:key="key">{{chip.text}}</view>
+          <view class="cs-dchip cs-dchip-more" wx:if="{{item.deductMore}}">+{{item.deductMore}}</view>
+        </view>
+        <text class="cs-nodeduct" wx:else>{{item.deductEmptyText}}</text>
       </view>
-      <text class="cs-cn cs-num cs-lv-{{item.dailyLevel}}" wx:if="{{columns.daily}}">{{item.dailyText}}</text>
-      <text class="cs-cn cs-num cs-lv-{{item.weeklyLevel}}" wx:if="{{columns.weekly}}">{{item.weeklyText}}</text>
-      <!-- 考勤列 = 10 分制分数（用户 2026-11-12「考勤应该显示分数，就10分制」）；
-           扣掉的那一项（迟到人数）写在班级名副行，不撑破 72rpx 的行高 -->
-      <text class="cs-cn cs-num cs-lv-{{item.attLevel}}" wx:if="{{columns.attendance}}">{{item.attText}}</text>
+      <view class="cs-row-side">
+        <text class="cs-score num-font cs-lv-{{item.attLevel}}" wx:if="{{columns.attendance}}">{{item.attText}}</text>
+        <text class="cs-rate cs-lv-{{item.dailyLevel}}" wx:if="{{columns.daily}}">{{item.dailyRateText}}</text>
+        <text class="cs-rate cs-lv-{{item.weeklyLevel}}" wx:if="{{columns.weekly}}">{{item.weeklyRateText}}</text>
+      </view>
     </view>
   </view>
 

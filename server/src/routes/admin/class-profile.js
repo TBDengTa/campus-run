@@ -39,6 +39,8 @@ const roster = require('../../services/roster');
 const dormsSvc = require('../../services/dorms');
 const classProfilesSvc = require('../../services/class-profiles');
 const bandChao = require('../../services/band-chao');
+// 分数展示口径（两位小数 / 空值显「—」）的唯一出口：CSV 导出必须与页面同一份
+const scoreScale = require('../../services/score-scale');
 // 人数实时统计（应到 = 学籍人数，应住 = 住宿名单人数）：唯一口径，见 services/class-counts.js
 const { liveCount, liveCounts } = require('../../services/class-counts');
 
@@ -1170,6 +1172,44 @@ router.put(
   })
 );
 
+/**
+ * 班级状态看板 / 导出 CSV 共用的取参（**唯一一份**）。
+ *
+ * 为什么必须抽出来：导出必须与页面用**同一份**筛选口径（同样的 attRange / today / 条件）。
+ * 两边各解析一遍参数，迟早就出现「看板显示 12 个班、导出 CSV 是 15 个班」——
+ * 这与本仓库反复报障的「两个数字互相矛盾」是同一类问题。
+ *
+ * 回落：白名单外的取值一律当「未指定」，前端拼错参数时退回全量而不是筛成空。
+ */
+function boardQuery(req) {
+  const str = (v) => String(v ?? '').trim();
+  // 考勤统计窗口：本日 / 本周 / 本月（用户 2026-11-12「要本日、本周、本月，而不是3天7天这样」）。
+  // 白名单外（含旧的 days=7 之类）一律交给服务层回退「本周」—— 不在这里再判一次默认值，
+  // 否则两处默认迟早不同（页面显示本周、数据算的是别的窗口）。
+  const attRange = ['day', 'week', 'month'].includes(str(req.query.attRange)) ? str(req.query.attRange) : undefined;
+  // 年级多选：逗号分隔 → 去空去重，只留 4 位数字年份（'20xx'）；解析不出任何合法值 = 未指定
+  const grades = [...new Set(String(req.query.grades || '').split(',').map((g) => g.trim()))].filter((g) =>
+    /^(19|20)\d{2}$/.test(g)
+  );
+  return {
+    today: str(req.query.today) || undefined,
+    attRange,
+    filter: {
+      // 院校 + 系部成对（同名系部跨校区，只能靠 school 消歧）
+      school: str(req.query.school),
+      department: str(req.query.department),
+      grades: grades.length ? grades : undefined,
+      quick: str(req.query.quick),
+      // 档位筛选：level × metric（日/周）
+      level: str(req.query.level),
+      metric: str(req.query.metric),
+      keyword: str(req.query.keyword),
+      // 复制口径（文案强调哪个指标）
+      copy: str(req.query.copy),
+    },
+  };
+}
+
 // ===== 全校班级状态总览（用户 2026-10-29）=====
 //   「增加班级状态页面显示所有班级的考勤、校园跑达标(日、周)，并且可以复制到文本如未达标班级等」
 //
@@ -1188,37 +1228,119 @@ router.put(
 //   grades=2023,2024  年级多选（逗号分隔，2026-11-03；只认 4 位年份，防注入防脏值）
 // 筛选放服务端而不是前端：可复制文案必须服务端单点生成（否则「列表 87%、文案 88%」），
 // 若筛选在前端、文案在服务端，两者用的就是不同的行集合 —— 正是要避免的那类不一致。
-// 回落：白名单外的取值一律当「未指定」，前端拼错参数时退回全量而不是筛成空。
 router.get(
   '/status-board',
   wrap(async (req, res) => {
     const board = require('../../services/class-status-board');
-    const str = (v) => String(v ?? '').trim();
-    // 考勤统计窗口：本日 / 本周 / 本月（用户 2026-11-12「要本日、本周、本月，而不是3天7天这样」）。
-    // 白名单外（含旧的 days=7 之类）一律交给服务层回退「本周」—— 不在这里再判一次默认值，
-    // 否则两处默认迟早不同（页面显示本周、数据算的是别的窗口）。
-    const attRange = ['day', 'week', 'month'].includes(str(req.query.attRange)) ? str(req.query.attRange) : undefined;
-    const full = await board.classStatusBoard({ today: str(req.query.today) || undefined, attRange });
-    // 年级多选：逗号分隔 → 去空去重，只留 4 位数字年份（'20xx'）；解析不出任何合法值 = 未指定
-    const grades = [...new Set(String(req.query.grades || '').split(',').map((g) => g.trim()))].filter((g) =>
-      /^(19|20)\d{2}$/.test(g)
-    );
-    ok(
-      res,
-      board.applyBoardFilter(full, {
-        // 院校 + 系部成对（同名系部跨校区，只能靠 school 消歧）
-        school: str(req.query.school),
-        department: str(req.query.department),
-        grades: grades.length ? grades : undefined,
-        quick: str(req.query.quick),
-        // 档位筛选：level × metric（日/周）
-        level: str(req.query.level),
-        metric: str(req.query.metric),
-        keyword: str(req.query.keyword),
-        // 复制口径（文案强调哪个指标）
-        copy: str(req.query.copy),
-      })
-    );
+    const q = boardQuery(req);
+    const full = await board.classStatusBoard({ today: q.today, attRange: q.attRange });
+    ok(res, board.applyBoardFilter(full, q.filter));
+  })
+);
+
+// ===== 班级状态导出 CSV（用户 2026-11-20）=====
+// 取参与筛选**完全复用**上面的看板（boardQuery + classStatusBoard + applyBoardFilter）：
+// 导出的每个数字都只能来自看板服务的同一份行数据，**禁止在这里重算分数 / 出勤率 / 达标率** ——
+// 重算就是第二套口径，CSV 与页面迟早出现两个互相矛盾的数。
+// 必须是 GET 且不写库（classStatusBoard 只写内存缓存，不碰数据库）。
+//
+// 列：日期区间 / 班级 / 院校 / 系部 / 年级 / 学生数 / 班超分 / 综合出勤率 /
+//     每个考勤模块一列（列名=模块名，单元格「应到N/实到M/率P%」）/
+//     扣分明细（模块-受检类型，如「卫生-宿舍 -0.20 · 晚自习 -0.12」）/
+//     今日达标人数 / 今日达标率 / 本周达标人数 / 本周达标率 / 当日人均步数
+router.get(
+  '/status-export',
+  wrap(async (req, res) => {
+    const board = require('../../services/class-status-board');
+    const q = boardQuery(req);
+    const full = await board.classStatusBoard({ today: q.today, attRange: q.attRange });
+    const result = board.applyBoardFilter(full, q.filter);
+    // 行数上限 500：正常全校约 43 个班；超过只可能是异常数据，截断即可（不报错）
+    const rows = (result.rows || []).slice(0, 500);
+    const modules = board.MODULES || [];
+
+    const header = [
+      '日期区间',
+      '班级',
+      '院校',
+      '系部',
+      '年级',
+      '学生数',
+      '班超分',
+      '综合出勤率',
+      ...modules.map((m) => m.name),
+      '扣分明细',
+      '今日达标人数',
+      '今日达标率',
+      '本周达标人数',
+      '本周达标率',
+      '当日人均步数',
+    ];
+    // 单元格一律双引号包裹 + 内部双引号转义（与 routes/admin/union.js::/records/export 同一写法，
+    // Excel 双击打开不乱码靠 BOM）。null / undefined 写空串。
+    const cell = (v) => `"${String(v === undefined || v === null ? '' : v).replace(/"/g, '""')}"`;
+    const pctText = (v) => (v === null || v === undefined ? '' : `${v}%`);
+    // 模块单元格「应到N/实到M/率P%」：早八只记迟到人（没有应到/实到）→ 该格式表达不了，留空。
+    // 整模块无数据也留空（不是 0 人，避免把「没录」显示成「应到 0」）。
+    const moduleCell = (row, key) => {
+      const m = (row.attendance && row.attendance.modules && row.attendance.modules[key]) || null;
+      if (!m || m.should === undefined || m.actual === undefined) return '';
+      // 率为 null（应到为 0 的历史脏数据）时写「—」，与页面同一显示口径 ——
+      // 不能留成「应到0/实到0/率」这种后面什么都没有的断句。
+      const rate = m.ratePercent === null || m.ratePercent === undefined ? '—' : `${m.ratePercent}%`;
+      return `应到${m.should}/实到${m.actual}/率${rate}`;
+    };
+    // 扣分明细：优先用 targets（模块-受检类型，Σ 已由服务端调平 == 模块日均扣分），
+    // 没有 targets（老数据 / 该模块没有受检类型聚合）退回模块名 - 扣分，保证不丢信息。
+    const deductText = (row) => {
+      const list = (row.attendance && row.attendance.deductDetail) || [];
+      const parts = [];
+      for (const d of list) {
+        const targets = Array.isArray(d.targets) ? d.targets : [];
+        if (targets.length) {
+          for (const t of targets) parts.push(`${t.name} -${scoreScale.scoreText(t.avgDeduct)}`);
+        } else {
+          parts.push(`${d.name} -${scoreScale.scoreText(d.deduct)}`);
+        }
+      }
+      return parts.join(' · ');
+    };
+
+    const lines = [header.map(cell).join(',')];
+    for (const r of rows) {
+      const att = r.attendance || {};
+      const run = r.run || {};
+      lines.push(
+        [
+          // 日期区间 = 看板实际统计窗口（服务端 to，不是所选日 —— 完整周/月下两者不同）
+          `${result.from} ~ ${result.to}`,
+          r.className,
+          r.schoolName || '',
+          r.departmentName || '',
+          r.grade || '',
+          r.studentCount,
+          att.score === null || att.score === undefined ? '' : scoreScale.scoreText(att.score),
+          pctText(att.ratePercent),
+          ...modules.map((m) => moduleCell(r, m.key)),
+          deductText(r),
+          run.achievedToday,
+          pctText(run.dailyRate),
+          run.achievedWeek,
+          pctText(run.weeklyRate),
+          // 当日人均步数：看板行已算好（services/class-status-board.js 的 run.avgSteps），这里不重算
+          run.avgSteps,
+        ]
+          .map(cell)
+          .join(',')
+      );
+    }
+
+    const csv = `\uFEFF${lines.join('\r\n')}`;
+    // 文件名只用 ASCII 安全字符：日期本身已做白名单清洗
+    const safeDay = String(result.today || dates.todayKey()).replace(/[^0-9A-Za-z-]/g, '');
+    res.set('Content-Type', 'text/csv; charset=utf-8');
+    res.set('Content-Disposition', `attachment; filename="class-status-${safeDay}.csv"`);
+    res.send(csv);
   })
 );
 
