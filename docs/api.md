@@ -284,7 +284,8 @@
 | `level` | 达标档位：`notFull` 未达标 / `below95` 低于95%（2026-11-03 替代「低于一半」）/ `zero` 零达标。与 `metric` 组合（如「日达标零达标」）。**没有这个档位时「今日未达标」会筛出全部班级**（今日全校达标率个位数，没有班到 100%），等于没筛 |
 | `metric` | 档位针对的指标：`daily`（默认）/ `weekly` |
 | `keyword` | 班名 / 系部 / 院校 模糊（服务端已转义正则元字符） |
-| `copy` | **复制口径**：`all` 全部指标（默认）/ `daily` 只要日达标 / `weekly` 只要周达标。收窄后 `copyText` 的标题与正文都不再出现另一指标 |
+| `copy` | **复制口径**（2026-11-20 第三轮起由前端**按显示列派生**，不再由用户手选）：`all` 全部指标（默认）/ `daily` 只要日达标 / `weekly` 只要周达标 / `att` 只写班超分报告（逐行含「日均扣 / 区间合计扣 / 主因」）。收窄后 `copyText` 的标题与正文都不再出现其它指标 |
+| `att` | 是否显示「班超分」列：`1`（默认）/ `0`。`0` 时 `copyText` 不写每行班超分、「考勤待补」段与考勤计算规则 —— 复制必须与屏幕上的列一致（用户 2026-11-20「去掉显示中的复制，上面的复制已经自动识别了显示内容」）。导出 CSV 不使用该参数 |
 
 响应要点：
 
@@ -292,13 +293,14 @@
 |---|---|
 | `today` / `from` / `to` / `weekStart` / `attRange` | 统计日、考勤窗口起止（`to` 是**完整周/月窗口终点**，不是所选日）、本周起点（ISO 周一）、窗口 key |
 | `totals` | **全校口径**（不随筛选变）：`classCount / studentCount / achievedToday / achievedWeek / dailyRate / weeklyRate / skippedClasses` |
-| `rows[]` | 逐班：`className / schoolName / departmentName / grade / studentCount`、`run{achievedToday,dailyRate,achievedWeek,weeklyRate,enabled,avgSteps}`、`attendance{modules,ratePercent,score,deduct,deductDetail[],lateCount,hasData,hasAnyCheck}`、`flags`。**有筛选时只含筛出的行**；行序 = 年级升序 → 班级名（2026-11-03，空年级排末尾）。⚠️ `attendance.score` = 班超分（与班超总评同一实现，**含卫生/查宿**）；`deductDetail[]` 每项 `{key,name,deduct,targets[]}`，`targets` 是「模块 × 受检类型」的日均扣分明细（如 `卫生-宿舍 -0.20`，2026-11-20 新增，见 AGENTS.md） |
+| `rows[]` | 逐班：`className / schoolName / departmentName / grade / studentCount`、`run{achievedToday,dailyRate,achievedWeek,weeklyRate,enabled,avgSteps}`、`attendance{modules,ratePercent,score,deduct,deductTotal,dayCount,deductDetail[],lateCount,hasData,hasAnyCheck}`、`flags`。**有筛选时只含筛出的行**；行序 = 年级升序 → 班级名（2026-11-03，空年级排末尾）。⚠️ `attendance.score` = 班超分（与班超总评同一实现，**含卫生/查宿**）；`deduct` = 日均扣分、`deductTotal` = 窗口合计扣分（2026-11-20 第三轮「日均/合计」切换的数据源，`dayCount` = 有记录天数）；`deductDetail[]` 每项 `{key,name,deduct,totalDeduct,targets[]}`，`targets` 是「模块 × 受检类型」明细 `{name,avgDeduct,totalDeduct,count}`（如 `卫生-宿舍`），两套口径分别调平到模块的 `avgDeduct` / `deduct` |
+| `hasAnyCheck` | **全量行**里是否有任意检查记录（筛选不改变它）。前端据此决定「班超分」列与「班超分范围」次级筛选是否可用 —— 曾用筛选后的行现算，导致一筛选范围行/班超分列就消失（用户 2026-11-20 报障的真因） |
 | `schools[]` / `departments[]` / `grades[]` | 院校 / 系部 / 年级候选（取自实际有数据的班，不查组织架构；年级已含班名解析兜底） |
 | `filtered` | **筛选后小计**（与 `rows` 同集合）；未筛选时等于 `totals` |
 | `activeFilters[]` | 生效的筛选标签（如 `['北校区','计财系','日达标零达标']`）；空数组 = 未筛选 |
-| `copyScope` | 回显生效的复制口径 |
+| `copyScope` / `withAtt` | 回显生效的复制口径与「是否写了班超分」（前端复制成功提示直接用，不自己映射） |
 | `notAchieved` | `daily[] / weekly[] / attendanceMissing[]`（**已排除** 不参跑班、空班、无达标率的班，避免误报） |
-| `copyText` | **服务端生成**的可直接粘贴文本。未筛选 = 全校完整报告；有筛选 = **只列筛出的行**并在标题写明筛选条件与班数，另附一行全校对照；并按 `copy` 口径只写对应指标 |
+| `copyText` | **服务端生成**的可直接粘贴文本。未筛选 = 全校完整报告；有筛选 = **只列筛出的行**并在标题写明筛选条件与班数，另附一行全校对照；并按 `copy` 口径只写对应指标；`att=0` 时不写班超分/考勤待补/规则 |
 
 口径（实现 `services/class-status-board.js`，前端不做二次计算）：
 ① 只统计 `status==='normal'` 的班（实习/毕业班不参与考勤与校园跑）；
@@ -306,8 +308,7 @@
 ③ 考勤按**应到人数加权**（早操/晚自习用 `shouldCount`、查宿用 `shouldStay`；早八只记迟到人数、无比率）；
 ④ **筛选在服务端做**（缓存存全量、筛选在内存）：文案必须服务端单点生成，
 若筛选在前端、文案在服务端，两者用的是不同行集合，复制出去仍是全量报告；
-⑤ 「考勤统计 N 天」只在区间内**确有考勤记录**时展示（`rows` 里任一 `attendance.hasData`）：
-当前 `check_records` 里没有早操/早八/晚自习/查宿数据，整块控件隐藏，不留一排点了没反应的按钮。
+⑤ **次级筛选与显示联动**（2026-11-20 第三轮）：「班超分范围」（本日/本周/本月）与「口径」（日均/合计）只在**显示班超分列**时出现，数据全部来自服务端 `attRange` 窗口与 `deductTotal/dayCount`；本日窗口下合计=日均，前端隐藏口径开关。范围行是否可用由全局 `hasAnyCheck` 决定，**不随筛选行集变化**。
 
 ### GET /api/admin/class/status-export（导出考勤表 CSV）
 

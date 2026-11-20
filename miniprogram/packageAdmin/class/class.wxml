@@ -547,7 +547,10 @@
         </view>
       </view>
 
-      <!-- ===== 总评 hero（紧凑：分数与名次同一行，上下 padding 收一档）===== -->
+      <!-- ===== 总评 hero（压缩：主数据=班超分，次数据=JS 预计算的一整句）=====
+           旧模板写「本 + rangeWord + 还没有检查记录」会渲染成「本今日还没有检查记录」，
+           现在空态/正常态都直接渲染 JS 拼好的 banchaoHeroNote（模板不拼三元、不拼字符串）。
+           全校名次已移到下方 KPI 卡（hero 只留分数 + 一行辅助说明，高度更矮）。 -->
       <view class="tt-hero cls-bc-hero">
         <view class="tt-hero-body">
           <view class="cls-bc-hero-top">
@@ -559,32 +562,39 @@
               <text class="num-font cls-bc-hero-score-v">{{banchao.scoreText || '—'}}</text>
               <text class="cls-bc-hero-score-u">分</text>
             </view>
-            <view class="cls-bc-hero-info">
-              <!-- 名次取 banchao.rank（本接口按**当前周期**算的），不能用 classRank（那是固定的本周口径） -->
-              <view class="cls-bc-hero-rank" wx:if="{{banchao.rank && banchao.rank.rank}}">
-                全校第 {{banchao.rank.rank}} / {{banchao.rank.total}} 名
-              </view>
-              <view class="cls-bc-hero-rank" wx:elif="{{banchao}}">本{{rangeWord}}还没有检查记录</view>
-              <text class="cls-bc-hero-meta">{{banchao.rangeLabel}}平均 · {{banchao.recordCount || 0}} 条记录</text>
-            </view>
           </view>
+          <text class="cls-bc-hero-note">{{banchaoHeroNote}}</text>
         </view>
       </view>
 
-      <!-- ===== 检查明细：两列网格（模块名 + 得分 / 扣分 + 指标），只压行高不删信息 ===== -->
+      <!-- ===== 本期关键指标：2×2 卡片 =====
+           4 张卡由 buildBanchaoKpis() 生成（overview + 班超详情谁后到都补齐）：
+           今日/本周达标率（带进度轨）、全校班超名次、本期检查记录数。
+           达标率 / 名次的空态、不参跑都在 JS 里落成整句，模板不写三元。 -->
+      <view class="cls-bc-kpis">
+        <view class="cls-bc-kpi" wx:for="{{banchaoKpis}}" wx:key="key">
+          <text class="num-font cls-bc-kpi-value">{{item.valueText}}</text>
+          <text class="cls-bc-kpi-label">{{item.label}}</text>
+          <view class="cls-bc-kpi-track" wx:if="{{item.hasBar}}">
+            <view class="cls-bc-kpi-fill" style="width: {{item.percent}}%"></view>
+          </view>
+          <text class="cls-bc-kpi-aux" wx:if="{{item.auxText}}">{{item.auxText}}</text>
+        </view>
+      </view>
+
+      <!-- ===== 检查明细：2 列独立卡片（模块名 + 得分 / 部门·指标 / 扣分），只压行高不删信息 ===== -->
       <view class="tt-section cls-bc-section">
         <text>检查明细</text>
         <text class="tt-section-extra">{{banchaoPeriodLabel || banchao.rangeLabel}}</text>
       </view>
-      <view class="tt-card cls-bc-modules">
+      <view class="cls-bc-modules">
         <view class="cls-bc-module" wx:for="{{banchaoModules}}" wx:key="key">
           <view class="cls-bc-module-head">
             <text class="cls-bc-module-name">{{item.name}}</text>
             <text class="num-font cls-bc-module-score cls-bc-module-{{item.state}}">{{item.scoreText}}</text>
           </view>
-          <view class="cls-bc-module-dept">{{item.ownerDeptName}}</view>
-          <view class="cls-bc-module-metric">{{item.metricLine}}</view>
-          <view class="cls-bc-module-deduct" wx:if="{{item.deductText}}">{{item.deductText}}</view>
+          <text class="cls-bc-module-desc">{{item.descText}}</text>
+          <text class="cls-bc-module-deduct {{item.deductTone}}" wx:if="{{item.deductText}}">{{item.deductText}}</text>
         </view>
         <view class="cls-bc-empty" wx:if="{{!banchaoModules.length}}">暂无检查模块</view>
       </view>
@@ -608,18 +618,21 @@
         </view>
       </block>
 
-      <!-- ===== 最近检查记录（卡片重做：检查人 / 复核人 / 实际数据 / 照片，模板与下方检查记录共用）===== -->
+      <!-- ===== 最近检查记录（2 列紧凑卡片，只显示前 6 条；模板 bc-record 与下方检查记录共用）=====
+           「全部 ›」入口保留（banchaoRecent 里仍有全部 10 条，进列表页即可看全）。 -->
       <view class="tt-section cls-bc-section">
         <text>最近记录</text>
         <text class="tt-section-extra" bind:tap="goBanchaoRecords">全部 ›</text>
       </view>
-      <view class="tt-card cls-bc-records">
-        <block wx:for="{{banchaoRecent}}" wx:key="id">
+      <view class="cls-bc-records-grid" wx:if="{{banchaoRecentGrid.length}}">
+        <block wx:for="{{banchaoRecentGrid}}" wx:key="id">
           <template is="bc-record" data="{{...item}}" />
         </block>
-        <view class="cls-bc-empty" wx:if="{{!banchaoRecent.length}}">暂无检查记录</view>
-        <view class="cls-bc-appeal-tip" wx:if="{{canNudge}}">对检查结果有异议？点开记录详情可以发起申诉</view>
       </view>
+      <view class="tt-card cls-bc-records" wx:else>
+        <view class="cls-bc-empty">暂无检查记录</view>
+      </view>
+      <view class="cls-bc-appeal-tip" wx:if="{{canNudge}}">对检查结果有异议？点开记录详情可以发起申诉</view>
 
       <!-- ===== 班级榜前三 ===== -->
       <block wx:if="{{banchaoRankingTop.length}}">

@@ -940,6 +940,36 @@
   （CSV 逐格对账 + 权限 + 只读）、`verify-class-status.js` [12]（targets 造数折叠与求和）、
   `verify-union-review.js` [9]（dayRecords 形状 / photoLimit=3 / month 窗口 / 范围闸门）。
 
+- **班级状态 / 我的班级「第三轮返工」（用户 2026-11-20 追加「部分 UI 很难看而且有 BUG」，
+  改这几块之前必读）**：四条硬约束 + 两个真 BUG，回退任一条都会复发。
+  ① **「一筛选班超分范围就不见了」的真 BUG**：前端曾用**筛选后的 rows** 现算 `hasAnyCheck`，
+     于是任何把有检查记录的班筛掉的筛选（院系/年级/搜索/快捷 chip）都会强制关掉班超分列、
+     范围行消失。现在 `buildResult` 下发**全量口径**的 `hasAnyCheck`（筛选不改变它），
+     前端只读它（旧后端缺字段才回退现算）。「有没有检查记录」是**系统能力**，不是当前结果。
+  ② **班超分范围 + 口径（本日/本周/本月 · 日均/合计）**：只在显示班超分列时渲染；
+     本日窗口合计≡日均故隐藏口径开关。口径切换**不重发请求** —— 服务端同时下发
+     `attendance.deduct`（日均）/`deductTotal`（窗口合计）、`deductDetail[].deduct/totalDeduct`、
+     `targets[].avgDeduct/totalDeduct`，两套值**各自调平**（Σ 子项分别等于模块值），
+     前端只挑口径、不乘天数（前端重算会差 0.01，老师当场能算出来）。
+  ③ **复制口径由显示列派生（不再有独立 picker）**：`class-status.js::autoCopy(columns)` 是唯一实现
+     （只日→daily、只周→weekly、只班超分→att、混合→all）+ 请求带 `att=1|0`；
+     `buildCopyText` 支持 `copy=att` 与 `withAtt`（att=0 时正文不写班超分/考勤待补/规则），
+     `applyBoardFilter` 只在「无筛选 + all + withAtt」才复用缓存文案，否则重生成；
+     **切显示列必须重查**（本地只改显隐 = 「显示一套、复制另一套」，用户点名的问题）。
+  ④ **达标单/多数据排版 + 不显示班超分不显示扣分**：`decorate(r,{columns,deductMode})` 预计算
+     `runBars`（单条 `.is-single` 更大 / 两条 `.is-multi` 紧凑），班超分列关闭时
+     chips / 无扣分文案 / 口径副行**一律不产出**（用户明确要求）。
+  ⑤ **我的班级双列卡片**：hero 只留分数 + 一行 JS 预计算备注（旧模板 `本{{rangeWord}}` 会渲染
+     「本今日」，已修）；KPI 2×2 由 `buildBanchaoKpis()` 读 overview + banchao 生成
+     （`loadOverview` / `loadBanchao` 的 setData 后各补一次，谁后到都补齐；不参跑/未上榜/无数据三态）；
+     检查明细改 2 列独立卡片；最近记录复用**同一份** `bc-record` 模板进 `cls-bc-records-grid`
+     （前 6 条；`banchaoRecent` 仍保留全量给「全部 ›」）；详细检查记录与榜单保持全宽（两列会截断）。
+  回归：`check-class-ui.js`（第三轮：无复制 picker / autoCopy 矩阵 / 范围行 gated / 口径 /
+  单多排版 / 不显示班超无扣分 / KPI 双列 / 无「本今日」）、`check-server-contract.js`
+  （hasAnyCheck / totalDeduct / copy=att / att 参数 / 复用文案条件）、`check-page-runtime.js`
+  （自动开列后补请求 / 派生口径 / 口径不重查 / 单多排版 / KPI 四卡三态）、
+  `verify-class-status.js` [13][14][15]（双口径对账 / 筛到 0 行 hasAnyCheck 仍真 / 复制文案跟随显示列）。
+
 - **检查记录筛选与卡片（用户 2026-11-19「有学生会总管的权限查看检查记录没有办法筛选与查看
   所有记录，增加筛选如班级、系部、院校、楼栋」「卡片增加缺勤人的显示、照片显示」）**：
   ① **总裁判必须识别 `*` 通配**（`routes/union.js::hasWildcard`）：超管组有效权限是 `['*']`，

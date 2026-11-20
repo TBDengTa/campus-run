@@ -1187,6 +1187,11 @@ function boardQuery(req) {
   // 白名单外（含旧的 days=7 之类）一律交给服务层回退「本周」—— 不在这里再判一次默认值，
   // 否则两处默认迟早不同（页面显示本周、数据算的是别的窗口）。
   const attRange = ['day', 'week', 'month'].includes(str(req.query.attRange)) ? str(req.query.attRange) : undefined;
+  // 班超分列是否显示（用户 2026-11-20 第三轮「复制内容跟着显示列走」）：
+  // 前端把「显示」开关的班超分状态传过来（att=1|0），复制正文据此决定是否写班超分/考勤待补/规则。
+  // 缺省（不传）=true，保持 Web 控制台与老客户端「含班超分」的原行为。
+  // 导出接口不使用这个参数（CSV 始终含考勤各列，口径不能跟着页面列显隐漂移）。
+  const att = ['0', 'false'].includes(str(req.query.att)) ? false : true;
   // 年级多选：逗号分隔 → 去空去重，只留 4 位数字年份（'20xx'）；解析不出任何合法值 = 未指定
   const grades = [...new Set(String(req.query.grades || '').split(',').map((g) => g.trim()))].filter((g) =>
     /^(19|20)\d{2}$/.test(g)
@@ -1204,8 +1209,10 @@ function boardQuery(req) {
       level: str(req.query.level),
       metric: str(req.query.metric),
       keyword: str(req.query.keyword),
-      // 复制口径（文案强调哪个指标）
+      // 复制口径（文案强调哪个指标）：由前端按显示列派生 all|daily|weekly|att
       copy: str(req.query.copy),
+      // 页面是否显示班超分列（决定复制正文是否含班超分/考勤待补/规则）
+      att,
     },
   };
 }

@@ -2476,8 +2476,9 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('规则写明迟到与缺勤两类逻辑（用户点名的两项）',
     /迟到/.test(boardSrc) && /缺勤/.test(boardSrc) && /未归/.test(boardSrc));
   ok('规则随响应下发（attRuleLines）', /attRuleLines: buildAttRuleLines\(\)/.test(boardSrc));
-  ok('copy=all 的复制文案附规则（收窄到只看日达标时不附，避免噪音）',
-    /if \(scope === 'all'\)[\s\S]{0,200}考勤计算规则/.test(boardSrc));
+  // 第三轮起规则跟「班超分是否显示」走（showAtt）：收窄到只看日达标、或页面关掉班超分列时都不附。
+  ok('复制文案附规则只在显示班超分时（showAtt；收窄/关闭班超分都不附，避免噪音）',
+    /if \(showAtt\) \{[\s\S]{0,1200}考勤计算规则/.test(boardSrc));
   // 图片：规则画在表格下面（用户明确「在图片下面标注」）。
   // 底部布局**只算一次**（planShareFooter 同时给 footH 和每行 y），绘制按它给的坐标画 ——
   // 高度与绘制分两处各算，改动时漏一处就是内容重叠或被切，而画布溢出是静默的
@@ -2568,10 +2569,7 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
     /attTo: d\.to \|\| ''/.test(csJs) && /\$\{d\.to \|\| d\.today/.test(csJs)
       // 图片标题同样不许留旧写法（from ~ today）
       && !/this\.data\.from\} ~ \$\{this\.data\.today\}/.test(csJs));
-  ok('失败路径清空 attTo（不留一个不存在的区间给图片标题）',
-    /attRangeText: '',\s*\n\s*\/\/ [^\n]*\n\s*attTo: ''/.test(csJs)
-      || /attRangeText: '',\s*\n\s*attTo: ''/.test(csJs),
-    (csJs.match(/attTo: ''/) || ['未清空'])[0]);
+  ok('失败路径清空 attTo（不留一个不存在的区间给图片标题）', /attTo: ''/.test(csJs) && /attTo: '',/.test(csJs), (csJs.match(/attTo: ''/) || ['未清空'])[0]);
 
   // 小程序反作弊页：指标网格 + 轨迹（2026-11-03 对齐 Web 控制台）
   const anoJs2 = readSrc(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'config', 'anomalies', 'anomalies.js'), 'utf8');
@@ -2760,6 +2758,45 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
     ok('导出不重算分数/出勤率（无现场聚合、无 CheckRecord 查询）', !/\.aggregate\(|CheckRecord\./.test(seg));
     ok('导出 CSV 带 BOM + attachment + 行数上限 500', /\\uFEFF/.test(seg) && /attachment/.test(seg) && /\.slice\(0, 500\)/.test(seg));
   }
+
+  // ===== 第三轮（用户 2026-11-20）：范围行消失根因 + 合计口径 + 显示驱动复制 =====
+  // 这三项都是「接口字段/参数」，前端只是消费者；写错同样不报错、只表现为控件消失或文案与屏幕不一致。
+  ok(
+    '看板下发**全量口径** hasAnyCheck（决定班超分列/范围行是否可用，不能按筛选后行现算）',
+    /hasAnyCheck: rows\.some\(\(r\) => r\.attendance && r\.attendance\.hasAnyCheck\)/.test(boardSrc2)
+  );
+  ok(
+    '扣分明细带 totalDeduct、attendance 带 deductTotal/dayCount（日均/合计切换的数据源）',
+    /totalDeduct: modDeduct\[k\]\.deduct/.test(boardSrc2) &&
+      /deductTotal: agg\.deductTotal/.test(boardSrc2) &&
+      /dayCount: agg\.dayCount/.test(boardSrc2)
+  );
+  ok(
+    'targets 同时调平「日均」与「合计」两套口径（Σ 分别等于模块 avgDeduct / deduct）',
+    /totalDeduct: round2\(hit\.deduct \|\| 0\)/.test(bandSrc2) &&
+      /const totalDiff = round2\(moduleTotalDeduct - totalSum\)/.test(bandSrc2) &&
+      /round2\(hit\.deduct \|\| 0\)\s*\n\s*\)/.test(bandSrc2)
+  );
+  ok(
+    'scoreOfAggregate 下发 deductTotal（合计 = cls.totalDeduct，不另算）',
+    /deductTotal: round2\(cls\.totalDeduct\)/.test(bandSrc2)
+  );
+  ok(
+    'buildCopyText 支持 att 口径 + withAtt 开关（复制正文跟随显示列）',
+    /copy === 'daily' \|\| copy === 'weekly' \|\| copy === 'att'/.test(boardSrc2) &&
+      /withAtt = true/.test(boardSrc2) &&
+      /const showAtt = withAtt && \(scope === 'all' \|\| scope === 'att'\)/.test(boardSrc2)
+  );
+  ok(
+    'applyBoardFilter 解析 att，且「all + 含班超分 + 无筛选」才复用缓存文案（否则重生成）',
+    /const withAtt = att === undefined \? true : !!att/.test(boardSrc2) &&
+      /copyText: copyScope === 'all' && withAtt \? board\.copyText : rebuild\(/.test(boardSrc2)
+  );
+  ok(
+    'boardQuery 解析 att=0/1 并注入 filter（导出不使用该参数，CSV 始终含考勤列）',
+    /const att = \['0', 'false'\]\.includes\(str\(req\.query\.att\)\) \? false : true/.test(adminClsSrc2) &&
+      /^\s*att,$/m.test(adminClsSrc2)
+  );
 }
 
 console.log(`\n契约自检：${checked} 项，失败 ${failed}`);

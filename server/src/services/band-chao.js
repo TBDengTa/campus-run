@@ -188,20 +188,22 @@ async function aggregateScores({ from, to, className, departmentIds, classNames 
  * 让老师看到扣分来自哪个模块的**哪类受检对象**，而不是只有一个模块名。
  *
  * ⚠️ 硬约束（本仓库反复报障的「两个数字互相矛盾」类问题）：
- *    `round2(Σ targets.avgDeduct)` **必须严格等于** `moduleDeduct[k].avgDeduct`。
+ *    `round2(Σ targets.avgDeduct)` **必须严格等于** `moduleDeduct[k].avgDeduct`；
+ *    `round2(Σ targets.totalDeduct)` **必须严格等于** `moduleDeduct[k].deduct`（窗口合计）。
  *    逐项 round2 后再相加，与整项 round2 可能差 0.01（0.005 的舍入方向不同），
- *    所以这里把尾差记到**扣分最大的那一项**上 —— 宁可让最大项偏 0.01，
- *    也不能让「子项加起来 ≠ 模块扣分」被老师当场算出来。
+ *    所以两套口径都各自把尾差记到**扣分最大的那一项**上 —— 宁可让最大项偏 0.01，
+ *    也不能让「子项加起来 ≠ 模块扣分」被老师当场算出来（页面切「日均/合计」两处都要对得上）。
  *
  * @param {string} moduleKey 模块 key
  * @param {string} moduleName 模块短名（与 deductDetail 的模块名同一口径，如「卫生」「晚自习」）
  * @param {Map<string,{deduct:number,count:number}>|null} byType 该模块按 targetType 的聚合
  * @param {number} dayCount 有记录天数（与 avgDeduct 同一个分母）
  * @param {number} moduleAvgDeduct 该模块日均扣分（round2 后的值，硬约束的目标）
- * @returns {Array<{key:string,name:string,avgDeduct:number,count:number}>}
+ * @param {number} moduleTotalDeduct 该模块窗口合计扣分（round2 后的值，合计口径的目标）
+ * @returns {Array<{key:string,name:string,avgDeduct:number,totalDeduct:number,count:number}>}
  *   按 avgDeduct 降序（并列按 name 稳定排序）；最多 3 项，其余并入一项「<模块名>-其他」。
  */
-function buildTargetItems(moduleKey, moduleName, byType, dayCount, moduleAvgDeduct) {
+function buildTargetItems(moduleKey, moduleName, byType, dayCount, moduleAvgDeduct, moduleTotalDeduct) {
   // 没有受检类型聚合（如 classSummary 走 aggregateScores、或该模块零记录）→ 空数组，
   // 消费方无需判空（前端/导出把空数组当「没有更细的来源」处理）。
   if (!byType || !byType.size || !(dayCount > 0)) return [];
@@ -214,6 +216,8 @@ function buildTargetItems(moduleKey, moduleName, byType, dayCount, moduleAvgDedu
       name: `${moduleName}-${TARGET_TYPE_TEXT[type] || TARGET_TYPE_TEXT.unknown}`,
       // 与模块 avgDeduct 同一个分母（有记录天数），这样各子项之和 ≈ 该模块的日均扣分
       avgDeduct: round2((hit.deduct || 0) / dayCount),
+      // 窗口合计（用户 2026-11-20 第三轮「合计/日均」切换）：与模块 deduct 同为窗口累计
+      totalDeduct: round2(hit.deduct || 0),
       count: hit.count || 0,
     });
   }
@@ -231,19 +235,21 @@ function buildTargetItems(moduleKey, moduleName, byType, dayCount, moduleAvgDedu
       key: `${moduleKey}:other`,
       name: `${moduleName}-其他`,
       avgDeduct: round2(rest.reduce((a, x) => a + x.avgDeduct, 0)),
+      totalDeduct: round2(rest.reduce((a, x) => a + x.totalDeduct, 0)),
       count: rest.reduce((a, x) => a + x.count, 0),
     };
   }
   // 调平尾差（见函数头硬约束）：只允许动**扣分最大的真实项**，
-  // 合计必须与模块日均扣分严格对上（不把尾差塞给「其他」：它只是分组汇总）。
+  // 两套口径分别与模块的日均 / 合计严格对上（不把尾差塞给「其他」：它只是分组汇总）。
   const sum = round2(top.concat(other ? [other] : []).reduce((a, x) => a + x.avgDeduct, 0));
   const diff = round2(moduleAvgDeduct - sum);
-  if (diff !== 0) {
-    top[0].avgDeduct = round2(top[0].avgDeduct + diff);
-    // 调平后最大项可能与第二项互换（0.01 的临界情况）：重排一次，
-    // 保证「按 avgDeduct 降序」这条展示契约不被调平破坏。
-    top.sort((a, b) => b.avgDeduct - a.avgDeduct || a.name.localeCompare(b.name, 'zh-CN'));
-  }
+  if (diff !== 0) top[0].avgDeduct = round2(top[0].avgDeduct + diff);
+  const totalSum = round2(top.concat(other ? [other] : []).reduce((a, x) => a + (x.totalDeduct || 0), 0));
+  const totalDiff = round2(moduleTotalDeduct - totalSum);
+  if (totalDiff !== 0) top[0].totalDeduct = round2(top[0].totalDeduct + totalDiff);
+  // 调平后最大项可能与第二项互换（0.01 的临界情况）：重排一次，
+  // 保证「按 avgDeduct 降序」这条展示契约不被调平破坏。
+  top.sort((a, b) => b.avgDeduct - a.avgDeduct || a.name.localeCompare(b.name, 'zh-CN'));
   return other ? top.concat([other]) : top;
 }
 
@@ -273,7 +279,7 @@ function buildTargetItems(moduleKey, moduleName, byType, dayCount, moduleAvgDedu
  *   不传则按该班实际有记录的模块输出（班级状态看板用它 —— 那里不想为了一行文案再拉模块字典）。
  */
 function scoreOfAggregate(cls, moduleList) {
-  const empty = { score: null, deduct: null, dayCount: 0, recordCount: 0, moduleDeduct: {} };
+  const empty = { score: null, deduct: null, deductTotal: null, dayCount: 0, recordCount: 0, moduleDeduct: {} };
   if (!cls || !cls.byDate || !cls.byDate.size) return empty;
   const dayScores = [...cls.byDate.values()].map((d) => scoreScale.scoreOf(d.deduct));
   const keys = Array.isArray(moduleList) && moduleList.length
@@ -300,19 +306,24 @@ function scoreOfAggregate(cls, moduleList) {
       count: hit.count || 0,
       // 向后兼容的**增量**字段：扣分来源子项（模块 × 受检类型）。
       // 没有 target 聚合（如 classSummary 用的 aggregateScores）时给空数组，而不是 undefined。
-      // ⚠️ Σ targets.avgDeduct 必须严格等于上面的 avgDeduct（见 buildTargetItems 的调平）。
+      // ⚠️ Σ targets.avgDeduct 必须严格等于上面的 avgDeduct、Σ targets.totalDeduct 必须等于 deduct
+      //   （两套口径都在 buildTargetItems 里调平，见那里的注释）。
       targets: buildTargetItems(
         k,
         (tmod && tmod.name) || k,
         tmod && tmod.byType,
         dayCount,
-        round2((hit.deduct || 0) / dayCount)
+        round2((hit.deduct || 0) / dayCount),
+        round2(hit.deduct || 0)
       ),
     };
   }
   return {
     score: round2(dayScores.reduce((a, b) => a + b, 0) / dayScores.length),
+    // 日均扣分（与 score 同一个分母）与**窗口合计扣分**（用户 2026-11-20 第三轮「合计/日均」切换）：
+    // 两个都下发，前端只调展示口径、不重算；合计 = cls.totalDeduct（与各模块 deduct 之和一致）。
     deduct: round2(cls.totalDeduct / cls.byDate.size),
+    deductTotal: round2(cls.totalDeduct),
     dayCount: cls.byDate.size,
     recordCount: cls.recordCount || 0,
     moduleDeduct,

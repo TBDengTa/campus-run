@@ -482,14 +482,19 @@ async function classStatusBoard({ today, attRange, days, force } = {}) {
     //   写成窗口累计就会出现「10 − 10.00 ≠ 8.45」这种自相矛盾（本轮实测差点踩进去）。
     // 新增 targets（用户 2026-11-20「扣分要能写成『卫生-宿舍 -0.20 · 晚自习 -0.12』」）：
     //   直接搬 scoreOfAggregate 产出的子项（模块 × 受检类型），**不在这里重算**；
-    //   Σ targets.avgDeduct 已由 band-chao 调平为严格等于本项的 deduct，前端怎么加都对得上。
+    //   Σ targets.avgDeduct / Σ targets.totalDeduct 已由 band-chao 分别调平为严格等于本项的
+    //   deduct / totalDeduct，前端切「日均 / 合计」两套口径怎么加都对得上。
     //   没有 targets 时给**空数组**而不是 undefined —— 前端/导出对 undefined 调 .map 会直接报错。
+    //
+    // 第三轮（用户 2026-11-20「合计或日均」）：每项同时下发窗口合计 totalDeduct。
+    // 只给日均时用户无法回答「这 1.6 分是一周扣的还是平均每天扣的」，而这正是本次要补的次级筛选。
     const deductDetail = Object.keys(modDeduct)
-      .filter((k) => modDeduct[k].avgDeduct > 0)
+      .filter((k) => modDeduct[k].avgDeduct > 0 || modDeduct[k].deduct > 0)
       .map((k) => ({
         key: k,
         name: moduleNameBy.get(k) || k,
         deduct: modDeduct[k].avgDeduct,
+        totalDeduct: modDeduct[k].deduct,
         targets: modDeduct[k].targets || [],
       }))
       .sort((a, b) => b.deduct - a.deduct || String(a.key).localeCompare(String(b.key)));
@@ -518,6 +523,10 @@ async function classStatusBoard({ today, attRange, days, force } = {}) {
         // 班超分（10 分制，与班超总评逐字同源）+ 扣分明细（含卫生/查宿）+ 早八迟到人数
         score: attScore,
         deduct: agg.deduct,
+        // 窗口合计扣分与有记录天数：前端「日均 / 合计」切换直接用这两个数换算展示，
+        // **不在前端重算**（合计 ÷ 天数再 round 会与后端口径差 0.01，老师当场就能算出来）。
+        deductTotal: agg.deductTotal,
+        dayCount: agg.dayCount,
         deductDetail,
         lateCount: lateTotal,
         // hasData 与「考勤待补」同一个判定；hasAnyCheck 决定考勤列显示
@@ -599,6 +608,11 @@ function buildResult({ day, from, to, weekStart, attRangeKey, attRangeLabel, row
     // 窗口改成完整周/月后那句话说的是错的（写着「11月16日~11月19日」，数据其实统计到 22 日）。
     to,
     weekStart,
+    // 全量行里是否有任意检查记录（**筛选前**口径，用户 2026-11-20 第三轮）：
+    // 前端原来用「筛选后的 rows」现算，于是任何把有记录的班筛掉的筛选都会导致
+    // 「班超分列被强制关掉、班超分范围行消失」——用户报「选了班超分却没有考勤范围」的真因。
+    // 这是「系统能力」而不是「当前结果」：筛选只该影响列出的行，不该改变可用控件。
+    hasAnyCheck: rows.some((r) => r.attendance && r.attendance.hasAnyCheck),
     // 考勤窗口（用户 2026-11-12 本日/本周/本月）：range 是 key、rangeLabel 是中文，
     // 前端标题与图片都直接用 rangeLabel，不许自己按 from~to 反推「这是几天」。
     attRange: attRangeKey,
@@ -633,7 +647,7 @@ function buildResult({ day, from, to, weekStart, attRangeKey, attRangeLabel, row
  * 缓存的是**全量聚合结果**，筛选只在内存里做 —— 切换筛选不必重算 Mongo 聚合（那要 3 秒），
  * 而且保证「同一批数据」：不会出现两次请求之间数据变了、筛选前后对不上。
  *
- * 返回里 copyText 是**按当前筛选 + 复制口径**重新生成的，
+ * 返回里 copyText 是**按当前筛选 + 复制口径 + 班超分是否显示**重新生成的，
  * 所以前端复制到的永远是看到的那些行、且只含要的那个指标。
  *
  * @param {object} board 全量聚合结果
@@ -645,33 +659,39 @@ function buildResult({ day, from, to, weekStart, attRangeKey, attRangeLabel, row
  * @param {string} [p.level]      达标档位（LEVELS，与 metric 组合）
  * @param {string} [p.metric]     档位针对的指标 daily|weekly
  * @param {string} [p.keyword]    班名/系部/院校 关键词
- * @param {string} [p.copy]       复制口径 all|daily|weekly（文案强调哪个指标）
+ * @param {string} [p.copy]       复制口径 all|daily|weekly|att（由前端按显示列派生）
+ * @param {boolean} [p.att]       页面是否显示班超分列（决定复制正文是否含班超分/考勤待补/规则）
  */
-function applyBoardFilter(board, { school, department, grades, quick, level, metric, keyword, copy } = {}) {
+function applyBoardFilter(board, { school, department, grades, quick, level, metric, keyword, copy, att } = {}) {
   const { rows, filtered, tags } = filterBoard(board, { school, department, grades, quick, level, metric, keyword });
-  const copyScope = ['daily', 'weekly'].includes(copy) ? copy : 'all';
+  const copyScope = ['daily', 'weekly', 'att'].includes(copy) ? copy : 'all';
+  // 缺省 true：老客户端/Web 控制台不传 att 时保持「含班超分」的原行为（向后兼容）
+  const withAtt = att === undefined ? true : !!att;
+  const rebuild = (p) =>
+    buildCopyText({
+      day: board.today,
+      from: board.from,
+      to: board.to,
+      weekStart: board.weekStart,
+      totals: board.totals,
+      filtered: p.filtered,
+      tags: p.tags,
+      rows: p.rows,
+      copy: copyScope,
+      attRangeLabel: board.attRangeLabel,
+      withAtt,
+    });
   if (!tags.length) {
     return {
       ...board,
       filtered: board.totals,
       activeFilters: [],
-      // 无筛选但复制口径收窄时，文案仍要按复制口径重生成（用户「只需要日达标这种的」）
-      copyText:
-        copyScope === 'all'
-          ? board.copyText
-          : buildCopyText({
-              day: board.today,
-              from: board.from,
-              to: board.to,
-              weekStart: board.weekStart,
-              totals: board.totals,
-              filtered: null,
-              tags: [],
-              rows: board.rows,
-              copy: copyScope,
-              attRangeLabel: board.attRangeLabel,
-            }),
+      // 无筛选时**只有**「口径 all + 含班超分」才能复用缓存里的 copyText；
+      // 收窄口径（daily/weekly/att）或隐藏班超分（att=0）都必须重生成，
+      // 否则会出现「屏幕关了班超分列、复制出来还带着班超分」（用户本轮报的不一致）。
+      copyText: copyScope === 'all' && withAtt ? board.copyText : rebuild({ filtered: null, tags: [], rows: board.rows }),
       copyScope,
+      withAtt,
     };
   }
   return {
@@ -682,19 +702,9 @@ function applyBoardFilter(board, { school, department, grades, quick, level, met
     // 顶部要显示「筛出 5 个班」，也要能说明「全校 43 个班」，否则老师会以为数据被截断。
     filtered,
     activeFilters: tags,
-    copyText: buildCopyText({
-      day: board.today,
-      from: board.from,
-      to: board.to,
-      weekStart: board.weekStart,
-      totals: board.totals,
-      filtered,
-      tags,
-      rows,
-      copy: copyScope,
-      attRangeLabel: board.attRangeLabel,
-    }),
+    copyText: rebuild({ filtered, tags, rows }),
     copyScope,
+    withAtt,
   };
 }
 
@@ -843,60 +853,95 @@ function filterBoard(board, { school, department, grades, quick, level, metric, 
  *    标题必须写：否则粘出 5 个班却顶着「全校 43 个班」，群里的人会把
  *    「没列出来」理解成「那些班没问题」—— 这是筛选型报告最容易造成的误读。
  *
- * 复制口径 copy（用户 2026-10-30「可以查看显示内容与复制内容，如只需要日达标这种的」）：
- *  · all    → 每行同时写今日与本周（默认）；
+ * 复制口径 copy（用户 2026-10-30 提出；2026-11-20 第三轮**改为由显示列驱动**）：
+ *  · all    → 每行同时写今日与本周（默认）；显示班超分时再追加班超分；
  *  · daily  → 只写今日达标，标题标注「日达标」；
- *  · weekly → 只写本周达标，标题标注「周达标」。
- *  与「显示内容」是两回事：可以列表看着三列、复制时只要日达标那份名单，
- *  所以它是独立参数，不由列显隐推导。
+ *  · weekly → 只写本周达标，标题标注「周达标」；
+ *  · att    → 只写班超分报告（标题「班超分」，逐行写班超分 + 日均/合计扣分 + 主因）。
+ *
+ * ⚠️ 第三轮：前端不再有「复制内容」picker —— 复制口径由**显示列**派生
+ * （只开日→daily、只开周→weekly、只开班超分→att、混合→all），
+ * 并额外传 `att=1|0` 表示班超分列是否显示。`att=0` 时本函数不写每行班超分、
+ * 不写「考勤待补」段、不写考勤规则 —— 否则会出现「屏幕没有班超分、复制出来却有」，
+ * 用户拿两处一对照就会认为复制坏了（这正是本轮要消灭的不一致）。
+ * 历史注释里「与显示内容是两回事、独立参数」的口径**已作废**，别再按那个改。
  */
-function buildCopyText({ day, from, to, weekStart, totals, filtered, tags, rows, copy, attRangeLabel }) {
+function buildCopyText({ day, from, to, weekStart, totals, filtered, tags, rows, copy, attRangeLabel, withAtt = true } = {}) {
   const scoped = Array.isArray(tags) && tags.length > 0;
-  const scope = copy === 'daily' || copy === 'weekly' ? copy : 'all';
-  const scopeLabel = { daily: '日达标', weekly: '周达标' }[scope];
+  const rawScope = copy === 'daily' || copy === 'weekly' || copy === 'att' ? copy : 'all';
+  // att 口径只在显示班超分时可用；防御脏参数（withAtt=false 却传 att）落回 all。
+  const scope = rawScope === 'att' && !withAtt ? 'all' : rawScope;
+  // 班超分是否进正文：copy=att 恒需要；copy=all 时还要看显示列（att=0 就不写）
+  const showAtt = withAtt && (scope === 'all' || scope === 'att');
+  const scopeLabel = { daily: '日达标', weekly: '周达标', att: '班超分' }[scope];
   const lines = [];
   const marks = [scopeLabel, ...(scoped ? tags : [])].filter(Boolean);
   const head = marks.length ? `【班级状态 ${day}｜${marks.join(' · ')}】` : `【班级状态 ${day}】`;
   lines.push(head);
 
-  // 汇总行：按复制口径只写要的那个指标（复制「只要日达标」却附一句本周，是噪音）
   const st = scoped ? filtered || {} : totals;
   const rateOf = (v) => (v === null || v === undefined ? '—' : `${v}%`);
-  const seg = [];
-  if (scope !== 'weekly') seg.push(`今日达标 ${st.achievedToday || 0} 人（${rateOf(st.dailyRate)}）`);
-  if (scope !== 'daily') seg.push(`本周达标 ${st.achievedWeek || 0} 人（${rateOf(st.weeklyRate)}）`);
-  if (scoped) {
-    lines.push(`筛选出 ${st.classCount ?? (rows || []).length} 个班 / ${st.studentCount ?? 0} 人；${seg.join('，')}`);
-    lines.push(`（全校合计 ${totals.classCount} 个班 / ${totals.studentCount} 人）`);
+  const list = rows || [];
+
+  if (scope === 'att') {
+    // 班超分报告：这是「不看达标、只看分数」的口径，汇总只写有分数的班与平均分。
+    const scored = list.filter((r) => r.attendance && r.attendance.score !== null && r.attendance.score !== undefined);
+    const avg = scored.length
+      ? scoreScale.scoreText(scored.reduce((a, r) => a + Number(r.attendance.score), 0) / scored.length)
+      : '—';
+    const seg = `有检查记录 ${scored.length} 个班，班超平均 ${avg} 分`;
+    if (scoped) {
+      lines.push(`筛选出 ${st.classCount ?? list.length} 个班 / ${st.studentCount ?? 0} 人；${seg}`);
+      lines.push(`（全校合计 ${totals.classCount} 个班 / ${totals.studentCount} 人）`);
+    } else {
+      lines.push(`全校 ${totals.classCount} 个班 / ${totals.studentCount} 人；${seg}`);
+    }
+    lines.push(`口径：${attRangeLabel || '本周'} ${from} ~ ${to || day}，班超分 = 10 − 日均扣分（含卫生/查宿等全部检查）`);
   } else {
-    lines.push(`全校 ${totals.classCount} 个班 / ${totals.studentCount} 人；${seg.join('，')}`);
-    if (totals.skippedClasses) lines.push(`（实习/毕业班 ${totals.skippedClasses} 个不参与统计，已排除）`);
+    // 汇总行：按复制口径只写要的那个指标（复制「只要日达标」却附一句本周，是噪音）
+    const seg = [];
+    if (scope !== 'weekly') seg.push(`今日达标 ${st.achievedToday || 0} 人（${rateOf(st.dailyRate)}）`);
+    if (scope !== 'daily') seg.push(`本周达标 ${st.achievedWeek || 0} 人（${rateOf(st.weeklyRate)}）`);
+    if (scoped) {
+      lines.push(`筛选出 ${st.classCount ?? list.length} 个班 / ${st.studentCount ?? 0} 人；${seg.join('，')}`);
+      lines.push(`（全校合计 ${totals.classCount} 个班 / ${totals.studentCount} 人）`);
+    } else {
+      lines.push(`全校 ${totals.classCount} 个班 / ${totals.studentCount} 人；${seg.join('，')}`);
+      if (totals.skippedClasses) lines.push(`（实习/毕业班 ${totals.skippedClasses} 个不参与统计，已排除）`);
+    }
   }
 
   lines.push('');
-  const list = rows || [];
   if (!list.length) {
-    lines.push(scoped ? '当前筛选条件下没有班级' : `未达标班级（${scopeLabel || '今日'}）：无，全部达标`);
+    if (scoped) lines.push('当前筛选条件下没有班级');
+    else if (scope === 'att') lines.push('全校没有班级数据');
+    else lines.push(`未达标班级（${scopeLabel || '今日'}）：无，全部达标`);
     return lines.join('\n');
   }
 
+  // 班超分整句（copy=att 与 copy=all 共用）：**日均与合计都写出来**，
+  // 这样复制文本不依赖前端当前选的是「日均」还是「合计」——文本会被转发进工作群，
+  // 口径冻结在文案里比跟着某个人的屏幕状态走更可靠。
+  const attPart = (r) => {
+    const att = r.attendance || {};
+    if (att.score === null || att.score === undefined) return '本期无检查记录';
+    const detail = (att.deductDetail || [])[0];
+    const why = detail ? `；主因 ${detail.name}` : att.lateCount ? `；迟到 ${att.lateCount} 人` : '';
+    const parts = [];
+    if (att.deduct !== null && att.deduct !== undefined) parts.push(`日均扣 ${scoreScale.scoreText(att.deduct)}`);
+    if (att.deductTotal !== null && att.deductTotal !== undefined) parts.push(`区间合计扣 ${scoreScale.scoreText(att.deductTotal)}`);
+    const deductText = parts.length ? `${parts.join(' / ')}${why}` : why.replace(/^；/, '');
+    return `班超 ${scoreScale.scoreText(att.score)} 分${deductText ? `（${deductText}）` : ''}`;
+  };
+
   // 逐行：按复制口径只写要的那个指标
-  // 考勤分数只在 copy=all 时出现（用户 2026-11-12「考勤要显示分数」）：
-  // 收窄成「只要日达标」时附考勤就是噪音 —— 与上面「另一指标不再出现」是同一条设计。
   const rowLine = (r) => {
+    if (scope === 'att') return `· ${r.className}：${attPart(r)}${r.departmentName ? `｜${r.departmentName}` : ''}`;
     const parts = [];
     if (scope !== 'weekly') parts.push(`今日 ${r.run.achievedToday}/${r.studentCount} 人（${rateOf(r.run.dailyRate)}）`);
     if (scope !== 'daily') parts.push(`本周 ${r.run.achievedWeek}/${r.studentCount} 人（${rateOf(r.run.weeklyRate)}）`);
-    if (scope === 'all') {
-      const att = r.attendance || {};
-      if (att.score !== null && att.score !== undefined) {
-        // 分数即「班超分」（含卫生/查宿等全部扣分），措辞与页面对齐；
-        // 扣分明细里挑最大的那一项写出来，让「分数被谁扣掉的」在群里也能看见（用户 2026-11-19）。
-        const detail = (att.deductDetail || [])[0];
-        const why = detail ? `（${detail.name} -${scoreScale.scoreText(detail.deduct)}）` : att.lateCount ? `（迟到 ${att.lateCount} 人）` : '';
-        parts.push(`班超 ${scoreScale.scoreText(att.score)} 分${why}`);
-      }
-    }
+    // 班超分只在「显示列里有它」时出现（用户 2026-11-20 第三轮：复制必须与显示一致）
+    if (scope === 'all' && showAtt) parts.push(attPart(r));
     return `· ${r.className}：${parts.join('，')}${r.departmentName ? `｜${r.departmentName}` : ''}`;
   };
 
@@ -907,37 +952,41 @@ function buildCopyText({ day, from, to, weekStart, totals, filtered, tags, rows,
     return lines.join('\n');
   }
 
-  // 未筛选：按复制口径分段落列（daily/weekly 只列对应那一段）
-  const notDaily = list.filter(QUICK_FILTERS.notDaily.test);
-  if (scope !== 'weekly') {
-    lines.push(`未达标班级（今日，共 ${notDaily.length} 个）：`);
-    for (const r of notDaily) lines.push(rowLine(r));
-    if (!notDaily.length) lines.push('（无，全部达标）');
-  }
-  if (scope !== 'daily') {
-    const notWeek = list.filter(QUICK_FILTERS.notWeek.test);
-    lines.push('');
-    lines.push(`未达标班级（本周 ${weekStart} 起，共 ${notWeek.length} 个）：`);
-    for (const r of notWeek) lines.push(rowLine(r));
-    if (!notWeek.length) lines.push('（无，全部达标）');
-  }
-
-  const attendanceMissing = list.filter(QUICK_FILTERS.attMissing.test);
-  if (attendanceMissing.length) {
-    lines.push('');
-    // 窗口措辞用服务端 rangeLabel（本日/本周/本月），区间用**真实窗口起止**（from ~ to）：
-    // 旧文案写「{from} 至今」，窗口还是「回看到所选日」时勉强对；
-    // 现在窗口是**完整周/完整月**（与班超同源），终点不再是所选日 ——
-    // 拿 day 当终点会出现「文案说统计到 11月19日、数字里含 11月20-22 日」，
-    // 那正是用户拿两个页面对照时报「日周月不一致」的同一种说谎。
-    lines.push(`考勤待补班级（${attRangeLabel || '本周'}：${from} ~ ${to || day} 无任何考勤记录，共 ${attendanceMissing.length} 个）：`);
-    for (const r of attendanceMissing) lines.push(`· ${r.className}`);
+  if (scope === 'att') {
+    lines.push(`各班班超分（共 ${list.length} 个班）：`);
+    for (const r of list) lines.push(rowLine(r));
+  } else {
+    // 未筛选：按复制口径分段落列（daily/weekly 只列对应那一段）
+    const notDaily = list.filter(QUICK_FILTERS.notDaily.test);
+    if (scope !== 'weekly') {
+      lines.push(`未达标班级（今日，共 ${notDaily.length} 个）：`);
+      for (const r of notDaily) lines.push(rowLine(r));
+      if (!notDaily.length) lines.push('（无，全部达标）');
+    }
+    if (scope !== 'daily') {
+      const notWeek = list.filter(QUICK_FILTERS.notWeek.test);
+      lines.push('');
+      lines.push(`未达标班级（本周 ${weekStart} 起，共 ${notWeek.length} 个）：`);
+      for (const r of notWeek) lines.push(rowLine(r));
+      if (!notWeek.length) lines.push('（无，全部达标）');
+    }
   }
 
-  // 考勤计算规则（用户 2026-11-12「要标注考勤计算规则，如迟到缺勤等逻辑」）：
-  // 只在 copy=all（带考勤分数）时附 —— 收窄到只看日达标时考勤规则是噪音，
-  // 与上面「另一指标不出现」是同一条设计。
-  if (scope === 'all') {
+  // 考勤待补 + 考勤计算规则：只有「显示班超分」时才有意义（att=0 时整段不写）。
+  if (showAtt) {
+    const attendanceMissing = list.filter(QUICK_FILTERS.attMissing.test);
+    if (attendanceMissing.length) {
+      lines.push('');
+      // 窗口措辞用服务端 rangeLabel（本日/本周/本月），区间用**真实窗口起止**（from ~ to）：
+      // 旧文案写「{from} 至今」，窗口还是「回看到所选日」时勉强对；
+      // 现在窗口是**完整周/完整月**（与班超同源），终点不再是所选日 ——
+      // 拿 day 当终点会出现「文案说统计到 11月19日、数字里含 11月20-22 日」，
+      // 那正是用户拿两个页面对照时报「日周月不一致」的同一种说谎。
+      lines.push(`考勤待补班级（${attRangeLabel || '本周'}：${from} ~ ${to || day} 无任何考勤记录，共 ${attendanceMissing.length} 个）：`);
+      for (const r of attendanceMissing) lines.push(`· ${r.className}`);
+    }
+    // 考勤计算规则（用户 2026-11-12「要标注考勤计算规则，如迟到缺勤等逻辑」）：
+    // 与班超分同生共死：收窄到只看日达标时考勤规则是噪音，不显示班超分时更不该出现。
     lines.push('');
     lines.push('考勤计算规则：');
     for (const l of buildAttRuleLines()) lines.push(`· ${l}`);

@@ -123,6 +123,17 @@ function md(dateKey) {
   return `${Number(dateKey.slice(5, 7))}月${Number(dateKey.slice(8, 10))}日`;
 }
 
+// 紧凑区间（「11-17 ~ 11-23」）：总评 hero 的次要整句里用 MM-DD，避免「11月17日至11月23日」
+// 这种长文案把一行撑满；区间只有一天时只给一个日期（日视图不出现「11-20 ~ 11-20」）。
+// 返回值空串 = 服务端没回显合法日期，调用方用「本期/今日」这类词兜底。
+function mdSpan(from, to) {
+  const key = (v) => (/^\d{4}-\d{2}-\d{2}/.test(String(v || '')) ? String(v).slice(5, 10) : '');
+  const a = key(from);
+  const b = key(to);
+  if (!a || !b) return '';
+  return a === b ? a : `${a} ~ ${b}`;
+}
+
 // ===== 校园跑 tab：日期回看（用户 2026-11-20「校园跑要跟班超联赛中同样拥有日期选择」）=====
 // 口径：runDate = 所选日期（YYYY-MM-DD），runToday = picker 的**上限**（恒为今天）。
 // ⚠️ 上限不能用 runDate —— 选了过去的日子后上限跟着退回，就再也选不回今天（班超 tab 的 banchaoToday 同理）。
@@ -410,6 +421,17 @@ Page({
     banchaoModules: [], // 检查明细（5 个模块）
     banchaoDays: [], // 得分趋势（按日）
     banchaoRecent: [], // 最近记录（跨日期，服务端取最近 10 条；卡片字段见 decorateBanchaoRecord）
+    // 「最近记录」改成 2 列紧凑卡片后只展示前 6 条：单独派生一份给 wx:for，
+    // 模板不写 slice 表达式（仓库约定：数据在 JS 里算好，WXML 只渲染）
+    banchaoRecentGrid: [],
+    // 总评 hero 的次要整句（JS 预计算，模板只渲染整句）：
+    // 修掉旧写法「本{{rangeWord}}还没有检查记录」拼出「本今日还没有检查记录」的 BUG
+    banchaoHeroNote: '',
+    // 本期「有记录的天数」：取服务端 data.days 的长度（趋势条只截前 7 天，但这张 KPI 要全区间）
+    banchaoDayCount: 0,
+    // 总评 hero 下方 2×2 KPI 卡（由 buildBanchaoKpis() 生成）：
+    // 数据来自 /api/class/overview 与班超详情两个接口，谁后到都会重新生成一次补齐
+    banchaoKpis: [],
     banchaoRankingTop: [], // 班级榜前三
     // 「班级考勤 · 检查记录」：所选区间内的全部检查记录（服务端 dayRecords，按模块分组展示）
     // 这四个字段名是前端契约的一部分（用户 2026-11-20）：dayGroups / total / truncated / rangeText
@@ -590,6 +612,8 @@ Page({
     const { tab } = this.data;
     if (tab === 'attendance') {
       // 「班超」tab 两半都要刷新：班超数据本页取，考勤由组件自己重取（它已被驱动区间）
+      // 回看态下 overview 还停在历史日期，而 KPI 的达标率是今天口径 → 先拉回今天再刷班超
+      if (this.data.runIsPast) this.loadOverview(fmt.todayKey());
       this.loadBanchao();
       this.refreshAttendance();
     } else if (tab === 'profile') {
@@ -654,6 +678,8 @@ Page({
       // 跑分未启用时不显示 0，避免误解成「本班得 0 分」
       pointsText: ov.pointsEnabled ? fmt.formatNumber(ov.pointsWeek) : '—',
     });
+    // 概况先到：把「今日 / 本周达标率」两张 KPI 立刻补上（名次 / 记录数等班超接口回来时会再刷新一次）
+    this.buildBanchaoKpis();
   },
 
   // 班内榜单前三：本周步数；本周有效（步数>0）人数不足 3 人且今日有效人数更多时，
@@ -792,30 +818,39 @@ Page({
         range: this.data.range,
         ...this.banchaoParams(),
       });
-      const modules = (data.modules || []).map((m) => ({
-        key: m.key,
-        name: m.shortName || m.name,
-        ownerDeptName: m.ownerDeptName || '',
-        entered: m.entered,
-        skipped: m.skipped,
-        skippedReason: m.skippedReason || '',
-        // 未录文案：早八这类「只记异常人」的模块显示「无迟到」（服务端 noRecordText），不是「未录」
-        scoreText: m.skipped ? '无' : m.score === null || m.score === undefined ? m.noRecordText || '未录' : scoreText(m.score),
-        // 两列网格里的「指标」整句：模板只渲染，不在 wxml 里拼三元（用户 2026-11-20 紧凑排版）
-        metricLine: m.skipped
-          ? m.skippedReason || ''
-          : !m.entered
-            ? '暂无记录'
-            : m.metricText || '已录入',
-        // 「扣分」与「得分」同时保留（不删信息）：得分看等级、扣分看差在哪
-        deductText: m.skipped || !m.entered ? '' : Number(m.deduct) > 0 ? `扣分 ${scoreText(m.deduct)}` : '未扣分',
-        // 趋势条宽度 = 得分占满分的比例（满分由服务端 data.fullScore 下发）。
-        // 10 分制下直接把 score 当百分数会画成 9.5% 宽的条（看着像只得了 9.5%）。
-        state: m.skipped ? 'skip' : !m.entered ? 'missing' : m.deduct > 0 ? 'warn' : 'done',
-      }));
+      const modules = (data.modules || []).map((m) => {
+        // 指标整句：跳过（不参检）/ 未录 / 已录入三种状态都要有可读文案，模板不拼三元
+        const metricLine = m.skipped ? m.skippedReason || '' : !m.entered ? '暂无记录' : m.metricText || '已录入';
+        const deduct = Number(m.deduct) > 0;
+        return {
+          key: m.key,
+          name: m.shortName || m.name,
+          ownerDeptName: m.ownerDeptName || '',
+          entered: m.entered,
+          skipped: m.skipped,
+          skippedReason: m.skippedReason || '',
+          // 未录文案：早八这类「只记异常人」的模块显示「无迟到」（服务端 noRecordText），不是「未录」
+          scoreText: m.skipped ? '无' : m.score === null || m.score === undefined ? m.noRecordText || '未录' : scoreText(m.score),
+          // 指标整句（保留字段：下方 descText 由它拼出，详情/旧断言仍可能读它）
+          metricLine,
+          // 模块卡第二行：所属部门 + 指标整句。两段任一段为空就不留多余分隔符
+          //（如「今日 已录入」而不是「 · 已录入」）——拼接在 JS 里做，模板只渲染整句
+          descText: [m.ownerDeptName || '', metricLine].filter(Boolean).join(' · '),
+          // 「扣分」与「得分」同时保留（不删信息）：得分看等级、扣分看差在哪
+          deductText: m.skipped || !m.entered ? '' : deduct ? `扣分 ${scoreText(m.deduct)}` : '未扣分',
+          // 扣分行的强调色只在**真的扣了分**时给；done 的「未扣分」保持灰（整行标红会像又扣了一次）
+          deductTone: !m.skipped && m.entered && deduct ? 'is-deduct' : '',
+          state: m.skipped ? 'skip' : !m.entered ? 'missing' : deduct ? 'warn' : 'done',
+        };
+      });
       // 得分趋势：接口返回的是区间内全部日期（本月最多 31 条），页面只展示**最近 7 天**的单行迷你条。
       // 服务端 days 已按日期倒序，slice(0,7) 即最近 7 天。
-      const days = (data.days || []).slice(0, 7).map((d) => ({
+      // allDays 的长度才是「本期有记录的天数」（KPI 的「覆盖 N 天」用），不能用截断后的 days.length
+      const allDays = Array.isArray(data.days) ? data.days : [];
+      const dayCount = allDays.length;
+      // 趋势条宽度 = 得分占满分的比例（满分由服务端 data.fullScore 下发）。
+      // 10 分制下直接把 score 当百分数会画成 9.5% 宽的条（看着像只得了 9.5%）。
+      const days = allDays.slice(0, 7).map((d) => ({
         date: d.date,
         label: `${Number(d.date.slice(5, 7))}/${Number(d.date.slice(8, 10))}`,
         scoreText: scoreText(d.score),
@@ -847,13 +882,23 @@ Page({
       const from = String(data.from || '').slice(0, 10);
       const to = String(data.to || '').slice(0, 10);
       const spanText = from && to ? period.dateRangeText(from, to) : '';
+      const rangeWord = RANGE_WORD[this.data.range] || '今日';
+      const recordCount = Number(data.recordCount) || 0;
+      // 总评 hero 的次要整句（一行）：区间 + 记录数 + 有记录天数。整句在 JS 拼好，
+      // 模板只渲染 {{banchaoHeroNote}} —— 旧写法「本{{rangeWord}}…」会拼出「本今日」的 BUG。
+      const compactSpan = mdSpan(from, to);
+      const heroSpan = compactSpan ? `本期 ${compactSpan}` : rangeWord;
+      const banchaoHeroNote =
+        recordCount > 0
+          ? `${heroSpan} · ${recordCount} 条记录 · ${dayCount} 天有记录`
+          : `${heroSpan} · 还没有检查记录`;
       // 周期选择器与班级考勤组件共用这个区间 → 两半永远同区间（不会一半今天一半本周）
       this.setData({
         banchaoLoading: false,
         banchao: {
           scoreText: scoreText(data.score),
           rangeLabel: data.periodLabel || data.rangeLabel || '今日',
-          recordCount: data.recordCount || 0,
+          recordCount,
           // 名次必须取**本接口按当前周期**算的那个（data.ranking），不能用 classRank ——
           // classRank 来自 /api/class/overview，口径永远固定为「本周」，
           // 选「今日 / 本月」时会显示成本周名次（原班超页用的就是 data.ranking，合并时差点丢掉）。
@@ -862,6 +907,10 @@ Page({
         banchaoModules: modules,
         banchaoDays: days,
         banchaoRecent: recent,
+        // 最近记录 2 列紧凑卡片只放前 6 条（完整列表在「全部记录」页）
+        banchaoRecentGrid: recent.slice(0, 6),
+        banchaoHeroNote,
+        banchaoDayCount: dayCount,
         // 班级榜前三：分数文案预计算（两位小数），模板不再直接渲染 item.score ——
         // 服务端给的是数字（9.5 / 9.55），直接渲染会出现「同列两种位数」，
         // 而这一列正是要和上面的总评比对的。
@@ -873,15 +922,73 @@ Page({
         banchaoDayRangeText: dayRange,
         banchaoDayTruncateText: dayRecords.length < dayTotal ? `仅显示前 ${dayRecords.length} 条` : '',
         banchaoPeriodLabel: spanText,
-        rangeWord: RANGE_WORD[this.data.range] || '今日',
+        rangeWord,
         attendanceFrom: from,
         attendanceTo: to,
         attendancePeriod: this.data.range,
       });
+      // 班超先到（或后到）：用班超名次 / 记录数 + 已就绪的概况，把 4 张 KPI 补齐/刷新
+      this.buildBanchaoKpis();
     } catch (e) {
       this.setData({ banchaoLoading: false });
       wx.showToast({ title: e.message || '班超数据加载失败', icon: 'none' });
     }
+  },
+
+  // ===== 总评 hero 下方 2×2 KPI 卡 =====
+  // 数据来自两个接口：/api/class/overview（今日 / 本周达标率）与班超详情（全校名次 / 本期记录数）。
+  // 两个请求并发、完成顺序不定，所以 loadOverview 与 loadBanchao 的 setData 之后各调一次：
+  // 谁后到都拿「已就绪的这一份 + 另一份的当前值」重新生成 4 张卡，不需要在前端等两次请求对齐。
+  // 边界（都不崩、不显示 0 冒充真实数据）：
+  //   · overview 为空 / 失败 → 达标率卡显示「—」
+  //   · runExcluded（本班不参跑）→ 两张达标卡显示「不参跑」（此时达标率没有意义）
+  //   · banchao 为空 → 名次卡显示「—」
+  buildBanchaoKpis() {
+    const ov = this.data.overview;
+    const bc = this.data.banchao;
+    const runExcluded = this.data.runExcluded === true;
+    // 用 studentCount 是否存在判断「概况真的回来了」：{} / null 都当没数据（显示「—」而不是 0 人）
+    const hasOverview = !!(ov && typeof ov === 'object' && ov.studentCount !== undefined);
+    const studentCount = hasOverview ? Number(ov.studentCount) || 0 : 0;
+    // 达标率卡：不参跑优先（不参跑时 rate 会恒为 0，显示具体百分比会误导成「全班没达标」）
+    const rateCard = (key, label, rate, achieved, achievedLabel) => {
+      const percent = hasOverview && !runExcluded ? Math.max(0, Math.min(100, Number(rate) || 0)) : 0;
+      return {
+        key,
+        label,
+        valueText: runExcluded ? '不参跑' : hasOverview ? `${percent}%` : '—',
+        auxText: runExcluded
+          ? '本班不参加校园跑'
+          : hasOverview
+            ? `${achievedLabel} ${Number(achieved) || 0}/${studentCount} 人`
+            : '暂无校园跑数据',
+        percent,
+        hasBar: hasOverview && !runExcluded,
+      };
+    };
+    // 名次卡：banchao 还没回来 → 「—」；回来了但本期没进榜 → 「未上榜」（两种状态别混成一回事）
+    const rank = bc && bc.rank ? bc.rank : null;
+    const hasRank = !!(rank && Number(rank.rank) > 0);
+    const rankValue = !bc ? '—' : hasRank ? `${rank.rank} / ${rank.total}` : '未上榜';
+    const rankAux = !bc ? '班超数据加载中' : hasRank ? `本期班超得分 ${bc.scoreText} 分` : '本期无检查记录';
+    // 记录数卡：N 条 + 覆盖天数（天数来自服务端 days 全量长度，不是被截断的趋势条）
+    const recordCount = bc ? Number(bc.recordCount) || 0 : 0;
+    const dayCount = Number(this.data.banchaoDayCount) || 0;
+    this.setData({
+      banchaoKpis: [
+        rateCard('daily', '今日达标率', ov && ov.dailyRate, ov && ov.achievedToday, '今日达标'),
+        rateCard('weekly', '本周达标率', ov && ov.weeklyRate, ov && ov.achievedWeek, '本周达标'),
+        { key: 'rank', label: '全校班超名次', valueText: rankValue, auxText: rankAux, percent: 0, hasBar: false },
+        {
+          key: 'records',
+          label: '本期检查记录',
+          valueText: bc ? `${recordCount} 条` : '—',
+          auxText: bc ? `覆盖 ${dayCount} 天` : '班超数据加载中',
+          percent: 0,
+          hasBar: false,
+        },
+      ],
+    });
   },
 
   // 清空「班级考勤 · 检查记录」的旧数据：切班级 / 切周期时先清，避免旧区间记录挂在新区间标题下。
@@ -1068,7 +1175,12 @@ Page({
     if (tab === 'students' && this.data.runIsPast) this.loadOverview(fmt.todayKey());
     // 「班超」tab 的班超数据是本页自己取的（考勤组件 attached 时会自拉）：
     // 首次进入 tab 时数据可能已被 onLoad 拉过，但切周期 / 切班后失效过，这里确保是最新的
-    if (tab === 'attendance') this.loadBanchao();
+    if (tab === 'attendance') {
+      // KPI 的「今日 / 本周达标率」是今天口径：从校园跑 tab 回看历史日期切过来时，
+      // overview 还停在那个回看日期上（loadOverview 默认跟 runDate 走），先拉回今天再刷班超
+      if (this.data.runIsPast) this.loadOverview(fmt.todayKey());
+      this.loadBanchao();
+    }
     return true;
   },
 
@@ -1176,6 +1288,11 @@ Page({
       banchaoModules: [],
       banchaoDays: [],
       banchaoRecent: [],
+      banchaoRecentGrid: [],
+      banchaoHeroNote: '',
+      banchaoDayCount: 0,
+      // KPI 卡也一起清空：新班数据回来前不能挂着上一个班的名次 / 达标率
+      banchaoKpis: [],
       banchaoRankingTop: [],
       banchaoPeriodLabel: '',
       // 「班级考勤 · 检查记录」同理：旧班的记录不能挂在新班标题下
@@ -1185,6 +1302,8 @@ Page({
       banchaoDayRangeText: '',
       banchaoDayTruncateText: '',
     });
+    // 概况 / 班超都清空了，KPI 立刻重建成「—」占位卡（等两个接口回来各刷一次）
+    this.buildBanchaoKpis();
     this.syncProfileCapability();
     // 换班后周期选择器按「今天」重算（周选项依赖月份/年份），并顺势把区间交给考勤组件。
     // 注意：**不清空 attendanceFrom/To** —— 区间只由周期决定、与班级无关，
@@ -1396,6 +1515,8 @@ Page({
       // 「不参加校园跑」提示在校园跑 tab 顶部显示
       runExcluded: profile.hasMorningRun === false,
     });
+    // 「不参跑」会改变两张达标率 KPI 的展示（不参跑 / 具体百分比），拿到配置后重算一次
+    this.buildBanchaoKpis();
     this.syncProfileCapability(); // 拿到 canEdit 后重算「可改」
   },
 
@@ -1411,6 +1532,8 @@ Page({
     // 校园跑开关同时驱动校园跑 tab 的提示，避免两个 tab 说法不一致
     if (field === 'hasMorningRun') patch.runExcluded = value === false;
     this.setData(patch);
+    // 未保存前也先把 KPI 的「不参跑」状态切过去（页面内两个 tab 说法要一致）
+    if (field === 'hasMorningRun') this.buildBanchaoKpis();
     this.syncProfileDirty();
   },
 

@@ -2,11 +2,12 @@
  *
  * 用户 2026-10-30 第二轮「这太难看了」—— 对照截图的具体毛病：
  *   ① 筛选区 4 行且每行一套控件（5 个大圆角 chip 占满一行 + 一排天数 pill + 一行搜索），
- *      视觉上极碎：现在压成紧凑的 4 行「工具条」，每行 40~56rpx 高，字号统一 22~24rpx；
- *   ② 列表 2026-11-20 再重做一遍：四列表格 → 各班条（班名/系部 + 扣分来源 chips + 班超分大字），
- *      扣了哪一项（卫生-宿舍、晚自习…）一眼可见；chips 由 JS 预计算，样式只用令牌；
- *   ③ 班超分统计区间固定显示在列表上方（用户「选择了班超分要有查看日期」）；
- *      考勤控件仍在无数据时整块隐藏，不留点了没反应的按钮。
+ *      视觉上极碎：现在压成紧凑的「工具条」，每行 40~56rpx 高，字号统一 22~24rpx；
+ *   ② 列表 2026-11-20 第三轮再重排：左列 班名/学生数·系部/扣分来源 chips/日周达标横条，
+ *      右列 班超分大字 + 日均扣/合计扣副行；班超分列关掉时右列整体不渲染；
+ *   ③ 「班超分范围（本日/本周/本月）+ 口径（日均/合计）」次级筛选行，
+ *      只在班超分列打开时出现，下方一行小字说明区间与公式；
+ *      旧版「考勤控件在无数据时整块隐藏」的语义保留（列关掉 = 也不显示）。
  *
  * 配色/间距一律用 app.wxss 的 --tt-* 令牌与 TDesign 色板，不硬编码品牌色。
  */
@@ -117,10 +118,6 @@
   color: var(--tt-brand);
   font-weight: 500;
 }
-.cs-pick-copy {
-  flex: none;
-  width: 200rpx;
-}
 .cs-field {
   display: flex;
   align-items: center;
@@ -129,9 +126,6 @@
   padding: 0 14rpx;
   border-radius: 10rpx;
   background: var(--tt-bg-page);
-}
-.cs-field-sm {
-  height: 52rpx;
 }
 .cs-field-t {
   max-width: 160rpx;
@@ -262,12 +256,7 @@
   background: var(--tt-brand-soft);
 }
 
-/* 考勤天数 */
-.cs-bar-days {
-  gap: 8rpx;
-}
-
-/* 年级多选行（2026-11-03）：chips 复用 cs-chip，行结构与考勤天数行一致 */
+/* 年级多选行（2026-11-03）：chips 复用 cs-chip */
 .cs-bar-grades {
   gap: 8rpx;
 }
@@ -302,45 +291,34 @@
   color: var(--tt-brand-deep);
   background: var(--tt-brand-soft);
 }
-.cs-bar-s {
-  flex: none;
-  margin-left: 4rpx;
-  font-size: 19rpx;
-  color: var(--tt-text-3);
-}
 
-/* ===== 班超分统计区间（用户 2026-11-20「选择了班超分要有查看日期」）=====
-   一条独立的信息条：左侧品牌短竖条 + 区间文案，让「班超分是哪段时间的」始终可见。 */
-.cs-period {
+/* ===== 班超分范围 + 口径（用户 2026-11-20 第三轮「合计或日均」）=====
+   与筛选工具条同一行高；只在班超分列打开时渲染。
+   「口径」在 attRange=day 时隐藏（本日窗口合计 ≡ 日均），条件在 JS 算好。 */
+.cs-bar-att {
+  gap: 8rpx;
+}
+.cs-att-modes {
+  flex: none;
   display: flex;
   align-items: center;
-  margin: 14rpx 14rpx 0;
-  padding: 10rpx 20rpx;
-  border-radius: 12rpx;
-  font-size: 20rpx;
-  line-height: 1.4;
-  color: var(--tt-text-2);
+  gap: 10rpx;
+}
+/* 区间说明小字：允许换行（含公式「班超分 = 10 − 日均扣分」，窄屏会折成两行） */
+.cs-att-note {
+  padding: 0 22rpx 8rpx;
+  font-size: 19rpx;
+  line-height: 1.45;
+  color: var(--tt-text-3);
   background: var(--tt-card);
-  box-shadow: var(--tt-card-shadow);
-}
-.cs-period::before {
-  content: '';
-  flex: none;
-  width: 6rpx;
-  height: 22rpx;
-  margin-right: 10rpx;
-  border-radius: 6rpx;
-  background: var(--tt-brand);
-}
-.cs-period-t {
-  flex: 1;
-  min-width: 0;
+  border-bottom: 1rpx solid var(--tt-line);
 }
 
-/* ===== 列表（2026-11-20 改成「各班条」：一条 = 班名/系部 + 扣分来源 chips + 右侧班超分）=====
-   旧版是四列表格：班名被挤成一行小字，扣了什么都看不见。
-   新版每条两行：第一行班名 + 弱化的「人数 · 系部」；第二行扣分来源 chips；
-   右侧班超分大字（.num-font）+ 今日/本周达标，一屏能看出「谁扣分、扣在哪」。 */
+/* ===== 列表（2026-11-20 第三轮重排「各班条」）=====
+   左列：班名（主）→ 学生数·系部（次）→ 扣分来源 chips → 日/周达标横条；
+   右列（仅班超分列开）：班超分大字 + 口径副行（日均扣/合计扣）。
+   宽屏适配：左列 flex:1 + min-width:0，右列 flex:none + 最小宽度 —— 横屏/大屏下
+   左列吃掉剩余宽度、右列不被挤扁，班名也不会把右列顶出屏幕。 */
 .cs-list {
   margin: 12rpx 14rpx 0;
   border-radius: 14rpx;
@@ -396,10 +374,10 @@
   line-height: 1.25;
   color: var(--tt-text-1);
 }
-/* 学生数 · 系部：次要信息弱化（用户 2026-11-20「系部（次要信息弱化）」） */
+/* 学生数 · 系部：班名下方独立一行，次要信息弱化
+   （用户 2026-11-20「系部（次要信息弱化）」）。 */
 .cs-meta {
-  flex: none;
-  max-width: 52%;
+  max-width: 100%;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -431,9 +409,85 @@
   line-height: 1.5;
   color: var(--tt-text-3);
 }
-.cs-row-side {
+
+/* ===== 日/周达标横条（用户 2026-11-20「重新设计各班条的UI样式」）=====
+   一行 = 固定宽标签（74rpx，日/周两字对齐）+ 弹性进度轨 + 右值（num-font）。
+   单条（只开日或只开周）字更大、轨更粗；两条（日+周）压小、间距 6rpx ——
+   两条都用 30rpx 会把一行撑成两倍高，一屏就看不完 43 个班。 */
+.cs-runbars {
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+  margin-top: 2rpx;
+}
+.cs-runbar {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+}
+.cs-runbar-k {
   flex: none;
-  min-width: 104rpx;
+  width: 74rpx;
+  font-size: 19rpx;
+  line-height: 1.3;
+  color: var(--tt-text-3);
+}
+/* 进度轨：底色用 --tt-line（与分隔线同一灰度，不抢视觉），填充宽度由内联 style 给 */
+.cs-runbar-track {
+  flex: 1;
+  min-width: 0;
+  height: 6rpx;
+  border-radius: 999rpx;
+  background: var(--tt-line);
+  overflow: hidden;
+}
+/* 填充：颜色按 level 走 ok/warn/bad（见下方 .cs-runbar-fill.cs-lv-*） */
+.cs-runbar-fill,
+.cs-att-bar {
+  height: 100%;
+  border-radius: 999rpx;
+  transition: width 0.2s ease;
+}
+.cs-runbar-v {
+  flex: none;
+  min-width: 58rpx;
+  text-align: right;
+  font-size: 24rpx;
+  font-weight: 600;
+  line-height: 1.2;
+}
+/* 只显示日或只显示周：一条横条更大（用户「只显示日或只显示周=一条且更大」） */
+.cs-runbars.is-single .cs-runbar-v {
+  font-size: 30rpx;
+}
+.cs-runbars.is-single .cs-runbar-track {
+  height: 10rpx;
+}
+.cs-runbars.is-single .cs-runbar-k {
+  font-size: 21rpx;
+}
+/* 两条（日+周）：以基础尺寸为「多数据版」，这里显式落一处锚点便于以后单独调 */
+.cs-runbars.is-multi .cs-runbar-v {
+  font-size: 24rpx;
+}
+/* 填充色：用 TDesign 状态色（app.wxss 已定义，暗色模式跟着换），不硬编码品牌色 */
+.cs-runbar-fill.cs-lv-ok {
+  background: var(--td-success-color-6, #128a3f);
+}
+.cs-runbar-fill.cs-lv-warn {
+  background: var(--td-warning-color-6, #d98a0b);
+}
+.cs-runbar-fill.cs-lv-bad {
+  background: var(--td-error-color-6, #e5484d);
+}
+.cs-runbar-fill.cs-lv-none {
+  background: var(--tt-text-3);
+}
+
+/* ===== 右列：班超分大字 + 口径副行（仅班超分列打开时渲染）===== */
+.cs-side {
+  flex: none;
+  min-width: 132rpx;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -445,10 +499,17 @@
   font-weight: 700;
   line-height: 1.1;
 }
-/* 今日/本周达标：颜色同样由 cs-lv-* 决定，这里只管字号行高 */
-.cs-rate {
+/* 没有检查记录：不写「—」（像坏数据），写人话 */
+.cs-score-empty {
+  font-size: 20rpx;
+  line-height: 1.4;
+  color: var(--tt-text-3);
+}
+/* 口径副行：「日均扣 1.60」/「合计扣 8.00」；扣分为 0 时不渲染 */
+.cs-side-sub {
   font-size: 19rpx;
   line-height: 1.35;
+  color: var(--tt-text-3);
 }
 
 /* ===== 加载 / 错误 / 空态 ===== */

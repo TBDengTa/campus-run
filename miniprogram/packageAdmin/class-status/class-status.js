@@ -1,7 +1,10 @@
-// 班级状态总览（用户 2026-10-29 建页；10-30 两次重排）
+// 班级状态总览（用户 2026-10-29 建页；10-30 两次重排；11-20 第三轮重排）
 //   第一轮：「要紧凑排版，并支持筛选，复制时复制的是筛选后的相应内容」
-//   第二轮（本次）：「这太难看了…可以查看显示内容与复制内容，如只需要日达标这种的，
-//                    而且考勤回看是什么，并且没有院系筛选」
+//   第二轮：「这太难看了…可以查看显示内容与复制内容，如只需要日达标这种的，
+//           而且考勤回看是什么，并且没有院系筛选」
+//   第三轮（本次）：「选择了班超分要有查看日期并且还要给各班中如有减分情况
+//           要写哪个考察项检查扣分如卫生-宿舍、晚自习这样，重新设计各班条的UI样式」
+//           + 追加「合计或日均」「一筛选班超分范围就消失」两处修 BUG。
 //
 // ===== 与「班级管理」的分工 =====
 //   · 班级管理：改台账（早操/校园跑标记、教室、宿舍）
@@ -13,24 +16,32 @@
 //     必须两级：实测北校区与洋河校区**都有「计财系」**，只给一个系部下拉
 //     会把两个校区混着筛出来（看着能筛、结果是错的）。
 //     系部选项随已选院校收窄；没选院校时允许按系部筛，但标签写明「各校区同名」。
-//  ② 「可以查看显示内容与复制内容，如只需要日达标这种的」→ 两个开关：
-//     「显示内容」= 列表与复制里出现哪几列（日达标 / 周达标 / 考勤）；
-//     「复制内容」= 复制时强调哪个指标（全部 / 只看日达标 / 只看周达标）。
-//     两者独立：可以看着三列、只复制日达标那一份名单。
-//  ③ 「考勤回看是什么」→ 这个词没说清，而且**当前考勤根本没有数据**
-//     （check_records 全库 4 条，moduleKey 只有 hygiene 卫生区，
-//      而考勤统计的是早操/早八/晚自习/查宿，一条都不匹配）。
-//     所以：整排选择器在「区间内没有任何考勤记录」时**不显示**，
-//     有数据时才出现，并改名为「考勤统计 N 天」+ 一行说明它统计什么。
-//     一个永远为空的控件摆在筛选区最显眼的位置，是这页"难看"的主要来源之一。
-//  ④ 「太难看」→ 见 WXSS：筛选区从 4 行压到 2 行（一行下拉、一行开关），
-//     列表列宽随「显示内容」变化，不再固定四列留大片空白。
+//  ② 「可以查看显示内容与复制内容，如只需要日达标这种的」→ 第二轮是两个开关
+//     （显示列 + 独立复制口径 picker）；**第三轮删掉复制 picker**，改成口径由显示列
+//     自动派生（见 autoCopy）—— 两个 picker 必然会选出「显示三列、只复制日达标」
+//     这种自相矛盾的组合，复制出去的文字和屏幕对不上。
+//  ③ 「考勤回看是什么」→ 整排选择器在「区间内没有任何检查记录」时**不显示**。
+//     第三轮起「有没有检查记录」读服务端顶层 hasAnyCheck（**筛选前**全量口径）：
+//     旧版用筛选后的 rows 现算，于是任何把有记录的班筛掉的筛选都会让班超分列
+//     与班超分范围行消失（用户报「一筛选班超分范围就不见了」的真 BUG）。
+//  ④ 「太难看」→ 见 WXSS：筛选区紧凑工具条，列表从四列表格 → 各班条。
+//
+// ===== 第三轮的四处结构改动 =====
+//  ① 复制口径自动派生：COPY_SCOPE_TEXT + autoCopy(columns)，请求带 copy/att，
+//     切显示列后重查（复制正文必须跟着列走）。
+//  ② 「班超分范围（本日/本周/本月）+ 口径（日均/合计）」次级筛选行：
+//     只在班超分列打开时渲染；口径切换**不重发请求**（两个数服务端都已下发，
+//     前端只重新 decorate）；attRange=day 时隐藏口径（合计≡日均）。
+//  ③ 行结构重排：左列 班名/学生数·系部/扣分 chips/达标横条，右列 班超分大字+口径副行；
+//     班超分列关掉时右列与全部扣分信息都不渲染。单条横条更大、两条更紧凑。
+//  ④ 删除 COPY_SCOPES / copyScopeIndex / copyScopeLabel / onCopyScopePick /
+//     attRangeText 及对应 picker、旧「考勤统计」行、独立区间条。
 //
 // ===== 筛选与文案都在服务端 =====
 // 可复制文案必须服务端单点生成（前端各拼一次必然漂移成「列表 87%、文案 88%」，
 // 老师粘到群里被问住）。若筛选在前端、文案在服务端，两者用的是不同行集合，
 // 复制出去仍是全量报告 —— 正是用户第一轮指出的问题。
-// 所以前端只传参数（school/department/quick/level/metric/columns）并渲染返回结果。
+// 所以前端只传参数（school/department/quick/level/metric/columns/copy/att）并渲染返回结果。
 const auth = require('../../utils/request');
 const adminPerm = require('../../utils/admin-perm');
 const fmt = require('../../utils/format');
@@ -62,7 +73,7 @@ const METRIC_CHIPS = [
   { key: 'weekly', label: '周' },
 ];
 
-// 显示内容（列表列）与复制内容（文案强调哪个指标）—— 两个独立开关
+// 显示内容（列表列）—— 用户「可以查看显示内容与复制内容，如只需要日达标这种的」。
 // 考勤列 2026-11-12 起显示**分数**（10 分制）；
 // 2026-11-19 起这一列就是**班超分**（与班超总评同一个数：10 − 各模块日均扣分，**含卫生/查宿**）。
 // 标签跟着改成「班超分」—— 用户报的正是「考勤的卫生、查宿等内容没有被减分」，
@@ -72,10 +83,43 @@ const COLUMN_TOGGLES = [
   { key: 'weekly', label: '周达标' },
   { key: 'attendance', label: '班超分' },
 ];
-const COPY_SCOPES = [
-  { key: 'all', label: '全部' },
-  { key: 'daily', label: '只要日达标' },
-  { key: 'weekly', label: '只要周达标' },
+
+// ===== 复制口径由「显示列」自动派生（用户 2026-11-20 第三轮）=====
+// 旧版有一个独立的「复制」picker：显示三列却只复制日达标、或只显示日达标却复制全部 ——
+// 复制出去的文字与屏幕上的表对不上，老师粘贴进工作群就会被问住。
+// 现在**只有一份口径**：看的是什么就复制什么，不再让用户选第二套口径。
+const COPY_SCOPE_TEXT = { all: '全部', daily: '日达标', weekly: '周达标', att: '班超分' };
+
+/**
+ * 由显示列派生复制口径。矩阵：
+ *   只开日达标 → copy=daily/att=0；只开周达标 → weekly/0；只开班超分 → att/1；
+ *   日+周 → all/0；含班超分的混合 → all/1。
+ *
+ * `att` 是给服务端的开关（1=页面显示班超分列）：服务端据此决定**复制正文里**要不要写
+ * 每行的班超分/考勤待补/考勤规则 —— 列关了却复制出分数，等于把没显示的信息发到群里。
+ * 服务端有 60s 缓存，切换显示列时重查一次代价可接受（文案必须跟着列走，见 onToggleColumn）。
+ *
+ * @param {{daily?:boolean,weekly?:boolean,attendance?:boolean}} columns
+ * @returns {{copy:string, att:string}}
+ */
+function autoCopy(columns) {
+  const cols = columns || {};
+  const daily = !!cols.daily;
+  const weekly = !!cols.weekly;
+  const att = !!cols.attendance;
+  if (att && !daily && !weekly) return { copy: 'att', att: '1' };
+  if (daily && !weekly && !att) return { copy: 'daily', att: '0' };
+  if (weekly && !daily && !att) return { copy: 'weekly', att: '0' };
+  // 两个及以上指标：正文含全部展示列；带班超分时让服务端补上每行班超分与考勤规则
+  return { copy: 'all', att: att ? '1' : '0' };
+}
+
+// 班超分口径（用户 2026-11-20 第三轮「合计或日均」）：
+// 「这 1.6 分是一周扣的还是平均每天扣的」必须能回答 —— 服务端同时下发日均/合计两个数，
+// 前端只切展示口径、不重算（合计 ÷ 天数再 round 会与后端口径差 0.01）。
+const DEDUCT_MODE_OPTIONS = [
+  { key: 'avg', label: '日均' },
+  { key: 'total', label: '合计' },
 ];
 
 // 考勤统计窗口（用户 2026-11-12「要本日、本周、本月，而不是3天7天这样」）。
@@ -129,8 +173,9 @@ Page({
     levelChips: LEVEL_CHIPS,
     metricChips: METRIC_CHIPS,
     columnToggles: COLUMN_TOGGLES,
-    copyScopes: COPY_SCOPES,
     attRangeOptions: ATT_RANGE_OPTIONS,
+    // 班超分口径选项（日均/合计）；只在班超分列打开且窗口不是「本日」时出现
+    deductModeOptions: DEDUCT_MODE_OPTIONS,
 
     quick: '',
     level: '',
@@ -138,6 +183,12 @@ Page({
     // 考勤统计窗口：day | week | month（用户 2026-11-12，替代旧的「回看 N 天」）
     attRange: DEFAULT_ATT_RANGE,
     attRangeLabel: '本周',
+    // 「口径」在 attRange === 'day' 时隐藏（本日窗口的合计 = 日均，两个按钮没有意义）。
+    // 比较放在 JS 里算好：模板不做表达式（仓库约定）。
+    showDeductMode: DEFAULT_ATT_RANGE !== 'day',
+    // 班超分口径：avg=日均（与分数同一口径）/ total=窗口合计。
+    // 切换只重排已有数据（onDeductMode），不重发请求。
+    deductMode: 'avg',
     // 服务端下发的考勤计算规则（用户 2026-11-12「要在图片下面标注考勤计算规则」）：
     // 页面脚注与生成图片共用同一份，前端不写一个字 —— 改了单价忘了改说明就是说谎。
     attRuleLines: [],
@@ -152,18 +203,17 @@ Page({
     dateLabel: '今天',
     // 考勤窗口终点（服务端 d.to 回显；缺失时退回所选日）
     attTo: '',
-    attRangeText: '',
-    // 班超分统计区间（用户 2026-11-20「选择了班超分要有查看日期」）：
-    // 形如「本周 11-17 至 11-23 · 班超分口径」，由服务端回显的窗口起止拼好再下发，
-    // 模板不做字符串拼接。列被关掉时不渲染（没有班超分就没有这个口径要解释）。
+    // 班超分统计区间说明（用户 2026-11-20「选择了班超分要有查看日期」）：
+    // 由服务端回显的窗口起止拼好再下发，模板不做字符串拼接。
+    // 2026-11-20 第三轮起这段文案挂在「班超分范围 + 口径」行下方（.cs-att-note），
+    // 旧版独立的 `.cs-period` 条不再需要（`attRangeText` 一并删除）。
     periodText: '',
-    // 显示内容（列表列）：默认日+周，考勤有数据时才自动加上
+    // 显示内容（列表列）：默认日+周，班超分有任意检查记录时才自动加上
     columns: { daily: true, weekly: true, attendance: false },
-    // 复制内容：默认只复制日达标（用户「如只需要日达标这种的」）
-    copyScope: 'daily',
-    // 复制口径的 picker 索引与显示文案（预计算，模板不做三元）
-    copyScopeIndex: 1,
-    copyScopeLabel: '只要日达标',
+    // 服务端回显的复制口径（'all' | 'daily' | 'weekly' | 'att'）：
+    // 由 autoCopy(columns) 请求、服务端确认后回显，复制成功的 toast 用它说明复制了什么。
+    // 不再是用户可选状态（旧版独立 picker 已删，见 autoCopy 注释）。
+    copyScope: '',
 
     loading: true,
     // 失败要显式呈现并给重试入口：上一版只弹 toast 后留空，
@@ -240,13 +290,20 @@ Page({
 
   // 并发保护：快速连点时慢响应不得覆盖新结果（否则筛选结果会「跳回去」）
   _seq: 0,
-  // 全量行缓存（前端留一份是为了切「显示内容」时不重发请求；判定与文案仍来自服务端）
+  // 全量行缓存（前端留一份是为了切「日均/合计」口径时不重发请求；判定与文案仍来自服务端）
   _raw: [],
+  // 「自动打开班超分列后补一次请求」的重入闸门（见 load 里的 needSyncCopy）：
+  // 防止极端情况下列自动开/关来回抖动把请求打成死循环。
+  _autoSynced: false,
 
   buildQuery() {
     const d = this.data;
+    // 复制口径由**当前显示列**派生（用户 2026-11-20 第三轮）：
+    // 旧版是独立 picker，可以「看着三列只复制日达标」，复制出去的内容与屏幕对不上。
+    // att 告诉服务端页面有没有显示班超分列 —— 正文是否带每行班超分/考勤规则由它决定。
+    const scope = autoCopy(d.columns);
     // 考勤窗口传 key（本日/本周/本月），起止由服务端算 —— 不再传 days（旧「回看 N 天」）
-    const q = { attRange: d.attRange };
+    const q = { attRange: d.attRange, copy: scope.copy, att: scope.att };
     // 选了非今天的日期才传（保持「今天」走服务端默认口径，缓存也最友好）
     if (d.selectedDate) q.today = d.selectedDate;
     if (d.selectedGrades.length) q.grades = d.selectedGrades.join(',');
@@ -258,13 +315,17 @@ Page({
       q.metric = d.metric;
     }
     if (d.keyword) q.keyword = d.keyword;
-    // 复制口径也传给服务端：文案要按它生成（用户「复制内容…只需要日达标这种的」）
-    q.copy = d.copyScope;
     return q;
   },
 
   async load() {
     const seq = ++this._seq;
+    // 上一次 load 是「自动打开班超分列后补一次」的（见下面 needSyncCopy）：
+    // 只允许补一次，避免极端情况下列/口径来回抖动导致请求打转。
+    const autoSynced = this._autoSynced;
+    this._autoSynced = false;
+    // 本次请求实际发送的复制口径（buildQuery 读的是同一份 this.data.columns）
+    const reqScope = autoCopy(this.data.columns);
     this.setData({ loading: true, errorText: '' });
     try {
       const d = (await auth.get('/api/admin/class/status-board', this.buildQuery())) || {};
@@ -278,44 +339,55 @@ Page({
       const selectedGrades = grades.length
         ? (this.data.selectedGrades || []).filter((g) => grades.includes(g))
         : this.data.selectedGrades || [];
-      // 考勤有没有真数据：决定「班超分」列与「考勤统计 N 天」那一行出不出现在页面上。
-      // ⚠️ 这里必须用 **hasAnyCheck**（窗口内有**任意**检查记录，含卫生），不能用 hasData
-      //   （只含 4 个考勤模块）。用户 2026-11-19 报「卫生、查宿没有被减分」的另一半观感来源
-      //   就是「本周只录了卫生」的班：分数明明 8.40，但旧判定认为它没考勤数据 →
-      //   考勤列被关掉、「考勤统计」那一行也不出现，看着就像真的没减分。
+      // 「有没有检查记录」是**系统能力**，不是「当前筛选结果」：
+      // 必须读服务端下发的顶层 hasAnyCheck（**筛选前**全量行口径）。
+      // ⚠️ 旧实现用筛选后的 rows.some(...) 现算 —— 任何把有记录的班筛掉的筛选
+      //   （院系/年级/搜索/快捷 chip）都会让班超分列被强制关掉、班超分范围行消失，
+      //   正是用户报「一筛选班超分范围就不见了」的真 BUG。旧后端没有该字段时才回退现算。
       // hasData 仍保留给服务端的「考勤待补」筛选（那个语义是「考勤四项都没录」，没变）。
-      const hasAttendance = rows.some((x) => x.attendance && x.attendance.hasAnyCheck);
+      const hasAttendance =
+        typeof d.hasAnyCheck === 'boolean'
+          ? d.hasAnyCheck
+          : rows.some((x) => x.attendance && x.attendance.hasAnyCheck);
       const columns = { ...this.data.columns };
+      // 自动勾选：有检查记录且用户没手动改过就开列；一条检查都没有则强制关闭。
       if (hasAttendance && !this._touchedColumns) columns.attendance = true;
       if (!hasAttendance) columns.attendance = false;
-      this.setData({
+      // 三列全关等于没有列表：强制关闭班超分时若用户只开了它，兜底保留日达标
+      if (!columns.daily && !columns.weekly && !columns.attendance) columns.daily = true;
+      // 列被自动打开/关闭后复制口径也跟着变：服务端正文是按**请求时**的 att 生成的，
+      // 不补这一次请求，首屏「复制」出来的文字就会与刚显示出来的列对不上
+      // （本轮要消灭的就是「显示一套、复制另一套」）。服务端有 60s 缓存，代价可接受。
+      const nextScope = autoCopy(columns);
+      const needSyncCopy =
+        !autoSynced && (nextScope.copy !== reqScope.copy || nextScope.att !== reqScope.att);
+      const payload = {
         loading: false,
         today: d.today || '',
         from: d.from || '',
-        // 窗口终点（完整周/完整月）：脚注与图片都要用它，不能用 today 顶替（见 attRangeText 注释）
+        // 窗口终点（完整周/完整月）：脚注与图片都要用它，不能用 today 顶替（见 periodText 注释）
         attTo: d.to || '',
         weekStart: d.weekStart || '',
         // 窗口以服务端回显为准（非法值会被回退成 week，前端跟着改，否则 chip 与数据不符）
         attRange: d.attRange || this.data.attRange,
         attRangeLabel: d.attRangeLabel || '',
+        // 「口径」只在非「本日」窗口出现：本日窗口的合计 = 日均，切了也没意义。
+        // 比较放在 JS 里算好 —— 模板不做表达式（仓库约定）。
+        showDeductMode: (d.attRange || this.data.attRange) !== 'day',
         attRuleLines: d.attRuleLines || [],
         attRuleText: (d.attRuleLines || []).join('；'),
-        // 联动展示：快捷 chip 文案随日期换词；考勤行标出实际统计区间（带窗口名）。
-        // ⚠️ 区间终点用服务端下发的 **d.to**（窗口终点），**不是 d.today**（所选日）：
-        //   窗口 2026-11-19 起与班超同源 = **完整周 / 完整月**，本周终点是周日而不是今天。
-        //   写 today 会让页面说「11月16日 ~ 11月19日」而数字里含 20~22 日 ——
-        //   老师照着这个区间去核对必然觉得「日周月不一致」（用户报障的第三种表现）。
-        //   d.to 缺失 = 后端还是旧版（没这个字段），此时退回 today 至少不说谎。
         chips: this.chipsFor(),
-        attRangeText: d.from
-          ? (d.to || d.today) === d.from
-            ? `${d.from}（仅当日，早操/早八/晚自习/查宿）`
-            : `${d.from} ~ ${d.to || d.today || ''}（${d.attRangeLabel || ''}，含卫生/查宿等全部检查）`
-          : '',
-        // 班超分统计区间（用户 2026-11-20「选择了班超分要有查看日期」）：
+        // 班超分统计区间说明（用户 2026-11-20「选择了班超分要有查看日期」）：
         // 起止只用服务端回显的 from/to（窗口由服务端按所选日算，前端自算必然与班超漂移）。
+        // ⚠️ 区间终点用 **d.to**（窗口终点），**不是 d.today**（所选日）：
+        //   窗口 2026-11-19 起与班超同源 = **完整周 / 完整月**，本周终点是周日而不是今天。
+        //   写 today 会让页面说「11-16 ~ 11-19」而数字里含 20~22 日 ——
+        //   老师照着这个区间去核对必然觉得「日周月不一致」（用户报障的第三种表现）。
+        //   d.to 缺失 = 后端还是旧版，此时退回 today 至少不说谎。
+        // 文案同时解释「分数怎么来」与「合计口径是什么」：老师切到合计后看到的是窗口累计扣分，
+        // 若只写「10 − 日均扣分」会以为两处数字是同一口径（本轮已被用户点名过一次「对不上」）。
         periodText: d.from
-          ? `${d.attRangeLabel ? `${d.attRangeLabel} ` : ''}${md(d.from)} 至 ${md(d.to || d.today)} · 班超分口径`
+          ? `${d.attRangeLabel ? `${d.attRangeLabel} ` : ''}${md(d.from)} ~ ${md(d.to || d.today)} · 含卫生/查宿等全部检查 · 班超分 = 10 − 日均扣分（切「合计」看窗口累计扣分）`
           : '',
         gradeChips: (grades.length ? grades : []).map((g) => ({
           key: g,
@@ -329,18 +401,30 @@ Page({
         hasAttendance,
         columns,
         rows,
-        shown: rows.map((r) => this.decorate(r)),
+        // 显式传参（不读 this.data.columns/deductMode）：这些值在同一次 setData 里才写入，
+        // 仓库已两次踩过「装饰时读到 setData 前的旧值」（buildFooter/buildMetrics 都有注释）。
+        shown: rows.map((r) => this.decorate(r, { columns, deductMode: this.data.deductMode })),
         // 院校/系部候选（服务端给的是**当前筛选后**的行，所以候选会随选择收窄）
         ...this.buildDeptOptions(d),
-        metrics: this.buildMetrics(scope, d),
+        metrics: this.buildMetrics(scope, columns),
         scopeText: this.buildScopeText(hasFilter, d),
         copyText: d.copyText || '',
         copyLabel: hasFilter ? '复制筛选结果' : '复制全部',
-        ...this.copyScopeView(this.data.copyScope),
+        // 复制口径以服务端回显为准（旧后端没回显时用本次请求的派生值兜底，仍与服务端一致）
+        copyScope: d.copyScope || nextScope.copy,
         hasFilter,
         emptyTitle: hasFilter ? '当前筛选条件下没有班级' : '没有班级数据',
         footerText: this.buildFooter(d, hasAttendance),
-      });
+      };
+      if (needSyncCopy) {
+        // 列被自动改了 → 先用新列再查一次，**不渲染**这一版（否则会「渲染旧口径 → 闪一下 loading」）。
+        // 只把 columns 写回内部状态：下一次 load 的 buildQuery 就会带上正确的 copy/att。
+        // _autoSynced 保证最多补一次，正常第二次请求的口径就与列一致了（服务端 60s 缓存，代价可接受）。
+        this._autoSynced = true;
+        this.setData({ columns });
+        return this.load();
+      }
+      this.setData(payload);
     } catch (e) {
       if (seq !== this._seq) return;
       const noPerm = e.code === 403002 || e.code === 403;
@@ -364,9 +448,8 @@ Page({
         // 规则说明也要清：失败时留着上一次的规则文案，会被当成「数据是新的、只是没刷新」
         attRuleLines: [],
         attRuleText: '',
-        // 区间条同属派生展示：失败后留着它，页面会顶着上一次的统计区间（而数据已空）
+        // 区间说明同属派生展示：失败后留着它，页面会顶着上一次的统计区间（而数据已空）
         periodText: '',
-        attRangeText: '',
         // 窗口终点同属派生展示：失败后留着它，图片标题会顶着一个不存在的区间
         attTo: '',
         errorText: noPerm ? '没有查看班级状态的权限（需要 class.view）' : e.message || '加载失败，请下拉重试',
@@ -411,12 +494,6 @@ Page({
     if (cols.daily) out.push({ k: custom ? '当日达标' : '今日达标', v: rateText(scope.dailyRate), lv: rateLevel(scope.dailyRate) });
     if (cols.weekly) out.push({ k: custom ? '当周达标' : '本周达标', v: rateText(scope.weeklyRate), lv: rateLevel(scope.weeklyRate) });
     return out;
-  },
-
-  // 复制口径的展示字段（模板不做三元拼接）
-  copyScopeView(key) {
-    const idx = COPY_SCOPES.findIndex((s) => s.key === key);
-    return { copyScopeIndex: idx < 0 ? 0 : idx, copyScopeLabel: (COPY_SCOPES[idx < 0 ? 0 : idx] || COPY_SCOPES[0]).label };
   },
 
   buildScopeText(hasFilter, d) {
@@ -470,28 +547,55 @@ Page({
   },
 
   // 只做展示格式化（数字与判定全部来自服务端）
-  decorate(r) {
+  //
+  // view = { columns, deductMode }：**必须由调用方显式传入**（load / onDeductMode），
+  // 不读 this.data —— 这些值都写在同一次 setData 里，读 this.data 会拿到上一次的旧值
+  // （仓库已在 buildMetrics / buildFooter 上踩过两次，这是第三次，别踩）。
+  decorate(r, view = {}) {
+    const cols = (view && view.columns) || this.data.columns || {};
+    const deductMode = (view && view.deductMode) || this.data.deductMode || 'avg';
+    // 班超分列关掉时：chips / 无扣分文案 / 口径行 / 右列**全部不产出**
+    // （用户明确要求「不显示班超分时不显示任何扣分信息」）。
+    const showAtt = !!cols.attendance;
     const run = r.run || {};
     const att = r.attendance || {};
     // 分数 = 班超分（服务端与班超总评同一个实现，含卫生/查宿扣分）；
     // 出勤率仍下发但不在这行重复显示：分数就是它的折算结果，
     // 同一行给两个数只会让人去核对「9.5 分和 95% 是不是一个意思」。
     const attScoreText = scoreText(att.score);
+    // 没有检查记录 ≠ 0 分（0 分是最严重的差评）：右列写人话「无检查记录」而不是「—」
+    const hasScore = att.score !== null && att.score !== undefined && att.score !== '';
     // 扣分来源 chips（用户 2026-11-20「各班中如有减分情况要写哪个考察项检查扣分」）：
     // 生成规则见 buildDeductChips —— 同一模块最多 2 条、整行最多 3 条，其余折成 +N。
-    const allChips = this.buildDeductChips(att);
+    const allChips = showAtt ? this.buildDeductChips(att, deductMode) : [];
     const deductChips = allChips.slice(0, DEDUCT_CHIP_MAX).map((c) => ({ key: c.key, text: c.text }));
     const attSub = this.buildAttSub(att);
     const detail = att.deductDetail || [];
     const custom = !!this.data.selectedDate;
+    // 达标横条（单/多数据不同排版，见 WXML）：只做**显示出来的**那两列，
+    // 不参跑的班不出条（「0%」会被误读成没完成，实际是本班不用跑）。
+    const runBars = [];
+    if (run.enabled !== false) {
+      if (cols.daily) runBars.push(this.buildRunBar('daily', '日达标', run.dailyRate));
+      if (cols.weekly) runBars.push(this.buildRunBar('weekly', '周达标', run.weeklyRate));
+    }
+    const runSingle = runBars.length === 1;
     // 第一行右侧的次要信息（人数 / 系部 / 不参跑）：整句预拼，模板不拼表达式
     const metaParts = [`${r.studentCount || 0}人`];
     if (r.departmentName) metaParts.push(r.departmentName);
     if (run.enabled === false) metaParts.push('不参跑');
+    // chips 为空时的替代文案（有记录但没扣分 → 「无扣分」弱文案）。
+    // 旧服务不下发 deductDetail 但给了迟到人数时，说「迟到 N 人」比说「无扣分」真实。
+    // 没有检查记录时左列留空（右列已经写「无检查记录」，重复两遍反而像两件事）。
+    let deductEmptyText = '';
+    if (showAtt && !deductChips.length) {
+      deductEmptyText = hasScore ? (detail.length ? '无扣分' : attSub || '无扣分') : '';
+    }
     return {
       className: r.className,
       studentCount: r.studentCount || 0,
       metaText: metaParts.join(' · '),
+      // ---- 旧字段一个不删：分享图片 drawShareImage 直接读 dailyText/weeklyText/attText 与 level ----
       dailyText: rateText(run.dailyRate),
       dailyLevel: rateLevel(run.dailyRate),
       weeklyText: rateText(run.weeklyRate),
@@ -501,16 +605,63 @@ Page({
       weeklyRateText: `${custom ? '当周' : '本周'} ${rateText(run.weeklyRate)}`,
       attText: attScoreText,
       attLevel: attScoreLevel(att.score),
+      // 班超分大字：有记录才显示数值；没有记录时右列写「无检查记录」（hasScore 由模板判定）
+      hasScore,
+      scoreEmptyText: showAtt && !hasScore ? '无检查记录' : '',
+      // ---- 本轮新增派生字段（WXML 只渲染，不做任何运算）----
+      runBars,
+      runSingle,
+      // 单/多数据的排版开关：模板不做三元拼接，这里预算成类名
+      runbarsClass: runSingle ? 'is-single' : 'is-multi',
       deductChips,
       deductMore: allChips.length > DEDUCT_CHIP_MAX ? allChips.length - DEDUCT_CHIP_MAX : 0,
-      // chips 为空时的替代文案（总扣分 0 / 无记录 → 「无扣分」弱文案）。
-      // 旧服务不下发 deductDetail 但给了迟到人数时，说「迟到 N 人」比说「无扣分」真实。
-      deductEmptyText: deductChips.length ? '' : detail.length ? '无扣分' : attSub || '无扣分',
-      // 扣分明细整句（旧实现保留：服务端旧版不下发 targets 时给一条可读的兜底说明）
+      deductEmptyText,
+      // 右列副行：「日均扣 1.60」/「合计扣 8.00」；扣分为 0 或没有检查记录时为空串
+      deductLine: showAtt ? this.buildDeductLine(att, deductMode, hasScore) : '',
+      // 扣分明细整句（旧实现保留：分享图/脚本断言用，服务端旧版不下发 targets 时的兜底说明）
       attSub,
       // 不参跑的班要标出来：否则「0%」会被误读成没完成，而实际上本班不用跑
       runDisabled: run.enabled === false,
     };
+  },
+
+  // 单条达标横条：{key,label,text,percent,level}。
+  // percent 只用于内联宽度（WXML 不做运算）；text 是给右值的「20%」/「—」。
+  buildRunBar(key, label, rate) {
+    const n = Number(rate);
+    return {
+      key,
+      label,
+      text: rateText(rate),
+      percent: Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : 0,
+      level: rateLevel(rate),
+    };
+  },
+
+  /**
+   * 班超分右列副行（用户 2026-11-20 第三轮「合计或日均」）：
+   *   · 日均 → 服务端 attendance.deduct（与 score 同一个分母）
+   *   · 合计 → 服务端 attendance.deductTotal（窗口累计扣分）
+   * 数值**不在这里重算**：合计 ÷ 天数再 round 会与后端口径差 0.01，老师当场就能算出来。
+   * 只有旧后端缺字段时才兜底：日均用「10 − 分数」反推；合计用「日均 × 有记录天数」，
+   * 天数也缺就退回日均（单日窗口下两者本来就相等）—— 宁可比标签少一层信息，也不编造数字。
+   * 扣分为 0 或没有检查记录 → 空串（不显示副行）。
+   */
+  buildDeductLine(att, deductMode, hasScore) {
+    if (!hasScore) return '';
+    const num = (v) => (v === null || v === undefined ? NaN : Number(v));
+    const avgRaw = num(att.deduct);
+    const avg = Number.isFinite(avgRaw) ? avgRaw : Math.round((10 - Number(att.score)) * 100) / 100;
+    if (!(avg > 0)) return '';
+    if (deductMode === 'total') {
+      let total = num(att.deductTotal);
+      if (!Number.isFinite(total)) {
+        const days = num(att.dayCount);
+        total = days > 0 ? Math.round(avg * days * 100) / 100 : avg;
+      }
+      return total > 0 ? `合计扣 ${scoreText(total)}` : '';
+    }
+    return `日均扣 ${scoreText(avg)}`;
   },
 
   /**
@@ -519,34 +670,46 @@ Page({
    *
    * 服务端 attendance.deductDetail = [{ key, name, deduct }]（name=模块名、deduct=模块日均扣分），
    * 并新增 targets = [{ key, name, avgDeduct, count }]（name 形如「卫生-宿舍」= 具体受检类型）。
+   * 2026-11-20 第三轮再新增 totalDeduct（模块与每个 target 的**窗口合计**扣分）：
+   * mode='total' 时 chips 全部改用合计口径，与右列副行「合计扣 8.00」对得上；
+   * 两套数字都由服务端算好（Σtargets 已调平），前端只挑口径，绝不自己乘天数。
    * 生成规则（三条都是为了让一行既装得下、又说得清）：
    *   ① 有 targets 的模块**展开成多条**（同一模块最多取 2 条最重的 —— 卫生底下受检类型很多）；
    *   ② 没有 targets 的老服务/模块退回「模块名 -0.20」；
    *   ③ 全部按扣分从大到小排，整行最多显示 DEDUCT_CHIP_MAX 条（在 decorate 里切），其余折 +N。
    * 返回的 weight 只用于排序，decorate 只把 { key, text } 下发给模板。
    */
-  buildDeductChips(att) {
+  buildDeductChips(att, mode) {
+    const totalMode = mode === 'total';
+    const num = (v) => (v === null || v === undefined ? NaN : Number(v));
+    // 取当前口径的值；旧后端没有 totalDeduct 时退回日均（这时「合计」只能少一层信息，
+    // 不编造一个乘过天数的假合计）。
+    const pick = (avg, total) => {
+      if (!totalMode) return num(avg);
+      const t = num(total);
+      return Number.isFinite(t) ? t : num(avg);
+    };
     const detail = (att && att.deductDetail) || [];
     const chips = [];
     for (const mod of detail) {
       if (!mod) continue;
-      const modDeduct = Number(mod.deduct) || 0;
+      const modDeduct = pick(mod.deduct, mod.totalDeduct);
       const modKey = String(mod.key || mod.name || '');
       const targets = (Array.isArray(mod.targets) ? mod.targets : [])
         .map((t) => ({
           key: String((t && t.key) || (t && t.name) || ''),
           name: String((t && t.name) || ''),
-          avg: Number(t && t.avgDeduct) || 0,
+          value: pick(t && t.avgDeduct, t && t.totalDeduct),
         }))
-        .filter((t) => t.name && t.avg > 0)
-        .sort((a, b) => b.avg - a.avg)
+        .filter((t) => t.name && Number.isFinite(t.value) && t.value > 0)
+        .sort((a, b) => b.value - a.value)
         .slice(0, DEDUCT_CHIP_PER_MODULE);
       if (targets.length) {
         for (const t of targets) {
           chips.push({
             key: `${modKey}:${t.key}:${chips.length}`,
-            weight: t.avg,
-            text: `${t.name} -${scoreText(t.avg)}`,
+            weight: t.value,
+            text: `${t.name} -${scoreText(t.value)}`,
           });
         }
       } else if (modDeduct > 0 && mod.name) {
@@ -592,31 +755,42 @@ Page({
     this.setData({ metric: key }, () => this.load());
   },
 
-  // 显示内容开关：只改本地列显隐，不重新请求（数据已在手，避免无谓往返）
+  // 显示内容开关：列变了 → 复制口径也跟着变，必须重查（复制正文由服务端按 copy/att 生成）。
+  // 不重查就会出现「勾上班超分、复制出来却没有班超分」—— 本轮要消灭的正是这种不一致。
+  // 服务端有 60s 缓存，多一次往返代价可接受（用户已确认这个取舍）。
   onToggleColumn(e) {
     const key = String((e.currentTarget.dataset || {}).key || '');
     const columns = { ...this.data.columns, [key]: !this.data.columns[key] };
     // 三列全关等于没有列表，兜底保留日达标
     if (!columns.daily && !columns.weekly && !columns.attendance) columns.daily = true;
-    // 用户手动改过就不再自动勾考勤（否则每次请求都被强制打开，改不动）
+    // 用户手动改过就不再自动勾班超分（否则每次请求都被强制打开，改不动）
     this._touchedColumns = true;
     // 传新 columns（不是 {}）：buildMetrics 里若退读 this.data 会拿到 setData 前的旧值
-    this.setData({ columns, metrics: this.buildMetrics(this.data.filtered || this.data.totals, columns) });
+    this.setData(
+      { columns, metrics: this.buildMetrics(this.data.filtered || this.data.totals, columns) },
+      () => this.load()
+    );
   },
 
-  // 复制内容（picker）：传给服务端，文案按它生成（前端不拼一个字）
-  onCopyScopePick(e) {
-    const idx = Number(e.detail.value) || 0;
-    const key = (COPY_SCOPES[idx] || COPY_SCOPES[0]).key;
-    if (key === this.data.copyScope) return;
-    this.setData({ copyScope: key, ...this.copyScopeView(key) }, () => this.load());
+  // 班超分口径切换（日均/合计）：**不重发请求** —— 服务端两个数都已下发（deduct / deductTotal），
+  // 这里只按新口径把已有行重新 decorate。传参而不是读 this.data：deductMode 是同一次 setData
+  // 才写入的，读 this.data 会拿到旧口径（仓库已在 buildMetrics/buildFooter 踩过两次）。
+  onDeductMode(e) {
+    const key = String((e.currentTarget.dataset || {}).key || '');
+    if (!key || key === this.data.deductMode) return;
+    const columns = this.data.columns;
+    this.setData({
+      deductMode: key,
+      shown: (this._raw || []).map((r) => this.decorate(r, { columns, deductMode: key })),
+    });
   },
 
   // 考勤统计窗口切换（本日/本周/本月，用户 2026-11-12 替代旧的「回看 N 天」）
   onAttRange(e) {
     const key = String((e.currentTarget.dataset || {}).key || '');
     if (!key || key === this.data.attRange) return;
-    this.setData({ attRange: key }, () => this.load());
+    // showDeductMode 同一次 setData 写入：attRange === 'day' 时「口径」没有意义，隐藏
+    this.setData({ attRange: key, showDeductMode: key !== 'day' }, () => this.load());
   },
 
   onSchool(e) {
@@ -690,9 +864,11 @@ Page({
       data: text,
       success: () => {
         const n = this.data.rows.length;
-        const scope = COPY_SCOPES.find((s) => s.key === this.data.copyScope);
+        // 口径用**服务端回显的 copyScope**（不是前端猜）：旧后端不回显时退回「全部」。
+        // COPY_SCOPE_TEXT 是唯一的 key→中文映射，前端不再另写一份。
+        const scopeText = COPY_SCOPE_TEXT[this.data.copyScope || 'all'];
         wx.showToast({
-          title: `已复制 ${n} 个班（${scope ? scope.label : '全部'}）`,
+          title: `已复制 ${n} 个班（${scopeText}）`,
           icon: 'none',
           duration: 2200,
         });
@@ -727,10 +903,12 @@ Page({
   },
 
   // 导出参数 = 当前已生效的筛选条件原样带上（与看板同一份 buildQuery），
-  // 只换 attRange（用户刚选的窗口）并去掉 copy（导出接口不生成复制文案）。
+  // 只换 attRange（用户刚选的窗口）。copy/att 是「生成复制正文」的参数，导出不生成文案，
+  // 两个一起去掉（不删 att 会让导出请求带上无意义的列开关）。
   buildExportQuery(rangeKey) {
     const q = this.buildQuery();
     delete q.copy;
+    delete q.att;
     q.attRange = rangeKey === 'month' ? 'month' : 'week';
     // 屏幕上的「今天」若来自服务端（用户没手选日期），导出也显式带上：
     // 避免跨零点导出与屏幕统计的不是同一天。
@@ -806,7 +984,7 @@ Page({
 
     // 规则块：标题 1 行 + 每条规则按宽度折行（画布没有自动换行，必须自己切）
     const ruleLines = this.data.attRuleLines || [];
-    // 区间终点同样是 **attTo（窗口终点）** 而不是 today（见 load() 里 attRangeText 的同款注释）：
+    // 区间终点同样是 **attTo（窗口终点）** 而不是 today（见 load() 里 periodText 的同款注释）：
     // 转发的图片是给人当通报用的，区间写错等于整份通报说谎。
     const ruleTitle = `考勤计算规则（${this.data.attRangeLabel || '本周'}：${this.data.from} ~ ${this.data.attTo || this.data.today}）`;
     // 标题不折行（它最长也就 30 字左右），规则条目逐条折行后加「· 」

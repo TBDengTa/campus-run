@@ -938,6 +938,86 @@ function assert(cond, label, extra) {
     }
   }
 
+  // ---- [13] 「日均 / 合计」双口径（用户 2026-11-20 第三轮「合计或日均」）----
+  //
+  // 需求原文（第三条）：「班级状态中…没有筛选考勤范围(本日、本周、本月)次级筛选合计或日均」。
+  // 服务端现在同时下发日均（deduct / avgDeduct）与窗口合计（deductTotal / totalDeduct），
+  // 前端只切展示口径、不重算。这里用**独立算术**核对两套值不能自相矛盾：
+  //   ① Σ 子项日均 = 模块日均；Σ 子项合计 = 模块合计；
+  //   ② 模块合计之和 = attendance.deductTotal；
+  //   ③ 日均 × 有记录天数 ≈ 合计（round 粒度内）。
+  console.log('\n[13] 日均 / 合计双口径');
+  {
+    const rb = await board.classStatusBoard({ force: true });
+    const detailRows = rb.rows.filter((x) => (x.attendance.deductDetail || []).length);
+    assert(detailRows.length > 0, '有扣分明细的班可用于对账', detailRows.length);
+    let badTotal = 0;
+    let badSum = 0;
+    let badRatio = 0;
+    for (const row of detailRows.slice(0, 10)) {
+      const att = row.attendance;
+      const list = att.deductDetail || [];
+      // ① 模块级：Σ targets 两套口径都要对上
+      for (const d of list) {
+        const sumAvg = (d.targets || []).reduce((a, t) => a + (t.avgDeduct || 0), 0);
+        const sumTotal = (d.targets || []).reduce((a, t) => a + (t.totalDeduct || 0), 0);
+        if (d.targets && d.targets.length) {
+          if (Math.abs(sumAvg - d.deduct) > 0.011) badSum += 1;
+          if (Math.abs(sumTotal - (d.totalDeduct || 0)) > 0.011) badSum += 1;
+        }
+        if (typeof d.totalDeduct !== 'number') badTotal += 1;
+        for (const t of d.targets || []) if (typeof t.totalDeduct !== 'number') badTotal += 1;
+      }
+      // ② 模块合计之和 = 班级窗口合计
+      const sumModuleTotal = Math.round(list.reduce((a, d) => a + (d.totalDeduct || 0), 0) * 100) / 100;
+      if (Math.abs(sumModuleTotal - (att.deductTotal || 0)) > 0.011) badSum += 1;
+      // ③ 日均 × 天数 ≈ 合计（两套值同源，不能出现「日均 1.60、7 天却合计 8.00」这种自相矛盾）
+      if (Number(att.dayCount) > 0) {
+        const back = (att.deduct || 0) * att.dayCount;
+        if (Math.abs(back - (att.deductTotal || 0)) > 0.02 * att.dayCount + 0.02) badRatio += 1;
+      }
+    }
+    assert(badTotal === 0, '扣分明细每项（含 targets）都带 totalDeduct', badTotal);
+    assert(badSum === 0, '子项之和 = 模块值、模块合计之和 = 窗口合计（两套口径都对得上）', badSum);
+    assert(badRatio === 0, '日均 × 有记录天数 ≈ 窗口合计（同一个数源的两种表达）', badRatio);
+  }
+
+  // ---- [14] hasAnyCheck 是「全量口径」而不是「筛选后口径」（用户 2026-11-20 范围行消失的根因）----
+  console.log('\n[14] hasAnyCheck 不随筛选变化');
+  {
+    const full = await board.classStatusBoard({ force: true });
+    assert(full.hasAnyCheck === true, '全库有检查记录时 hasAnyCheck=true', full.hasAnyCheck);
+    // 筛到 0 行：列/范围行仍应可用（否则用户「选了班超分却没有考勤范围」）
+    const none = board.applyBoardFilter(full, { keyword: '一定不存在的班级名XYZ' });
+    assert(none.rows.length === 0, '关键词筛到 0 行', none.rows.length);
+    assert(none.hasAnyCheck === true, '筛到 0 行时 hasAnyCheck 仍为 true（控件不该消失）', none.hasAnyCheck);
+    // 随便挑一个班筛：即使这个班没有检查记录，hasAnyCheck 也不该变 false
+    const one = board.applyBoardFilter(full, { keyword: (full.rows[0] || {}).className || '' });
+    assert(one.rows.length > 0 && one.hasAnyCheck === true, '按班名筛后 hasAnyCheck 仍为 true', {
+      rows: one.rows.length,
+      flag: one.hasAnyCheck,
+    });
+  }
+
+  // ---- [15] 复制文案由「显示内容」驱动（copy=att / att=0）----
+  console.log('\n[15] 复制文案跟随显示列');
+  {
+    const rb = await board.classStatusBoard({ force: true });
+    const tAgv = board.applyBoardFilter(rb, { copy: 'all', att: true });
+    assert(/班超/.test(tAgv.copyText), 'att=1 的 all 文案含班超分', tAgv.copyText.slice(0, 120));
+    assert(/考勤计算规则/.test(tAgv.copyText), 'att=1 时附考勤计算规则');
+    const tNoAtt = board.applyBoardFilter(rb, { copy: 'all', att: false });
+    assert(!/班超/.test(tNoAtt.copyText), 'att=0 的 all 文案不含班超分（屏幕没有就不复制）', tNoAtt.copyText.slice(0, 120));
+    assert(!/考勤计算规则/.test(tNoAtt.copyText) && !/考勤待补/.test(tNoAtt.copyText), 'att=0 时不写考勤待补与规则');
+    assert(/今日达标/.test(tNoAtt.copyText) && /本周达标/.test(tNoAtt.copyText), 'att=0 仍写日/周达标');
+    const tAtt = board.applyBoardFilter(rb, { copy: 'att', att: true });
+    assert(/班超分】/.test(tAtt.copyText.split('\n')[0] || ''), 'copy=att 标题标注班超分', tAtt.copyText.split('\n')[0]);
+    assert(/日均扣/.test(tAtt.copyText) && /区间合计扣/.test(tAtt.copyText), 'copy=att 同时写日均与合计扣分');
+    assert(!/今日达标/.test(tAtt.copyText), 'copy=att 不写达标（与显示列一致）', tAtt.copyText.slice(0, 160));
+    // 复制口径回显：前端 toast 直接用它
+    assert(tNoAtt.copyScope === 'all' && tNoAtt.withAtt === false, '响应回显 copyScope / withAtt', [tNoAtt.copyScope, tNoAtt.withAtt]);
+  }
+
   await mongoose.disconnect();
   console.log(failed ? `\n${failed} 项失败` : '\n全部通过');
   process.exit(failed ? 1 : 0);

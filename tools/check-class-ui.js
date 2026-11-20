@@ -33,6 +33,9 @@ const classJs = read(path.join(MINI, 'packageAdmin', 'class', 'class.js'));
 const classWxml = read(path.join(MINI, 'packageAdmin', 'class', 'class.wxml'));
 const classWxss = read(path.join(MINI, 'packageAdmin', 'class', 'class.wxss'));
 const csJs = read(path.join(MINI, 'packageAdmin', 'class-status', 'class-status.js'));
+// 去注释后的代码：断言「源码里不再出现某标识符」时必须只看代码（注释里会提到被删掉的旧名字）
+const stripComments = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '');
+const csCode = stripComments(csJs);
 const csWxml = read(path.join(MINI, 'packageAdmin', 'class-status', 'class-status.wxml'));
 const csWxss = read(path.join(MINI, 'packageAdmin', 'class-status', 'class-status.wxss'));
 const reqJs = read(path.join(MINI, 'utils', 'request.js'));
@@ -277,6 +280,31 @@ ok(
     /所选区间暂无检查记录/.test(classWxml)
 );
 ok('紧凑排版：明细两列网格 + 趋势迷你条（不再竖排 5 行）', /cls-bc-module-head/.test(classWxml) && /cls-bc-trend-bars/.test(classWxml) && /cls-bc-trend-col/.test(classWxml));
+
+// ---- 第三轮（用户 2026-11-20）：总评压缩 + KPI 双列卡 + 明细/记录双列 ----
+ok(
+  'KPI 双列卡片：buildBanchaoKpis 唯一实现，loadOverview / loadBanchao 后各补一次（谁后到都补齐）',
+  /buildBanchaoKpis\(\) \{/.test(classJs) &&
+    countOf(classJs, /this\.buildBanchaoKpis\(\);/g) >= 2 &&
+    /banchaoKpis: \[\]/.test(classJs) &&
+    /cls-bc-kpis/.test(classWxml) &&
+    /cls-bc-kpi/.test(classWxml)
+);
+ok(
+  '检查明细 = 两列独立卡片（每格主数据得分 + 次数据模块/指标），不再套一张大卡',
+  /cls-bc-modules/.test(classWxml) && /cls-bc-module-desc/.test(classWxml) && !/tt-card cls-bc-modules/.test(classWxml)
+);
+ok(
+  '最近记录 = 同一 bc-record 模板 + 唯一双列容器（详细检查记录仍全宽列表）',
+  /cls-bc-records-grid/.test(classWxml) &&
+    /banchaoRecentGrid/.test(classWxml) &&
+    countOf(classWxml, /cls-bc-records-grid/g) === 1 &&
+    countOf(classWxml, /<template is="bc-record"/g) >= 2
+);
+ok(
+  '修掉「本今日还没有检查记录」：hero 备注整句由 JS 预计算，模板不再拼 `本{{rangeWord}}`',
+  /banchaoHeroNote/.test(classWxml) && !/本\{\{rangeWord\}\}/.test(classWxml) && /banchaoHeroNote:/.test(classJs)
+);
 {
   // WXML 用到的页内类名必须在页内 WXSS 定义（本仓库踩过「写了类名没样式 → 控件裸排」）
   const tokens = new Set();
@@ -304,7 +332,7 @@ ok(
   const body = fnBody(csJs, 'buildExportQuery(rangeKey) {');
   ok(
     '导出参数：换 attRange、去掉 copy、today 兜底（与看板同参）',
-    /delete q\.copy/.test(body) && /q\.attRange = rangeKey === 'month' \? 'month' : 'week'/.test(body) && /q\.today/.test(body),
+    /delete q\.copy/.test(body) && /delete q\.att/.test(body) && /q\.attRange = rangeKey === 'month' \? 'month' : 'week'/.test(body) && /q\.today/.test(body),
     body.slice(0, 200)
   );
 }
@@ -324,19 +352,91 @@ ok(
     /\.slice\(0, DEDUCT_CHIP_PER_MODULE\)/.test(csJs)
 );
 {
-  const body = fnBody(csJs, 'decorate(r) {');
+  const body = fnBody(csJs, 'decorate(r, view = {}) {');
   ok(
     'chips 全局截断 + +N 计数在 decorate 里算好（模板零运算）',
     /allChips\.slice\(0, DEDUCT_CHIP_MAX\)/.test(body) && /deductMore: allChips\.length > DEDUCT_CHIP_MAX/.test(body),
     body.slice(0, 200)
+  );
+  // 用户 2026-11-20 第三轮：不显示班超分列时**不产出任何扣分信息**
+  ok(
+    '班超分列关闭时 chips / 无扣分文案一律不产出（用户明确要求）',
+    /const showAtt = !!cols\.attendance/.test(body) &&
+      /const allChips = showAtt \? this\.buildDeductChips\(att, deductMode\) : \[\]/.test(body) &&
+      /if \(showAtt && !deductChips\.length\)/.test(body)
   );
 }
 ok(
   'chips 在 WXML 渲染（循环 deductChips.chip.text + deductMore「+N」）',
   /wx:for="\{\{item\.deductChips\}\}"/.test(csWxml) && /chip\.text/.test(csWxml) && /item\.deductMore/.test(csWxml)
 );
-ok('班超分统计区间可见（periodText 来自服务端 from/to）', /periodText: d\.from/.test(csJs) && /periodText/.test(csWxml));
+ok('班超分统计区间可见（periodText 来自服务端 from/to，并写明「10 − 日均扣分」口径）', /periodText: d\.from/.test(csJs) && /periodText/.test(csWxml) && /10 − 日均扣分/.test(csJs));
 ok('班超分大字走 num-font（数字排版约定）', /cs-score num-font/.test(csWxml));
+
+// ---- 第三轮（用户 2026-11-20）：复制 autodetect + 班超分范围/口径 + 单多数据排版 ----
+ok(
+  '删掉独立「复制内容」picker（用户：上面的复制已经自动识别显示内容）',
+  !/COPY_SCOPES/.test(csCode) && !/copyScopes/.test(csCode) && !/onCopyScopePick/.test(csCode) && !/cs-pick-copy/.test(csWxml)
+);
+ok(
+  '复制口径由显示列自动派生（autoCopy 唯一实现：只日/只周/只班超分/混合）',
+  /function autoCopy\(columns\)/.test(csJs) &&
+    /copy: 'att', att: '1'/.test(csJs) &&
+    /copy: 'daily', att: '0'/.test(csJs) &&
+    /copy: 'weekly', att: '0'/.test(csJs) &&
+    /copy: 'all', att: att \? '1' : '0'/.test(csJs)
+);
+ok(
+  '请求同时带 copy 与 att（页面显示班超分与否决定复制正文）',
+  /copy: scope\.copy, att: scope\.att/.test(csJs)
+);
+ok(
+  '切换显示列后重查，保证复制正文跟着列走（不再本地只改显隐）',
+  /onToggleColumn\(e\) \{/.test(csJs) && /this\.load\(\)/.test(fnBody(csJs, 'onToggleColumn(e) {'))
+);
+ok(
+  '「有没有检查记录」读服务端顶层 hasAnyCheck（筛选后不消失，旧后端回退现算）',
+  /typeof d\.hasAnyCheck === 'boolean'/.test(csCode) && /d\.hasAnyCheck/.test(csCode) && /rows\.some/.test(csCode) && /hasAnyCheck\)/.test(csCode)
+);
+ok(
+  '班超分范围行只在显示班超分列时出现（本日/本周/本月）',
+  /班超分范围/.test(csWxml) && /wx:if="\{\{columns\.attendance && !errorText\}\}"/.test(csWxml) && /onAttRange/.test(csWxml)
+);
+ok(
+  '日均/合计口径：选项 + 切换只重排已有数据（不重发请求）+ 本日窗口隐藏口径',
+  /const DEDUCT_MODE_OPTIONS = \[/.test(csJs) &&
+    /label: '日均'/.test(csJs) &&
+    /label: '合计'/.test(csJs) &&
+    /onDeductMode\(e\) \{/.test(csJs) &&
+    !/this\.load\(\)/.test(fnBody(csJs, 'onDeductMode(e) {')) &&
+    /showDeductMode: \(d\.attRange \|\| this\.data\.attRange\) !== 'day'/.test(csJs) &&
+    /wx:if="\{\{showDeductMode\}\}"/.test(csWxml)
+);
+ok(
+  '合计口径用服务端 totalDeduct / deductTotal（前端只挑口径，不乘天数）',
+  /buildDeductChips\(att, mode\)/.test(csJs) &&
+    /const totalMode = mode === 'total'/.test(csJs) &&
+    /pick\(mod\.deduct, mod\.totalDeduct\)/.test(csJs) &&
+    /pick\(t && t\.avgDeduct, t && t\.totalDeduct\)/.test(csJs) &&
+    /合计扣 \$\{scoreText\(total\)\}/.test(csJs)
+);
+ok(
+  '达标单/多数据不同排版（is-single / is-multi，模板不拼三元）',
+  /runbarsClass: runSingle \? 'is-single' : 'is-multi'/.test(csJs) &&
+    /item\.runBars/.test(csWxml) &&
+    /\.cs-runbars\.is-single/.test(csWxss) &&
+    /\.cs-runbars\.is-multi/.test(csWxss)
+);
+ok(
+  '右列（班超分大字 + 口径副行）只在显示班超分列时渲染',
+  /class="cs-side" wx:if="\{\{columns\.attendance\}\}"/.test(csWxml) &&
+    /扣分为 0 或没有检查记录时为空串/.test(csJs)
+);
+ok(
+  '旧控件已彻底移除（attRangeText / cs-bar-days / 独立 cs-period 条）',
+  !/attRangeText/.test(csCode) && !/attRangeText/.test(csWxml) && !/cs-bar-days/.test(csWxml) && !/cs-period"/.test(csWxml)
+);
+
 {
   const tokens = new Set();
   for (const m of csWxml.matchAll(/class="([^"]*)"/g)) {

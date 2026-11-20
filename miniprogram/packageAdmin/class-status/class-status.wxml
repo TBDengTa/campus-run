@@ -1,17 +1,16 @@
 <!-- 班级状态总览（用户 2026-10-30 第二轮：
      「这太难看了…可以查看显示内容与复制内容，如只需要日达标这种的，
-       而且考勤回看是什么，并且没有院系筛选」）
+       而且考勤回看是什么，并且没有院系筛选」；2026-11-20 第三轮再重排）
 
-     这次针对截图的具体改动：
-     ① 筛选区从 4 行压到 2 行：第一行 院校+系部+搜索，第二行 快捷档位+复制；
-        上一版 5 个圆角 chip 横着排占满满一行、下面再来一排天数选择器，视觉上非常碎。
-     ② 院校/系部**两级**下拉（同名系部跨校区，见 JS 注释）。
-     ③ 「考勤统计 N 天」只在**真有考勤数据**时出现（当前全库 4 条且都不是考勤模块，
-        那个永远为空的控件是"难看"的主要来源）。
-     ④ 2026-11-20 再改（用户「选择了班超分要有查看日期并且还要给各班中如有减分情况
-        要写哪个考察项检查扣分如卫生-宿舍、晚自习这样，重新设计各班条的UI样式」）：
-        列表从四列表格改成「各班条」——班名/系部 + 扣分来源 chips + 右侧班超分大字；
-        列表上方固定显示班超分统计区间，右侧按钮组加「导出」（本周/本月考勤表 CSV）。
+     结构（自上而下）：
+     ① 指标条 → 口径说明 → 筛选工具条（日期/院校/系部/搜索 → 年级 → 快捷 chip+动作 → 达标档位）
+     ② 显示内容：日达标 / 周达标 / 班超分三个开关。**复制口径由显示列自动派生**
+        （JS autoCopy），不再有独立「复制」picker —— 看什么就复制什么。
+     ③ 班超分范围（本日/本周/本月）+ 口径（日均/合计）次级筛选行：
+        只在班超分列打开时渲染；口径切换不重发请求；下方一行小字说明区间与公式。
+     ④ 列表「各班条」：左列 班名/学生数·系部/扣分来源 chips/日周达标横条；
+        右列（仅班超分列开）班超分大字 + 日均扣/合计扣副行，无记录显示「无检查记录」。
+        班超分列关掉时右列与全部扣分信息都不渲染（用户明确要求）。
      所有展示字段由 JS 预计算，模板里不做表达式拼接（仓库约定）。 -->
 <view class="tt-page cs-page">
   <!-- ===== 指标条 ===== -->
@@ -125,7 +124,8 @@
     </scroll-view>
   </view>
 
-  <!-- ===== 显示内容 / 复制内容 ===== -->
+  <!-- ===== 显示内容（复制口径由显示列自动派生，不再有独立「复制」picker）===== -->
+  <!-- 复制口径见 JS autoCopy(columns)：看的是什么就复制什么，避免「看三列、只复制日达标」。 -->
   <view class="cs-bar cs-bar-opts">
     <text class="cs-bar-k">显示</text>
     <view
@@ -139,19 +139,15 @@
       <text>{{item.label}}</text>
     </view>
     <view class="cs-grow"></view>
-    <text class="cs-bar-k">复制</text>
-    <picker class="cs-pick-copy" range="{{copyScopes}}" range-key="label" value="{{copyScopeIndex}}" bindchange="onCopyScopePick">
-      <view class="cs-field cs-field-sm">
-        <text class="cs-field-t">{{copyScopeLabel}}</text>
-        <t-icon name="chevron-down" size="20rpx" color="var(--tt-text-3)" />
-      </view>
-    </picker>
   </view>
 
-  <!-- 考勤统计窗口（用户 2026-11-12「要本日、本周、本月，而不是3天7天这样」）；
-       仍在「真有考勤数据」时才出现，区间说明由服务端回显的 from~to 拼 -->
-  <view class="cs-bar cs-bar-days" wx:if="{{hasAttendance}}">
-    <text class="cs-bar-k">考勤统计</text>
+  <!-- ===== 班超分范围 + 口径（用户 2026-11-20 第三轮）=====
+       只在「班超分」列打开时出现：列关掉时范围/口径都没有意义，整块不渲染（用户明确要求）。
+       范围复用本日/本周/本月（窗口起止由服务端按所选日算，前端不算）；
+       口径默认「日均」，attRange === 'day' 时隐藏（本日窗口的合计 ≡ 日均，两个按钮没意义）。
+       口径切换**不重发请求**：服务端已同时下发日均/合计两个数，只重新 decorate。 -->
+  <view class="cs-bar cs-bar-att" wx:if="{{columns.attendance && !errorText}}">
+    <text class="cs-bar-k">班超分范围</text>
     <view
       class="cs-day {{attRange === item.key ? 'on' : ''}}"
       wx:for="{{attRangeOptions}}"
@@ -159,14 +155,24 @@
       data-key="{{item.key}}"
       bind:tap="onAttRange"
     >{{item.label}}</view>
-    <text class="cs-bar-s">{{attRangeText}}</text>
+    <view class="cs-grow"></view>
+    <view class="cs-att-modes" wx:if="{{showDeductMode}}">
+      <text class="cs-bar-k">口径</text>
+      <view class="cs-seg">
+        <view
+          class="cs-seg-i {{deductMode === item.key ? 'on' : ''}}"
+          wx:for="{{deductModeOptions}}"
+          wx:key="key"
+          data-key="{{item.key}}"
+          bind:tap="onDeductMode"
+        >{{item.label}}</view>
+      </view>
+    </view>
   </view>
-
-  <!-- 班超分统计区间（用户 2026-11-20「选择了班超分要有查看日期并且…重新设计各班条的UI样式」）：
-       区间起止用服务端回显的窗口（页面不自算），与右侧大字「班超分」同一口径。
-       用户点开列表第一眼就知道「这个分是哪段时间的」，不用去猜本周/本月。 -->
-  <view class="cs-period" wx:if="{{periodText && columns.attendance && !errorText}}">
-    <text class="cs-period-t">{{periodText}}</text>
+  <!-- 区间说明：文案整句在 JS 预计算（periodText），模板不拼字符串；
+       班超分口径公式写在这里，老师一眼知道「10 − 日均扣分」是这列分数的来路。 -->
+  <view class="cs-att-note" wx:if="{{columns.attendance && periodText && !errorText}}">
+    <text>{{periodText}}</text>
   </view>
 
   <!-- ===== 列表 ===== -->
@@ -188,13 +194,15 @@
     <text class="cs-empty-s" wx:if="{{hasFilter}}" bind:tap="resetFilters">点此清除筛选</text>
   </view>
 
-  <!-- ===== 各班条（用户 2026-11-20 重做 UI）=====
-       一条 = 第一行「班名 + 学生数 · 系部（弱化）」+ 第二行「扣分来源 chips」+ 右侧「班超分大字 + 今日/本周达标」。
-       chips 全部由 JS 预计算（deductChips = [{ key, text }]），模板里不拼表达式、不做字符串运算；
-       「+N」是纯文本标签，故意不做成看起来可点的按钮（点了没有动作，不该给可点的暗示）。 -->
+  <!-- ===== 各班条（用户 2026-11-20 第三轮重排）=====
+       左列：班名（主）→ 学生数 · 系部（次）→ 扣分来源 chips（仅班超分列）→ 达标横条；
+       右列（仅班超分列开）：班超分大字 + 口径副行（日均扣/合计扣）；无记录写「无检查记录」。
+       所有文案与数值由 JS decorate 预计算，模板零运算（不拼三元/字符串）；
+       chips/横条都是纯展示元素，不做成看起来可点的按钮。 -->
   <view class="cs-list" wx:else>
     <view class="cs-thead">
-      <text class="cs-thead-l">班级 · 扣分来源</text>
+      <text class="cs-thead-l" wx:if="{{columns.attendance}}">班级 · 扣分来源</text>
+      <text class="cs-thead-l" wx:else>班级</text>
       <text class="cs-thead-r" wx:if="{{columns.attendance}}">班超分</text>
       <text class="cs-thead-r" wx:else>达标</text>
     </view>
@@ -202,18 +210,30 @@
       <view class="cs-row-main">
         <view class="cs-row-head">
           <text class="cs-name">{{item.className}}</text>
-          <text class="cs-meta">{{item.metaText}}</text>
         </view>
+        <text class="cs-meta">{{item.metaText}}</text>
+        <!-- 扣分来源：仅班超分列打开时 decorate 才会产出（关列时数组为空/文案为空） -->
         <view class="cs-dchips" wx:if="{{item.deductChips.length}}">
           <view class="cs-dchip" wx:for="{{item.deductChips}}" wx:for-item="chip" wx:key="key">{{chip.text}}</view>
           <view class="cs-dchip cs-dchip-more" wx:if="{{item.deductMore}}">+{{item.deductMore}}</view>
         </view>
-        <text class="cs-nodeduct" wx:else>{{item.deductEmptyText}}</text>
+        <text class="cs-nodeduct" wx:elif="{{item.deductEmptyText}}">{{item.deductEmptyText}}</text>
+        <!-- 达标横条：只显示开着的列（日/周），单条时更大、两条时更紧凑 -->
+        <view class="cs-runbars {{item.runbarsClass}}" wx:if="{{item.runBars.length}}">
+          <view class="cs-runbar" wx:for="{{item.runBars}}" wx:for-item="bar" wx:key="key">
+            <text class="cs-runbar-k">{{bar.label}}</text>
+            <view class="cs-runbar-track">
+              <view class="cs-runbar-fill cs-att-bar cs-lv-{{bar.level}}" style="width:{{bar.percent}}%;"></view>
+            </view>
+            <text class="cs-runbar-v num-font cs-lv-{{bar.level}}">{{bar.text}}</text>
+          </view>
+        </view>
       </view>
-      <view class="cs-row-side">
-        <text class="cs-score num-font cs-lv-{{item.attLevel}}" wx:if="{{columns.attendance}}">{{item.attText}}</text>
-        <text class="cs-rate cs-lv-{{item.dailyLevel}}" wx:if="{{columns.daily}}">{{item.dailyRateText}}</text>
-        <text class="cs-rate cs-lv-{{item.weeklyLevel}}" wx:if="{{columns.weekly}}">{{item.weeklyRateText}}</text>
+      <!-- 右列只在班超分列开时存在：关列时整块不渲染（用户「不显示班超分时不显示任何扣分信息」） -->
+      <view class="cs-side" wx:if="{{columns.attendance}}">
+        <text class="cs-score num-font cs-lv-{{item.attLevel}}" wx:if="{{item.hasScore}}">{{item.attText}}</text>
+        <text class="cs-score-empty" wx:else>{{item.scoreEmptyText}}</text>
+        <text class="cs-side-sub" wx:if="{{item.deductLine}}">{{item.deductLine}}</text>
       </view>
     </view>
   </view>
