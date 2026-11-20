@@ -1877,7 +1877,7 @@ router.get(
   wrap(async (req, res) => {
     const filter = recordFilter(req);
     filter.status = { $in: CheckRecord.COUNTED_STATUS };
-    const [byClass, byModule, byDay] = await Promise.all([
+    const [byClass, byClassModule, byModule, byDay] = await Promise.all([
       CheckRecord.aggregate([
         { $match: filter },
         {
@@ -1886,11 +1886,18 @@ router.get(
             deduct: { $sum: '$deduct' },
             count: { $sum: 1 },
             days: { $addToSet: '$date' },
+            // 缺勤人次 / 假别加权：与看板、班超页共用 bandChao 的唯一 Mongo 表达式
+            ...bandChao.absenceAccumulators(),
           },
         },
-        { $project: { deduct: 1, count: 1, days: { $size: '$days' } } },
+        { $project: { deduct: 1, count: 1, days: { $size: '$days' }, absentCount: 1, absenceWeight: 1 } },
         { $sort: { deduct: -1 } },
         { $limit: 200 },
+      ]),
+      // 每个班的「四模块累计扣分」：新班超分公式要用（早八不在扣分项里）
+      CheckRecord.aggregate([
+        { $match: filter },
+        { $group: { _id: { className: '$className', moduleKey: '$moduleKey' }, deduct: { $sum: '$deduct' } } },
       ]),
       CheckRecord.aggregate([
         { $match: filter },
@@ -1903,20 +1910,33 @@ router.get(
         { $limit: 400 },
       ]),
     ]);
+    // className → 四模块累计扣分（hygiene/night_dorm/study_evening/morning_exercise）
+    const deduct4By = new Map();
+    for (const r of byClassModule) {
+      const cn = (r._id && r._id.className) || '未分班';
+      if (!bandChao.FOUR_MODULE_KEYS.includes(r._id && r._id.moduleKey)) continue;
+      deduct4By.set(cn, (deduct4By.get(cn) || 0) + (r.deduct || 0));
+    }
     const modules = await checkModules.listModules();
     const nameOf = new Map(modules.map((m) => [m.key, m.shortName || m.name]));
     ok(res, {
-      classes: byClass.map((c) => ({
-        className: c._id || '未分班',
-        deduct: Math.round((c.deduct || 0) * 100) / 100,
-        avgDeduct: c.days ? Math.round(((c.deduct || 0) / c.days) * 100) / 100 : 0,
-        days: c.days,
-        // 得分走 services/score-scale.js（10 分制唯一出口）：这里曾硬编码 `100 - 扣分/天数`，
-        // 与班级页 / 首页班超卡不是同一处算分，改刻度时最容易漏 —— 漏了就是
-        // 「同一个班，管理端统计 92 分、班级页 9.2 分」。
-        score: c.days ? scoreScale.avgScoreOf((c.deduct || 0) / c.days) : null,
-        recordCount: c.count,
-      })),
+      classes: byClass.map((c) => {
+        const className = c._id || '未分班';
+        const deduct4 = Math.round((deduct4By.get(className) || 0) * 100) / 100;
+        return {
+          className,
+          deduct: Math.round((c.deduct || 0) * 100) / 100,
+          avgDeduct: c.days ? Math.round(((c.deduct || 0) / c.days) * 100) / 100 : 0,
+          days: c.days,
+          // 班超分走新公式唯一实现（2026-11-20 用户定稿）：
+          //   10 − 四模块累计扣分×10% − 缺勤人次加权（病/事/公假 0.01，其余/早八 0.02）
+          // 不要在这里自己写 10 − 扣分/天数（那正是历史上「管理端 92 分、班级页 9.2 分」的成因）。
+          score: c.days ? bandChao.scoreOfParts(deduct4, c.absenceWeight || 0) : null,
+          deduct4,
+          absenceCount: Math.round(c.absentCount || 0),
+          recordCount: c.count,
+        };
+      }),
       modules: byModule.map((m) => ({
         key: m._id,
         name: nameOf.get(m._id) || m._id,

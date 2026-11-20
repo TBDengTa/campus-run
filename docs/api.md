@@ -310,29 +310,45 @@
 若筛选在前端、文案在服务端，两者用的是不同行集合，复制出去仍是全量报告；
 ⑤ **次级筛选与显示联动**（2026-11-20 第三轮）：「班超分范围」（本日/本周/本月）与「口径」（日均/合计）只在**显示班超分列**时出现，数据全部来自服务端 `attRange` 窗口与 `deductTotal/dayCount`；本日窗口下合计=日均，前端隐藏口径开关。范围行是否可用由全局 `hasAnyCheck` 决定，**不随筛选行集变化**。
 
-### GET /api/admin/class/status-export（导出考勤表：xlsx / csv / json 预览）
+### GET /api/admin/class/status-export（导出工作簿：总标 + 每班明细 / CSV / JSON 预览）
 
-用户 2026-11-20「班级状态中增加导出考勤表格本周、本月的各班考勤详细信息(包括校园跑)」。
+用户 2026-11-20「班级状态中增加导出考勤表格本周、本月的各班考勤详细信息(包括校园跑)」，
+同日定稿改版：**「总标」总览 + 每班一张「详细数据」sheet**。
 权限：`class.view`（只读，不写库）。参数与 `status-board` **完全一致**（`attRange=week|month`、
-`today`、院校/系部/年级/档位/关键词等），取参共用 `boardQuery`、筛选共用 `applyBoardFilter`，
-三种格式共用同一份 `tableRows`（**导出不在路由里重算任何数字**，与页面同一行数据）。
+`today`、院校/系部/年级/档位/关键词等），取参共用 `boardQuery`、筛选共用 `applyBoardFilter`；
+**看板数字一律读 `classStatusBoard` 行数据（导出里不重算分数/出勤率/达标率）**，
+校园跑区间统计（8 列）来自 run_records/goals 的独立聚合（窗口 = `from ~ min(to, 今天)`）。
 
 | `format` | 返回 | 用途 |
 |---|---|---|
-| `xlsx`（推荐） | 真 Excel 文件（`application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`，附件名 `class-status-<today>.xlsx`） | 小程序默认。**微信 `wx.openDocument` 不支持 csv**（真机报「本机无法打开/转发失败」），必须给 Office 格式才能直接预览、右上角转发/保存 |
-| `csv`（缺省，向后兼容） | UTF-8 BOM CSV（`text/csv`） | 旧版小程序 / 脚本 / Web 控制台；不传 `format` 时行为与改造前逐字一致 |
-| `json&preview=1&limit=5` | `{ title, subtitle, note, columns[{title,wch}], rows, total, preview }` | 小程序「导出预览」弹层：生成文件**之前**先看列、前 5 行示例、总班数、区间（预览与最终文件同一实现） |
+| `xlsx`（新版小程序） | 完整工作簿（`...spreadsheetml.sheet`，附件名 `class-status-<today>.xlsx`） | **`总标` + 每班 `<className>详细数据` + `字段说明`**；微信 `wx.openDocument` 可直接预览（CSV 不支持，真机报「本机无法打开/转发失败」） |
+| `csv`（缺省，向后兼容） | UTF-8 BOM CSV（`text/csv`） | 旧版小程序 / 脚本：只出「总标」22 列 |
+| `json&preview=1&limit=N` | `{ title, subtitle, note, columns[{title,wch}], rows(截断), total, sheets, preview }` | 小程序「导出预览」弹层：生成文件前先看总标列/示例行/班数/将导出几张 sheet（不下发明细行） |
 
-- 列（18 列）：日期区间 / 班级 / 院校 / 系部 / 年级 / 学生数 / 班超分 / 综合出勤率 /
-  各考勤模块（单元格「应到N/实到M/率P%」，早八只记迟到故留空）/
-  **扣分明细**（`卫生-宿舍 -0.40 · 晚自习 -0.20`，来自 `deductDetail.targets`）/
-  今日达标人数 / 今日达标率 / 本周达标人数 / 本周达标率 / 当日人均步数。行数上限 500。
-- **xlsx 版式**：第 1 行标题、第 2 行「统计区间 ｜ 筛选 ｜ 班数人数 ｜ 导出时间」、第 4 行表头、
-  数据行（顺序 = 页面行序：年级升序 → 班级名）、表尾「考勤计算规则」+ 口径说明（跨列合并）；
-  另带 **「字段说明」sheet**（每列含义，报表发出去后读的人不用回来问）。
-- 小程序端走 `utils/request.js::downloadAndOpen`：downloadFile → 保存到用户目录 →
-  `openDocument(fileType:'xlsx')`；若本机预览器仍打不开则降级 `shareFileMessage`，
-  降级成功按导出成功处理；两条都失败时页面给「复制表格文本」兜底。
+**Sheet1「总标」22 列（顺序固定）**：序号 / 院校 / 系部 / 专业 / 年级 / 学生数 / 住宿数 /
+班委数 / 学生会成员数 / 卫生累计扣分 / 晚自习累计扣分 / 查宿累计扣分 / 早操累计扣分 /
+早八累计扣分 / 校园跑班级日目标平均达标率 / 校园跑班级周目标平均达标率 /
+校园跑班级日目标达标次数 / 校园跑班级周目标达标次数 / 校园跑班级日目标达标最低值 /
+校园跑班级周目标达标最低值 / 校园跑累计步数 / 校园跑人均累计步数。
+- 五模块累计扣分取看板 `attendance.deductDetail[].totalDeduct`；校园跑「日/周」按班级整体口径：
+  平均达标率 = 各日/各周班级达标率均值，**达标次数 = 达标率 100% 的天/周数**，
+  最低值 = 各日/各周达标率最低值；累计步数为窗口内班级步数之和、人均 = ÷学生数。
+- 学生数来自看板；住宿数 = `class_counts.liveCounts().dormCount`（在住）；班委数 = `users.isClassOfficer`；
+  学生会成员数 = `union_members.status='active'` 按班级计数；专业取 `class_profiles.specialty`（缺行退学籍）。
+
+**每班 `<className>详细数据` sheet（两块）**：
+1. **区间考勤明细**（14 列）：日期 / 时段 / 模块 / 受检对象 / 应到 / 实到 /
+   缺勤·未归·迟到名单（**姓名(病假/事假/公假)**，早八无假别）/ 得分 / 扣分 / 检查人 / 复核人 /
+   状态 / 备注 / 照片数；只含 `status ∈ COUNTED` 且 `voided≠true` 的记录。
+2. **校园跑每人数据**（9 列）：姓名 / 学号 / 日目标 / 周目标 / 达标天数 / 日达标率 /
+   达标周数 / 周达标率 / 区间累计步数（目标 = 个人计划优先、否则全局默认）。
+
+**Sheet 末尾「字段说明」**：逐列含义 + 筛选口径 + 导出时间 + 上限（总标 500 行 /
+班级 sheet 500 张 / 区间考勤明细 5000 条，超出截断并注明）。
+
+小程序端走 `utils/request.js::downloadAndOpen`：downloadFile → 保存到用户目录 →
+`openDocument(fileType:'xlsx')`；本机预览器仍打不开则降级 `shareFileMessage`（成功即算成功）；
+两条都失败时页面弹窗给「复制表格文本」兜底。
 
 ### 班级域（用户端 `/api/class/*`）的日期回看与当日全部检查记录（2026-11-20）
 

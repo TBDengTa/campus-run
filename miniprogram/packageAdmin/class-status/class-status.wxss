@@ -304,7 +304,7 @@
   align-items: center;
   gap: 10rpx;
 }
-/* 区间说明小字：允许换行（含公式「班超分 = 10 − 日均扣分」，窄屏会折成两行） */
+/* 区间说明小字：允许换行（含公式「班超分 = 10 − 四模块累计扣分×10% − 缺勤人次×0.02」，窄屏会折成两行） */
 .cs-att-note {
   padding: 0 22rpx 8rpx;
   font-size: 19rpx;
@@ -680,6 +680,12 @@
 .cs-prev-more {
   font-size: 19rpx;
   color: var(--tt-text-2);
+}
+/* 工作簿结构提示（总标 + 每班明细 sheet）：导出不再是一张表，先说清楚有几张 */
+.cs-prev-sheets {
+  font-size: 19rpx;
+  line-height: 1.45;
+  color: var(--tt-brand-deep);
 }
 .cs-prev-note {
   font-size: 18rpx;

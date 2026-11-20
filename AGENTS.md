@@ -917,21 +917,11 @@
   avgDeduct**（尾差记到扣分最大的真实项 —— 老师拿子项一加就能发现「加起来对不上」）。
   看板专用的 `aggregateTargetsLite`（className×moduleKey×targetType）**另起一次聚合**、与
   `aggregateScoresLite` 共用 `liteMatch`；**不许**把 targetType 塞进主聚合（看板 60 秒被反复刷新）。
-  ④ **导出考勤表（第三轮改为 xlsx + 先预览，改这里之前必读）**：
-  `GET /api/admin/class/status-export?attRange=week|month&format=xlsx|csv|json&…`（`class.view`，
-  随 `/api/admin/class` 前缀挂载）。取参与筛选**完全复用看板**
-  （`boardQuery` + `classStatusBoard` + `applyBoardFilter`），**禁止在导出里重算分数/出勤率/
-  达标率或直接查 check_records**；三种格式共用同一份 `tableRows`（唯一 builder），行上限 500。
-  ⚠️ **微信 `wx.openDocument` 不支持 csv**（用户 2026-11-20 真机：「文件已下载，但本机无法打开
-  （CSV 需要 Excel/WPS），转发也失败了」）—— 小程序导出**必须给 xlsx**（`format=xlsx`，
-  `fileType:'xlsx'`）；CSV 只保留给旧客户端/脚本（不传 format 时缺省 csv，行为与改造前一致）。
-  xlsx 版式：第 1 行标题、第 2 行「统计区间 ｜ 筛选 ｜ 班数人数 ｜ 导出时间」、第 4 行表头、
-  数据行、表尾考勤规则+口径说明（跨列合并）+「字段说明」sheet；列宽 `!cols`、合并 `!merges`
-  （社区版 SheetJS 不支持字体/底色，**不要把样式当契约**，主次只靠行高与列宽）。
-  `format=json&preview=1&limit=N` 回 `{columns[{title,wch}], rows, total}` 给小程序「导出预览」弹层：
-  **生成文件之前先展示列 + 前 5 行 + 总班数 + 区间**（预览与最终文件同一 builder，预览≠全表必须提示）。
-  列含各考勤模块「应到N/实到M/率P%」、扣分明细（targets 文案）、校园跑今日/本周达标与
-  当日人均步数（看板行 `run.avgSteps`，学生数 0 给 0 不产生 NaN）。
+  ④ **导出考勤表**：`GET /api/admin/class/status-export?attRange=week|month&format=xlsx|csv|json&…`
+  （`class.view`）。**2026-11-20 第四轮已改为「总标 + 每班明细」工作簿**，口径与结构见下方
+  「导出工作簿（第四轮定稿）」小节；这里只保留三条不变红线：取参与筛选完全复用看板
+  （`boardQuery` + `classStatusBoard` + `applyBoardFilter`）、**禁止在导出里重算看板数字**、
+  微信 `wx.openDocument` 不支持 csv（小程序必须拿 xlsx，CSV 只留给旧客户端/脚本）。
   ⑤ **小程序下载能力**放在 `utils/request.js::downloadAndOpen`（域名只来自 `env.BASE_URL`、
   token 与 `request()` 同源 `getToken()`）：`wx.downloadFile`（120s）→ `saveFile` 到
   `wx.env.USER_DATA_PATH`（**临时文件会被系统清理**，水印相机的教训）→ `openDocument`；
@@ -979,6 +969,69 @@
   （hasAnyCheck / totalDeduct / copy=att / att 参数 / 复用文案条件）、`check-page-runtime.js`
   （自动开列后补请求 / 派生口径 / 口径不重查 / 单多排版 / KPI 四卡三态）、
   `verify-class-status.js` [13][14][15]（双口径对账 / 筛到 0 行 hasAnyCheck 仍真 / 复制文案跟随显示列）。
+
+- **班超分新公式 + 导出工作簿（用户 2026-11-20 第四轮定稿，改这两块之前必读）**：
+  用户原话「班级状态中的班超分的计算规则为 10 − 卫生、查宿、晚自习、早操的扣分值×10% − 任意考勤
+  缺勤人数(包含早八)×0.02(病假、事假、公假减 0.01)」+ 导出改为「总标 + 每班详细数据」。
+  ① **公式唯一实现在 `services/band-chao.js`**：`scoreOfParts(deduct4, absenceWeight)` +
+     常量 `DEDUCT_SCORE_RATIO=0.1 / ABSENCE_WEIGHT=0.02 / LEAVE_ABSENCE_WEIGHT=0.01 /
+     FOUR_MODULE_KEYS=['hygiene','night_dorm','study_evening','morning_exercise']`。
+     **区间累计口径**（不是日均）：`score = clamp(round2(10 − deduct4×0.1 − absenceWeight), 0, 10)`；
+     一个班区间内没有检查记录时 score 仍是 **null**（不是 0 分）。
+     所有出口必须走同一份：`classSummary`（首页班超块 + `/api/union/class/:className`）、
+     `classStatusBoard`（班级状态）、`classRanking`（排行榜）、管理端记录统计
+     （`routes/admin/union.js` 的 `/records/stats` 也改成 `bandChao.scoreOfParts`，
+     旧 `scoreScale.avgScoreOf(总扣分/天数)` 已删）。**不许任何页面再写 `10 − 扣分` 或 `100 − 扣分`**。
+  ② **缺勤加权必须按月/周/日累计、按人算假别**（唯一 Mongo 表达式 `absenceAccumulators()`，
+     `aggregateScores` 与 `aggregateScoresLite` 用 `...absenceAccumulators()` **共同展开**，
+     所以两套聚合不可能漂移）：
+     名单字段 — 早八 `details.lateList`、早操/晚自习/查宿 `details.absentList`；
+     名单非空按 `$size` 逐人加权（`reason ∈ ['病假','事假','公假']` → 0.01，否则 0.02），
+     名单为空回退 `lateCount / notReturnedCount / absentCount` × 0.02（无假别信息）；
+     `$isArray` 兜脏类型、`$convert` 兜字符串人数（否则整条聚合会报错/算 NaN）。
+     **早八只进缺勤人次，不进 deduct4**（早八旧 0.05/人扣分不再算进公式）。
+     看板行下发 `attendance.deduct4 / absenceCount / absenceWeight`，`days[].score` 为当日口径同公式。
+  ③ **规则/复制文案必须跟着公式换**（留着旧句子 = 改了分数忘了改说明）：
+     `buildAttRuleLines()` 的数字取 `bandChao.*` 常量 + `scoreScale.FULL_SCORE`（不许写死）；
+     `buildCopyText` 的班超分行写「班超 X 分（四模块累计扣分 X.XX×10% + 缺勤 N 人次，加权 Y；主因 …）」。
+     前端 `class-status.js::periodText` 同步写新公式；扣分 chips 默认口径切 `total`（与分数同为累计，
+     避免老师拿「日均扣 0.80」核对 8.72 分）。注意：**导出总标没有班超分列**（用户给定的 22 列里没有），
+     导出的五个「累计扣分」列是原始模块扣分，不是分数。
+  ④ **导出工作簿唯一实现在 `services/class-status-export.js`**（路由只鉴权 + `boardQuery` 取参 +
+     `classStatusBoard`/`applyBoardFilter`，不写格式、不查记录）：
+     **Sheet1「总标」22 列（顺序固定）**：序号 / 院校 / 系部 / 专业 / 年级 / 学生数 / 住宿数 /
+     班委数 / 学生会成员数 / 卫生累计扣分 / 晚自习累计扣分 / 查宿累计扣分 / 早操累计扣分 /
+     早八累计扣分 / 校园跑班级日目标平均达标率 / 校园跑班级周目标平均达标率 /
+     校园跑班级日目标达标次数 / 校园跑班级周目标达标次数 / 校园跑班级日目标达标最低值 /
+     校园跑班级周目标达标最低值 / 校园跑累计步数 / 校园跑人均累计步数。
+     （用户原需求里「周目标达标最低值」写了两次，按「日/周各一个」实现。）
+     随后**每班一张 `<className>详细数据`**：A. 区间考勤明细 14 列（日期/时段/模块/受检对象/
+     应到/实到/缺勤·未归·迟到名单（姓名+假别）/得分/扣分/检查人/复核人/状态/备注/照片数，
+     只含 COUNTED 且 `voided≠true`）；B. 校园跑每人 9 列（姓名/学号/日目标/周目标/达标天数/
+     日达标率/达标周数/周达标率/区间累计步数）。最后一张「字段说明」。
+     Sheet 名上限 31 字符、非法字符清洗、重名加序号。
+  ⑤ **口径边界**（写死在服务头注释里，改前先读）：
+     - 看板数字（学生数/院校/系部/年级/五模块累计扣分）**只读 board.rows**，导出不重算；
+       五模块取 `attendance.deductDetail[].totalDeduct`；早八列同理（累计）。
+     - 校园跑 8 列是区间独立聚合：窗口 = `from ~ min(to, 今天)`（本周/本月含未来天会把达标率拖低）；
+       日/周达标按**班级整体**：平均达标率 = 各日/各周班级达标率均值；达标次数 = 达标率 100% 的天/周数；
+       最低值 = 各日/各周最低百分比；累计步数 = 窗口内班级步数之和、人均 = ÷学生数。
+       目标 = 个人 `UserGoal` 优先（0 也是 0）、否则 `GoalConfig` 全局；判定一律 `步数 ≥ 目标`。
+     - 住宿数 = `class-counts.liveCounts().dormCount`（在住）；班委数 = `users.isClassOfficer`；
+       学生会成员数 = `union_members.status='active'` 按班级计数（一次 aggregate）；专业 =
+       `class_profiles.specialty`（缺行退学籍）。**这些查询必须按全部筛选班批量下推**：
+       导出是单次请求，按班 N+1 会在 43 个班时把接口拖到几秒。
+     - 上限：总标 500 行 / 班级 sheet 500 张 / 区间考勤明细 5000 条（超出截断并在字段说明注明）。
+     - `format=xlsx` 是完整工作簿；`format=csv`（缺省）只出总标 22 列（旧脚本兼容）；
+       `format=json&preview=1&limit=N` 回 `{columns[{title,wch}], rows(截断), total, sheets}` 给
+       小程序导出预览（**不下发明细行**）；微信 `wx.openDocument` 不支持 csv，小程序必须拿 xlsx。
+  ⑥ **回归**：`tools/verify-class-status.js` [10c]（造「病/事/公/无故 + 早八 + 名单空回退 + 卫生」
+     手算 9.49，验证不是一刀切 0.02、早八不进 deduct4、classSummary 与看板同源、clamp 0 分）+
+     [13] 全库逐行公式自洽；`tools/verify-class-export.js`（22 列表头逐字/临时班逐格手算/
+     明细 sheet 表头与名单假别/每人跑步达标/JSON sheets/CSV BOM/权限/只读/清理）；
+     `check-server-contract.js`（scoreOfParts/常量/absenceAccumulators 唯一展开/管理端统计/导出服务切片）、
+     `check-class-ui.js`（导出 service 结构 + 22 列 + 明细/字段说明 sheet + periodText 新公式）、
+     `check-page-runtime.js`（新预览 22 列 + sheets 提示 + xlsx 导出链路）。
 
 - **检查记录筛选与卡片（用户 2026-11-19「有学生会总管的权限查看检查记录没有办法筛选与查看
   所有记录，增加筛选如班级、系部、院校、楼栋」「卡片增加缺勤人的显示、照片显示」）**：

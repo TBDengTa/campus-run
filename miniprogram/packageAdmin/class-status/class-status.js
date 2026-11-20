@@ -75,7 +75,7 @@ const METRIC_CHIPS = [
 
 // 显示内容（列表列）—— 用户「可以查看显示内容与复制内容，如只需要日达标这种的」。
 // 考勤列 2026-11-12 起显示**分数**（10 分制）；
-// 2026-11-19 起这一列就是**班超分**（与班超总评同一个数：10 − 各模块日均扣分，**含卫生/查宿**）。
+// 2026-11-19 起这一列就是**班超分**（与班超总评同一个数：10 − 四模块累计扣分×10% − 缺勤人次×0.02（2026-11-20 公式修订））。
 // 标签跟着改成「班超分」—— 用户报的正是「考勤的卫生、查宿等内容没有被减分」，
 // 再叫「考勤分」会继续被读成「只算考勤四项」。
 const COLUMN_TOGGLES = [
@@ -186,9 +186,12 @@ Page({
     // 「口径」在 attRange === 'day' 时隐藏（本日窗口的合计 = 日均，两个按钮没有意义）。
     // 比较放在 JS 里算好：模板不做表达式（仓库约定）。
     showDeductMode: DEFAULT_ATT_RANGE !== 'day',
-    // 班超分口径：avg=日均（与分数同一口径）/ total=窗口合计。
+    // 班超分口径：avg=日均 / total=窗口合计。
+    // 2026-11-20 用户把班超分公式改为**区间累计口径**（10 − 四模块累计扣分×10% − 缺勤人次×0.02，
+    // 病/事/公假 0.01），所以扣分明细默认显示「合计扣」——与分数同一口径，
+    // 否则老师会拿「日均扣 0.80」去核对 8.72 分（对不上，正是历史报障类型）。
     // 切换只重排已有数据（onDeductMode），不重发请求。
-    deductMode: 'avg',
+    deductMode: 'total',
     // 服务端下发的考勤计算规则（用户 2026-11-12「要在图片下面标注考勤计算规则」）：
     // 页面脚注与生成图片共用同一份，前端不写一个字 —— 改了单价忘了改说明就是说谎。
     attRuleLines: [],
@@ -273,6 +276,7 @@ Page({
     previewCols: [], // [{ key, title, style }]
     previewRows: [], // [{ key, cells: [{ key, v, style }] }]
     previewMoreText: '',
+    previewSheetsText: '',
     previewRangeKey: 'week',
     previewRangeLabel: '',
   },
@@ -399,10 +403,11 @@ Page({
         //   写 today 会让页面说「11-16 ~ 11-19」而数字里含 20~22 日 ——
         //   老师照着这个区间去核对必然觉得「日周月不一致」（用户报障的第三种表现）。
         //   d.to 缺失 = 后端还是旧版，此时退回 today 至少不说谎。
-        // 文案同时解释「分数怎么来」与「合计口径是什么」：老师切到合计后看到的是窗口累计扣分，
-        // 若只写「10 − 日均扣分」会以为两处数字是同一口径（本轮已被用户点名过一次「对不上」）。
+        // 文案同时解释「分数怎么来」：用户 2026-11-20 定稿的新公式是**区间累计口径**
+        // （10 − 四模块累计扣分×10% − 缺勤人次×0.02，病/事/公假 0.01），
+        // 而扣分 chips 默认也切到「合计」——两处同一口径，老师才能当场算平。
         periodText: d.from
-          ? `${d.attRangeLabel ? `${d.attRangeLabel} ` : ''}${md(d.from)} ~ ${md(d.to || d.today)} · 含卫生/查宿等全部检查 · 班超分 = 10 − 日均扣分（切「合计」看窗口累计扣分）`
+          ? `${d.attRangeLabel ? `${d.attRangeLabel} ` : ''}${md(d.from)} ~ ${md(d.to || d.today)} · 班超分 = 10 − 卫生/查宿/晚自习/早操累计扣分×10% − 缺勤人次×0.02（病/事/公假 0.01）`
           : '',
         gradeChips: (grades.length ? grades : []).map((g) => ({
           key: g,
@@ -955,15 +960,21 @@ Page({
         })),
       }));
       const total = Number(d.total) || previewRows.length;
+      // 工作簿结构提示：这次导出不再是「一张表」——总表 + 每班一张明细 sheet。
+      // 服务端 json 预览会下发 sheets 数组（总标在前、班级明细在后），原样展示前几个名字。
+      const sheets = Array.isArray(d.sheets) ? d.sheets : [];
       this.setData({
         previewLoading: false,
-        previewTitle: d.title || '班级状态考勤表',
+        previewTitle: d.title || '班级状态总表',
         previewSubtitle: d.subtitle || '',
         previewNote: d.note || '',
         previewCols,
         previewRows,
+        previewSheetsText: sheets.length
+          ? `将导出 ${sheets.length} 张工作表：${sheets.slice(0, 3).join(' / ')}${sheets.length > 3 ? ' …' : ''}`
+          : '',
         // 截断提示：预览只有前 5 行，导出的是全量（用户要知道「预览≠全表」）
-        previewMoreText: previewRows.length < total ? `预览前 ${previewRows.length} 行 · 导出含全部 ${total} 个班` : `共 ${total} 个班`,
+        previewMoreText: previewRows.length < total ? `预览前 ${previewRows.length} 行 · 总表含全部 ${total} 个班` : `总表共 ${total} 个班`,
       });
     } catch (e) {
       this.setData({ previewLoading: false, previewVisible: false });

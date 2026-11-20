@@ -1009,7 +1009,7 @@ const TARGETS = [
       ok(p2.data.copyScope === 'all', '复制口径以服务端回显为准（前端不自己映射）', p2.data.copyScope);
       ok(!('days' in (calls[0] || {})), '请求里已经没有旧的 days 参数', Object.keys(calls[0] || {}));
       ok(
-        p2.data.attRangeLabel === '本周' && /本周/.test(p2.data.periodText) && /11-09/.test(p2.data.periodText) && /10 − 日均扣分/.test(p2.data.periodText),
+        p2.data.attRangeLabel === '本周' && /本周/.test(p2.data.periodText) && /11-09/.test(p2.data.periodText) && /累计扣分×10%/.test(p2.data.periodText) && /缺勤人次×0.02/.test(p2.data.periodText),
         '班超分统计区间来自服务端窗口（from~to + 公式），模板不拼字符串',
         p2.data.periodText
       );
@@ -1185,30 +1185,34 @@ const TARGETS = [
         sheet = o;
         o.success({ tapIndex: 0 });
       };
-      // 预览接口 stub：列/行形态与后端 format=json 一致（18 列）
+      // 预览接口 stub：列/行形态与后端 format=json 一致（总标 22 列 + sheets 名单）
       const previewColumns = [
-        { title: '日期区间', wch: 24 },
-        { title: '班级', wch: 30 },
+        { title: '序号', wch: 6 },
         { title: '院校', wch: 16 },
         { title: '系部', wch: 16 },
+        { title: '专业', wch: 22 },
         { title: '年级', wch: 8 },
         { title: '学生数', wch: 8 },
-        { title: '班超分', wch: 9 },
-        { title: '综合出勤率', wch: 11 },
-        { title: '早操', wch: 20 },
-        { title: '早八', wch: 20 },
-        { title: '晚自习', wch: 20 },
-        { title: '查宿', wch: 20 },
-        { title: '扣分明细', wch: 46 },
-        { title: '今日达标人数', wch: 12 },
-        { title: '今日达标率', wch: 11 },
-        { title: '本周达标人数', wch: 12 },
-        { title: '本周达标率', wch: 11 },
-        { title: '当日人均步数', wch: 13 },
+        { title: '住宿数', wch: 8 },
+        { title: '班委数', wch: 8 },
+        { title: '学生会成员数', wch: 12 },
+        { title: '卫生累计扣分', wch: 12 },
+        { title: '晚自习累计扣分', wch: 14 },
+        { title: '查宿累计扣分', wch: 12 },
+        { title: '早操累计扣分', wch: 12 },
+        { title: '早八累计扣分', wch: 12 },
+        { title: '校园跑班级日目标平均达标率', wch: 24 },
+        { title: '校园跑班级周目标平均达标率', wch: 24 },
+        { title: '校园跑班级日目标达标次数', wch: 22 },
+        { title: '校园跑班级周目标达标次数', wch: 22 },
+        { title: '校园跑班级日目标达标最低值', wch: 24 },
+        { title: '校园跑班级周目标达标最低值', wch: 24 },
+        { title: '校园跑累计步数', wch: 15 },
+        { title: '校园跑人均累计步数', wch: 17 },
       ];
       const previewRows = [
-        ['2026-11-01 ~ 2026-11-30', '26级信息安全技术应用', '北校区', '计财系', '2026', 48, '8.72', '92%', '', '', '应到30/实到27/率90%', '应到40/实到38/率95%', '卫生-宿舍 -0.35', 42, '87%', 39, '81%', 1500],
-        ['2026-11-01 ~ 2026-11-30', '25级电气自动化技术', '北校区', '机电建工系', '2025', 52, '9.85', '98%', '', '', '应到28/实到28/率100%', '', '卫生-教室 -0.10', 45, '86%', 40, '76%', 1600],
+        [1, '北校区', '计财系', '信息安全技术应用', '2026', 48, 46, 3, 5, 8, 4, 2, 1, 1, '92.3%', '88.5%', 6, 3, '85.7%', '80%', 168000, 3500],
+        [2, '北校区', '机电建工系', '电气自动化技术', '2025', 52, 50, 2, 4, 6, 3, 1, 2, 1, '88.1%', '84.0%', 5, 2, '81.4%', '76.2%', 175000, 3365],
       ];
       let previewParams = null;
       const pageLoadGet = state.get;
@@ -1218,10 +1222,11 @@ const TARGETS = [
           return {
             title: '班级状态考勤表',
             subtitle: '统计区间：2026-11-01 ~ 2026-11-30（本月） ｜ 筛选：全校 ｜ 共 43 个班 / 2263 人 ｜ 导出时间：2026-11-20 15:30',
-            note: '班超分 = 10 − 日均扣分（含卫生/查宿等全部检查）。',
+            note: '总标 = 看板同源数据；校园跑为区间独立聚合；明细见每班「详细数据」sheet。',
             columns: previewColumns,
             rows: previewRows,
             total: 43,
+            sheets: ['总标', '26级信息安全技术应用详细数据', '字段说明'],
             preview: true,
           };
         }
@@ -1242,19 +1247,19 @@ const TARGETS = [
       ok(p4.data.previewVisible === true && p4.data.previewLoading === false, '预览弹层打开且 loading 收尾', p4.data.previewVisible);
       ok(p4.data.previewTitle === '班级状态考勤表' && /共 43 个班/.test(p4.data.previewSubtitle), '预览标题/副标题来自服务端（区间/筛选/班数/时间）', p4.data.previewSubtitle);
       ok(
-        p4.data.previewCols.length === 18 && p4.data.previewRows.length === 2 && p4.data.previewRows[0].cells.length === 18,
-        '预览 18 列 × 前 2 行（cells 在 JS 预计算，模板零运算）',
+        p4.data.previewCols.length === 22 && p4.data.previewRows.length === 2 && p4.data.previewRows[0].cells.length === 22,
+        '预览总标 22 列 × 前 2 行（cells 在 JS 预计算，模板零运算）',
         [p4.data.previewCols.length, p4.data.previewRows.length]
       );
       ok(
-        p4.data.previewCols[0].style === 'width:336rpx;' && p4.data.previewRows[0].cells[0].style === 'width:336rpx;',
-        '列宽按 Excel 字符宽折算（wch 24 → 336rpx），行单元格复用同一列宽',
+        p4.data.previewCols[0].style === 'width:96rpx;' && p4.data.previewRows[0].cells[5].style === 'width:112rpx;',
+        '列宽按 Excel 字符宽折算（wch 6 保底 96rpx、wch 8 → 112rpx），行单元格复用同一列宽',
         [p4.data.previewCols[0].style, p4.data.previewRows[0].cells[0].style]
       );
       ok(
-        p4.data.previewRows[0].cells[6].v === '8.72' && /预览前 2 行 · 导出含全部 43 个班/.test(p4.data.previewMoreText),
+        p4.data.previewRows[0].cells[5].v === '48' && /预览前 2 行 · 总表含全部 43 个班/.test(p4.data.previewMoreText) && /将导出 3 张工作表/.test(p4.data.previewSheetsText),
         '预览内容用服务端行数据 + 明确提示「预览≠全表」',
-        [p4.data.previewRows[0].cells[6], p4.data.previewMoreText]
+        [p4.data.previewRows[0].cells[5], p4.data.previewMoreText, p4.data.previewSheetsText]
       );
 
       // 确认导出：生成 **xlsx**（不是 csv），参数里带 format=xlsx

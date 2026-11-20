@@ -170,7 +170,7 @@
     </view>
   </view>
   <!-- 区间说明：文案整句在 JS 预计算（periodText），模板不拼字符串；
-       班超分口径公式写在这里，老师一眼知道「10 − 日均扣分」是这列分数的来路。 -->
+       班超分口径公式写在这里，老师一眼知道这列分数怎么来的（区间累计口径，见服务端规则文案）。 -->
   <view class="cs-att-note" wx:if="{{columns.attendance && periodText && !errorText}}">
     <text>{{periodText}}</text>
   </view>
@@ -275,6 +275,7 @@
 
       <view class="cs-prev-tips">
         <text class="cs-prev-more">{{previewMoreText}}</text>
+        <text class="cs-prev-sheets" wx:if="{{previewSheetsText}}">{{previewSheetsText}}</text>
         <text class="cs-prev-note" wx:if="{{previewNote}}">{{previewNote}}</text>
       </view>
 

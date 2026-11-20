@@ -1,10 +1,22 @@
 /**
  * 班超（班级检查）汇总服务
  *
- * 口径（**唯一来源**，页面与管理端都从这里取，禁止在路由/页面里另写一套）：
- *   班级得分 = FULL_SCORE(10) − Σ(该班各模块扣分)，按日计算；
- *   区间（周 / 月）得分 = 区间内各日得分的算术平均（没有记录的日期不参与平均，避免「没查就满分」）；
- *   早操 / 早八：`hasMorningExercise === false` 的班级**不进分母**，`cancelled` 记录退出统计；
+ * ===== 班超分公式（用户 2026-11-20 定稿：**区间累计口径**，全仓唯一实现）=====
+ *   班超分 = max(0, round2(10 − 四模块累计扣分 × 10% − 缺勤加权))
+ *   四模块 = 卫生 / 查宿 / 晚自习 / 早操（**早八的模块扣分不再进扣分项**）
+ *   缺勤加权 = Σ 每个缺勤人次：普通（含无故 / 未填假别）0.02；病假 / 事假 / 公假 0.01
+ * 与旧口径（2026-11-19）的区别：旧版 = 逐日 `10 − 当日 Σ全部模块扣分` 再取平均、早八迟到按 0.05/人。
+ * 新口径**不再按日平均**：区间内累计扣分直接 ×10% 折算，缺勤按人次加权 —— 所以「区间越长扣得越多」
+ * 是设计如此（老师看的是整个统计期），不要改回逐日平均。
+ *
+ * 区间内的缺勤数据**只来自 check_records.details**（见 absenceAccumulators）：
+ *   早操 / 晚自习 / 查宿 → details.absentList；早八 → details.lateList；
+ *   名单为空（老数据 / 批量「无缺勤」）时回退 details.absentCount / notReturnedCount / lateCount。
+ * 只统计 COUNTED 状态且 voided≠true 的记录；卫生没有缺勤概念，只贡献扣分项。
+ *
+ * 其它口径（**唯一来源**，页面与管理端都从这里取，禁止在路由/页面里另写一套）：
+ *   区间（周 / 月）窗口 = rangeOf()：本日 = 当天、本周 = ISO 周一至周日、本月 = 1 号至月末（完整区间）；
+ *   早操 / 早八：`hasMorningExercise === false` 的班级不产生检查对象；
  *   宿舍 / 卫生区：记录里已冗余 className（录入时经映射反查写入），班级聚合直接按 className 求和。
  *
  * ===== 10 分制（用户 2026-11-12）=====
@@ -40,6 +52,42 @@ const round1 = (n) => Math.round((Number(n) || 0) * 10) / 10;
 // 分数一律两位小数（10 分制）：round1 会把 9.95 收成 10.0，「迟到 1 人」在界面上
 // 就变成「没扣分」—— 百分制时 0.5 分粒度看不出这个问题，刻度换小后必须跟着改。
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+
+// ===== 班超分公式的单价 / 模块白名单（用户 2026-11-20 定稿，**唯一一份**）=====
+// 看板（class-status-board.js）的规则文案、复制文案都从这里取数拼句 ——
+// 那边自己写一份数字，改了公式忘了改说明就是「老师照着过时说明质疑正确分数」。
+//   ① 四模块累计扣分按 x% 折算（× 10% = ×0.1，独立常量便于以后调）
+//   ② 缺勤加权：普通缺勤 0.02/人次；病假 / 事假 / 公假 0.01/人次
+//   ③ 早八的模块扣分**不进**四模块（只把人次计入缺勤加权，且早八没有假别）
+const DEDUCT_SCORE_RATIO = 0.1;
+const ABSENCE_WEIGHT = 0.02;
+const LEAVE_ABSENCE_WEIGHT = 0.01;
+const LEAVE_REASONS = ['病假', '事假', '公假'];
+// 计入「四模块累计扣分」的模块（卫生 / 查宿 / 晚自习 / 早操）；morning_class 刻意不在内
+const FOUR_MODULE_KEYS = ['hygiene', 'night_dorm', 'study_evening', 'morning_exercise'];
+// 有缺勤名单的模块：早八是 lateList，其余三个是 absentList（卫生没有缺勤概念）
+const ABSENCE_LIST_MODULES = ['morning_exercise', 'study_evening', 'night_dorm'];
+
+// 得分 → clamp 到 [0, 满分] 并保留两位小数（扣穿不出现负分）
+function clampScore(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  return round2(Math.max(0, Math.min(BASE_SCORE, n)));
+}
+
+/**
+ * 新公式核心：由「四模块累计扣分 + 缺勤加权」算出班超分（区间累计口径）。
+ * 区间分与每日趋势分**共用这一份**算式（逐日就是当天的四模块扣分 / 缺勤加权）。
+ *
+ * @param {number} deduct4 四模块（卫生/查宿/晚自习/早操）累计扣分（未 round 的原值）
+ * @param {number} absenceWeight 缺勤加权合计（未 round 的原值）
+ * @returns {number} 0~10 的两位小数
+ */
+function scoreOfParts(deduct4, absenceWeight) {
+  const d4 = Number(deduct4) || 0;
+  const aw = Number(absenceWeight) || 0;
+  return clampScore(BASE_SCORE - d4 * DEDUCT_SCORE_RATIO - aw);
+}
 
 // ===== 受检类型中文名（**全仓唯一一份**，本文件导出给看板 / 导出 / 复制文案复用）=====
 // check_records.targetType 的取值域见 models/check-record.js（classroom / dorm_room / area / class）。
@@ -125,7 +173,92 @@ function rangeOf(range, date, weekStartKey, monthKey, weekNo) {
   return { range: 'day', from: day, to: day, label: '今日', periodLabel: `${dm}月${dd}日` };
 }
 
-// 模块当日/区间聚合：按 className × date × moduleKey 求扣分与记录数
+/**
+ * 缺勤聚合表达式（**aggregateScores 与 aggregateScoresLite 共用这一份**，口径必须逐字一致）。
+ *
+ * 用户 2026-11-20 定稿：班超分的缺勤项按**人次加权**，来源只有检查记录的 details：
+ *   · 早操 / 晚自习 / 查宿 → `details.absentList`（元素 `{ name, studentId, reason }`，
+ *     reason 由录入台的 person-picker 写入：事假 / 病假 / 公假 / 无故）；
+ *   · 早八 → `details.lateList`（只登记迟到的人；录入台对早八不开放假别，恒按 0.02/人）。
+ * 名单非空 → 用名单长度 + 逐人假别加权；名单为空（老数据 / 批量「无缺勤」）→
+ * 回退 details 上的人数（早操/晚自习 absentCount、查宿 notReturnedCount、早八 lateCount），
+ * 此时拿不到假别，一律按普通 0.02/人次。
+ *
+ * 为什么写在聚合里而不是 Node 侧：聚合分组是 className×date×moduleKey，记录本身的 details
+ * 到不了 Node；在 `$group` 里用 `$sum` 累加表达式字段，一次扫描同时产出「每模块 / 每天 / 每班」
+ * 三层的 absentCount 与 absenceWeight（Node 侧再逐层累加），不会多打一次库。
+ *
+ * 脏数据兜底（check_records.details 是 Mixed，历史数据可能是字符串 / 非数组）：
+ *   · 名单字段用 `$isArray` 判类型，不是数组就按空名单处理（`$size` 对非数组会直接让整条聚合报错）；
+ *   · 人数字段用 `$convert ... onError/onNull: 0`，字符串数字也认，非数字不炸。
+ *
+ * @returns {{absentCount: object, absenceWeight: object}} 可直接展开进 `$group`
+ */
+function absenceAccumulators() {
+  const num = (path) => ({
+    $convert: { input: { $ifNull: [path, 0] }, to: 'double', onError: 0, onNull: 0 },
+  });
+  const asArray = (path) => ({ $cond: [{ $isArray: path }, path, []] });
+  // 该条记录的「名单」字段：早八读 lateList，其余考勤模块读 absentList；
+  // 其它模块（卫生 / 未知模块）恒空数组 —— 卫生没有缺勤概念，只贡献扣分项。
+  const list = {
+    $switch: {
+      branches: [
+        { case: { $eq: ['$moduleKey', 'morning_class'] }, then: asArray('$details.lateList') },
+        { case: { $in: ['$moduleKey', ABSENCE_LIST_MODULES] }, then: asArray('$details.absentList') },
+      ],
+      default: [],
+    },
+  };
+  const listLen = { $size: list };
+  // 名单为空时的回退人数（模块决定字段名，见 check-modules 的 summaryKeyByModule）
+  const fallback = {
+    $switch: {
+      branches: [
+        { case: { $eq: ['$moduleKey', 'morning_class'] }, then: num('$details.lateCount') },
+        { case: { $eq: ['$moduleKey', 'night_dorm'] }, then: num('$details.notReturnedCount') },
+        {
+          case: { $in: ['$moduleKey', ['morning_exercise', 'study_evening']] },
+          then: num('$details.absentCount'),
+        },
+      ],
+      default: 0,
+    },
+  };
+  // 逐人加权：早八没有假别（无 person-picker 原因），恒 0.02；其余模块病/事/公假 0.01、其它 0.02。
+  const weightedByList = {
+    $sum: {
+      $map: {
+        input: list,
+        as: 'person',
+        in: {
+          $cond: [
+            {
+              $and: [
+                { $ne: ['$moduleKey', 'morning_class'] },
+                { $in: [{ $ifNull: ['$$person.reason', ''] }, LEAVE_REASONS] },
+              ],
+            },
+            LEAVE_ABSENCE_WEIGHT,
+            ABSENCE_WEIGHT,
+          ],
+        },
+      },
+    },
+  };
+  return {
+    // 人次：名单非空用名单长度，否则回退人数
+    absentCount: { $sum: { $cond: [{ $gt: [listLen, 0] }, listLen, fallback] } },
+    // 加权：名单非空逐人按假别加权，否则回退人数 × 0.02（无假别信息）
+    absenceWeight: {
+      $sum: {
+        $cond: [{ $gt: [listLen, 0] }, weightedByList, { $multiply: [fallback, ABSENCE_WEIGHT] }],
+      },
+    },
+  };
+}
+
+// 模块当日/区间聚合：按 className × date × moduleKey 求扣分 / 记录数 / 缺勤
 async function aggregateScores({ from, to, className, departmentIds, classNames }) {
   const match = {
     date: { $gte: from, $lte: to },
@@ -145,12 +278,14 @@ async function aggregateScores({ from, to, className, departmentIds, classNames 
         count: { $sum: 1 },
         scoreSum: { $sum: '$score' },
         metrics: { $push: '$metrics' },
+        // 缺勤人次 / 加权（与 aggregateScoresLite 共用同一份表达式，口径逐字一致）
+        ...absenceAccumulators(),
       },
     },
     { $limit: MAX_ROWS },
   ]);
 
-  // className → date → moduleKey → { deduct, count }
+  // className → date → moduleKey → { deduct, count, absentCount, absenceWeight }
   const byClass = new Map();
   for (const r of rows) {
     const cn = r._id.className || '未分班';
@@ -158,23 +293,55 @@ async function aggregateScores({ from, to, className, departmentIds, classNames 
     const mk = r._id.moduleKey;
     let cls = byClass.get(cn);
     if (!cls) {
-      cls = { byDate: new Map(), byModule: new Map(), totalDeduct: 0, recordCount: 0 };
+      cls = {
+        byDate: new Map(),
+        byModule: new Map(),
+        totalDeduct: 0,
+        recordCount: 0,
+        // 新公式（2026-11-20）需要的两级累计：四模块扣分 + 缺勤人次/加权
+        deduct4: 0,
+        absentCount: 0,
+        absenceWeight: 0,
+      };
       byClass.set(cn, cls);
     }
+    const absentCount = r.absentCount || 0;
+    const absenceWeight = r.absenceWeight || 0;
+    const deduct4 = FOUR_MODULE_KEYS.includes(mk) ? r.deduct || 0 : 0;
     cls.totalDeduct += r.deduct || 0;
     cls.recordCount += r.count || 0;
+    cls.deduct4 += deduct4;
+    cls.absentCount += absentCount;
+    cls.absenceWeight += absenceWeight;
 
     let day = cls.byDate.get(dk);
     if (!day) {
-      day = { date: dk, deduct: 0, modules: new Map() };
+      day = { date: dk, deduct: 0, modules: new Map(), deduct4: 0, absentCount: 0, absenceWeight: 0 };
       cls.byDate.set(dk, day);
     }
     day.deduct += r.deduct || 0;
-    day.modules.set(mk, { deduct: r.deduct || 0, count: r.count || 0, metrics: r.metrics || [] });
+    day.deduct4 += deduct4;
+    day.absentCount += absentCount;
+    day.absenceWeight += absenceWeight;
+    day.modules.set(mk, {
+      deduct: r.deduct || 0,
+      count: r.count || 0,
+      metrics: r.metrics || [],
+      absentCount,
+      absenceWeight,
+    });
 
-    const mod = cls.byModule.get(mk) || { deduct: 0, count: 0, metrics: [] };
+    const mod = cls.byModule.get(mk) || {
+      deduct: 0,
+      count: 0,
+      metrics: [],
+      absentCount: 0,
+      absenceWeight: 0,
+    };
     mod.deduct += r.deduct || 0;
     mod.count += r.count || 0;
+    mod.absentCount += absentCount;
+    mod.absenceWeight += absenceWeight;
     mod.metrics.push(...(r.metrics || []));
     cls.byModule.set(mk, mod);
   }
@@ -255,18 +422,25 @@ function buildTargetItems(moduleKey, moduleName, byType, dayCount, moduleAvgDedu
 
 /**
  * 「一个班在某区间的班超分」的**唯一组装实现**
- *（用户 2026-11-19「班级状态日周月考勤不一致，并且卫生、查宿等相关内容没有被减分」）。
+ *（用户 2026-11-19「班级状态日周月考勤不一致，并且卫生、查宿等相关内容没有被减分」
+ *  + 用户 2026-11-20「班超分公式全面替换」）。
  *
- * 为什么必须抽出来：班级状态看板原来自己算一套考勤分
- * （`10 × 加权出勤率 − 迟到×0.05`，模块只有早操/早八/晚自习/查宿，**完全不含卫生**），
- * 而班超总页算的是另一套（`10 − 日均扣分`，**所有模块**的 deduct 都算）。
- * 实测同一个班同一周：班超 8.40 分、看板 9.74 分 —— 用户正是拿两个页面互相对照才发现的。
- * 现在两处都走这里，分数只有一个公式。
+ * ===== 现行公式（2026-11-20 定稿：**区间累计口径**）=====
+ *   score = max(0, round2(10 − 四模块累计扣分 × 10% − 缺勤加权))
+ *   四模块 = 卫生 / 查宿 / 晚自习 / 早操；缺勤加权 = Σ 每人次（普通 0.02、病/事/公假 0.01）。
  *
- * 算法（与改造前的 classSummary 逐字一致，只是搬进单点函数）：
- *   · 逐日得分 = scoreScale.scoreOf(当日 Σdeduct)（10 − 当日扣分，扣穿不显负）
- *   · 区间得分 = 各日得分的**平均**（不是「10 − 区间总扣分」：一个班两周的记录不该扣成负分）
- *   · deduct   = 日均扣分 = 区间总扣分 ÷ 有记录天数
+ * 历史说明（保留但**已替换**，不要按它改代码）：
+ *   · 2026-11-19 之前：看板自己算 `10 × 加权出勤率 − 迟到×0.05`（只含 4 个考勤模块、**不含卫生**），
+ *     班超页算 `10 − 日均扣分`，实测同一班同一周 8.40 vs 9.74，用户拿两页对照报障；
+ *   · 2026-11-19 起：两处统一为「逐日 10 − 当日 Σ全部模块扣分 → 各日平均」；
+ *   · 2026-11-20 起（现行）：改为**区间累计口径** —— 区间内四模块累计扣分只按 10% 折算、
+ *     缺勤按人次加权，早八的模块扣分退出扣分项（只把人次计入缺勤加权）。
+ *     所以「区间越长扣得越多」是设计如此，**不要再改回逐日平均**。
+ *
+ * 仍然保留的字段（页面 / 导出要显示「各模块扣了多少、合计多少、日均多少」）：
+ *   deduct（日均总扣分 = 区间总扣分 ÷ 有记录天数）/ deductTotal（区间合计总扣分）/
+ *   dayCount / recordCount / moduleDeduct（各模块 deduct、avgDeduct、score、count、targets）。
+ *
  * ⚠️ 没有记录的班返回 score=null（前端显示「—」），**不是 0 分** ——
  *    0 分是最严重的差评，会被当成真实成绩复制发进工作群。
  *
@@ -277,15 +451,34 @@ function buildTargetItems(moduleKey, moduleName, byType, dayCount, moduleAvgDedu
  * @param {Array} [moduleList] 模块定义列表：传了则按它的 key 与顺序输出 moduleDeduct
  *   （classSummary 要用它列出**全部**模块，含没记录的）；
  *   不传则按该班实际有记录的模块输出（班级状态看板用它 —— 那里不想为了一行文案再拉模块字典）。
+ * @returns {{score:number|null, deduct:number|null, deductTotal:number|null, dayCount:number,
+ *   recordCount:number, moduleDeduct:object, absenceCount:number, absenceWeight:number|null,
+ *   deduct4:number|null}}
+ *   `absenceCount` = 区间缺勤人次、`absenceWeight` = 区间缺勤加权、`deduct4` = 四模块累计扣分
+ *   （三者都是新公式的直接输入，页面可展示「为什么扣了这么多」，无记录时三者分别为 0 / null / null）。
  */
 function scoreOfAggregate(cls, moduleList) {
-  const empty = { score: null, deduct: null, deductTotal: null, dayCount: 0, recordCount: 0, moduleDeduct: {} };
+  const empty = {
+    score: null,
+    deduct: null,
+    deductTotal: null,
+    dayCount: 0,
+    recordCount: 0,
+    moduleDeduct: {},
+    // 新公式（2026-11-20）的输入：没记录时 score=null，缺勤项给「零值 + null」而不是编一个 0 分
+    absenceCount: 0,
+    absenceWeight: null,
+    deduct4: null,
+  };
   if (!cls || !cls.byDate || !cls.byDate.size) return empty;
-  const dayScores = [...cls.byDate.values()].map((d) => scoreScale.scoreOf(d.deduct));
   const keys = Array.isArray(moduleList) && moduleList.length
     ? moduleList.map((m) => m.key)
     : [...(cls.byModule ? cls.byModule.keys() : [])];
   const dayCount = cls.byDate.size;
+  // 新公式输入（区间累计口径，见函数头）：四模块累计扣分与缺勤加权都从聚合结构直接取，
+  // **不再**按日平均、也不再用逐日 score 求和 —— 那就是被替换掉的旧口径。
+  const deduct4Raw = Number(cls.deduct4) || 0;
+  const absenceWeightRaw = Number(cls.absenceWeight) || 0;
   // 「扣分来源」聚合（模块 × targetType）：由调用方挂到 cls.byTarget 上（可选，老调用方没有）
   const byTarget = cls.byTarget && typeof cls.byTarget.get === 'function' ? cls.byTarget : null;
   const moduleDeduct = {};
@@ -297,13 +490,15 @@ function scoreOfAggregate(cls, moduleList) {
     const tmod = byTarget ? byTarget.get(k) : null;
     moduleDeduct[k] = {
       deduct: round2(hit.deduct),
-      // 日均扣分（**与区间得分同一个分母 dayCount**）：
-      // 区间得分 = 10 − 日均总扣分，所以「各模块日均扣分之和」必须能与得分对上。
-      // 只给窗口累计的话，老师拿「10 − 卫生累计10.00」去核对「班超 8.45 分」必然算不平
-      // —— 这类「两个数字互相矛盾」正是本仓库反复报障的成因。
+      // 日均扣分 / 窗口合计：页面的「日均 | 合计」切换仍要显示各模块扣了多少，
+      // 与 totalDeduct 的日均口径同一个分母（**不再是算分的分子**，算分只用上面四模块累计）。
       avgDeduct: round2((hit.deduct || 0) / dayCount),
+      // 模块自身的展示得分仍走 scoreScale（10 − 该模块累计扣分），与班级总评公式无关
       score: scoreScale.scoreOf(hit.deduct),
       count: hit.count || 0,
+      // 该模块的缺勤人次 / 加权（聚合里按 className×date×moduleKey 产出后累加，口径见 absenceAccumulators）
+      absentCount: hit.absentCount || 0,
+      absenceWeight: round2(hit.absenceWeight || 0),
       // 向后兼容的**增量**字段：扣分来源子项（模块 × 受检类型）。
       // 没有 target 聚合（如 classSummary 用的 aggregateScores）时给空数组，而不是 undefined。
       // ⚠️ Σ targets.avgDeduct 必须严格等于上面的 avgDeduct、Σ targets.totalDeduct 必须等于 deduct
@@ -319,14 +514,19 @@ function scoreOfAggregate(cls, moduleList) {
     };
   }
   return {
-    score: round2(dayScores.reduce((a, b) => a + b, 0) / dayScores.length),
-    // 日均扣分（与 score 同一个分母）与**窗口合计扣分**（用户 2026-11-20 第三轮「合计/日均」切换）：
+    // 新公式（2026-11-20）：10 − 四模块累计扣分×10% − 缺勤加权，clamp 到 [0,10]
+    score: scoreOfParts(deduct4Raw, absenceWeightRaw),
+    // 日均扣分与**窗口合计扣分**（用户 2026-11-20 第三轮「合计/日均」切换）：
     // 两个都下发，前端只调展示口径、不重算；合计 = cls.totalDeduct（与各模块 deduct 之和一致）。
-    deduct: round2(cls.totalDeduct / cls.byDate.size),
+    deduct: round2(cls.totalDeduct / dayCount),
     deductTotal: round2(cls.totalDeduct),
-    dayCount: cls.byDate.size,
+    dayCount,
     recordCount: cls.recordCount || 0,
     moduleDeduct,
+    // 新公式的三个直接输入（供页面/验证核对「分数怎么来的」）
+    absenceCount: Number(cls.absentCount) || 0,
+    absenceWeight: round2(absenceWeightRaw),
+    deduct4: round2(deduct4Raw),
   };
 }
 
@@ -347,17 +547,21 @@ function liteMatch({ from, to, classNames }) {
 }
 
 /**
- * 班级状态看板专用的**轻量**扣分聚合（className × date）。
+ * 班级状态看板专用的**轻量**扣分聚合（className × date × moduleKey）。
  *
  * 为什么不用 aggregateScores()：那个聚合带 `$push: '$metrics'` 并按
  * className×date×moduleKey 分组，是给「每模块指标文案」用的；
- * 看板只要「这个班这天扣了多少分」，把全部 metrics 数组拖到 Node 侧
+ * 看板只要「这个班这天扣了多少分、缺勤几人次」，把全部 metrics 数组拖到 Node 侧
  * 会让网络传输与内存都翻几倍（看板每 60 秒被多个老师反复刷新）。
- * 两者**分组口径完全一致**（同一个 match、同一个 COUNTED 状态集合），
+ * 两者**分组口径完全一致**（同一个 liteMatch 基线、同一个 COUNTED 状态集合，
+ * 缺勤表达式也共用 absenceAccumulators()），
  * 所以算出来的分数与班超逐字相同 —— 只是少带了展示用的字段。
  *
- * @returns {Promise<Map<string, {byDate: Map, byModule: Map, totalDeduct: number, recordCount: number}>>}
- *   形状与 aggregateScores() 的返回值**兼容**，可直接喂 scoreOfAggregate()
+ * 产出的结构与 aggregateScores() **兼容**（同样带 deduct4 / absentCount / absenceWeight），
+ * 可直接喂 scoreOfAggregate()；差别只在每天少一个 modules Map、每班少 metrics。
+ *
+ * @returns {Promise<Map<string, {byDate: Map, byModule: Map, totalDeduct: number, recordCount: number,
+ *   deduct4: number, absentCount: number, absenceWeight: number}>>}
  */
 async function aggregateScoresLite({ from, to, classNames }) {
   const match = liteMatch({ from, to, classNames });
@@ -368,6 +572,9 @@ async function aggregateScoresLite({ from, to, classNames }) {
         _id: { className: '$className', date: '$date', moduleKey: '$moduleKey' },
         deduct: { $sum: '$deduct' },
         count: { $sum: 1 },
+        // ⚠️ 与 aggregateScores 的 $group 展开的是**同一个函数**的返回值：
+        //   任何一边单独改（比如只给名单长度、不给假别加权）都会让两个页面分数不一致。
+        ...absenceAccumulators(),
       },
     },
     { $limit: MAX_ROWS },
@@ -379,17 +586,44 @@ async function aggregateScoresLite({ from, to, classNames }) {
     const mk = r._id.moduleKey;
     let cls = byClass.get(cn);
     if (!cls) {
-      cls = { byDate: new Map(), byModule: new Map(), totalDeduct: 0, recordCount: 0 };
+      cls = {
+        byDate: new Map(),
+        byModule: new Map(),
+        totalDeduct: 0,
+        recordCount: 0,
+        deduct4: 0,
+        absentCount: 0,
+        absenceWeight: 0,
+      };
       byClass.set(cn, cls);
     }
+    const absentCount = r.absentCount || 0;
+    const absenceWeight = r.absenceWeight || 0;
+    const deduct4 = FOUR_MODULE_KEYS.includes(mk) ? r.deduct || 0 : 0;
     cls.totalDeduct += r.deduct || 0;
     cls.recordCount += r.count || 0;
-    const day = cls.byDate.get(dk) || { date: dk, deduct: 0 };
+    cls.deduct4 += deduct4;
+    cls.absentCount += absentCount;
+    cls.absenceWeight += absenceWeight;
+
+    const day = cls.byDate.get(dk) || {
+      date: dk,
+      deduct: 0,
+      deduct4: 0,
+      absentCount: 0,
+      absenceWeight: 0,
+    };
     day.deduct += r.deduct || 0;
+    day.deduct4 += deduct4;
+    day.absentCount += absentCount;
+    day.absenceWeight += absenceWeight;
     cls.byDate.set(dk, day);
-    const mod = cls.byModule.get(mk) || { deduct: 0, count: 0 };
+
+    const mod = cls.byModule.get(mk) || { deduct: 0, count: 0, absentCount: 0, absenceWeight: 0 };
     mod.deduct += r.deduct || 0;
     mod.count += r.count || 0;
+    mod.absentCount += absentCount;
+    mod.absenceWeight += absenceWeight;
     cls.byModule.set(mk, mod);
   }
   return byClass;
@@ -486,10 +720,29 @@ async function classSummary({ className, date, range = 'day', weekStartKey, mont
   const profile = await ClassProfile.findOne({ className }).lean();
 
   const byClass = await aggregateScores({ from: scope.from, to: scope.to, className });
-  const cls = byClass.get(className) || { byDate: new Map(), byModule: new Map(), totalDeduct: 0, recordCount: 0 };
+  const cls = byClass.get(className) || {
+    byDate: new Map(),
+    byModule: new Map(),
+    totalDeduct: 0,
+    recordCount: 0,
+    deduct4: 0,
+    absentCount: 0,
+    absenceWeight: 0,
+  };
 
+  // 每日趋势（用户 2026-11-20 新公式：**当日口径** = 当日四模块扣分×10% + 当日缺勤加权）：
+  //   days[].score = max(0, round2(10 − 当日四模块扣分×10% − 当日缺勤加权))
+  //   注意与区间 score 的区别：区间是**累计**口径（整个统计期加总），不是各日平均。
+  //   days[].deduct 保留「当日全部模块扣分」（页面趋势条/明细展示用），不参与新公式的分母。
   const days = [...cls.byDate.values()]
-    .map((d) => ({ date: d.date, deduct: round1(d.deduct), score: scoreScale.scoreOf(d.deduct) }))
+    .map((d) => ({
+      date: d.date,
+      deduct: round1(d.deduct),
+      deduct4: round2(d.deduct4 || 0),
+      absenceCount: d.absentCount || 0,
+      absenceWeight: round2(d.absenceWeight || 0),
+      score: scoreOfParts(d.deduct4, d.absenceWeight),
+    }))
     .sort((a, b) => (a.date < b.date ? 1 : -1));
   // 区间得分与「卫生/查宿等有没有被减分」全部来自这一处组装（scoreOfAggregate）
   const agg = scoreOfAggregate(cls, moduleList);
@@ -548,8 +801,13 @@ async function classSummary({ className, date, range = 'day', weekStartKey, mont
     to: scope.to,
     // score / deduct 都来自 scoreOfAggregate（单点实现，班级状态看板走的是同一个函数）：
     // ⚠️ 不要在这里再写一遍「逐日得分平均」—— 那正是用户报「两个页面对不上」的成因。
-    score: agg.score, // 区间平均分（当区间无记录时 null，前端显示「—」）
+    score: agg.score, // 区间班超分（新公式；当区间无记录时 null，前端显示「—」）
     deduct: agg.deduct,
+    // 新公式的三个直接输入（用户 2026-11-20）：四模块累计扣分 / 缺勤人次 / 缺勤加权。
+    // classSummary 是首页班超块与班超门户页的出口，下发它们页面才能解释「分数怎么来的」。
+    deduct4: agg.deduct4,
+    absenceCount: agg.absenceCount,
+    absenceWeight: agg.absenceWeight,
     days,
     recordCount: agg.recordCount,
     modules: moduleRows,
@@ -583,20 +841,24 @@ async function classRanking({ from, to, departmentIds, classNames, className, li
     rows = names
       .map((cn) => {
         const cls = byClass.get(cn);
-        const dayList = [...cls.byDate.values()];
-        const avgDeduct = dayList.length ? cls.totalDeduct / dayList.length : 0;
+        // 排行分数与 classSummary / 班级状态看板走**同一个** scoreOfAggregate（用户 2026-11-20
+        // 「排行榜也要新公式」）：以前这里自己算 `avgScoreOf(日均扣分)`，公式一换就会
+        // 「班级榜第 1 名 9.5 分、点进详情 9.49 分」——两位数下最容易被老师当场发现的那类不一致。
+        const agg = scoreOfAggregate(cls);
         const p = pmap.get(cn) || {};
         return {
           className: cn,
           departmentName: p.departmentName || '',
           grade: p.grade || '',
           studentCount: p.studentCount || 0,
-          days: dayList.length,
+          days: agg.dayCount,
           recordCount: cls.recordCount,
-          deduct: round2(avgDeduct),
-          // 走 scoreScale 而不是 BASE_SCORE − 扣分：与 classSummary 同一个出口，
-          // 否则「班级榜第 1 名 9.5 分、点进详情 9.55 分」这种两位小数下的对不上就成了新问题。
-          score: scoreScale.avgScoreOf(avgDeduct),
+          // 日均总扣分（含全部模块）保留给列表副信息；算分只用 agg.score（新公式）
+          deduct: agg.deduct,
+          score: agg.score,
+          deduct4: agg.deduct4,
+          absenceCount: agg.absenceCount,
+          absenceWeight: agg.absenceWeight,
           // 实习 / 毕业班不参加班超统计：即使历史上有记录，也不进榜
           joinsBandChao: ClassProfile.joinsBandChao(p),
         };
@@ -1260,6 +1522,16 @@ function clearRankCache() {
 
 module.exports = {
   BASE_SCORE,
+  // ===== 班超分公式（用户 2026-11-20 定稿，**唯一一份**；看板规则文案/复制文案从这里取数）=====
+  DEDUCT_SCORE_RATIO, // 四模块累计扣分 ×10%
+  ABSENCE_WEIGHT, // 普通缺勤 / 早八每人次 0.02
+  LEAVE_ABSENCE_WEIGHT, // 病假 / 事假 / 公假每人次 0.01
+  LEAVE_REASONS, // 可减半加权的假别（与 person-picker 的 reasonOptions 同口径）
+  FOUR_MODULE_KEYS, // 计入「四模块累计扣分」的模块（早八不在内）
+  scoreOfParts, // 新公式核心（区间分与每日趋势分共用）
+  // 缺勤 Mongo 聚合表达式（名额/假别加权）：**唯一一份**，看板/班超/管理端统计共用，
+  // 直接展开进 $group（`{ $group: { _id: ..., ...bandChao.absenceAccumulators() } }`）。
+  absenceAccumulators,
   // 受检类型中文名的**唯一一份**：看板扣分明细 / CSV 导出 / 复制文案都从这里取
   TARGET_TYPE_TEXT,
   classSummary,

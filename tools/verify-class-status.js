@@ -24,6 +24,8 @@ const UserGoal = require(path.join(serverDir, 'src', 'models', 'user-goal'));
 const GoalConfig = require(path.join(serverDir, 'src', 'models', 'goal-config'));
 const dates = require(path.join(serverDir, 'src', 'utils', 'dates'));
 const board = require(path.join(serverDir, 'src', 'services', 'class-status-board'));
+// 班超服务：只用于「两套聚合口径一致」的交叉核对（classSummary = aggregateScores vs 看板 = aggregateScoresLite）
+const bandChao = require(path.join(serverDir, 'src', 'services', 'band-chao'));
 
 let failed = 0;
 function assert(cond, label, extra) {
@@ -197,11 +199,25 @@ function assert(cond, label, extra) {
     // ===== 分数**不再**由率折算（旧公式 10×率 − 迟到×0.05 已删除）=====
     // 用户 2026-11-19：「班级状态日周月考勤不一致，并且考勤的卫生、查宿等相关内容
     // 相应没有被减分」—— 旧公式只看 4 个考勤模块，**卫生整块不在内**，
-    // 与班超总评（10 − 日均扣分，全部模块）实测差到 1.3 分。
+    // 与班超总评实测差到 1.3 分。用户 2026-11-20 又把公式换成**区间累计口径**
+    // （10 − 四模块累计扣分×10% − 缺勤加权，早八模块扣分退出扣分项）。
     // 现在分数 = bandChao 同一个实现，所以这里的独立核对必须**从 check_records 重算**
-    // 一遍班超分，而不是再抄一次被测代码的公式。
+    // 一遍班超分，而不是再抄一次被测代码的公式（见 [6b]）。
     const lateN = row.attendance.lateCount || 0;
     assert(typeof lateN === 'number', '考勤带 lateCount（迟到人数仍下发）', lateN);
+    // 新公式（用户 2026-11-20 区间累计口径）的三个直接输入必须随行下发：
+    //   score = max(0, 10 − deduct4×10% − absenceWeight)
+    assert(typeof row.attendance.absenceCount === 'number', '考勤带 absenceCount（缺勤人次）', row.attendance.absenceCount);
+    assert(
+      row.attendance.absenceWeight === null || typeof row.attendance.absenceWeight === 'number',
+      '考勤带 absenceWeight（缺勤加权；无记录时才为 null）',
+      row.attendance.absenceWeight
+    );
+    assert(
+      row.attendance.deduct4 === null || typeof row.attendance.deduct4 === 'number',
+      '考勤带 deduct4（四模块累计扣分；无记录时才为 null）',
+      row.attendance.deduct4
+    );
     assert(
       row.attendance.score === null || (row.attendance.score >= 0 && row.attendance.score <= 10),
       '分数在 0~10 区间（10 分制，不出现百分制数值）',
@@ -220,52 +236,105 @@ function assert(cond, label, extra) {
   }
 
   // ---- [6b] 分数与班超同源：从 check_records **独立重算**（抽样逐班比对）----
-  console.log('\n[6b] 看板分数 = 从 check_records 独立重算的班超分（含卫生）');
+  // 用户 2026-11-20 定稿的新公式（**区间累计口径**）：
+  //   score = max(0, round2(10 − 四模块累计扣分×10% − 缺勤加权))
+  //   四模块 = 卫生 / 查宿 / 晚自习 / 早操（早八模块扣分**不在内**）
+  //   缺勤加权 = Σ 每人次：普通 0.02、病假/事假/公假 0.01
+  // 独立核对**从 check_records 原始数据手算**（不 require 被测的常量，否则等于自证）：
+  // 四模块按 moduleKey 白名单、缺勤按 details 名单/回退人数逐人加权。
+  console.log('\n[6b] 看板分数 = 从 check_records 独立重算的班超分（四模块累计×10% + 缺勤加权）');
   {
     const win = board.attWindow('week', day);
+    // 手写口径（与实现的唯一区别是「这里不 import 被测模块」）：
+    const FOUR = ['hygiene', 'night_dorm', 'study_evening', 'morning_exercise'];
+    const LEAVE = ['病假', '事假', '公假'];
+    const absOf = (x) => {
+      const d = x.details || {};
+      const isEarly = x.moduleKey === 'morning_class';
+      const list = isEarly ? d.lateList : d.absentList;
+      if (Array.isArray(list) && list.length > 0) {
+        let weight = 0;
+        for (const p of list) {
+          // 早八没有假别（录入台 with-reason=false）：即使脏数据写了病假也应仍按 0.02
+          const reason = String((p && p.reason) || '');
+          weight += !isEarly && LEAVE.includes(reason) ? 0.01 : 0.02;
+        }
+        return { count: list.length, weight };
+      }
+      // 名单为空（老数据 / 批量「无缺勤」）：回退 details 上的人数，无假别信息 → 一律 0.02
+      const fallback = isEarly
+        ? d.lateCount
+        : x.moduleKey === 'night_dorm'
+          ? d.notReturnedCount
+          : x.moduleKey === 'morning_exercise' || x.moduleKey === 'study_evening'
+            ? d.absentCount
+            : 0;
+      const n = Number(fallback) || 0;
+      return { count: n, weight: n * 0.02 };
+    };
+    const independent = (recs) => {
+      let deduct4 = 0;
+      let absenceCount = 0;
+      let absenceWeight = 0;
+      for (const x of recs) {
+        if (FOUR.includes(x.moduleKey)) deduct4 += Number(x.deduct) || 0;
+        const a = absOf(x);
+        absenceCount += a.count;
+        absenceWeight += a.weight;
+      }
+      const score = Math.round(Math.max(0, Math.min(10, 10 - deduct4 * 0.1 - absenceWeight)) * 100) / 100;
+      return { deduct4, absenceCount, absenceWeight, score };
+    };
     const sampleRows = r.rows.filter((x) => x.attendance.hasAnyCheck).slice(0, 8);
     assert(sampleRows.length > 0, '本周有检查记录的班可用于核对', sampleRows.length);
     let mismatch = 0;
+    let inputMismatch = 0;
     let hygCases = 0;
     let hygBroken = 0;
     for (const row of sampleRows) {
-      // 独立算法：拉该班本周全部检查记录（**不限模块**）→ 按日求扣分和 →
-      // 逐日 10−扣分（负数封顶 0）→ 取平均。与被测实现完全无关。
+      // 独立算法：拉该班本周全部检查记录（**不限模块**，带 details 算缺勤）→ 手算新公式
       const recs = await CheckRecord.find({
         className: row.className,
         date: { $gte: win.from, $lte: win.to },
         status: { $in: ['submitted', 'approved'] },
         voided: { $ne: true },
-      }).select('date deduct moduleKey').lean();
-      const byDay = new Map();
-      for (const x of recs) byDay.set(x.date, (byDay.get(x.date) || 0) + (Number(x.deduct) || 0));
-      const dayScores = [...byDay.values()].map((d) => Math.max(0, Math.round((10 - d) * 100) / 100));
-      const expScore = dayScores.length ? Math.round((dayScores.reduce((a, b) => a + b, 0) / dayScores.length) * 100) / 100 : null;
-      if (Math.abs(Number(row.attendance.score) - Number(expScore)) > 0.02) {
+      })
+        .select('date deduct moduleKey details')
+        .lean();
+      const exp = independent(recs);
+      const att = row.attendance || {};
+      if (Math.abs(Number(att.score) - Number(exp.score)) > 0.02) {
         mismatch += 1;
-        console.log(`   DIFF ${row.className}: 看板=${row.attendance.score} 独立重算=${expScore}（记录 ${recs.length} 条，含模块 ${[...new Set(recs.map((x) => x.moduleKey))].join('/')}）`);
+        console.log(`   DIFF ${row.className}: 看板=${att.score} 独立重算=${exp.score}（记录 ${recs.length} 条，含模块 ${[...new Set(recs.map((x) => x.moduleKey))].join('/')}）`);
       }
-      // 卫生是否真的被减分：拿同一批记录算两次 —— 含卫生 vs **排除卫生**，
-      // 只要该班有卫生扣分，含卫生的分数就必须**严格更低**。
-      // 这是用户报障「卫生、查宿等相关内容相应没有被减分」最直接的判据，
-      // 也是旧实现必然测不过的一条（旧公式压根不看 hygiene）。
-      const hygDeduct = recs.filter((x) => x.moduleKey === 'hygiene').reduce((a, x) => a + (Number(x.deduct) || 0), 0);
-      if (hygDeduct > 0) {
-        const noHyg = new Map();
-        for (const x of recs) {
-          if (x.moduleKey === 'hygiene') continue;
-          noHyg.set(x.date, (noHyg.get(x.date) || 0) + (Number(x.deduct) || 0));
-        }
-        const ns = [...noHyg.values()].map((d) => Math.max(0, Math.round((10 - d) * 100) / 100));
-        const expNoHyg = ns.length ? Math.round((ns.reduce((a, b) => a + b, 0) / ns.length) * 100) / 100 : null;
+      // 三个输入（四模块累计扣分 / 缺勤人次 / 缺勤加权）也必须与独立重算一致：
+      // 只比最终分数会漏掉「扣分项与缺勤项互相抵消」的假绿（公式把某项算反了照样可能凑出同一个分）。
+      if (
+        Math.abs((Number(att.deduct4) || 0) - exp.deduct4) > 0.011 ||
+        (Number(att.absenceCount) || 0) !== exp.absenceCount ||
+        Math.abs((Number(att.absenceWeight) || 0) - exp.absenceWeight) > 0.005
+      ) {
+        inputMismatch += 1;
+        console.log(
+          `   输入不一致 ${row.className}: 看板(deduct4=${att.deduct4}, 缺勤人次=${att.absenceCount}, 加权=${att.absenceWeight}) ` +
+            `独立(deduct4=${exp.deduct4.toFixed(2)}, 缺勤人次=${exp.absenceCount}, 加权=${exp.absenceWeight.toFixed(2)})`
+        );
+      }
+      // 卫生是否真的被减分：含卫生（四模块口径）vs **排除卫生** 各算一次，
+      // 只要该班有卫生扣分，含卫生的分数就必须**严格更低**（新公式里卫生按 ×10% 进扣分项）。
+      // 这是用户报障「卫生、查宿等相关内容相应没有被减分」最直接的判据。
+      if (recs.some((x) => x.moduleKey === 'hygiene' && (Number(x.deduct) || 0) > 0)) {
+        const expNoHyg = independent(recs.filter((x) => x.moduleKey !== 'hygiene'));
         hygCases += 1;
-        if (expNoHyg !== null && !(row.attendance.score < expNoHyg - 0.001)) {
+        // 已扣穿到 0 分的班无法再「更低」（clamp 生效），只对有下降空间的班断言
+        if (expNoHyg.score > 0 && !(Number(att.score) < expNoHyg.score - 0.001)) {
           hygBroken += 1;
-          console.log(`   卫生没被减分 ${row.className}: 含卫生=${row.attendance.score} 排除卫生=${expNoHyg}`);
+          console.log(`   卫生没被减分 ${row.className}: 含卫生=${att.score} 排除卫生=${expNoHyg.score}`);
         }
       }
     }
     assert(mismatch === 0, `抽样 ${sampleRows.length} 个班的分数与独立重算一致`, mismatch);
+    assert(inputMismatch === 0, `抽样 ${sampleRows.length} 个班的 deduct4 / 缺勤人次 / 缺勤加权与独立重算一致`, inputMismatch);
     assert(hygBroken === 0, `有卫生扣分的班（${hygCases} 个）分数确实因卫生而更低`, hygBroken);
     // 窗口终点必须是**完整周**（班超同源），不能是所选日
     assert(win.to > win.from || win.to === win.from, '本周窗口有终点字段', win);
@@ -623,25 +692,57 @@ function assert(cond, label, extra) {
         assert(me.should === 40 && me.actual === 36, '早操应到/实到读的是 details', { s: me.should, a: me.actual });
         assert(nc.should === 40 && nc.actual === 38, '查宿读 details.shouldStay（不是 shouldCount）', { s: nc.should, a: nc.actual });
         assert(mc.rate === null && mc.ratePercent === null && (mc.lateCount || mc.late) === 3, '早八只记迟到、不给比率', mc);
-        // ===== 分数（用户 2026-11-19 改为班超同源）=====
-        // 期望 = 10 − 当日扣分合计，**扣分合计直接由本文件上方 SEED_DEDUCT 手算相加**，
-        // 不读任何被测函数的返回值（读了就是自证）。
-        const expScore = Math.round((10 - SEED_DAY_DEDUCT) * 100) / 100;
+        // ===== 分数（用户 2026-11-20 区间累计口径）=====
+        // 期望值**全部由本文件上方 SEED_* 手算**，不读任何被测函数的返回值（读了就是自证）：
+        //   四模块累计扣分 = 早操 1.0 + 晚自习 2.1 + 查宿 0.4 + 卫生 2.0 = 5.5
+        //                  （早八 0.15 **不在内** —— 早八模块扣分退出扣分项）
+        //   缺勤人次 = 早操 4（名单空 → 回退 absentCount）+ 晚自习 8 + 查宿 2（notReturnedCount）
+        //            + 早八 3（lateCount）= 17
+        //   缺勤加权 = 17 × 0.02 = 0.34（都是回退计数，没有假别信息 → 全部按普通缺勤）
+        //   班超分   = 10 − 5.5×10% − 0.34 = 9.11
+        const SEED_DEDUCT4 =
+          SEED_DEDUCT.morning_exercise + SEED_DEDUCT.study_evening + SEED_DEDUCT.night_dorm + SEED_DEDUCT.hygiene;
+        const SEED_ABS_COUNT = 4 + 8 + 2 + 3;
+        const SEED_ABS_WEIGHT = SEED_ABS_COUNT * 0.02;
+        const expScore = Math.round(Math.max(0, 10 - SEED_DEDUCT4 * 0.1 - SEED_ABS_WEIGHT) * 100) / 100;
         assert(
           att.score !== null && att.score !== undefined && Math.abs(att.score - expScore) < 0.02,
-          `分数 = 10 − 当日扣分合计（期望 ${expScore}，含卫生 ${SEED_DEDUCT.hygiene || 0} 分扣分）`,
+          `班超分 = 10 − 四模块累计扣分×10% − 缺勤加权（期望 ${expScore}，含卫生 ${SEED_DEDUCT.hygiene || 0} 分）`,
           { got: att.score, expScore }
+        );
+        assert(
+          Math.abs((Number(att.deduct4) || 0) - SEED_DEDUCT4) < 0.02,
+          `attendance.deduct4 = 四模块累计扣分 ${SEED_DEDUCT4}（早八 0.15 不在内）`,
+          att.deduct4
+        );
+        assert(
+          (Number(att.absenceCount) || 0) === SEED_ABS_COUNT,
+          `attendance.absenceCount = 缺勤人次 ${SEED_ABS_COUNT}（含早八迟到）`,
+          att.absenceCount
+        );
+        assert(
+          Math.abs((Number(att.absenceWeight) || 0) - SEED_ABS_WEIGHT) < 0.005,
+          `attendance.absenceWeight = 缺勤加权 ${SEED_ABS_WEIGHT}（回退计数按 0.02/人次）`,
+          att.absenceWeight
         );
         assert(att.lateCount === 3, '考勤带 lateCount（迟到人数仍下发）', att.lateCount);
         assert(att.score > 0 && att.score < 10, '分数落在 10 分制区间', att.score);
-        // 分数**不等于**旧公式（10×加权率 − 迟到×0.05）：证明换掉了那套只看考勤四项的算法
+        // 分数**不等于**旧口径「10 − 全部模块累计扣分」：早八 0.15 也被排除，证明公式真的换了
+        const legacySumScore = Math.round((10 - SEED_DAY_DEDUCT) * 100) / 100;
+        assert(
+          Math.abs(att.score - legacySumScore) > 0.05,
+          `分数不再是旧口径「10 − 全部模块扣分」（旧=${legacySumScore} 新=${att.score}）`,
+          { legacySumScore, got: att.score }
+        );
+        // 分数**不等于**更早的旧公式（10×加权率 − 迟到×0.05）
         const legacyScore = Math.round((exp * 10 - 3 * 0.05) * 100) / 100;
         assert(
           Math.abs(att.score - legacyScore) > 0.05,
           `分数已脱离旧的「10×加权率−迟到×0.05」公式（旧=${legacyScore} 新=${att.score}）`,
           { legacyScore, got: att.score }
         );
-        // 扣分明细必须能对上账：各模块日均扣分之和 = 日均总扣分 = 10 − 分数
+        // 扣分明细仍保留日均/总扣分展示口径（新公式不用它算分，但页面 chip 要显示各模块扣了多少）：
+        // 各模块日均扣分之和 = 日均总扣分（两者都含早八，是同一份数的两种表达）
         const ddSum = (att.deductDetail || []).reduce((a, x) => a + x.deduct, 0);
         assert(
           Math.abs(ddSum - (Number(att.deduct) || 0)) < 0.02,
@@ -678,6 +779,8 @@ function assert(cond, label, extra) {
       const row2 = rb2.rows.find((x) => x.className === CLS2);
       assert(!!row2 && row2.attendance.hasData === true, '只有早八记录也算「有考勤数据」', row2 && row2.attendance);
       assert(!!row2 && row2.attendance.score === 10, '无迟到 = 满分 10.00（不是 —、不是 0）', row2 && row2.attendance.score);
+      assert(!!row2 && row2.attendance.absenceCount === 0, '无迟到 = 缺勤人次 0（早八名单空且 lateCount 0）', row2 && row2.attendance.absenceCount);
+      assert(!!row2 && row2.attendance.deduct4 === 0, '只有早八记录时四模块累计扣分 = 0（早八模块扣分不在内）', row2 && row2.attendance.deduct4);
       assert(!!row2 && row2.attendance.ratePercent === null, '早八不产生出勤率（率仍为 null）', row2 && row2.attendance.ratePercent);
       await CheckRecord.deleteMany({ className: CLS2 });
       await ClassProfile.deleteOne({ className: CLS2 });
@@ -689,6 +792,168 @@ function assert(cond, label, extra) {
       await board.classStatusBoard({ force: true }).catch(() => {});
       const left = await CheckRecord.countDocuments({ className: { $in: [CLS, `verify考勤_${TS}乙班`] } });
       assert(left === 0, '临时考勤记录清理干净', left);
+    }
+  }
+
+  // ---- [10c] 缺勤按假别加权（用户 2026-11-20：普通 0.02、病/事/公假 0.01）----
+  //
+  // 这一节是「一刀切 0.02」的直接判据：同一个临时班里同时造
+  //   · 名单带假别（病/事/公/无故 各 1）
+  //   · 早八名单（录入台对早八不开放假别，即使脏数据写了 reason 也只能按 0.02）
+  //   · 名单为空但有人数（老数据 / 批量「无缺勤」→ 回退 counted 字段，按 0.02）
+  // 期望值由本表手算；若实现把病/事/公假也当普通缺勤，分数会低 0.03，断言必然失败。
+  // 同时交叉核对 aggregateScores（classSummary）与 aggregateScoresLite（看板）**两套聚合逐字同口径**。
+  console.log('\n[10c] 缺勤名单带假别的加权（0.02 / 0.01）+ 两套聚合交叉核对');
+  {
+    const TS = String(Date.now());
+    const CLS = `verify缺勤_${TS}班`;
+    const CLSC = `verify缺勤_${TS}丙班`; // clamp 用例
+    // 手算（与任何被测实现无关）：
+    //   四模块累计扣分 = 卫生评良 2.0 + 早操 1.0 + 晚自习 1.0 = 4.0（**早八 0.15 不在内**）
+    //   缺勤人次 = 早操名单 4 + 早八迟到名单 1 + 晚自习回退 absentCount 2 = 7
+    //   缺勤加权 = (0.01×3 + 0.02×1) + 0.02 + (2×0.02) = 0.05 + 0.02 + 0.04 = 0.11
+    //   班超分   = 10 − 4.0×10% − 0.11 = 9.49
+    // 反例判别：一刀切 0.02 → 10 − 0.4 − 0.14 = 9.46；旧口径 10 − 全部模块扣分 5.15 = 4.85
+    const FOUR_DEDUCT = 4.0;
+    const ABS_COUNT = 7;
+    const ABS_WEIGHT = 0.11;
+    const EXP_SCORE = 9.49;
+    await ClassProfile.create({ className: CLS, status: 'normal' });
+    await CheckRecord.insertMany(
+      [
+        {
+          moduleKey: 'hygiene',
+          deduct: 2.0,
+          targetType: 'classroom',
+          details: { grade: ['良'], score: 8 },
+          metrics: { values: { score: 8 } },
+        },
+        {
+          moduleKey: 'morning_exercise',
+          deduct: 1.0,
+          targetType: 'class',
+          details: {
+            shouldCount: 40,
+            actualCount: 36,
+            absentList: [
+              { name: '甲', studentId: '1001', reason: '病假' },
+              { name: '乙', studentId: '1002', reason: '事假' },
+              { name: '丙', studentId: '1003', reason: '公假' },
+              { name: '丁', studentId: '1004', reason: '无故' },
+            ],
+          },
+          metrics: { ratios: { rate: 0.9 } },
+        },
+        {
+          moduleKey: 'morning_class',
+          deduct: 0.15,
+          targetType: 'class',
+          // 故意给早八名单写 reason='病假'：早八没有假别概念，实现必须仍按 0.02/人
+          details: { lateList: [{ name: '戊', studentId: '1005', reason: '病假' }] },
+          metrics: { values: { lateCount: 1 } },
+        },
+        {
+          moduleKey: 'study_evening',
+          deduct: 1.0,
+          targetType: 'classroom',
+          // 名单为空 + absentCount=2：走回退计数（无假别信息 → 0.02/人）
+          details: { shouldCount: 30, actualCount: 28, absentList: [], absentCount: 2 },
+          metrics: { ratios: { rate: 28 / 30 } },
+        },
+      ].map((s) => ({
+        ...s,
+        date: day,
+        period: '',
+        targetId: CLS,
+        targetName: CLS,
+        className: CLS,
+        status: 'submitted',
+      }))
+    );
+    try {
+      const rb = await board.classStatusBoard({ force: true });
+      const row = rb.rows.find((x) => x.className === CLS);
+      assert(!!row, '临时班出现在看板行里', rb.rows.length);
+      if (row) {
+        const att = row.attendance || {};
+        assert((Number(att.absenceCount) || 0) === ABS_COUNT, `看板缺勤人次 = ${ABS_COUNT}（含早八迟到）`, att.absenceCount);
+        assert(
+          Math.abs((Number(att.absenceWeight) || 0) - ABS_WEIGHT) < 0.005,
+          `看板缺勤加权 = ${ABS_WEIGHT}（病/事/公假 0.01，其余 0.02）`,
+          att.absenceWeight
+        );
+        assert(
+          Math.abs((Number(att.deduct4) || 0) - FOUR_DEDUCT) < 0.011,
+          `看板四模块累计扣分 = ${FOUR_DEDUCT}（早八 0.15 不在内）`,
+          att.deduct4
+        );
+        assert(
+          att.score !== null && Math.abs(att.score - EXP_SCORE) < 0.02,
+          `看板班超分 = ${EXP_SCORE}（手算：10 − 4.0×10% − 0.11）`,
+          att.score
+        );
+        assert(Math.abs(att.score - 9.46) > 0.005, `不是一刀切 0.02（一刀切会得 9.46，实际 ${att.score}）`, att.score);
+        assert(Math.abs(att.score - 4.85) > 0.05, `不是旧口径 10 − 全部模块累计扣分（旧会得 4.85，实际 ${att.score}）`, att.score);
+
+        // ===== 两套聚合交叉核对：classSummary 走 aggregateScores，看板走 aggregateScoresLite =====
+        const summary = await bandChao.classSummary({ className: CLS, date: day, range: 'day' });
+        assert(
+          Math.abs(Number(summary.score) - Number(att.score)) < 0.02,
+          `classSummary（aggregateScores）与看板（aggregateScoresLite）分数一致（${summary.score} vs ${att.score}）`,
+          { summary: summary.score, board: att.score }
+        );
+        assert(
+          Math.abs((Number(summary.deduct4) || 0) - FOUR_DEDUCT) < 0.011,
+          `classSummary 四模块累计扣分 = ${FOUR_DEDUCT}`,
+          summary.deduct4
+        );
+        assert((Number(summary.absenceCount) || 0) === ABS_COUNT, `classSummary 缺勤人次 = ${ABS_COUNT}`, summary.absenceCount);
+        assert(
+          Math.abs((Number(summary.absenceWeight) || 0) - ABS_WEIGHT) < 0.005,
+          `classSummary 缺勤加权 = ${ABS_WEIGHT}`,
+          summary.absenceWeight
+        );
+        // classSummary.days[].score 必须是**当日口径**（本日窗口只有一天 → 与区间分相等）
+        assert(
+          summary.days.length === 1 && Math.abs(Number(summary.days[0].score) - EXP_SCORE) < 0.02,
+          `classSummary.days[].score = 当日口径新公式（期望 ${EXP_SCORE}）`,
+          summary.days
+        );
+        // 复制文案：分数后必须写清「四模块累计扣分×10% + 缺勤 N 人次」（用户 2026-11-20 点名要求）
+        const filtered = board.applyBoardFilter(rb, { keyword: CLS, copy: 'att', att: true });
+        assert(
+          /四模块累计扣分 4\.00×10%/.test(filtered.copyText),
+          'copy=att 写出四模块累计扣分 4.00×10%',
+          filtered.copyText.split('\n').slice(0, 4)
+        );
+        assert(/缺勤 7 人次/.test(filtered.copyText), 'copy=att 写出缺勤 7 人次', filtered.copyText.split('\n').slice(0, 4));
+      }
+
+      // clamp：扣穿到负数时显示 0 分（不是负分，也不是 —）
+      await ClassProfile.create({ className: CLSC, status: 'normal' });
+      await CheckRecord.create({
+        moduleKey: 'hygiene',
+        date: day,
+        period: '',
+        targetType: 'classroom',
+        targetId: CLSC,
+        targetName: CLSC,
+        className: CLSC,
+        deduct: 500,
+        details: { grade: ['差'], score: 6 },
+        metrics: { values: { score: 6 } },
+        status: 'submitted',
+      });
+      const rc = await board.classStatusBoard({ force: true });
+      const rowC = rc.rows.find((x) => x.className === CLSC);
+      assert(!!rowC && rowC.attendance.score === 0, '扣穿时分数 clamp 到 0（不是负分、不是 —）', rowC && rowC.attendance.score);
+      assert(!!rowC && Math.abs(rowC.attendance.deduct4 - 500) < 0.02, 'clamp 用例的四模块累计扣分如实下发', rowC && rowC.attendance.deduct4);
+    } finally {
+      await CheckRecord.deleteMany({ className: { $in: [CLS, CLSC] } });
+      await ClassProfile.deleteMany({ className: { $in: [CLS, CLSC] } });
+      await board.classStatusBoard({ force: true }).catch(() => {});
+      const left = await CheckRecord.countDocuments({ className: { $in: [CLS, CLSC] } });
+      assert(left === 0, '临时缺勤造数清理干净', left);
     }
   }
 
@@ -804,9 +1069,25 @@ function assert(cond, label, extra) {
     assert(/迟到/.test(ruleText) && /缺勤/.test(ruleText), '规则里写明迟到与缺勤逻辑', ruleText.slice(0, 80));
     assert(/未归/.test(ruleText), '规则里写明查宿未归', ruleText.slice(0, 120));
     assert(/10/.test(ruleText), '规则里写明满分刻度', ruleText.slice(0, 60));
-    // 数字必须与真源一致，不能是写死的旧单价
-    const cmSvc = require(path.join(serverDir, 'src', 'services', 'check-modules'));
-    assert(ruleText.includes(String(cmSvc.PERSON_DEDUCT.late)), `规则里的迟到单价跟随 PERSON_DEDUCT（${cmSvc.PERSON_DEDUCT.late}）`, ruleText.slice(0, 90));
+    // 数字必须与真源一致（用户 2026-11-20 新公式的单价都在 band-chao，不能是写死的旧单价）
+    assert(
+      ruleText.includes(String(bandChao.ABSENCE_WEIGHT)),
+      `规则里的普通缺勤单价跟随 band-chao（${bandChao.ABSENCE_WEIGHT}/人次）`,
+      ruleText.slice(0, 140)
+    );
+    assert(
+      ruleText.includes(String(bandChao.LEAVE_ABSENCE_WEIGHT)),
+      `规则里的病/事/公假单价跟随 band-chao（${bandChao.LEAVE_ABSENCE_WEIGHT}/人次）`,
+      ruleText.slice(0, 140)
+    );
+    assert(
+      ruleText.includes(`${Math.round(bandChao.DEDUCT_SCORE_RATIO * 100)}%`),
+      `规则里的四模块折算比例跟随 band-chao（${Math.round(bandChao.DEDUCT_SCORE_RATIO * 100)}%）`,
+      ruleText.slice(0, 140)
+    );
+    assert(/累计扣分/.test(ruleText), '规则写明「四模块累计扣分」口径（不是旧的分天平均）', ruleText.slice(0, 140));
+    assert(!/各天的得分取平均/.test(ruleText), '规则已删除旧的「逐日得分平均」说法', ruleText.slice(0, 160));
+    assert(/早八/.test(ruleText), '规则说明早八只记迟到/缺勤人数、不进扣分项', ruleText.slice(0, 200));
     // 复制文案（copy=all）也要带规则
     assert(/考勤计算规则/.test(rp.copyText), 'copy=all 的复制文案含规则段', rp.copyText.split('\n').slice(-2)[0]);
 
@@ -921,12 +1202,24 @@ function assert(cond, label, extra) {
           '晚自习只有一个受检类型时也带 targets（晚自习-教室）',
           even && even.targets
         );
-        // 分数仍然可由扣分明细还原：10 − Σ 各模块日均扣分
-        const totalDeduct = detail.reduce((a, d) => a + d.deduct, 0);
+        // 分数仍可由新公式还原（用户 2026-11-20 区间累计口径）：
+        //   score = max(0, 10 − 四模块累计扣分×10% − 缺勤加权)
+        // 早八（morning_class）的模块扣分**不在**四模块里，这里用 attendance.deduct4 交叉验证。
+        const FOUR = ['hygiene', 'night_dorm', 'study_evening', 'morning_exercise'];
+        const totalDeduct4 = detail
+          .filter((d) => FOUR.includes(d.key))
+          .reduce((a, d) => a + d.deduct, 0);
+        const absW = Number(rowT.attendance.absenceWeight) || 0;
+        const expBoardScore = Math.round(Math.max(0, Math.min(10, 10 - totalDeduct4 * 0.1 - absW)) * 100) / 100;
         assert(
-          Math.abs(10 - totalDeduct - rowT.attendance.score) < 0.02,
-          `看板分数 = 10 − Σ 模块日均扣分（${rowT.attendance.score}）`,
-          { score: rowT.attendance.score, totalDeduct }
+          Math.abs(expBoardScore - rowT.attendance.score) < 0.02,
+          `看板分数 = 10 − 四模块累计扣分×10% − 缺勤加权（期望 ${expBoardScore}，实际 ${rowT.attendance.score}）`,
+          { score: rowT.attendance.score, totalDeduct4, absW }
+        );
+        assert(
+          Math.abs((Number(rowT.attendance.deduct4) || 0) - totalDeduct4) < 0.011,
+          `attendance.deduct4 = Σ 四模块日均扣分（当日窗口 日均=合计，${totalDeduct4.toFixed(2)}）`,
+          rowT.attendance.deduct4
         );
       }
     } finally {
@@ -954,6 +1247,7 @@ function assert(cond, label, extra) {
     let badTotal = 0;
     let badSum = 0;
     let badRatio = 0;
+    let badFormula = 0;
     for (const row of detailRows.slice(0, 10)) {
       const att = row.attendance;
       const list = att.deductDetail || [];
@@ -976,10 +1270,17 @@ function assert(cond, label, extra) {
         const back = (att.deduct || 0) * att.dayCount;
         if (Math.abs(back - (att.deductTotal || 0)) > 0.02 * att.dayCount + 0.02) badRatio += 1;
       }
+      // ④ 新公式自洽（用户 2026-11-20）：score = max(0, 10 − deduct4×10% − absenceWeight)
+      //    全库逐行对账，任何一行内部矛盾（比如 score 用了旧公式、deduct4 漏了卫生）都会被抓到。
+      const expScore = Math.round(
+        Math.max(0, Math.min(10, 10 - (Number(att.deduct4) || 0) * 0.1 - (Number(att.absenceWeight) || 0))) * 100
+      ) / 100;
+      if (Math.abs(expScore - (att.score === null || att.score === undefined ? -1 : att.score)) > 0.02) badFormula += 1;
     }
     assert(badTotal === 0, '扣分明细每项（含 targets）都带 totalDeduct', badTotal);
     assert(badSum === 0, '子项之和 = 模块值、模块合计之和 = 窗口合计（两套口径都对得上）', badSum);
     assert(badRatio === 0, '日均 × 有记录天数 ≈ 窗口合计（同一个数源的两种表达）', badRatio);
+    assert(badFormula === 0, 'score = 10 − 四模块累计扣分×10% − 缺勤加权（全库逐行自洽）', badFormula);
   }
 
   // ---- [14] hasAnyCheck 是「全量口径」而不是「筛选后口径」（用户 2026-11-20 范围行消失的根因）----
@@ -1012,7 +1313,10 @@ function assert(cond, label, extra) {
     assert(/今日达标/.test(tNoAtt.copyText) && /本周达标/.test(tNoAtt.copyText), 'att=0 仍写日/周达标');
     const tAtt = board.applyBoardFilter(rb, { copy: 'att', att: true });
     assert(/班超分】/.test(tAtt.copyText.split('\n')[0] || ''), 'copy=att 标题标注班超分', tAtt.copyText.split('\n')[0]);
-    assert(/日均扣/.test(tAtt.copyText) && /区间合计扣/.test(tAtt.copyText), 'copy=att 同时写日均与合计扣分');
+    // 用户 2026-11-20 点名：分数后要写「（累计扣分 X.XX×10% + 缺勤 N 人次）」——两截缺一不可
+    assert(/四模块累计扣分 \d+\.\d{2}×10%/.test(tAtt.copyText), 'copy=att 写出四模块累计扣分×10%', tAtt.copyText.slice(0, 200));
+    assert(/缺勤 \d+ 人次/.test(tAtt.copyText), 'copy=att 写出缺勤人次', tAtt.copyText.slice(0, 200));
+    assert(!/日均扣/.test(tAtt.copyText) && !/区间合计扣/.test(tAtt.copyText), 'copy=att 不再并列写旧口径的日均/合计扣分（不同分母会算不平）');
     assert(!/今日达标/.test(tAtt.copyText), 'copy=att 不写达标（与显示列一致）', tAtt.copyText.slice(0, 160));
     // 复制口径回显：前端 toast 直接用它
     assert(tNoAtt.copyScope === 'all' && tNoAtt.withAtt === false, '响应回显 copyScope / withAtt', [tNoAtt.copyScope, tNoAtt.withAtt]);

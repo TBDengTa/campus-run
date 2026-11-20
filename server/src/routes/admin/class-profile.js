@@ -39,8 +39,6 @@ const roster = require('../../services/roster');
 const dormsSvc = require('../../services/dorms');
 const classProfilesSvc = require('../../services/class-profiles');
 const bandChao = require('../../services/band-chao');
-// 分数展示口径（两位小数 / 空值显「—」）的唯一出口：CSV 导出必须与页面同一份
-const scoreScale = require('../../services/score-scale');
 // 人数实时统计（应到 = 学籍人数，应住 = 住宿名单人数）：唯一口径，见 services/class-counts.js
 const { liveCount, liveCounts } = require('../../services/class-counts');
 
@@ -1252,252 +1250,25 @@ router.get(
 // 重算就是第二套口径，文件与页面迟早出现两个互相矛盾的数。
 // 必须是 GET 且不写库（classStatusBoard 只写内存缓存，不碰数据库）。
 //
-// 三种格式（2026-11-20 第三轮补 xlsx，用户真机截图「文件已下载，但本机无法打开（CSV 需要
-// Excel/WPS），转发也失败了」——微信 wx.openDocument **不支持 csv**，CSV 这条路在客户端是死的）：
-//   · xlsx（默认给新版小程序）：真 Excel 文件，wx.openDocument 可直接预览，右上角还能转发/保存；
-//   · csv  （保留给旧版小程序 / 脚本 / Web 控制台）：带 BOM，Excel 双击打开不乱码；
-//   · json （预览用）：返回列定义 + 前 N 行，小程序「导出预览」弹层据此画表格，
-//     让用户在**生成文件之前**就能看到表格长什么样（列、示例数据、行数、区间）。
-//
-// 列：日期区间 / 班级 / 院校 / 系部 / 年级 / 学生数 / 班超分 / 综合出勤率 /
-//     每个考勤模块一列（列名=模块名，单元格「应到N/实到M/率P%」）/
-//     扣分明细（模块-受检类型，如「卫生-宿舍 -0.20 · 晚自习 -0.12」）/
-//     今日达标人数 / 今日达标率 / 本周达标人数 / 本周达标率 / 当日人均步数
-const EXPORT_FORMATS = ['xlsx', 'csv', 'json'];
-
-/** 导出列的唯一定义：CSV 表头、xlsx 表头 + 列宽、json 预览的列都从这里来 */
-function exportColumns(modules) {
-  return [
-    { title: '日期区间', wch: 24 },
-    { title: '班级', wch: 30 },
-    { title: '院校', wch: 16 },
-    { title: '系部', wch: 16 },
-    { title: '年级', wch: 8 },
-    { title: '学生数', wch: 8 },
-    { title: '班超分', wch: 9 },
-    { title: '综合出勤率', wch: 11 },
-    ...modules.map((m) => ({ title: m.name, wch: 20 })),
-    { title: '扣分明细', wch: 46 },
-    { title: '今日达标人数', wch: 12 },
-    { title: '今日达标率', wch: 11 },
-    { title: '本周达标人数', wch: 12 },
-    { title: '本周达标率', wch: 11 },
-    { title: '当日人均步数', wch: 13 },
-  ];
-}
-
-/**
- * 组装导出数据（CSV / xlsx / json 共用，**唯一一份**）。
- * @returns {Promise<{result:object, columns:Array, tableRows:Array, meta:object}>}
- */
-async function buildStatusExport(req) {
-  const board = require('../../services/class-status-board');
-  const q = boardQuery(req);
-  const full = await board.classStatusBoard({ today: q.today, attRange: q.attRange });
-  const result = board.applyBoardFilter(full, q.filter);
-  // 行数上限 500：正常全校约 43 个班；超过只可能是异常数据，截断即可（不报错）
-  const rows = (result.rows || []).slice(0, 500);
-  const modules = board.MODULES || [];
-  const columns = exportColumns(modules);
-
-  const pctText = (v) => (v === null || v === undefined ? '' : `${v}%`);
-  // 模块单元格「应到N/实到M/率P%」：早八只记迟到人（没有应到/实到）→ 该格式表达不了，留空。
-  // 整模块无数据也留空（不是 0 人，避免把「没录」显示成「应到 0」）。
-  const moduleCell = (row, key) => {
-    const m = (row.attendance && row.attendance.modules && row.attendance.modules[key]) || null;
-    if (!m || m.should === undefined || m.actual === undefined) return '';
-    // 率为 null（应到为 0 的历史脏数据）时写「—」，与页面同一显示口径 ——
-    // 不能留成「应到0/实到0/率」这种后面什么都没有的断句。
-    const rate = m.ratePercent === null || m.ratePercent === undefined ? '—' : `${m.ratePercent}%`;
-    return `应到${m.should}/实到${m.actual}/率${rate}`;
-  };
-  // 扣分明细：优先用 targets（模块-受检类型，Σ 已由服务端调平 == 模块日均扣分），
-  // 没有 targets（老数据 / 该模块没有受检类型聚合）退回模块名 - 扣分，保证不丢信息。
-  const deductText = (row) => {
-    const list = (row.attendance && row.attendance.deductDetail) || [];
-    const parts = [];
-    for (const d of list) {
-      const targets = Array.isArray(d.targets) ? d.targets : [];
-      if (targets.length) {
-        for (const t of targets) parts.push(`${t.name} -${scoreScale.scoreText(t.avgDeduct)}`);
-      } else {
-        parts.push(`${d.name} -${scoreScale.scoreText(d.deduct)}`);
-      }
-    }
-    return parts.join(' · ');
-  };
-
-  const tableRows = rows.map((r) => {
-    const att = r.attendance || {};
-    const run = r.run || {};
-    return [
-      // 日期区间 = 看板实际统计窗口（服务端 to，不是所选日 —— 完整周/月下两者不同）
-      `${result.from} ~ ${result.to}`,
-      r.className,
-      r.schoolName || '',
-      r.departmentName || '',
-      r.grade || '',
-      r.studentCount,
-      att.score === null || att.score === undefined ? '' : scoreScale.scoreText(att.score),
-      pctText(att.ratePercent),
-      ...modules.map((m) => moduleCell(r, m.key)),
-      deductText(r),
-      run.achievedToday,
-      pctText(run.dailyRate),
-      run.achievedWeek,
-      pctText(run.weeklyRate),
-      // 当日人均步数：看板行已算好（services/class-status-board.js 的 run.avgSteps），这里不重算
-      run.avgSteps,
-    ];
-  });
-
-  const studentCount = rows.reduce((a, r) => a + (Number(r.studentCount) || 0), 0);
-  const filterText = (result.activeFilters || []).length ? result.activeFilters.join(' · ') : '全校';
-  // 导出时刻用北京时间（服务器时区可能与用户不同，写进文件里必须是人能对上的时间）
-  const exportedAt = new Intl.DateTimeFormat('zh-CN', {
-    timeZone: 'Asia/Shanghai',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(new Date());
-  const meta = {
-    title: '班级状态考勤表',
-    from: result.from,
-    to: result.to,
-    attRangeLabel: result.attRangeLabel || '',
-    filterText,
-    classCount: rows.length,
-    studentCount,
-    exportedAt,
-    ruleLines: result.attRuleLines || [],
-    note: '班超分 = 10 − 日均扣分（含卫生/查宿等全部检查）；出勤率按应到加权（早八只记迟到人数、无比率）；空单元格 = 该模块当期无记录。',
-    subtitle: `统计区间：${result.from} ~ ${result.to}${result.attRangeLabel ? `（${result.attRangeLabel}）` : ''} ｜ 筛选：${filterText} ｜ 共 ${rows.length} 个班 / ${studentCount} 人 ｜ 导出时间：${exportedAt}`,
-  };
-  return { result, columns, tableRows, meta };
-}
-
-/** CSV：与改造前逐字一致（BOM + 双引号包裹），旧客户端/脚本依赖这个格式 */
-function sendStatusCsv(res, { columns, tableRows, meta }) {
-  // 单元格一律双引号包裹 + 内部双引号转义（与 routes/admin/union.js::/records/export 同一写法，
-  // Excel 双击打开不乱码靠 BOM）。null / undefined 写空串。
-  const cell = (v) => `"${String(v === undefined || v === null ? '' : v).replace(/"/g, '""')}"`;
-  const lines = [columns.map((c) => cell(c.title)).join(',')];
-  for (const row of tableRows) lines.push(row.map(cell).join(','));
-  const csv = `\uFEFF${lines.join('\r\n')}`;
-  // 文件名只用 ASCII 安全字符：日期本身已做白名单清洗
-  const safeDay = String(meta.today || dates.todayKey()).replace(/[^0-9A-Za-z-]/g, '');
-  res.set('Content-Type', 'text/csv; charset=utf-8');
-  res.set('Content-Disposition', `attachment; filename="class-status-${safeDay}.csv"`);
-  res.send(csv);
-}
-
-/**
- * XLSX：微信 wx.openDocument 能直接预览（CSV 不行，这是本轮用户报障的直接原因）。
- *
- * 版式（社区版 SheetJS 不支持字体/底色样式，但列宽、合并、多 sheet 都支持）：
- *   第 1 行  标题（跨全列合并）
- *   第 2 行  统计区间 / 筛选 / 班数人数 / 导出时间（跨全列合并）
- *   第 3 行  空
- *   第 4 行  表头（与页面表头逐字一致）
- *   第 5 行~  数据（每班一行，顺序 = 页面行序：年级升序 → 班级名）
- *   表尾     考勤计算规则 + 口径说明（跨全列合并，换行后逐条列出）
- *   Sheet2  字段说明（列名 → 含义，方便老师/宿管照着读）
- */
-function buildStatusXlsx({ columns, tableRows, meta }) {
-  const XLSX = require('xlsx');
-  const lastCol = columns.length - 1;
-  const aoa = [];
-  aoa.push([meta.title]);
-  aoa.push([meta.subtitle]);
-  aoa.push([]);
-  aoa.push(columns.map((c) => c.title));
-  const headerRow = 3; // 0-based：第 4 行
-  for (const row of tableRows) aoa.push(row);
-  const merges = [
-    { s: { r: 0, c: 0 }, e: { r: 0, c: lastCol } },
-    { s: { r: 1, c: 0 }, e: { r: 1, c: lastCol } },
-  ];
-  // 表尾说明：规则与口径整段跨全列，避免文字被挤进 A 列一格
-  aoa.push([]);
-  aoa.push(['考勤计算规则']);
-  merges.push({ s: { r: aoa.length - 1, c: 0 }, e: { r: aoa.length - 1, c: lastCol } });
-  for (const line of meta.ruleLines) {
-    aoa.push([line]);
-    merges.push({ s: { r: aoa.length - 1, c: 0 }, e: { r: aoa.length - 1, c: lastCol } });
-  }
-  aoa.push([]);
-  aoa.push([meta.note]);
-  merges.push({ s: { r: aoa.length - 1, c: 0 }, e: { r: aoa.length - 1, c: lastCol } });
-
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols'] = columns.map((c) => ({ wch: c.wch || 16 }));
-  ws['!merges'] = merges;
-  // 行高：标题/副标题/表头留白（社区版不支持字体，只用行高把主次拉开）
-  ws['!rows'] = [{ hpt: 26 }, { hpt: 30 }, { hpt: 8 }, { hpt: 22 }];
-  ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: headerRow, c: 0 }, e: { r: headerRow + tableRows.length, c: lastCol } }) };
-
-  // Sheet2：字段说明 —— 报表发出去后读的人不用回来问「班超分怎么算的」
-  const dict = [
-    ['字段', '含义'],
-    ['日期区间', '本表统计窗口（完整周 / 完整月，与「班级状态」页面同一窗口）'],
-    ['班超分', '10 − 日均扣分（含卫生/查宿等全部检查）；空 = 本期没有检查记录（不是 0 分）'],
-    ['综合出勤率', '早操 / 晚自习 / 查宿按应到人数加权；早八只记迟到人数、不产生出勤率'],
-    ...((require('../../services/class-status-board').MODULES) || []).map((m) => [m.name, '单元格「应到N/实到M/率P%」；空 = 该模块当期无记录']),
-    ['扣分明细', '模块-受检类型 - 日均扣分（如「卫生-宿舍 -0.35」），Σ 子项 = 模块日均扣分'],
-    ['今日/本周达标', '校园跑达标 = 步数 ≥ 生效目标（个人计划优先、否则全局默认）'],
-    ['当日人均步数', '当日班级步数 ÷ 学生数'],
-    ['筛选', meta.filterText],
-    ['导出时间', meta.exportedAt],
-  ];
-  const ws2 = XLSX.utils.aoa_to_sheet(dict);
-  ws2['!cols'] = [{ wch: 18 }, { wch: 76 }];
-
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, '班级状态');
-  XLSX.utils.book_append_sheet(wb, ws2, '字段说明');
-  return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-}
-
-function sendStatusXlsx(res, payload) {
-  const buf = buildStatusXlsx(payload);
-  const safeDay = String(payload.meta.today || dates.todayKey()).replace(/[^0-9A-Za-z-]/g, '');
-  res.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-  res.set('Content-Disposition', `attachment; filename="class-status-${safeDay}.xlsx"`);
-  res.send(buf);
-}
-
+// 实现全部在 services/class-status-export.js（工作簿的唯一实现，本路由只做鉴权与取参）：
+//   · xlsx（默认给新版小程序）：总标 + 每班一张「<班级>详细数据」+ 字段说明（真 Excel，
+//     wx.openDocument 可直接预览 —— 微信不支持 csv，这是 2026-11-20 真机报障的直接原因）；
+//   · csv （缺省，向后兼容旧客户端 / 脚本 / Web 控制台）：只有总标 22 列（带 BOM，Excel 不乱码）；
+//   · json（format=json&preview=1&limit=N）：列定义 + 总标前 N 行 + total + sheets 名单，
+//     小程序「导出预览」弹层用它先看表格长什么样；**不下发明细行**。
 router.get(
   '/status-export',
   wrap(async (req, res) => {
-    const rawFormat = String(req.query.format || '').trim().toLowerCase();
-    const format = EXPORT_FORMATS.includes(rawFormat) ? rawFormat : 'csv'; // 缺省 csv：旧客户端行为不变
-    const payload = await buildStatusExport(req);
-    payload.meta.today = payload.result.today;
-
-    if (format === 'json') {
-      // 预览：只回列定义 + 前 N 行（小程序在「生成文件之前」先给用户看表格长什么样）
-      const preview = ['1', 'true', 'yes'].includes(String(req.query.preview || ''));
-      const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || (preview ? 5 : 50)));
-      const rows = preview ? payload.tableRows.slice(0, limit) : payload.tableRows;
-      ok(res, {
-        title: payload.meta.title,
-        subtitle: payload.meta.subtitle,
-        note: payload.meta.note,
-        columns: payload.columns.map((c) => ({ title: c.title, wch: c.wch })),
-        rows,
-        total: payload.tableRows.length,
-        preview,
-      });
-      return;
-    }
-    if (format === 'xlsx') {
-      sendStatusXlsx(res, payload);
-      return;
-    }
-    sendStatusCsv(res, payload);
+    const board = require('../../services/class-status-board');
+    const exportSvc = require('../../services/class-status-export');
+    const q = boardQuery(req);
+    const full = await board.classStatusBoard({ today: q.today, attRange: q.attRange });
+    const payload = await exportSvc.buildExport({ board: board.applyBoardFilter(full, q.filter) });
+    exportSvc.respond(res, payload, {
+      format: req.query.format,
+      preview: req.query.preview,
+      limit: req.query.limit,
+    });
   })
 );
 

@@ -367,8 +367,19 @@ if (cm) {
     JSON.stringify(cm.PERSON_DEDUCT));
   ok('score-scale 只转发满分（不自己定义第二份）', ss.FULL_SCORE === cm.FULL_SCORE && ss.LEGACY_FULL_SCORE === 100, ss.FULL_SCORE);
   ok('band-chao 的满分取自 scoreScale', /const BASE_SCORE = scoreScale\.FULL_SCORE;/.test(bcSrc10), 'BASE_SCORE 又变成字面量了');
-  ok('classSummary 走 scoreScale 算分（不再 BASE_SCORE − 扣分）',
-    /scoreScale\.scoreOf\(d\.deduct\)/.test(bcSrc10) && /scoreScale\.avgScoreOf\(avgDeduct\)/.test(bcSrc10));
+  // 班超分公式（用户 2026-11-20 定稿）：10 − 四模块累计扣分×10% − 缺勤人次加权。
+  // classSummary 的逐日趋势也走同一份 scoreOfParts（只是用当日口径的输入），
+  // 不许再出现旧的 `scoreScale.scoreOf(d.deduct)` / `avgScoreOf(日均扣分)`。
+  ok('classSummary 分数走新公式 scoreOfParts（不再 scoreScale 算分）',
+    /scoreOfParts\(/.test(bcSrc10)
+      && /score: scoreOfParts\(/.test(bcSrc10)
+      && !/scoreScale\.avgScoreOf\(avgDeduct\)/.test(bcSrc10)
+      && !/scoreScale\.scoreOf\(d\.deduct\)/.test(bcSrc10));
+  ok('新公式常量单点导出（×10% / 0.02 / 0.01 / 四模块白名单）',
+    /DEDUCT_SCORE_RATIO = 0\.1/.test(bcSrc10)
+      && /ABSENCE_WEIGHT = 0\.02/.test(bcSrc10)
+      && /LEAVE_ABSENCE_WEIGHT = 0\.01/.test(bcSrc10)
+      && /FOUR_MODULE_KEYS = \['hygiene', 'night_dorm', 'study_evening', 'morning_exercise'\]/.test(bcSrc10));
   ok('computeDeduct 折算到 FULL_SCORE（不再 ×100）', /\* FULL_SCORE \* w/.test(seedSrc) && !/\* 100 \* w/.test(seedSrc));
   ok('按人扣分只有一份实现（rate 退化路径与 deduct 模式共用）',
     (seedSrc.match(/personDeduct\(details\) \* w/g) || []).length === 2 && !/\* 0\.5;/.test(seedSrc), '又出现两份单价字面量');
@@ -395,8 +406,20 @@ if (cm) {
   ok('看板下发 hasAnyCheck（只录卫生的班也算有检查）',
     /hasAnyCheck,/.test(boardSrc10) && /const hasAnyCheck = agg\.dayCount > 0/.test(boardSrc10));
   ok('看板下发 attendance.lateCount（迟到人数仍可见）', /lateCount: lateTotal/.test(boardSrc10));
-  ok('管理端记录统计走 scoreScale（不再 100 − 扣分）',
-    !/100 - \(c\.deduct/.test(adminUnion10) && /scoreScale\.avgScoreOf/.test(adminUnion10));
+  // 新公式的输入必须随行下发（页面/复制/导出/管理端统计都要能核对分数）
+  ok('看板行下发 deduct4 / absenceCount / absenceWeight（新公式三个输入）',
+    /deduct4: agg\.deduct4/.test(boardSrc10) &&
+      /absenceCount: agg\.absenceCount/.test(boardSrc10) &&
+      /absenceWeight: agg\.absenceWeight/.test(boardSrc10));
+  ok('缺勤聚合表达式唯一一份（absenceAccumulators 被两个聚合共同展开）',
+    (bcSrc10.match(/\.\.\.absenceAccumulators\(\)/g) || []).length === 2 &&
+      /absenceAccumulators,/.test(bcSrc10));
+  ok('早八模块不参与「四模块累计扣分」（只算缺勤人次）',
+    !/FOUR_MODULE_KEYS = \[[^\]]*morning_class/.test(bcSrc10));
+  ok('管理端记录统计走新公式（不再 100 − 扣分 / scoreScale.avgScoreOf）',
+    !/100 - \(c\.deduct/.test(adminUnion10) &&
+      /bandChao\.scoreOfParts\(/.test(adminUnion10) &&
+      !/scoreScale\.avgScoreOf/.test(adminUnion10));
   ok('得分文案两位小数（0.05 分不能被 round1 吞掉）', /toFixed\(2\)/.test(ssSrc10) && /function scoreText/.test(ssSrc10));
   ok('10 分制迁移有幂等标记（绝不重复换算）',
     /isDone\('banchao-score-scale-v10'\)/.test(ssSrc10) && /scoreScale: \{ \$ne: FULL_SCORE \}/.test(ssSrc10));
@@ -2471,7 +2494,8 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
     // match 可能为 null（函数被改名/删除）—— 直接 [0] 会把检查器本身炸掉，
     // 检查器崩了比断言失败更糟：所有断言都不会跑完，看起来像「检查通过」。
     const seg = (boardSrc.match(/function buildAttRuleLines[\s\S]*?\n\}/) || [''])[0];
-    return seg.length > 0 && /PERSON_DEDUCT/.test(seg) && /scoreScale\.FULL_SCORE/.test(seg);
+    // 新公式的单价（×10% / 0.02 / 0.01）必须是 bandChao 导出的常量，不能写死字面量
+    return seg.length > 0 && /bandChao\.DEDUCT_SCORE_RATIO/.test(seg) && /bandChao\.ABSENCE_WEIGHT/.test(seg) && /bandChao\.LEAVE_ABSENCE_WEIGHT/.test(seg) && /scoreScale\.FULL_SCORE/.test(seg);
   })(), (boardSrc.match(/function buildAttRuleLines[\s\S]{0,400}/) || [''])[0]);
   ok('规则写明迟到与缺勤两类逻辑（用户点名的两项）',
     /迟到/.test(boardSrc) && /缺勤/.test(boardSrc) && /未归/.test(boardSrc));
@@ -2534,7 +2558,10 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
     /bandChao\.aggregateScoresLite\(\{ from, to: attTo, classNames: activeNames \}\)/.test(boardSrc)
       // Lite 聚合绝不能按考勤模块白名单过滤 —— 那正是「卫生没被减分」的机制
       && !/aggregateScoresLite\([\s\S]{0,240}MODULE_KEYS/.test(boardSrc));
-  ok('模块级扣分明细用日均口径（与分数同分母，老师能算平）',
+  // 模块级扣分明细仍同时给日均/合计两套（页面「日均/合计」切换与 chips 用），
+  // 但**它不再是分数公式的分子**（新公式分子是四模块累计×10% + 缺勤加权）——
+  // 所以这里只断言结构保留，别把「日均之和 = 10 − 分数」当契约。
+  ok('模块级扣分明细保留日均/合计两套（页面口径切换用）',
     /avgDeduct: round2\(\(hit\.deduct \|\| 0\) \/ dayCount\)/.test(bcSrcSync)
       && /deduct: dd \? dd\.avgDeduct : 0/.test(boardSrc)
       && /modDeduct\[k\]\.avgDeduct/.test(boardSrc));
@@ -2553,8 +2580,13 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
       /卫生/.test(ruleSeg) && /GRADE_SCORE/.test(ruleSeg), ruleSeg.slice(0, 200));
     ok('规则文案不再描述旧的「只算考勤三项的出勤率」算法',
       !/早操、晚自习、查宿三项一起算/.test(ruleSeg));
-    ok('规则里的单价取真源（PERSON_DEDUCT + FULL_SCORE，不写死）',
-      /PERSON_DEDUCT/.test(ruleSeg) && /scoreScale\.FULL_SCORE/.test(ruleSeg));
+    ok('规则里的单价取真源（新公式常量 + FULL_SCORE，不写死）',
+      /bandChao\.DEDUCT_SCORE_RATIO/.test(ruleSeg) &&
+        /bandChao\.ABSENCE_WEIGHT/.test(ruleSeg) &&
+        /bandChao\.LEAVE_ABSENCE_WEIGHT/.test(ruleSeg) &&
+        /scoreScale\.FULL_SCORE/.test(ruleSeg));
+    ok('规则点明早八只记人次、不进四模块扣分项（新公式边界）',
+      /早八/.test(ruleSeg) && /扣分/.test(ruleSeg));
   }
   ok('看板下发 hasAnyCheck（只有卫生记录的班也算有检查）',
     /const hasAnyCheck = agg\.dayCount > 0/.test(boardSrc) && /hasAnyCheck,/.test(boardSrc));
@@ -2752,25 +2784,60 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
     /function boardQuery\(req\)/.test(adminClsSrc2) && (adminClsSrc2.match(/boardQuery\(req\)/g) || []).length >= 2
   );
   {
-    // 导出段 = 注释起点 → module.exports（helper 在路由之前，必须整段看）
+    // 2026-11-20 用户定稿：导出改成「总标 + 每班明细」工作簿，实现搬到独立 service，
+    // 路由只做鉴权 + boardQuery 取参 + 调服务。导出数字仍禁止重算看板口径。
+    const exportSvcSrc = readSrc(path.join(SERVER, 'services/class-status-export.js'), 'utf8');
     const exportStart = adminClsSrc2.indexOf('// ===== 班级状态导出');
     const exportEnd = adminClsSrc2.indexOf('module.exports = router');
     const seg = adminClsSrc2.slice(exportStart, exportEnd);
-    ok('导出不重算分数/出勤率（无现场聚合、无 CheckRecord 查询）', !/\.aggregate\(|CheckRecord\./.test(seg));
-    ok('导出段含三种序列化（csv / xlsx / json），共享同一份 tableRows', /sendStatusCsv|sendStatusXlsx|buildStatusXlsx|format === 'json'/.test(seg));
-    ok(
-      '导出默认 csv（旧客户端不带 format 仍拿到原格式）+ xlsx/json 显式可选',
-      /EXPORT_FORMATS = \['xlsx', 'csv', 'json'\]/.test(seg) && /: 'csv';/.test(seg) && /format === 'xlsx'/.test(seg) && /format === 'json'/.test(seg)
-    );
-    ok('CSV 带 BOM + attachment + 行数上限 500（旧格式逐字保留）', /\\uFEFF/.test(seg) && /attachment/.test(seg) && /\.slice\(0, 500\)/.test(seg));
-    ok(
-      'XLSX 用 xlsx 库写缓冲 + 正确 MIME + .xlsx 附件名（微信 openDocument 只认 Office 格式）',
-      /require\('xlsx'\)/.test(seg) &&
-        /bookType: 'xlsx'/.test(seg) &&
-        /spreadsheetml\.sheet/.test(seg) &&
-        /class-status-\$\{safeDay\}\.xlsx/.test(seg)
-    );
-    ok('JSON 预览只回列定义 + 截断行 + total（不把全量行下发到小程序）', /const rows = preview \? payload\.tableRows\.slice\(0, limit\) : payload\.tableRows/.test(seg) && /total: payload\.tableRows\.length/.test(seg));
+    ok('导出路由变薄：只取参 + 调 services/class-status-export（不自己查库/写格式）',
+      /require\('\.\.\/\.\.\/services\/class-status-export'\)/.test(seg) &&
+        !/\.aggregate\(|CheckRecord\.|require\('xlsx'\)/.test(seg));
+    ok('导出不重算看板数字（服务里不出现 classSummary/scoreOfAggregate 这类二次算分）',
+      !/classSummary\(/.test(exportSvcSrc) && !/scoreOfAggregate\(/.test(exportSvcSrc));
+    const SUMMARY_COLUMNS = [
+      '序号', '院校', '系部', '专业', '年级', '学生数', '住宿数', '班委数', '学生会成员数',
+      '卫生累计扣分', '晚自习累计扣分', '查宿累计扣分', '早操累计扣分', '早八累计扣分',
+      '校园跑班级日目标平均达标率', '校园跑班级周目标平均达标率',
+      '校园跑班级日目标达标次数', '校园跑班级周目标达标次数',
+      '校园跑班级日目标达标最低值', '校园跑班级周目标达标最低值',
+      '校园跑累计步数', '校园跑人均累计步数',
+    ];
+    ok('总标表头 = 用户指定的 22 列（顺序固定、逐字一致）',
+      SUMMARY_COLUMNS.every((t) => exportSvcSrc.includes(`'${t}'`)) &&
+        new RegExp(`SUMMARY_COLUMNS[\\s\\S]{0,1200}序号[\\s\\S]{0,200}院校[\\s\\S]{0,200}专业`).test(exportSvcSrc),
+      (exportSvcSrc.match(/const SUMMARY_COLUMNS[\s\S]{0,900}/) || [''])[0]);
+    ok('每班明细 sheet 命名「<className>详细数据」且有 31 字符/非法字符清洗',
+      /详细数据/.test(exportSvcSrc) && /sheetNameOf/.test(exportSvcSrc) && /31/.test(exportSvcSrc));
+    ok('明细含考勤（检查人/复核人/名单带假别）与校园跑每人达标（日/周）',
+      /检查人/.test(exportSvcSrc) && /复核人/.test(exportSvcSrc) &&
+        /日达标率/.test(exportSvcSrc) && /周达标率/.test(exportSvcSrc) &&
+        /reason/.test(exportSvcSrc));
+    ok('总标三张表顺序：总标 → 每班明细 → 字段说明（看 buildWorkbook 的 append 顺序）',
+      (() => {
+        const seg2 = (exportSvcSrc.match(/function buildWorkbook[\s\S]*?\n\}/) || [''])[0];
+        const a = seg2.indexOf('book_append_sheet(wb, buildSummarySheet');
+        const b = seg2.indexOf('book_append_sheet(wb, buildClassSheet');
+        const c = seg2.indexOf('book_append_sheet(wb, buildDictSheet');
+        return a >= 0 && b > a && c > b;
+      })());
+    ok('XLSX 用 xlsx 库写缓冲 + 正确 MIME + .xlsx 附件名（微信 openDocument 只认 Office 格式）',
+      /require\('xlsx'\)/.test(exportSvcSrc) &&
+        /bookType: 'xlsx'/.test(exportSvcSrc) &&
+        /spreadsheetml\.sheet/.test(exportSvcSrc) &&
+        /class-status-\$\{safeDay\}\.xlsx/.test(exportSvcSrc));
+    ok('CSV 只出总标 22 列 + BOM + 附件名（旧脚本/旧客户端兼容）',
+      /sendCsv/.test(exportSvcSrc) && /\\uFEFF/.test(exportSvcSrc) && /class-status-\$\{safeDay\}\.csv/.test(exportSvcSrc));
+    ok('JSON 预览回总标列/截断行/total/sheets（不把明细全量下发）',
+      /jsonPreview/.test(exportSvcSrc) && /sheets/.test(exportSvcSrc) && /total:/.test(exportSvcSrc) && /slice\(0, (lim|limit)/.test(exportSvcSrc));
+    ok('行数/明细上限常量（总标 500 / 班级 sheet 500 / 明细记录 5000）',
+      /SUMMARY_ROW_LIMIT = 500/.test(exportSvcSrc) &&
+        /CLASS_SHEET_LIMIT = 500/.test(exportSvcSrc) &&
+        /ATTENDANCE_ROW_LIMIT = 5000/.test(exportSvcSrc));
+    ok('批量查询无 N+1（考勤一次 find、跑步一次 aggregate、学生一次 find）',
+      (exportSvcSrc.match(/CheckRecord\.find\(/g) || []).length === 1 &&
+        (exportSvcSrc.match(/RunRecord\.aggregate\(/g) || []).length === 1 &&
+        (exportSvcSrc.match(/User\.find\(/g) || []).length === 1);
   }
 
   // ===== 第三轮（用户 2026-11-20）：范围行消失根因 + 合计口径 + 显示驱动复制 =====

@@ -178,7 +178,7 @@ ok(
   /avgSteps: run\.studentCount \? Math\.round\(\(run\.stepsToday \|\| 0\) \/ run\.studentCount\) : 0/.test(boardSrc)
 );
 
-console.log('\n=== 四、服务端：考勤表导出（xlsx/csv/json，需求 4）===');
+console.log('\n=== 四、服务端：导出工作簿（总标 + 每班明细，需求 4）===');
 ok('新增 GET /status-export', /router\.get\(\s*\n\s*'\/status-export'/.test(adminClsSrc));
 ok(
   '看板与导出共用 boardQuery（取参唯一，杜绝「页面 12 个班、导出 15 个班」）',
@@ -186,41 +186,53 @@ ok(
   countOf(adminClsSrc, /boardQuery\(req\)/g)
 );
 {
-  // 导出段 = 从「班级状态导出」注释到 module.exports 之前（helper 在路由之前，必须整段看）
+  // 2026-11-20 用户定稿：导出改成「总标 + 每班明细」工作簿，实现搬进独立 service。
+  const exportSvcSrc = read(path.join(SERVER, 'src', 'services', 'class-status-export.js'));
   const exportStart = adminClsSrc.indexOf('// ===== 班级状态导出');
   const exportEnd = adminClsSrc.indexOf('module.exports = router');
   const seg = adminClsSrc.slice(exportStart, exportEnd);
-  ok('导出段定位成功（整段包含 columns/CSV/xlsx/JSON 四个 helper）', exportStart > 0 && exportEnd > exportStart);
-  ok('导出只读：不重做聚合、不直接查 check_records（只有看板服务一份口径）', !/\.aggregate\(|CheckRecord\./.test(seg), seg.slice(0, 200));
+  ok('导出路由变薄：只取参 + 调 service（不自己查库/写格式）',
+    /require\('\.\.\/\.\.\/services\/class-status-export'\)/.test(seg) && !/\.aggregate\(|CheckRecord\.|require\('xlsx'\)/.test(seg));
   ok('导出复用 applyBoardFilter（筛选与页面同源）', /board\.applyBoardFilter\(full, q\.filter\)/.test(seg));
-  ok('三种格式白名单：xlsx / csv / json（缺省 csv 保持旧客户端行为）', /EXPORT_FORMATS = \['xlsx', 'csv', 'json'\]/.test(seg) && /: 'csv'; \/\/ 缺省 csv/.test(seg));
-  ok(
-    'CSV：BOM + text/csv + attachment 附件名（旧格式逐字保留）',
-    /\\uFEFF/.test(seg) && /text\/csv; charset=utf-8/.test(seg) && /Content-Disposition.*attachment/.test(seg) && /class-status-\$\{safeDay\}\.csv/.test(seg)
-  );
-  ok(
-    'XLSX：用 xlsx 库写 zip + 正确 MIME + .xlsx 附件名（微信可预览，CSV 不行）',
-    /require\('xlsx'\)/.test(seg) &&
-      /XLSX\.write\(wb, \{ type: 'buffer', bookType: 'xlsx' \}\)/.test(seg) &&
-      /spreadsheetml\.sheet/.test(seg) &&
-      /class-status-\$\{safeDay\}\.xlsx/.test(seg)
-  );
-  ok(
-    'XLSX 版式：标题/副标题/表头/数据/考勤规则/口径说明 + 字段说明 sheet + 列宽 + 合并',
-    /meta\.title/.test(seg) &&
-      /meta\.subtitle/.test(seg) &&
-      /考勤计算规则/.test(seg) &&
-      /'字段说明'/.test(seg) &&
-      /!cols/.test(seg) &&
-      /!merges/.test(seg)
-  );
-  ok('JSON 预览：列定义 + 前 N 行 + total（生成文件前先看表格长什么样）', /format === 'json'/.test(seg) && /const preview = \['1', 'true', 'yes'\]/.test(seg) && /total: payload\.tableRows\.length/.test(seg));
-  ok('导出行数上限 500（三种格式共用同一份行数据）', /\.slice\(0, 500\)/.test(seg));
-  ok(
-    '导出表头含校园跑列（今日/本周达标人数、达标率、当日人均步数）',
-    /'今日达标人数'/.test(seg) && /'本周达标人数'/.test(seg) && /'当日人均步数'/.test(seg)
-  );
-  ok('扣分明细列优先用 targets（模块-受检类型）', /deductText/.test(seg) && /t\.name} -\$\{scoreScale\.scoreText\(t\.avgDeduct\)/.test(seg));
+  const SUMMARY_COLUMNS = [
+    '序号', '院校', '系部', '专业', '年级', '学生数', '住宿数', '班委数', '学生会成员数',
+    '卫生累计扣分', '晚自习累计扣分', '查宿累计扣分', '早操累计扣分', '早八累计扣分',
+    '校园跑班级日目标平均达标率', '校园跑班级周目标平均达标率',
+    '校园跑班级日目标达标次数', '校园跑班级周目标达标次数',
+    '校园跑班级日目标达标最低值', '校园跑班级周目标达标最低值',
+    '校园跑累计步数', '校园跑人均累计步数',
+  ];
+  ok('总标 = 用户指定的 22 列（逐字 + 顺序）',
+    SUMMARY_COLUMNS.every((t) => exportSvcSrc.includes(`'${t}'`)) &&
+      SUMMARY_COLUMNS.reduce((acc, t) => {
+        const i = exportSvcSrc.indexOf(`'${t}'`);
+        return i > acc ? i : -1;
+      }, 0) > 0);
+  ok('每班明细 sheet 命名「<className>详细数据」+ 31 字符/非法字符清洗',
+    /详细数据/.test(exportSvcSrc) && /sheetNameOf/.test(exportSvcSrc));
+  ok('明细含考勤检查人/复核人/名单假别 + 校园跑每人日/周达标率',
+    /检查人/.test(exportSvcSrc) && /复核人/.test(exportSvcSrc) && /reason/.test(exportSvcSrc) &&
+      /日达标率/.test(exportSvcSrc) && /周达标率/.test(exportSvcSrc));
+  ok('工作簿顺序：总标 → 每班详细数据 → 字段说明',
+    (() => {
+      const w = exportSvcSrc.match(/function buildWorkbook[\s\S]*?\n\}/) || [''];
+      const s = w[0];
+      const a = s.indexOf('book_append_sheet(wb, buildSummarySheet');
+      const b = s.indexOf('book_append_sheet(wb, buildClassSheet');
+      const c = s.indexOf('book_append_sheet(wb, buildDictSheet');
+      return a >= 0 && b > a && c > b;
+    })());
+  ok('XLSX：xlsx 库写 buffer + 正确 MIME + .xlsx 附件名',
+    /require\('xlsx'\)/.test(exportSvcSrc) && /bookType: 'xlsx'/.test(exportSvcSrc) &&
+      /spreadsheetml\.sheet/.test(exportSvcSrc) && /class-status-\$\{safeDay\}\.xlsx/.test(exportSvcSrc));
+  ok('CSV：只出总标 22 列 + BOM + attachment（旧脚本兼容）',
+    /sendCsv/.test(exportSvcSrc) && /\\uFEFF/.test(exportSvcSrc) && /attachment/.test(exportSvcSrc) && /class-status-\$\{safeDay\}\.csv/.test(exportSvcSrc));
+  ok('JSON 预览：22 列定义 + 截断行 + total + sheets（生成文件前先看表格/工作簿结构）',
+    /jsonPreview/.test(exportSvcSrc) && /sheets/.test(exportSvcSrc) && /total/.test(exportSvcSrc) && /slice\(0,/.test(exportSvcSrc));
+  ok('上限常量：总标 500 / 班级 sheet 500 / 区间明细 5000',
+    /SUMMARY_ROW_LIMIT = 500/.test(exportSvcSrc) && /CLASS_SHEET_LIMIT = 500/.test(exportSvcSrc) && /ATTENDANCE_ROW_LIMIT = 5000/.test(exportSvcSrc));
+  ok('导出不重算看板数字（服务里没有 classSummary/scoreOfAggregate）',
+    !/classSummary\(/.test(exportSvcSrc) && !/scoreOfAggregate\(/.test(exportSvcSrc));
 }
 
 console.log('\n=== 五、前端：校园跑日期回看（需求 3）===');
@@ -423,7 +435,7 @@ ok(
   'chips 在 WXML 渲染（循环 deductChips.chip.text + deductMore「+N」）',
   /wx:for="\{\{item\.deductChips\}\}"/.test(csWxml) && /chip\.text/.test(csWxml) && /item\.deductMore/.test(csWxml)
 );
-ok('班超分统计区间可见（periodText 来自服务端 from/to，并写明「10 − 日均扣分」口径）', /periodText: d\.from/.test(csJs) && /periodText/.test(csWxml) && /10 − 日均扣分/.test(csJs));
+ok('班超分统计区间可见（periodText 来自服务端 from/to，并写明新公式：四模块累计扣分×10% − 缺勤人次×0.02）', /periodText: d\.from/.test(csJs) && /periodText/.test(csWxml) && /累计扣分×10%/.test(csJs) && /缺勤人次×0.02/.test(csJs));
 ok('班超分大字走 num-font（数字排版约定）', /cs-score num-font/.test(csWxml));
 
 // ---- 第三轮（用户 2026-11-20）：复制 autodetect + 班超分范围/口径 + 单多数据排版 ----

@@ -15,9 +15,13 @@
  * 另外加 60 秒内存缓存：这张表的数据变化很慢（老师刷新不是为了看秒级变化），
  * 缓存能让人连续点击时**立刻**出结果（与 `routes/class.js::classRankCache` 同一思路）。
  *
- * ===== 分数口径（用户 2026-11-19「班级状态日周月考勤不一致，并且卫生、查宿等内容没有被减分」）=====
- * 本页的「考勤分」**就是班超分**，不是另一套算法：
- *   分数 = bandChao.scoreOfAggregate() = 10 − 各模块日均扣分（**含卫生、查宿、晚自习、早操、早八全部模块**）
+ * ===== 分数口径（用户 2026-11-19「班级状态日周月考勤不一致，并且卫生、查宿等内容没有被减分」
+ *                    + 用户 2026-11-20「班超分公式全面替换」）=====
+ * 本页的「班超分」**就是班超分**，不是另一套算法：
+ *   分数 = bandChao.scoreOfAggregate()
+ *        = max(0, round2(10 − 四模块累计扣分 × 10% − 缺勤加权))
+ *        四模块 = 卫生 / 查宿 / 晚自习 / 早操（**早八的模块扣分不进扣分项**）
+ *        缺勤加权 = Σ 每人次：普通（含无故）0.02、病假 / 事假 / 公假 0.01
  *   窗口 = bandChao.rangeOf()（本日 = 当天；本周 = ISO 周一起至周日；本月 = 1 号至月末，**完整区间**）
  *
  * 为什么必须同源：旧版这里自己写了第二套公式
@@ -25,9 +29,11 @@
  * 且窗口取「周一起至所选日」—— 同一个班同一周实测 **班超 8.40 / 本页 9.74**。
  * 用户正是拿两个页面互相对照发现「卫生没被减分」的；老师还会把这里的数复制发进工作群，
  * 两套口径迟早变成两份互相矛盾的通报。
+ * 2026-11-20 起公式再升级为**区间累计口径**（不再逐日平均）：分数、规则文案、复制文案、
+ * 扣分明细 chips 全部要跟着换口径 —— 只改一处就是「改了分数没改说明」的第二次翻车。
  *
  * 仍保留 ratePercent（应到加权的**事实指标**，档位筛选与对照要用），但它**不参与算分**。
- * 展示一律两位小数（scoreScale.scoreText）：10 分制下迟到 1 人只扣 0.05，
+ * 展示一律两位小数（scoreScale.scoreText）：10 分制下 0.01 分的差异也要如实显示，
  * 一位小数会把 9.95 显示成 10.0，看着就是「扣了个寂寞」。
  *
  * ===== 达标口径（改这里前先读对应实现，禁止另写一份）=====
@@ -84,32 +90,33 @@ const DEFAULT_RANGE = 'week';
 // 实际算式漂移（改了单价忘了改说明，老师照着错误说明去质疑正确的分数）。
 //
 // ⚠️ 措辞必须与 bandChao.scoreOfAggregate()（= 本页分数的唯一来源）的真实算式逐字一致。
-//   用户 2026-11-19 报「卫生、查宿等内容没有被减分」之后，分数已从
-//   「4 个考勤模块的加权出勤率折算」改成「10 分 − 各模块日均扣分（**含卫生**）」，
-//   所以这里的说明也必须跟着重写 —— 说明留在旧算法上，就是「改了分数没改说明」的第二次翻车。
-// 各类扣分机制**不同**，句子必须分开说，不能笼统写「按出勤率」：
-//   · 卫生 = 评价折算（优/良/差 → 10/8/6），扣的是「满分减得分」；
-//   · 早操 / 晚自习 = 出勤率折算，每人扣多少**取决于班大小**（10 ÷ 应到人数）——
-//     写成固定单价就是说谎（实测 40 人的班缺 1 人扣 0.25，99 人的班扣 0.1）；
-//   · 查宿 = 按未归人数固定单价（rate 模式的分母在历史脏数据里可能是 0，走按人计扣）；
-//   · 早八 = 按迟到人数固定单价。
-// 数字全部从 checkModules.PERSON_DEDUCT / GRADE_SCORE / scoreScale.FULL_SCORE 取值拼句，不写死。
+//   用户 2026-11-20 把公式换成**区间累计口径**：
+//     班超分 = 10 − 四模块（卫生/查宿/晚自习/早操）累计扣分 × 10% − 缺勤加权
+//     缺勤加权 = 普通 0.02/人次、病假/事假/公假 0.01/人次
+//   早八只登记迟到/缺勤人数（计入缺勤加权），**早八的模块扣分不再进扣分项**。
+//   说明留在旧算法上（「每天从 10 分起扣、各天取平均」「早八每迟到 1 人扣 0.05」），
+//   就是「改了分数没改说明」的第二次翻车。
+// 单价 / 比例一律从 band-chao 的常量取（那里是公式真源），本文件不写死数字。
 function buildAttRuleLines() {
-  const pd = checkModules.PERSON_DEDUCT;
   const full = scoreScale.FULL_SCORE;
+  // 公式单价 / 折算比例：唯一实现在 services/band-chao.js，这里只翻译成白话
+  const ratio = bandChao.DEDUCT_SCORE_RATIO; // 0.1
+  const ratioPct = round1(ratio * 100); // 10（展示用百分数）
+  const aw = bandChao.ABSENCE_WEIGHT; // 0.02
+  const lw = bandChao.LEAVE_ABSENCE_WEIGHT; // 0.01
   const gs = checkModules.GRADE_SCORE || {};
-  // 卫生各评价的扣分 = 满分 − 评价折算分（与 computeDeduct 的 percent 分支同一算式）
+  // 卫生各评价的扣分 = 满分 − 评价折算分（与 computeDeduct 的 percent 分支同一算式）；
+  // 只用来举「评价 → 模块扣分 → 折算进班超分」的例子，真正进公式的是四模块累计扣分。
   const hyDeduct = (g) => round2(full - (Number(gs[g]) || 0));
   // 白话优先（用户 2026-11-13「一般人看不明白，需要你白话写出」）：
-  // 不出现「加权出勤率 / 日均扣分」这类术语，也不写公式符号。
+  // 不出现「加权出勤率 / 区间累计」这类术语，也不写公式符号。
   return [
-    `总分满分 ${full} 分（早操/早八/晚自习/查宿 + 卫生全部算在内）：每天从 ${full} 分起扣，统计期里各天的得分取平均。`,
-    `卫生按评价扣：评良扣 ${hyDeduct('良')} 分、评差扣 ${hyDeduct('差')} 分（评优不扣）。`,
-    '早操、晚自习按出勤情况扣：应到多少人、实际到了多少人，缺勤的人越多扣得越多；' +
-      '同样缺 1 个人，小班扣得多、大班扣得少（按人数比例折到 ' +
-      full + ' 分上）。',
-    `查宿按未归人数扣：每 1 人未归扣 ${pd.notReturned} 分（未归 2 人扣 ${round2(pd.notReturned * 2)} 分）。`,
-    `早八只登记迟到的人：每迟到 1 人扣 ${pd.late} 分（迟到 2 人扣 ${round2(pd.late * 2)} 分）。`,
+    `总分满分 ${full} 分：班超分 = ${full} − 卫生 / 查宿 / 晚自习 / 早操这四样的统计期累计扣分 × ${ratioPct}% − 缺勤加权，最低 0 分。`,
+    `四模块累计扣分按 ${ratioPct}% 折算：例如卫生评良累计扣 ${scoreScale.scoreText(hyDeduct('良'))} 分，班超分只扣 ${scoreScale.scoreText(round2(hyDeduct('良') * ratio))} 分。`,
+    `卫生按评价折算扣分（评良扣 ${hyDeduct('良')} 分、评差扣 ${hyDeduct('差')} 分，评优不扣），计入上面的四模块累计扣分。`,
+    `缺勤按人次加权：普通缺勤（含无故 / 没填假别）每人次 ${aw} 分，病假 / 事假 / 公假每人次 ${lw} 分；` +
+      '早操 / 晚自习缺勤、查宿未归、早八迟到都按人次计入。',
+    '早八只登记迟到 / 缺勤人数（计入缺勤加权），早八自己的模块扣分不参与四模块扣分项。',
     '班里没排某一项（比如没有晚自习）不另外扣分，只按实际有的项目算。',
     '整个统计期一次检查都没录的班显示「—」，不是 0 分。',
   ];
@@ -128,7 +135,7 @@ const pct = (num, den) => (den > 0 ? round1((num / den) * 100) : null);
 // （已删除）attendanceScore(rateWeighted, lateTotal, hasData)
 //   用户 2026-11-19「班级状态日周月考勤不一致，并且卫生、查宿等相关内容没有被减分」：
 //   这个函数是本页**自己的一套考勤分公式**（加权出勤率折算 + 早八迟到单价），
-//   与班超总评（10 − 日均扣分，含卫生）是两套算法 —— 同一个班同一周实测 9.74 vs 8.40。
+//   与班超总评（含卫生）是两套算法 —— 同一个班同一周实测 9.74 vs 8.40。
 //   现在分数一律走 bandChao.scoreOfAggregate（与班超同一个函数），本文件不再保留第二套公式。
 //   ⚠️ 不要因为「页面要显示出勤率」把它加回来：ratePercent 仍下发，但它只是事实指标，
 //      **不是**分数来源。回归断言见 tools/check-server-contract.js 的分数同源一节。
@@ -447,7 +454,9 @@ async function classStatusBoard({ today, attRange, days, force } = {}) {
         should: m.should,
         actual: m.actual,
         records: m.records,
-        // 该模块在窗口内的**日均**扣分（与分数同一个分母）：让「查宿扣了几分」在这一页也看得见
+        // 该模块在窗口内的**日均**扣分：让「查宿扣了几分」在这一页也看得见。
+        // ⚠️ 它只是展示口径（页面「日均 / 合计」切换用），**不是**新公式的分子 ——
+        //    新公式用的是四模块**累计**扣分 ×10%（见 attendance.deduct4）。
         deduct: dd ? dd.avgDeduct : 0,
       };
     }
@@ -472,14 +481,14 @@ async function classStatusBoard({ today, attRange, days, force } = {}) {
     // ⚠️ 只拿考勤类记录判断会让「本周只录了卫生」的班显示「—」，
     //   而它的班超分明明是 8.40 —— 用户报「卫生没有被减分」的另一半观感来源。
     const hasAnyCheck = agg.dayCount > 0;
-    // 分数 = 班超区间分（**含卫生、查宿等全部模块扣分**，用户 2026-11-19 的核心修复）。
+    // 分数 = 班超区间分（用户 2026-11-20 新公式：10 − 四模块累计扣分×10% − 缺勤加权）。
     // 无记录 → null（显「—」），不是 0 分。
     const attScore = agg.score;
     // 扣分明细（按扣分降序，含卫生）：「卫生 -10.00 · 晚自习 -1.53」这种，
     // 让老师看得见**分数是被谁扣掉的**，而不是只有一个孤零零的总分。
-    // ⚠️ 用的是**日均扣分 avgDeduct**（与分数同一个分母），不是窗口累计 ——
-    //   各模块日均扣分之和 ≈ 10 − 分数，老师能当场把账算平；
-    //   写成窗口累计就会出现「10 − 10.00 ≠ 8.45」这种自相矛盾（本轮实测差点踩进去）。
+    // ⚠️ 这里下发的是**日均 / 窗口合计**两套展示口径（页面 chip 切换用），
+    //   **不是**新公式的分子：新公式只用 attendance.deduct4（四模块累计扣分）×10% + 缺勤加权。
+    //   所以不要再写「各模块日均之和 = 10 − 分数」这类旧说法 —— 公式换了，那个恒等式不再成立。
     // 新增 targets（用户 2026-11-20「扣分要能写成『卫生-宿舍 -0.20 · 晚自习 -0.12』」）：
     //   直接搬 scoreOfAggregate 产出的子项（模块 × 受检类型），**不在这里重算**；
     //   Σ targets.avgDeduct / Σ targets.totalDeduct 已由 band-chao 分别调平为严格等于本项的
@@ -527,6 +536,13 @@ async function classStatusBoard({ today, attRange, days, force } = {}) {
         // **不在前端重算**（合计 ÷ 天数再 round 会与后端口径差 0.01，老师当场就能算出来）。
         deductTotal: agg.deductTotal,
         dayCount: agg.dayCount,
+        // ===== 新公式（用户 2026-11-20 区间累计口径）的三个直接输入 =====
+        //   score = max(0, 10 − deduct4 × 10% − absenceWeight)
+        // 页面/导出要能解释「分数怎么来的」，所以和 score 一起下发；直接取 agg 的值，
+        // **不在这里重算**（重算就会与班超页/排行榜差 0.01 那类问题）。
+        deduct4: agg.deduct4, // 四模块（卫生/查宿/晚自习/早操）累计扣分；早八模块扣分不在内
+        absenceCount: agg.absenceCount, // 区间缺勤人次（含早八迟到，名单为空时回退计数）
+        absenceWeight: agg.absenceWeight, // 区间缺勤加权（普通 0.02/人次，病/事/公假 0.01/人次）
         deductDetail,
         lateCount: lateTotal,
         // hasData 与「考勤待补」同一个判定；hasAnyCheck 决定考勤列显示
@@ -896,7 +912,12 @@ function buildCopyText({ day, from, to, weekStart, totals, filtered, tags, rows,
     } else {
       lines.push(`全校 ${totals.classCount} 个班 / ${totals.studentCount} 人；${seg}`);
     }
-    lines.push(`口径：${attRangeLabel || '本周'} ${from} ~ ${to || day}，班超分 = 10 − 日均扣分（含卫生/查宿等全部检查）`);
+    // 口径句子必须与真实公式一致（用户 2026-11-20 区间累计口径），数字从 band-chao 常量取
+    lines.push(
+      `口径：${attRangeLabel || '本周'} ${from} ~ ${to || day}，班超分 = ${scoreScale.FULL_SCORE} − ` +
+        `四模块（卫生/查宿/晚自习/早操）累计扣分×${round1(bandChao.DEDUCT_SCORE_RATIO * 100)}% − ` +
+        `缺勤加权（普通 ${bandChao.ABSENCE_WEIGHT}/人次，病/事/公假 ${bandChao.LEAVE_ABSENCE_WEIGHT}/人次）`
+    );
   } else {
     // 汇总行：按复制口径只写要的那个指标（复制「只要日达标」却附一句本周，是噪音）
     const seg = [];
@@ -919,19 +940,25 @@ function buildCopyText({ day, from, to, weekStart, totals, filtered, tags, rows,
     return lines.join('\n');
   }
 
-  // 班超分整句（copy=att 与 copy=all 共用）：**日均与合计都写出来**，
-  // 这样复制文本不依赖前端当前选的是「日均」还是「合计」——文本会被转发进工作群，
-  // 口径冻结在文案里比跟着某个人的屏幕状态走更可靠。
+  // 班超分整句（copy=att 与 copy=all 共用）：**把新公式的两个输入写出来**（用户 2026-11-20：
+  // 「分数后写（累计扣分 X.XX×10% + 缺勤 N 人次）」）。文本会被转发进工作群，
+  // 只给一个孤零零的分数，读的人无法核对「为什么被扣」，也分不清是扣分项还是缺勤项。
+  // 日均 / 合计扣分仍在行数据里（页面 chip 用），但**不写进这段主句** ——
+  // 它们是全模块总扣分（含早八），与新公式的「四模块累计扣分×10%」不是同一个口径，
+  // 并列写会让老师拿两个不同分母的数去对账（正是历史报障的同类问题）。
+  const ratioPct = round1(bandChao.DEDUCT_SCORE_RATIO * 100);
   const attPart = (r) => {
     const att = r.attendance || {};
     if (att.score === null || att.score === undefined) return '本期无检查记录';
     const detail = (att.deductDetail || [])[0];
+    // 主因仍取扣分最大的**具体模块**（targets 的名字如「卫生-宿舍」更细，但主因写模块更稳）
     const why = detail ? `；主因 ${detail.name}` : att.lateCount ? `；迟到 ${att.lateCount} 人` : '';
-    const parts = [];
-    if (att.deduct !== null && att.deduct !== undefined) parts.push(`日均扣 ${scoreScale.scoreText(att.deduct)}`);
-    if (att.deductTotal !== null && att.deductTotal !== undefined) parts.push(`区间合计扣 ${scoreScale.scoreText(att.deductTotal)}`);
-    const deductText = parts.length ? `${parts.join(' / ')}${why}` : why.replace(/^；/, '');
-    return `班超 ${scoreScale.scoreText(att.score)} 分${deductText ? `（${deductText}）` : ''}`;
+    const d4 = att.deduct4 === null || att.deduct4 === undefined ? 0 : att.deduct4;
+    const absN = Number(att.absenceCount) || 0;
+    const absW = att.absenceWeight === null || att.absenceWeight === undefined ? 0 : att.absenceWeight;
+    const absText = absN > 0 ? `缺勤 ${absN} 人次，加权 ${scoreScale.scoreText(absW)}` : '缺勤 0 人次';
+    const inner = `四模块累计扣分 ${scoreScale.scoreText(d4)}×${ratioPct}% + ${absText}${why}`;
+    return `班超 ${scoreScale.scoreText(att.score)} 分（${inner}）`;
   };
 
   // 逐行：按复制口径只写要的那个指标
