@@ -217,13 +217,18 @@ ok(
     (() => {
       const w = exportSvcSrc.match(/function buildWorkbook[\s\S]*?\n\}/) || [''];
       const s = w[0];
-      const a = s.indexOf('book_append_sheet(wb, buildSummarySheet');
-      const b = s.indexOf('book_append_sheet(wb, buildClassSheet');
-      const c = s.indexOf('book_append_sheet(wb, buildDictSheet');
+      const a = s.indexOf('buildSummarySheet(wb, payload)');
+      const b = s.indexOf('buildClassSheet(wb, payload, sheet)');
+      const c = s.indexOf('buildDictSheet(wb, payload)');
       return a >= 0 && b > a && c > b;
     })());
-  ok('XLSX：xlsx 库写 buffer + 正确 MIME + .xlsx 附件名',
-    /require\('xlsx'\)/.test(exportSvcSrc) && /bookType: 'xlsx'/.test(exportSvcSrc) &&
+  ok('XLSX：exceljs 写带样式工作簿（表头底色/边框/冻结/筛选）+ 正确 MIME + .xlsx 附件名',
+    /require\('exceljs'\)/.test(exportSvcSrc) &&
+      /xlsx\.writeBuffer\(\)/.test(exportSvcSrc) &&
+      /styleHeaderRow/.test(exportSvcSrc) &&
+      /XLSX_BORDER/.test(exportSvcSrc) &&
+      /state: 'frozen'/.test(exportSvcSrc) &&
+      /autoFilter =/.test(exportSvcSrc) &&
       /spreadsheetml\.sheet/.test(exportSvcSrc) && /class-status-\$\{safeDay\}\.xlsx/.test(exportSvcSrc));
   ok('CSV：只出总标 23 列 + BOM + attachment（旧脚本兼容）',
     /sendCsv/.test(exportSvcSrc) && /\\uFEFF/.test(exportSvcSrc) && /attachment/.test(exportSvcSrc) && /class-status-\$\{safeDay\}\.csv/.test(exportSvcSrc));

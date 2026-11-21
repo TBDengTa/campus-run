@@ -615,7 +615,7 @@ function expectedRunStats({ board, students, seeds, studentCount }) {
     assert(!/\d{4}级/.test(String((summary[0] || [])[0] || '')), '无年级筛选时标题不带年级段', (summary[0] || [])[0]);
     const subtitle = String((summary[1] || [])[0] || '');
     assert(/统计区间：/.test(subtitle) && /筛选：/.test(subtitle) && /共 1 个班/.test(subtitle) && /导出时间/.test(subtitle), '第 2 行 = 区间/筛选/班数人数/导出时间', subtitle);
-    assert(subtitle.includes(`${boardW.from} ~ ${boardW.to}`), '本周区间 = 周一 ~ 周日（完整周）', subtitle);
+    assert(/统计区间：\d{4}年\d{1,2}月\d{1,2}日 ~ \d{4}年\d{1,2}月\d{1,2}日/.test(subtitle), '本周区间（人话日期）= 周一 ~ 周日（完整周）', subtitle);
     const sumHeader = summary.find((r) => r[0] === '序号' && r.length === 23) || [];
     assert(JSON.stringify(sumHeader) === JSON.stringify(SUMMARY_HEADER), '总标表头 23 列逐字一致', sumHeader);
     // 总标没有「班级」列（23 列是需求定的），keyword 筛到 1 个班时数据行序号一定是 1
@@ -628,7 +628,16 @@ function expectedRunStats({ board, students, seeds, studentCount }) {
     assert(Number(sumDataRow[21]) === expW.totalSteps, '总标累计步数与 CSV 一致（列右移 1）', sumDataRow[21]);
     const tailText = summary.map((r) => String((r || [])[0] || '')).join('\n');
     assert(/口径说明/.test(tailText), '总标表尾带「口径说明」', tailText.slice(-80));
-    assert(/累计扣分/.test(tailText) && /校园跑达标/.test(tailText) && /缺勤口径/.test(tailText) && /统计窗口/.test(tailText), '表尾覆盖累计扣分/达标/缺勤/统计窗口', tailText.slice(-200));
+    assert(
+      /累计扣分/.test(tailText) &&
+        /校园跑达标/.test(tailText) &&
+        /缺勤/.test(tailText) &&
+        /这份表统计的是/.test(tailText) &&
+        // 不能出现字段名/公式符号（用户 2026-11-21「其他老师也看不懂」）
+        !/attendance\.|deductDetail|totalDeduct|clamp|ISO 周/.test(tailText),
+      '表尾口径说明：覆盖累计扣分/达标/缺勤/统计区间，且不出现字段名与公式符号',
+      tailText.slice(-260)
+    );
     const merged = (wb.Sheets['总标']['!merges'] || []).length;
     assert(merged >= 3, '总标标题/副标题/说明做了合并单元格', merged);
     // ⚠️ 社区版 SheetJS 回读工作簿时不会保留 !cols（列宽只在写入端有效），
@@ -637,20 +646,30 @@ function expectedRunStats({ board, students, seeds, studentCount }) {
       path.join(serverDir, 'src', 'services', 'class-status-export.js'),
       'utf8'
     );
-    assert(/ws\['!cols'\] = payload\.columns\.map/.test(exportSvcSrc) && /ws\['!cols'\] = DETAIL_COL_WIDTHS\.map/.test(exportSvcSrc), 'xlsx 总标与明细 sheet 都写了 !cols 列宽', 'source');
+    assert(
+      /ws\.columns = columns\.map/.test(exportSvcSrc) &&
+        /ws\.columns = Array\.from/.test(exportSvcSrc) &&
+        // 美化：品牌色表头 / 边框 / 表头冻结 / 筛选（用户 2026-11-21「太难看了」）
+        /fill = \{ type: 'pattern'/.test(exportSvcSrc) &&
+        /XLSX_BORDER/.test(exportSvcSrc) &&
+        /state: 'frozen'/.test(exportSvcSrc) &&
+        /ws\.autoFilter =/.test(exportSvcSrc),
+      'xlsx 总标与明细 sheet 都写了列宽 + 样式（表头底色/边框/冻结/筛选）',
+      'source'
+    );
 
     const dictRows = sheetRows(wb, '字段说明');
     const dictKeys = dictRows.map((r) => String((r || [])[0] || ''));
     assert(dictKeys.includes('校园跑班级日目标平均达标率') && dictKeys.includes('序号'), '字段说明覆盖总标列含义', dictKeys.slice(0, 5));
     const dictText = dictRows.map((r) => r.join(' ')).join('\n');
     assert(/班级明细上限/.test(dictText) && /500/.test(dictText), '字段说明注明班级明细 sheet 上限', dictText.slice(-200));
-    assert(/考勤明细上限/.test(dictText) && /统计窗口/.test(dictText), '字段说明注明考勤明细上限与统计窗口', dictText.slice(-200));
+    assert(/考勤明细上限/.test(dictText) && /统计区间/.test(dictText), '字段说明注明考勤明细上限与统计区间', dictText.slice(-200));
 
     // ---- 4b) 每班明细 sheet：A. 区间考勤明细 ----
     console.log('\n[3] 每班明细 sheet：区间考勤明细');
     const detailRows = sheetRows(wb, `${CLS}详细数据`);
-    const attTitleIdx = detailRows.findIndex((r) => String((r || [])[0] || '').startsWith('A. 区间考勤明细'));
-    assert(attTitleIdx >= 0, '明细 sheet 有「A. 区间考勤明细」小标题', attTitleIdx);
+    const attTitleIdx = detailRows.findIndex((r) => String((r || [])[0] || '').startsWith('A. 这一周的每一次检查'));
+    assert(attTitleIdx >= 0, '明细 sheet 有「A. 这一周的每一次检查」小标题', attTitleIdx);
     const attHeader = detailRows[attTitleIdx + 1] || [];
     const wantAttHeader = ['日期', '时段', '模块', '受检对象', '应到', '实到', '缺勤/未归/迟到名单', '得分', '扣分', '检查人', '复核人', '状态', '备注', '照片数'];
     assert(JSON.stringify(attHeader) === JSON.stringify(wantAttHeader), '考勤明细表头 14 列逐字一致', attHeader);
@@ -690,8 +709,8 @@ function expectedRunStats({ board, students, seeds, studentCount }) {
 
     // ---- 4c) 每班明细 sheet：B. 校园跑每人数据 ----
     console.log('\n[4] 每班明细 sheet：校园跑每人数据');
-    const runTitleIdx = detailRows.findIndex((r) => String((r || [])[0] || '').startsWith('B. 校园跑每人数据'));
-    assert(runTitleIdx >= 0, '明细 sheet 有「B. 校园跑每人数据」小标题', runTitleIdx);
+    const runTitleIdx = detailRows.findIndex((r) => String((r || [])[0] || '').startsWith('B. 这一周每位同学的跑步达标情况'));
+    assert(runTitleIdx >= 0, '明细 sheet 有「B. 这一周每位同学的跑步达标情况」小标题', runTitleIdx);
     const runHeader = detailRows[runTitleIdx + 1] || [];
     const wantRunHeader = ['姓名', '学号', '日目标', '周目标', '达标天数', '日达标率', '达标周数', '周达标率', '区间累计步数'];
     // sheet_to_json 会把行补齐到整张 sheet 的列宽（两大块共用 14 列），只比前 9 列
@@ -720,7 +739,15 @@ function expectedRunStats({ board, students, seeds, studentCount }) {
       assert(Number(got[8]) === expect.total, `学生 ${i + 1} 区间累计步数 = 手算`, { got: got[8], want: expect.total });
     }
     const detailTail = detailRows.map((r) => String((r || [])[0] || '')).join('\n');
-    assert(/考勤明细口径/.test(detailTail) && /名单格式/.test(detailTail) && /校园跑达标判定/.test(detailTail), '明细 sheet 表尾带口径说明', detailTail.slice(-160));
+    // 说人话版：不再出现 details.absentList / lateList 这类字段名
+    assert(
+      /A 部分是这一周/.test(detailTail) &&
+        /缺勤名单里括号是请假类型/.test(detailTail) &&
+        /B 部分是这一周/.test(detailTail) &&
+        !/details\.|absentList|lateList/.test(detailTail),
+      '明细 sheet 表尾带说人话的口径说明（无字段名）',
+      detailTail.slice(-160)
+    );
 
     // ---- 5) 窗口变化：本月 vs 本周（区间不同时数值必须跟着变） ----
     console.log('\n[5] 本月 / 本周区间变化');

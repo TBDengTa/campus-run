@@ -1071,6 +1071,24 @@
   `curl` 一下即可）、再确认手机端小程序是重新上传后的版本（删除小程序重进 / 清缓存；版本号一直固定
   2.0.11，不能靠版本号判断构建新旧，只能靠功能特征：行内矩形块 / 图片块版式）。
 
+- **导出 Excel 的美化与「说人话」口径（用户 2026-11-21「太难看了」「其他老师也看不懂」）**：
+  ① **必须用 `exceljs` 生成 xlsx**（`server/package.json` 已加依赖；社区版 `xlsx` 的样式是 Pro 功能，
+  写不出底色/字体/边框，改回去就是一坨黑白网格）。样式约定在 `services/class-status-export.js`：
+  品牌橙 `FFFF6B00` 表头 + 白字加粗居中、标题浅橙底大号、副标题灰字、隔行浅底、细边框
+  `XLSX_BORDER`、冻结首行首列（`views: [{state:'frozen'}]`）、总标 `autoFilter`、
+  班超分按 <8 / <9.2 / ≥9.2 上红/橙/绿；明细 sheet 的 A/B 小节用 `styleSectionTitle`。
+  ② **表尾「口径说明」与「字段说明」必须说人话**：不出现 `attendance.score / deductDetail /
+  clamp / ISO 周 / absentList` 这类字段名与公式符号，要写成「先扣掉…再按缺勤人数扣…病假每人 0.01 分」
+  这种老师能直接念给同事听的句子；新增/修改字段时**同步改 `SUMMARY_FIELD_DESC` 与 noteLines**。
+  ③ `buildWorkbook` 是 **async**（ExcelJS `writeBuffer` 是 Promise），`respond` 也 async，
+  路由必须 `await exportSvc.respond(...)`；忘了 await 会直接 500（`payload is not defined` 一类
+  的报错还可能来自 noteLines 里引用了不存在的 `payload` 变量 —— 该函数在 buildExport 里只能用
+  `from/to/runTo/rows` 等局部变量）。
+  ④ 性能：全量 47 张 sheet 约 300KB、生成十几秒（大头是看板聚合+数据查询，不是样式）；
+  导出按钮已有 `showLoading(mask)`，不要因为慢就砍掉明细 sheet 或样式。
+  回归：`verify-class-export`（标题/23 列/明细/JSON/CSV + 表尾不得出现字段名与公式符号）、
+  `check-server-contract` / `check-class-ui`（exceljs + 样式断言 + 说人话断言）。
+
 - **检查记录筛选与卡片（用户 2026-11-19「有学生会总管的权限查看检查记录没有办法筛选与查看
   所有记录，增加筛选如班级、系部、院校、楼栋」「卡片增加缺勤人的显示、照片显示」）**：
   ① **总裁判必须识别 `*` 通配**（`routes/union.js::hasWildcard`）：超管组有效权限是 `['*']`，

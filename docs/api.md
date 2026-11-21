@@ -321,7 +321,7 @@
 
 | `format` | 返回 | 用途 |
 |---|---|---|
-| `xlsx`（新版小程序） | 完整工作簿（`...spreadsheetml.sheet`，附件名 `class-status-<today>.xlsx`） | **`总标` + 每班 `<className>详细数据` + `字段说明`**；微信 `wx.openDocument` 可直接预览（CSV 不支持，真机报「本机无法打开/转发失败」） |
+| `xlsx`（新版小程序） | 完整工作簿（**exceljs 生成带样式**：品牌橙表头、隔行浅底、细边框、冻结首行/首列、自动筛选、班超分分段上色；附件名 `class-status-<today>.xlsx`） | **`总标` + 每班 `<className>详细数据` + `字段说明`**；微信 `wx.openDocument` 可直接预览（CSV 不支持，真机报「本机无法打开/转发失败」） |
 | `csv`（缺省，向后兼容） | UTF-8 BOM CSV（`text/csv`） | 旧版小程序 / 脚本：只出「总标」23 列 |
 | `json&preview=1&limit=N` | `{ title, subtitle, note, columns[{title,wch}], rows(截断), total, sheets, preview }` | 小程序「导出预览」弹层：生成文件前先看总标列/示例行/班数/将导出几张 sheet（不下发明细行） |
 

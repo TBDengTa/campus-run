@@ -1268,7 +1268,7 @@ router.get(
       // 年级筛选要出现在总标标题里（「2026年11月16日至…（本周）2026级-2025级班级状态总表」）
       filter: q.filter,
     });
-    exportSvc.respond(res, payload, {
+    await exportSvc.respond(res, payload, {
       format: req.query.format,
       preview: req.query.preview,
       limit: req.query.limit,

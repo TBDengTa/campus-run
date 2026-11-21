@@ -499,121 +499,290 @@ function sheetNameOf(className, used) {
   return name;
 }
 
+// ===== 版式：Excel 成品美化（用户 2026-11-21「太难看了，格式化一下」）=====
+// 用 exceljs（唯一新增依赖）而不是社区版 xlsx：后者**不支持单元格样式**（字体/底色/边框
+// 都是 Pro 功能），只能改列宽，导出出来就是一坨黑白网格。ExcelJS 支持 fill/font/border/
+// alignment/numFmt/freeze/autoFilter，且写出的仍是标准 xlsx（微信 wx.openDocument 可预览）。
+const XLSX_COLORS = {
+  brand: 'FFFF6B00',
+  brandDeep: 'FFB45309',
+  brandSoft: 'FFFFF4EC',
+  brandSoft2: 'FFFFE6D2',
+  white: 'FFFFFFFF',
+  text: 'FF1F2329',
+  text2: 'FF4B5563',
+  text3: 'FF6B7280',
+  line: 'FFE5E7EB',
+  zebra: 'FFFFFBF7',
+  good: 'FF15803D',
+  warn: 'FFB45309',
+  bad: 'FFD93025',
+};
+const XLSX_BORDER = {
+  top: { style: 'thin', color: { argb: XLSX_COLORS.line } },
+  left: { style: 'thin', color: { argb: XLSX_COLORS.line } },
+  bottom: { style: 'thin', color: { argb: XLSX_COLORS.line } },
+  right: { style: 'thin', color: { argb: XLSX_COLORS.line } },
+};
+const XLSX_FONT = '微软雅黑';
+
+/** 「2026-11-16」→「2026年11月16日」（标题/口径说明里说人话用） */
+function humanDay(dayKey) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dayKey || ''));
+  if (!m) return String(dayKey || '');
+  return `${m[1]}年${Number(m[2])}月${Number(m[3])}日`;
+}
+
+/** 标题行：品牌浅橙底 + 加粗大字 + 横向合并 */
+function styleSheetTitle(ws, rowNo, colCount, text) {
+  ws.mergeCells(rowNo, 1, rowNo, colCount);
+  const cell = ws.getCell(rowNo, 1);
+  cell.value = text;
+  cell.font = { name: XLSX_FONT, size: 15, bold: true, color: { argb: XLSX_COLORS.text } };
+  cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: XLSX_COLORS.brandSoft } };
+  cell.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+  ws.getRow(rowNo).height = 34;
+}
+
+/** 副标题行：灰字小字 + 浅灰底（区间 / 筛选 / 导出时间） */
+function styleSheetSubtitle(ws, rowNo, colCount, text) {
+  ws.mergeCells(rowNo, 1, rowNo, colCount);
+  const cell = ws.getCell(rowNo, 1);
+  cell.value = text;
+  cell.font = { name: XLSX_FONT, size: 10, color: { argb: XLSX_COLORS.text2 } };
+  cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF9FAFB' } };
+  cell.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+  ws.getRow(rowNo).height = 22;
+}
+
+/** 表头行：品牌橙底 + 白字加粗居中 + 细边框（Excel 里像表头，而不是普通行） */
+function styleHeaderRow(ws, rowNo, columns) {
+  const row = ws.getRow(rowNo);
+  row.height = 30;
+  columns.forEach((c, i) => {
+    const cell = row.getCell(i + 1);
+    cell.value = c.title;
+    cell.font = { name: XLSX_FONT, size: 10, bold: true, color: { argb: XLSX_COLORS.white } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: XLSX_COLORS.brand } };
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    cell.border = XLSX_BORDER;
+  });
+}
+
+/** 小节标题（明细表 A/B、字段说明表头等）：浅橙底 + 深橙加粗 */
+function styleSectionTitle(ws, rowNo, colCount, text) {
+  ws.mergeCells(rowNo, 1, rowNo, colCount);
+  const cell = ws.getCell(rowNo, 1);
+  cell.value = text;
+  cell.font = { name: XLSX_FONT, size: 11, bold: true, color: { argb: XLSX_COLORS.brandDeep } };
+  cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: XLSX_COLORS.brandSoft2 } };
+  cell.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+  ws.getRow(rowNo).height = 24;
+}
+
+/**
+ * 数据行：细边框 + 隔行浅底 + 数值右对齐 / 文本左对齐；可指定哪些列换行。
+ * @param {number[]} numericCols 1-based 数值列（右对齐）
+ * @param {number[]} wrapCols 1-based 需要自动换行的长文本列（缺勤名单 / 备注）
+ */
+function styleDataRows(ws, startRow, rows, colCount, { numericCols = [], wrapCols = [], centerCols = [], light = false } = {}) {
+  const numSet = new Set(numericCols);
+  const wrapSet = new Set(wrapCols);
+  const centerSet = new Set(centerCols);
+  // 样式对象**预先建好共享**：47 张 sheet × 上万单元格时，每格 new 3 个对象会把生成时间拖到
+  // 十几秒（实测 15.6s，导出按钮像卡死）。共享后 ExcelJS 写档只按样式 id 复用，快一个数量级。
+  const BODY_FONT = { name: XLSX_FONT, size: 10, color: { argb: XLSX_COLORS.text } };
+  const ZEBRA_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: XLSX_COLORS.zebra } };
+  const alignCache = new Map();
+  const alignOf = (horizontal, wrapText) => {
+    const key = `${horizontal}|${wrapText ? 1 : 0}`;
+    let v = alignCache.get(key);
+    if (!v) {
+      v = { vertical: 'middle', horizontal, wrapText };
+      alignCache.set(key, v);
+    }
+    return v;
+  };
+  rows.forEach((values, ri) => {
+    const row = ws.getRow(startRow + ri);
+    const fill = ri % 2 === 1 ? ZEBRA_FILL : null;
+    for (let c = 1; c <= colCount; c += 1) {
+      const cell = row.getCell(c);
+      const v = values[c - 1];
+      cell.value = v === undefined || v === null ? '' : v;
+      if (!light) {
+        cell.font = BODY_FONT;
+        cell.border = XLSX_BORDER;
+        if (fill) cell.fill = fill;
+      }
+      cell.alignment = alignOf(numSet.has(c) ? 'right' : centerSet.has(c) ? 'center' : 'left', wrapSet.has(c));
+    }
+    row.height = 20;
+  });
+}
+
+/** 表尾「口径说明」小节标题 + 逐条整段合并（自动换行，Excel 打开时按内容撑高） */
+function styleNoteBlock(ws, startRow, colCount, notes) {
+  ws.mergeCells(startRow, 1, startRow, colCount);
+  const head = ws.getCell(startRow, 1);
+  head.value = '口径说明（这份表怎么算出来的）';
+  head.font = { name: XLSX_FONT, size: 11, bold: true, color: { argb: XLSX_COLORS.brandDeep } };
+  head.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: XLSX_COLORS.brandSoft2 } };
+  head.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+  ws.getRow(startRow).height = 24;
+  notes.forEach((line, i) => {
+    const rowNo = startRow + 1 + i;
+    ws.mergeCells(rowNo, 1, rowNo, colCount);
+    const cell = ws.getCell(rowNo, 1);
+    cell.value = `${i + 1}. ${line}`;
+    cell.font = { name: XLSX_FONT, size: 10, color: { argb: XLSX_COLORS.text2 } };
+    cell.alignment = { vertical: 'top', horizontal: 'left', wrapText: true, indent: 1 };
+    cell.border = { bottom: { style: 'hair', color: { argb: XLSX_COLORS.line } } };
+  });
+}
+
 // ===== 版式：总标 sheet =====
-function buildSummarySheet(XLSX, payload) {
-  const lastCol = payload.columns.length - 1;
-  const aoa = [];
-  const merges = [];
-  aoa.push([payload.meta.title]);
-  merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: lastCol } });
-  aoa.push([payload.meta.subtitle]);
-  merges.push({ s: { r: 1, c: 0 }, e: { r: 1, c: lastCol } });
-  aoa.push([]);
-  aoa.push(payload.columns.map((c) => c.title));
-  for (const row of payload.tableRows) aoa.push(row);
-
-  aoa.push([]);
-  aoa.push(['口径说明']);
-  merges.push({ s: { r: aoa.length - 1, c: 0 }, e: { r: aoa.length - 1, c: lastCol } });
-  for (const line of payload.meta.noteLines) {
-    aoa.push([line]);
-    merges.push({ s: { r: aoa.length - 1, c: 0 }, e: { r: aoa.length - 1, c: lastCol } });
+function buildSummarySheet(wb, payload) {
+  const ExcelJS = require('exceljs');
+  const columns = payload.columns;
+  const colCount = columns.length;
+  const ws = wb.addWorksheet(SUMMARY_SHEET, {
+    views: [{ state: 'frozen', xSplit: 1, ySplit: 3 }],
+    properties: { defaultRowHeight: 18 },
+    pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 },
+  });
+  ws.columns = columns.map((c) => ({ width: Math.max(6, c.wch || 14) }));
+  styleSheetTitle(ws, 1, colCount, payload.meta.title);
+  styleSheetSubtitle(ws, 2, colCount, payload.meta.subtitle);
+  styleHeaderRow(ws, 3, columns);
+  // 数据行：1 序号居中；数值列（学生数起）右对齐
+  const dataStart = 4;
+  const numericCols = [];
+  for (let i = 6; i <= colCount; i += 1) numericCols.push(i); // 学生数(6) 之后都是数字/百分比/计数
+  styleDataRows(ws, dataStart, payload.tableRows, colCount, { numericCols, centerCols: [1, 5] });
+  // 班超分（第 15 列）按分段上色，一眼能看出谁差
+  const scoreCol = columns.findIndex((c) => c.title === '班超分') + 1;
+  if (scoreCol > 0) {
+    payload.tableRows.forEach((row, ri) => {
+      const v = Number(row[scoreCol - 1]);
+      if (!Number.isFinite(v) || row[scoreCol - 1] === '') return;
+      const cell = ws.getCell(dataStart + ri, scoreCol);
+      const color = v < 8 ? XLSX_COLORS.bad : v < 9.2 ? XLSX_COLORS.warn : XLSX_COLORS.good;
+      cell.font = { name: XLSX_FONT, size: 10, bold: true, color: { argb: color } };
+    });
   }
-
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols'] = payload.columns.map((c) => ({ wch: c.wch || 14 }));
-  ws['!merges'] = merges;
-  ws['!rows'] = [{ hpt: 26 }, { hpt: 32 }, { hpt: 8 }, { hpt: 24 }];
+  const dataEnd = dataStart + payload.tableRows.length - 1;
+  if (payload.tableRows.length) {
+    ws.autoFilter = { from: { row: 3, column: 1 }, to: { row: dataEnd, column: colCount } };
+  }
+  ws.pageSetup.printTitlesRow = '3:3';
+  const noteStart = dataEnd + 2;
+  styleNoteBlock(ws, noteStart, colCount, payload.meta.noteLines);
   return ws;
 }
 
-/** 版式：每班一张明细 sheet（上：区间考勤明细；下：校园跑每人数据；表尾口径/截断说明） */
-function buildClassSheet(XLSX, payload, sheet) {
-  const lastCol = Math.max(DETAIL_ATT_COLUMNS.length, DETAIL_RUN_COLUMNS.length) - 1;
-  const aoa = [];
-  const merges = [];
-  const mergeLine = () => merges.push({ s: { r: aoa.length - 1, c: 0 }, e: { r: aoa.length - 1, c: lastCol } });
+/** 版式：每班一张明细 sheet（上：区间考勤明细；下：校园跑每人数据；表尾说人话的口径） */
+function buildClassSheet(wb, payload, sheet) {
+  const attCols = DETAIL_ATT_COLUMNS;
+  const runCols = DETAIL_RUN_COLUMNS;
+  const colCount = Math.max(attCols.length, runCols.length);
+  const ws = wb.addWorksheet(sheet.sheetName, {
+    views: [{ state: 'frozen', xSplit: 1, ySplit: 4 }],
+    properties: { defaultRowHeight: 18 },
+    pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 },
+  });
+  ws.columns = Array.from({ length: colCount }, (_, i) => ({ width: DETAIL_COL_WIDTHS[i] || 12 }));
+  styleSheetTitle(ws, 1, colCount, `${sheet.className} · 详细数据`);
+  styleSheetSubtitle(ws, 2, colCount, `统计区间：${payload.meta.from} ~ ${payload.meta.to} ｜ 导出时间：${payload.meta.exportedAt}`);
 
-  aoa.push([`班级状态 · ${sheet.className} 详细数据`]);
-  mergeLine();
-  aoa.push([`A. 区间考勤明细（${payload.meta.from} ~ ${payload.meta.to}，共 ${sheet.attRows.length} 条）`]);
-  mergeLine();
-  aoa.push(DETAIL_ATT_COLUMNS.map((c) => c.title));
-  for (const row of sheet.attRows) aoa.push(row);
+  // A. 区间考勤明细
+  styleSectionTitle(ws, 3, colCount, `A. 这一周的每一次检查（共 ${sheet.attRows.length} 条）`);
+  const attHeaderRow = 4;
+  const attHeaderCols = attCols.map((c) => ({ title: c.title }));
+  styleHeaderRow(ws, attHeaderRow, attHeaderCols);
+  const attStart = attHeaderRow + 1;
+  styleDataRows(ws, attStart, sheet.attRows, attCols.length, {
+    numericCols: [5, 6, 8, 9], // 应到 / 实到 / 得分 / 扣分
+    centerCols: [2, 12, 14], // 时段 / 状态 / 照片数
+    wrapCols: [7, 13], // 缺勤名单 / 备注
+  });
 
-  aoa.push([]);
-  aoa.push([`B. 校园跑每人数据（统计窗口 ${payload.meta.runFrom} ~ ${payload.meta.runTo}）`]);
-  mergeLine();
-  aoa.push(DETAIL_RUN_COLUMNS.map((c) => c.title));
-  for (const row of sheet.runRows) aoa.push(row);
+  // B. 校园跑每人数据
+  const secBRow = attStart + sheet.attRows.length + 1;
+  styleSectionTitle(ws, secBRow, colCount, `B. 这一周每位同学的跑步达标情况（统计到 ${payload.meta.runTo}）`);
+  const runHeaderRow = secBRow + 1;
+  styleHeaderRow(ws, runHeaderRow, runCols);
+  const runStart = runHeaderRow + 1;
+  styleDataRows(ws, runStart, sheet.runRows, runCols.length, {
+    numericCols: [3, 4, 5, 6, 7, 8, 9],
+    centerCols: [1],
+  });
 
-  aoa.push([]);
-  for (const line of sheet.noteLines) {
-    aoa.push([line]);
-    mergeLine();
-  }
-
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols'] = DETAIL_COL_WIDTHS.map((wch) => ({ wch }));
-  ws['!merges'] = merges;
-  ws['!rows'] = [{ hpt: 26 }, { hpt: 20 }, { hpt: 22 }];
+  const noteStart = runStart + sheet.runRows.length + 1;
+  styleNoteBlock(ws, noteStart, colCount, sheet.noteLines);
   return ws;
 }
 
 // ===== 版式：字段说明 sheet =====
 const SUMMARY_FIELD_DESC = {
-  序号: '筛选后的行序（1..N）',
-  院校: '看板行的院校（class_profiles.schoolName）',
-  系部: '看板行的系部（class_profiles.departmentName）',
-  专业: 'class_profiles.specialty；台账缺行/为空时用该班任一学生 users.specialty；都空写空',
-  年级: '看板行的年级（grade 字段为空时按班级名推导）',
-  学生数: '看板同学籍人数（users，排除教师）；也是达标率 / 人均步数的分母',
-  住宿数: '住宿名单（dorm_assignments 在住：checked_in / guest）人数',
-  班委数: 'users.isClassOfficer=true 且 role≠teacher 的人数',
-  学生会成员数: 'student_union_members 中 status=active 且班级匹配的人数',
-  卫生累计扣分: '看板 attendance.deductDetail 中 hygiene 的 totalDeduct（窗口累计），无记录 0',
-  晚自习累计扣分: '看板 attendance.deductDetail 中 study_evening 的 totalDeduct（窗口累计），无记录 0',
-  查宿累计扣分: '看板 attendance.deductDetail 中 night_dorm 的 totalDeduct（窗口累计），无记录 0',
-  早操累计扣分: '看板 attendance.deductDetail 中 morning_exercise 的 totalDeduct（窗口累计），无记录 0',
-  早八累计扣分: '看板 attendance.deductDetail 中 morning_class 的 totalDeduct（窗口累计），无记录 0',
-  班超分: '看板 attendance.score（新公式：10 − 卫生/查宿/晚自习/早操累计扣分×10% − 缺勤人次×0.02（病/事/公假 0.01），clamp 0~10）；区间内无检查记录写空（不是 0 分）',
-  校园跑班级日目标平均达标率: '区间内各日「达标人数 ÷ 学生数」百分比的平均（1 位小数，%）；窗口无有效日写空',
-  校园跑班级周目标平均达标率: '按 ISO 周（周一~周日）切分后，各周达标率的平均（1 位小数，%）；无有效周写空',
-  校园跑班级日目标达标次数: '日达标率 = 100% 的天数',
-  校园跑班级周目标达标次数: '周达标率 = 100% 的周数',
-  校园跑班级日目标达标最低值: '各日达标率中的最低值（%；无有效日写空）',
-  校园跑班级周目标达标最低值: '各周达标率中的最低值（%；无有效周写空）',
-  校园跑累计步数: '统计窗口内该班全部学生步数之和',
-  校园跑人均累计步数: 'round(累计步数 ÷ 学生数)；学生数 0 写 0',
+  序号: '第几个班，从 1 开始',
+  院校: '这个班属于哪个校区（院校）',
+  系部: '这个班属于哪个系部',
+  专业: '班级对应的专业名称',
+  年级: '入学年份，如 2026 就是 2026 级',
+  学生数: '这个班在籍的学生人数（不含老师），也是达标率、人均步数的分母',
+  住宿数: '在宿舍住的学生人数',
+  班委数: '班里的班委人数',
+  学生会成员数: '这个班在学生会的成员人数',
+  卫生累计扣分: '这一周卫生检查一共扣了多少分；没有检查就是 0',
+  晚自习累计扣分: '这一周晚自习考勤一共扣了多少分；没有记录就是 0',
+  查宿累计扣分: '这一周查宿（未归）一共扣了多少分；没有记录就是 0',
+  早操累计扣分: '这一周早操考勤一共扣了多少分；没有记录就是 0',
+  早八累计扣分: '这一周早八迟到一共扣了多少分；没有记录就是 0',
+  班超分: '满分 10 分：先扣掉卫生、查宿、晚自习、早操这四项累计扣分的 10%，再按缺勤人数扣——普通缺勤每人 0.02 分，病假/事假/公假每人 0.01 分，早八迟到每人 0.02 分。这一周没有检查记录时留空，不是 0 分',
+  校园跑班级日目标平均达标率: '每天「达标人数 ÷ 班级人数」的百分比，再对这一周每天取平均；没有跑步数据时留空',
+  校园跑班级周目标平均达标率: '每周「达标人数 ÷ 班级人数」的百分比，再对每周取平均；没有跑步数据时留空',
+  校园跑班级日目标达标次数: '这一周里，全班所有人当天都达标（100%）的天数',
+  校园跑班级周目标达标次数: '这一周里，全班所有人当周都达标（100%）的周数',
+  校园跑班级日目标达标最低值: '这一周里表现最差的那一天，全班的达标率是多少',
+  校园跑班级周目标达标最低值: '这一周里表现最差的那一周，全班的达标率是多少',
+  校园跑累计步数: '这一周全班学生加起来的步数',
+  校园跑人均累计步数: '这一周全班步数 ÷ 班级人数，平均每人走了多少步',
 };
 
-function buildDictSheet(XLSX, payload) {
-  const rows = [['字段', '含义']];
-  for (const c of payload.columns) rows.push([c.title, SUMMARY_FIELD_DESC[c.title] || '']);
-  rows.push([]);
-  rows.push(['工作表结构', `第 1 张「${SUMMARY_SHEET}」= 筛选后每个班一行；随后每班一张「<班级>详细数据」（区间考勤明细 + 校园跑每人数据）；最后本「${DICT_SHEET}」。`]);
-  rows.push(['班级明细上限', `最多 ${CLASS_SHEET_LIMIT} 张（正常约 43 张）；本次 ${payload.classSheets.length} 张${payload.classSheetsTruncated ? '，超出部分已截断' : ''}。`]);
-  rows.push(['总标行数上限', `最多 ${SUMMARY_ROW_LIMIT} 行；本次 ${payload.tableRows.length} 行。`]);
-  rows.push(['考勤明细上限', `单次最多 ${ATTENDANCE_ROW_LIMIT} 条；本次 ${payload.attendance.total} 条${payload.attendance.truncated ? '，超出部分已截断' : ''}。`]);
-  rows.push(['统计窗口', `考勤 / 累计扣分：${payload.meta.from} ~ ${payload.meta.to}；校园跑区间统计：${payload.meta.runFrom} ~ ${payload.meta.runTo}（终点 = min(看板区间终点, 今天)，避免本周/本月含未来天数把达标率拖低）。`]);
-  rows.push(['筛选', payload.meta.filterText]);
-  rows.push(['导出时间', payload.meta.exportedAt]);
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = [{ wch: 24 }, { wch: 96 }];
+function buildDictSheet(wb, payload) {
+  const ws = wb.addWorksheet(DICT_SHEET, {
+    views: [{ state: 'frozen', xSplit: 0, ySplit: 2 }],
+    properties: { defaultRowHeight: 18 },
+    pageSetup: { orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
+  });
+  ws.columns = [{ width: 26 }, { width: 92 }];
+  styleSheetTitle(ws, 1, 2, '字段说明（每个表头是什么意思）');
+  styleHeaderRow(ws, 2, [{ title: '字段' }, { title: '含义（说人话版）' }]);
+  const rows = [
+    ...payload.columns.map((c) => [c.title, SUMMARY_FIELD_DESC[c.title] || '']),
+    ['工作表结构', `第 1 张「${SUMMARY_SHEET}」是总表，一个班一行；后面每个班一张「详细数据」，可以看每一次检查是谁查的、谁复核的，以及每位同学的跑步达标情况；最后就是本页。`],
+    ['班级明细上限', `最多 ${CLASS_SHEET_LIMIT} 个班；本次 ${payload.classSheets.length} 个班${payload.classSheetsTruncated ? '，超出的部分已截断' : ''}。`],
+    ['总标行数上限', `最多 ${SUMMARY_ROW_LIMIT} 个班；本次 ${payload.tableRows.length} 个班。`],
+    ['考勤明细上限', `每份导出最多 ${ATTENDANCE_ROW_LIMIT} 条检查记录；本次 ${payload.attendance.total} 条${payload.attendance.truncated ? '，超出的部分已截断' : ''}。`],
+    ['统计区间', `考勤和扣分统计的是 ${payload.meta.from} 到 ${payload.meta.to}；校园跑统计到 ${payload.meta.runTo}（今天），后面的日子还没到，不算进达标率。`],
+    ['筛选条件', payload.meta.filterText],
+    ['导出时间', payload.meta.exportedAt],
+  ];
+  styleDataRows(ws, 3, rows, 2, { wrapCols: [2] });
   return ws;
 }
 
-/** 生成完整 xlsx 工作簿（总标 + 每班明细 + 字段说明） */
-function buildWorkbook(payload) {
-  // 仓库已有 xlsx 依赖（server/package.json），不新增依赖
-  const XLSX = require('xlsx');
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, buildSummarySheet(XLSX, payload), SUMMARY_SHEET);
-  for (const sheet of payload.classSheets) {
-    XLSX.utils.book_append_sheet(wb, buildClassSheet(XLSX, payload, sheet), sheet.sheetName);
-  }
-  XLSX.utils.book_append_sheet(wb, buildDictSheet(XLSX, payload), DICT_SHEET);
-  return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+/** 生成完整 xlsx 工作簿（总标 + 每班明细 + 字段说明）—— 异步（ExcelJS writeBuffer 是 Promise） */
+async function buildWorkbook(payload) {
+  const ExcelJS = require('exceljs');
+  const wb = new ExcelJS.Workbook();
+  wb.creator = '唐唐快跑';
+  wb.created = new Date();
+  buildSummarySheet(wb, payload);
+  for (const sheet of payload.classSheets) buildClassSheet(wb, payload, sheet);
+  buildDictSheet(wb, payload);
+  return wb.xlsx.writeBuffer();
 }
 
 /**
@@ -725,10 +894,12 @@ async function buildExport({ board, filter = {} } = {}) {
         s.totalSteps,
       ]);
     const noteLines = [
-      `考勤明细口径：早操 / 晚自习取 details.shouldCount / actualCount / absentList；查宿取 details.shouldStay / actualCount / absentList（未归名单）；早八只登记迟到名单（lateList），应到 / 实到留空。`,
-      `名单格式：姓名(假别) · 姓名（假别为空不写括号；早八没有假别）。状态：已提交 / 已复核 / 已退回 / 已取消。`,
-      `校园跑达标判定：个人计划目标优先、否则全局默认；目标 ≤ 0 视为已达标。日达标率 = 达标人数 ÷ 学生数；周按 ISO 周（周一~周日）切分，周步数 = 窗口内该周每日步数之和。窗口 ${runFrom} ~ ${runTo}（截止今天，不含未来日期）。`,
-      `本班区间内考勤明细 ${attRows.length} 条；全校单次最多 ${ATTENDANCE_ROW_LIMIT} 条${attendance.truncated ? '，本次已截断' : ''}。`,
+      `A 部分是这一周（${from} 到 ${to}）的每一次检查：应到 / 实到就是当时检查录入的人数。早八只记迟到的人，所以它没有应到 / 实到。`,
+      `缺勤名单里括号是请假类型（病假 / 事假 / 公假）；早八只记迟到，没有假别。`,
+      `状态说明：已提交 = 录入人交上来了；已复核 = 学生会复核通过；已退回 / 已取消 = 不计入分数。`,
+      `B 部分是这一周每位同学的跑步：每人有每日目标和每周目标（没设个人目标就用学校默认），当天步数达到目标就算达标。日达标率 = 达标天数 ÷ 统计天数，周达标率同理。`,
+      `校园跑统计到 ${runTo}（今天），不包含还没到的日子。`,
+      `本班这一周共 ${attRows.length} 条检查记录。`,
     ];
     return {
       className,
@@ -743,34 +914,33 @@ async function buildExport({ board, filter = {} } = {}) {
   const filterText = (result.activeFilters || []).length ? result.activeFilters.join(' · ') : '全校';
   const attRangeLabel = result.attRangeLabel || '';
   const exportedAt = exportedAtText();
-  const subtitle = `统计区间：${from} ~ ${to}${attRangeLabel ? `（${attRangeLabel}）` : ''} ｜ 筛选：${filterText} ｜ 共 ${rows.length} 个班 / ${studentCount} 人 ｜ 导出时间：${exportedAt}`;
-  const note = '总标 = 看板同源数据（不重算任何看板数字）；校园跑 8 列为区间独立聚合（窗口 = 看板区间起点 ~ min(看板区间终点, 今天)），明细见每班「详细数据」sheet。';
+  // 副标题 / 口径说明都写成**老师能直接看懂的话**（用户 2026-11-21：别再堆字段名和公式符号）。
+  const subtitle = `统计区间：${humanDay(from)} ~ ${humanDay(to)}${attRangeLabel ? `（${attRangeLabel}）` : ''} ｜ 筛选：${filterText} ｜ 共 ${rows.length} 个班 / ${studentCount} 人 ｜ 导出时间：${exportedAt}`;
+  const note =
+    '这张总表一个班一行，汇总这一周的考勤扣分和校园跑达标情况；每个班后面还有一张「详细数据」表，能看到每次检查是谁查的、谁复核的，以及每位同学的跑步达标情况。';
 
-  // 表尾口径说明（总标 sheet 尾部整段跨列）
+  // 表尾口径说明（总标 sheet 尾部整段跨列）：说人话，不写字段名 / 公式符号。
   const noteLines = [
-    `统计窗口：考勤 / 五模块累计扣分 / 班超分 = ${from} ~ ${to}${attRangeLabel ? `（${attRangeLabel}）` : ''}；校园跑区间统计 = ${runFrom} ~ ${runTo}（终点 = min(看板区间终点, 今天)，避免本周/本月把未来天数算进达标率分母）。`,
-    `累计扣分：取看板 attendance.deductDetail[].totalDeduct（窗口累计，与看板同源），无记录的模块记 0；不在导出里重新聚合扣分。`,
-    `班超分：取看板 attendance.score（唯一实现算好的值，导出不重算）= 10 − 卫生/查宿/晚自习/早操累计扣分 × 10% − 缺勤人次加权（普通/早八每人 0.02，病假/事假/公假 0.01），clamp 到 0~10；区间内没有检查记录写空。`,
-    `校园跑达标：生效目标 = 个人计划优先、否则全局默认；目标 ≤ 0 视为已达标，判定一律为「步数 ≥ 目标」。日达标率 = 当日达标人数 ÷ 学生数；日平均达标率 = 各日达标率的平均（1 位小数）；日达标次数 = 达标率 100% 的天数；日达标最低值 = 各日最低达标率。周按 ISO 周（周一~周日）切分，周步数 = 窗口内该周每日步数之和，周平均 / 次数 / 最低值同上。窗口内没有有效日 / 周时对应单元格写空。`,
-    `缺勤口径：班级明细 sheet 的应到 / 实到 / 名单取自 check_records.details（早操、晚自习用 shouldCount / actualCount / absentList；查宿用 shouldStay / actualCount / absentList，语义为未归；早八只有迟到名单，应到 / 实到留空）；名单写「姓名(假别) · 姓名」。`,
-    `行数 / 张数上限：总标最多 ${SUMMARY_ROW_LIMIT} 行、班级明细 sheet 最多 ${CLASS_SHEET_LIMIT} 张、区间考勤明细单次最多 ${ATTENDANCE_ROW_LIMIT} 条，超出截断（详见「字段说明」sheet）。`,
+    `这份表统计的是 ${humanDay(from)} 到 ${humanDay(to)}${attRangeLabel ? `（${attRangeLabel}）` : ''} 的检查情况。`,
+    `校园跑只统计到 ${humanDay(runTo)}（今天）：后面的日子还没到，算进去会把达标率拉低，所以不统计。`,
+    '「累计扣分」是这一周里卫生、晚自习、查宿、早操、早八各扣了多少分，直接从「班级状态」页拿过来，导出时没有重新算。',
+    '班超分满分 10 分。算法：先扣掉卫生、查宿、晚自习、早操这四项这一周累计扣分的 10%，再按缺勤人数扣分——普通缺勤每人扣 0.02 分，病假、事假、公假每人扣 0.01 分；早八迟到只按人数扣（每人 0.02 分）。最低扣到 0 分。这一周一次检查都没有的班，这一格是空的，不是 0 分。',
+    '校园跑达标：每个学生有自己的每日目标和每周目标（没设个人目标就用学校默认）。当天步数达到目标算达标；达标人数 ÷ 班级人数 = 达标率。',
+    '「达标次数」是全班所有人都达标的天数 / 周数；「最低值」是这段时间里最差的一天 / 一周的达标率。',
+    '每个班都有一张「详细数据」表：A 部分是这一周每一次检查的记录（含检查人、复核人、缺勤名单），B 部分是每位同学这一周的跑步达标情况。',
+    `最多导出 ${SUMMARY_ROW_LIMIT} 个班、每个班 ${ATTENDANCE_ROW_LIMIT} 条检查记录；超出的部分会被截断。`,
   ];
 
   const sheets = [SUMMARY_SHEET, ...classSheets.map((s) => s.sheetName), DICT_SHEET];
   // 标题（用户 2026-11-20 第五轮）：
   //   「2026年11月16日至2026年11月22日（本周）2026级-2025级班级状态总表」
   // 年级段只在**有年级筛选**时出现（多选按年份降序、用「级-」连接；单选就是「2026级」）。
-  const cnDate = (dayKey) => {
-    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dayKey || ''));
-    if (!m) return String(dayKey || '');
-    return `${m[1]}年${Number(m[2])}月${Number(m[3])}日`;
-  };
   const gradeList = (Array.isArray(filter.grades) ? filter.grades : [])
     .map((g) => String(g || '').trim())
     .filter((g) => /^(19|20)\d{2}$/.test(g))
     .sort((a, b) => Number(b) - Number(a));
   const gradesText = gradeList.length ? `${gradeList.map((g) => `${g}级`).join('-')}` : '';
-  const title = `${cnDate(from)}至${cnDate(to)}${attRangeLabel ? `（${attRangeLabel}）` : ''}${gradesText}班级状态总表`;
+  const title = `${humanDay(from)}至${humanDay(to)}${attRangeLabel ? `（${attRangeLabel}）` : ''}${gradesText}班级状态总表`;
 
   return {
     columns: SUMMARY_COLUMNS,
@@ -802,7 +972,7 @@ async function buildExport({ board, filter = {} } = {}) {
 
 // ===== 三种格式的序列化（同一份 payload）=====
 
-/** CSV：只有总标 22 列（缺省格式，旧客户端/脚本向后兼容），BOM 防 Excel 乱码 */
+/** CSV：只有总标 23 列（缺省格式，旧客户端/脚本向后兼容），BOM 防 Excel 乱码 */
 function sendCsv(res, payload) {
   const cell = (v) => `"${String(v === undefined || v === null ? '' : v).replace(/"/g, '""')}"`;
   const lines = [payload.columns.map((c) => cell(c.title)).join(',')];
@@ -815,8 +985,8 @@ function sendCsv(res, payload) {
 }
 
 /** XLSX：微信 wx.openDocument 能直接预览（CSV 不行） */
-function sendXlsx(res, payload) {
-  const buf = buildWorkbook(payload);
+async function sendXlsx(res, payload) {
+  const buf = await buildWorkbook(payload);
   const safeDay = String(payload.meta.today || dates.todayKey()).replace(/[^0-9A-Za-z-]/g, '');
   res.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.set('Content-Disposition', `attachment; filename="class-status-${safeDay}.xlsx"`);
@@ -849,7 +1019,7 @@ function jsonPreview(payload, { preview = false, limit } = {}) {
 /**
  * 路由出口：按 format 分发（xlsx / csv / json；非法值回退 csv，旧客户端行为不变）。
  */
-function respond(res, payload, { format, preview, limit } = {}) {
+async function respond(res, payload, { format, preview, limit } = {}) {
   const raw = String(format || '').trim().toLowerCase();
   const fmt = ['xlsx', 'csv', 'json'].includes(raw) ? raw : 'csv';
   if (fmt === 'json') {
@@ -857,7 +1027,7 @@ function respond(res, payload, { format, preview, limit } = {}) {
     return;
   }
   if (fmt === 'xlsx') {
-    sendXlsx(res, payload);
+    await sendXlsx(res, payload);
     return;
   }
   sendCsv(res, payload);

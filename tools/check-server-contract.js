@@ -2809,7 +2809,7 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
       (exportSvcSrc.match(/const SUMMARY_COLUMNS[\s\S]{0,900}/) || [''])[0]);
     ok(
       '总标标题 = 日期段（本周）+ 可选年级段 + 班级状态总表（用户 2026-11-20 第五轮）',
-      /cnDate\(from\)/.test(exportSvcSrc) &&
+      /humanDay\(from\)/.test(exportSvcSrc) &&
         /年级段只在/.test(exportSvcSrc) &&
         /attRangeLabel \? `（\$\{attRangeLabel\}）` : ''/.test(exportSvcSrc) &&
         /gradesText/.test(exportSvcSrc)
@@ -2824,14 +2824,14 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
     ok('总标三张表顺序：总标 → 每班明细 → 字段说明（看 buildWorkbook 的 append 顺序）',
       (() => {
         const seg2 = (exportSvcSrc.match(/function buildWorkbook[\s\S]*?\n\}/) || [''])[0];
-        const a = seg2.indexOf('book_append_sheet(wb, buildSummarySheet');
-        const b = seg2.indexOf('book_append_sheet(wb, buildClassSheet');
-        const c = seg2.indexOf('book_append_sheet(wb, buildDictSheet');
+        const a = seg2.indexOf('buildSummarySheet(wb, payload)');
+        const b = seg2.indexOf('buildClassSheet(wb, payload, sheet)');
+        const c = seg2.indexOf('buildDictSheet(wb, payload)');
         return a >= 0 && b > a && c > b;
       })());
-    ok('XLSX 用 xlsx 库写缓冲 + 正确 MIME + .xlsx 附件名（微信 openDocument 只认 Office 格式）',
-      /require\('xlsx'\)/.test(exportSvcSrc) &&
-        /bookType: 'xlsx'/.test(exportSvcSrc) &&
+    ok('XLSX 用 exceljs 写带样式的 xlsx（社区版 xlsx 不支持单元格样式）+ 正确 MIME + .xlsx 附件名',
+      /require\('exceljs'\)/.test(exportSvcSrc) &&
+        /xlsx\.writeBuffer\(\)/.test(exportSvcSrc) &&
         /spreadsheetml\.sheet/.test(exportSvcSrc) &&
         /class-status-\$\{safeDay\}\.xlsx/.test(exportSvcSrc));
     ok('CSV 只出总标 23 列 + BOM + 附件名（旧脚本/旧客户端兼容）',
