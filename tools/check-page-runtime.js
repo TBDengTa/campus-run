@@ -1541,17 +1541,39 @@ const TARGETS = [
       p4.onExport();
       ok(sheet === null, '导出中重复点击不弹第二次菜单', !!sheet);
       p4.data.exporting = false;
-      // 预览请求失败：关弹层 + 明确错误文案（不能留一个空白弹层）
+      // 预览请求失败（用户 2026-11-21「请求失败(200)」）：不再弹「预览失败」死路，
+      // 而是关弹层 + **直接降级生成 Excel**（后端支持就仍能导出成功）。
       state.get = async () => {
         throw Object.assign(new Error('预览炸了'), { code: 500 });
       };
       lastModal = null;
+      lastToast = null;
+      state.downloads = [];
+      state.downloadResult = { filePath: 'wxfile://usr/x.xlsx', fileName: 'x.xlsx', saved: true, via: 'open' };
       await p4.openExportPreview('week');
       ok(
-        p4.data.previewVisible === false && !!lastModal && lastModal.title === '预览失败',
-        '预览请求失败 → 关闭弹层并提示失败（不留空白弹层）',
-        lastModal && lastModal.title
+        p4.data.previewVisible === false && !!lastToast && /预览不可用/.test(lastToast.title || ''),
+        '预览失败 → 关弹层 + toast 提示直接生成 Excel（不留空白弹层）',
+        lastToast && lastToast.title
       );
+      ok((state.downloads || []).length === 1 && state.downloads[0].opts.fileType === 'xlsx', '预览失败后自动降级导出 xlsx', state.downloads && state.downloads[0] && state.downloads[0].opts);
+      // 后端过旧（2xx 但响应不是 JSON → request 层抛 stale）：降级导出也失败时，
+      // 弹窗必须把「后端未更新」说清楚，不能再让用户猜「请求失败(200)」。
+      state.get = async () => {
+        throw Object.assign(new Error('服务端返回格式异常（可能后端未更新）'), { code: -1, stale: true });
+      };
+      lastModal = null;
+      lastToast = null;
+      state.downloadFail = Object.assign(new Error('文件格式不支持'), { stage: 'open' });
+      p4.data.exporting = false;
+      await p4.openExportPreview('week');
+      await flush(); // 降级导出是 openExportPreview 里的异步尾巴
+      ok(
+        !!lastModal && /后端/.test(lastModal.content || ''),
+        '后端过旧（stale）+ 导出失败 → 弹窗明确提示「后端未更新/重启后端」',
+        lastModal && lastModal.content
+      );
+      state.downloadFail = null;
       // 复位共享桩（后面的 target 也会用到 ActionSheet 默认行为）
       showActionSheetImpl = (o) => o && o.fail && o.fail({ errMsg: 'showActionSheet:fail cancel' });
     },

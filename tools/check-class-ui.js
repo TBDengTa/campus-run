@@ -400,14 +400,29 @@ ok(
     /catch:tap="closeExportPreview"/.test(csWxml)
 );
 ok(
-  '预览失败/导出失败都有文案，且导出失败给「复制表格文本」兜底（这是用户真正能发进群的东西）',
-  /title: '预览失败'/.test(csJs) &&
-    /showExportFailure\(e\)/.test(csJs) &&
-    /confirmText: canCopy \? '复制文本' : '知道了'/.test(csJs)
+  '预览失败不再弹「预览失败」死路：关弹层 + 提示后**自动降级导出 xlsx**（用户 2026-11-21「请求失败(200)」）',
+  /this\._exportStaleHint = !!\(e && e\.stale\)/.test(csJs) &&
+    /预览不可用，直接生成 Excel/.test(csJs) &&
+    /this\.exportAttendance\(key\)/.test(csJs) &&
+    !/title: '预览失败'/.test(csJs)
 );
 ok(
-  '失败文案分档：登录过期 / 无权限 / 网络 / 保存 / 打开',
-  /err\.code === 401/.test(csJs) && /err\.code === 403/.test(csJs) && /err\.stage === 'save'/.test(csJs) && /err\.stage === 'open'/.test(csJs) && /err\.network/.test(csJs)
+  '导出失败给「复制表格文本」兜底 + 后端过旧时明确提示重启/部署后端',
+  /showExportFailure\(e\)/.test(csJs) &&
+    /confirmText: canCopy \? '复制文本' : '知道了'/.test(csJs) &&
+    /后端可能还是旧版本（导出接口返回格式不对）/.test(csJs) &&
+    /if \(err\.stale\) return '后端还没更新/.test(csJs)
+);
+ok(
+  '请求层识别「2xx 但非 JSON」= 后端过旧（不再落到「请求失败(200)」这种无解文案）',
+  /typeof body !== 'object' \|\| body === null/.test(reqJs) &&
+    /err\.stale = true/.test(reqJs) &&
+    /服务端返回格式异常（可能后端未更新）/.test(reqJs) &&
+    /请求失败\(\$\{statusCode\}\)/.test(reqJs) // 非 2xx/业务错误仍保留兜底文案
+);
+ok(
+  '失败文案分档：登录过期 / 无权限 / 网络 / 保存 / 打开 / 后端过旧',
+  /err\.code === 401/.test(csJs) && /err\.code === 403/.test(csJs) && /err\.stage === 'save'/.test(csJs) && /err\.stage === 'open'/.test(csJs) && /err\.network/.test(csJs) && /err\.stale/.test(csJs)
 );
 ok(
   '扣分 chips：从 targets 展开到受检类型、每模块≤3、整行≤4、其余 +N（第五轮）',

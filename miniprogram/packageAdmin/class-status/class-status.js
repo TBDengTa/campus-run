@@ -1005,12 +1005,18 @@ Page({
       });
     } catch (e) {
       this.setData({ previewLoading: false, previewVisible: false });
-      wx.showModal({
-        title: '预览失败',
-        content: this.exportErrorText(e),
-        showCancel: false,
-        confirmText: '知道了',
+      // 预览失败不再把用户挡在「预览失败」上：**直接尝试生成 Excel**（用户 2026-11-21
+      // 报「请求失败(200)」——旧后端不认 format=json，把 CSV 当响应体返回，请求层解析不到 JSON）。
+      // 若后端支持 xlsx 只是预览接口偶发失败，这一步仍能导出成功；
+      // 若后端确实过旧（连 xlsx 都不认），下载/打开会失败，届时弹窗用 stale 文案告诉他部署后端。
+      this._exportStaleHint = !!(e && e.stale);
+      wx.showToast({
+        title: this._exportStaleHint ? '后端未更新，尝试直接导出…' : '预览不可用，直接生成 Excel',
+        icon: 'none',
+        duration: 2200,
       });
+      const key = this.data.previewRangeKey === 'month' ? 'month' : 'week';
+      this.exportAttendance(key);
     } finally {
       wx.hideLoading();
     }
@@ -1081,9 +1087,15 @@ Page({
   /** 导出失败的兜底弹窗：确认=复制表格文本（copyText），取消=知道了 */
   showExportFailure(e) {
     const canCopy = !!this.data.copyText;
+    // 预览阶段已发现后端过旧（返回的不是 JSON）：导出再失败时把话说明白，
+    // 否则用户只看到「导出失败」+ 一条本机打不开的文案，会以为是小程序坏了。
+    const staleHint = this._exportStaleHint
+      ? '后端可能还是旧版本（导出接口返回格式不对），请让管理员重启或部署最新后端后再试。\n'
+      : '';
+    this._exportStaleHint = false;
     wx.showModal({
       title: '导出失败',
-      content: this.exportErrorText(e) + (canCopy ? '\n可改用「复制表格文本」，直接粘到 Excel/微信里。' : ''),
+      content: staleHint + this.exportErrorText(e) + (canCopy ? '\n可改用「复制表格文本」，直接粘到 Excel/微信里。' : ''),
       showCancel: true,
       confirmText: canCopy ? '复制文本' : '知道了',
       cancelText: '关闭',
@@ -1093,10 +1105,11 @@ Page({
     });
   },
 
-  // 失败文案分档（网络 / 无权限 / 登录过期 / 保存 / 打开）—— 页面直接展示
+  // 失败文案分档（网络 / 无权限 / 登录过期 / 保存 / 打开 / 后端过旧）—— 页面直接展示
   exportErrorText(e) {
     const err = e || {};
     const status = Number(err.statusCode) || 0;
+    if (err.stale) return '后端还没更新（接口返回的不是 JSON），请重启或部署最新后端后再导出。';
     if (err.code === 401 || status === 401) return '登录已过期，请重新登录后再导出。';
     if (err.code === 403 || status === 403) return '没有导出权限（需要 class.view 班级状态查看权限）。';
     if (err.stage === 'save') return err.message || 'Excel 已下载，但保存到本机失败，请重试。';

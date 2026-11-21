@@ -300,6 +300,19 @@ function rawRequest({ url, method = 'GET', data, header = {}, timeout = 15000, _
           gotoLogin();
           return;
         }
+        // 2xx 但响应体不是对象（没有 { code, data } 包装）：**多半是服务端版本过旧** ——
+        // 该接口还不认识新参数，把文本/CSV/HTML 原样返回了。旧版这里会落到
+        // 「请求失败(200)」这句谁都不知道该怎么办的话（用户 2026-11-21 报障正是它：
+        // 新小程序请求 format=json 导出预览，旧后端返回 CSV 文本）。
+        // 明确标 stale=true，页面据此提示「重启/部署后端」并尽量走降级路径。
+        if (statusCode >= 200 && statusCode < 300 && (typeof body !== 'object' || body === null)) {
+          const err = new Error('服务端返回格式异常（可能后端未更新），请重启或部署最新后端后重试');
+          err.code = -1;
+          err.statusCode = statusCode;
+          err.stale = true;
+          reject(err);
+          return;
+        }
         if (statusCode >= 200 && statusCode < 300 && body.code === 0) {
           resolve(body.data);
           return;
