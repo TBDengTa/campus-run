@@ -624,6 +624,7 @@ GitHub Release 正文至少包含：
 | 文档 | 用途 |
 |---|---|
 | [README.md](../README.md) | 产品介绍、快速开始、发布、部署 |
+| [README.en.md](../README.en.md) | English README（英文版入口） |
 | [AGENTS.md](../AGENTS.md) | 开发硬约束与历史事故复盘 |
 | [database-v2.md](database-v2.md) | 集合、索引、字段口径 |
 | [api.md](api.md) | 接口清单与请求 / 响应 |

@@ -1,5 +1,7 @@
 # 唐唐快跑 · 校园跑小程序 2.0
 
+[English](README.en.md) | **简体中文**
+
 > 面向高校师生的校园运动记录与班级管理平台：微信小程序（用户端 + 管理端同包）+ Node.js 后端 + MongoDB。
 > **当前版本：v2.0.13** · [GitHub Release](https://github.com/TBDengTa/campus-run/releases/tag/v2.0.13)
 
@@ -463,6 +465,7 @@ node tools/verify-beidou-lottery.js
 
 | 文档 | 内容 |
 |---|---|
+| **[README.en.md](README.en.md)** | **English README（英文版：产品 / 架构 / 启动 / 发布 / 质量）** |
 | **[docs/architecture.md](docs/architecture.md)** | **内部文件架构：分层、模块地图、数据流、扩展指南、发布流程** |
 | [docs/database-v2.md](docs/database-v2.md) | 数据库 2.0 设计（集合、索引、字段口径） |
 | [docs/api.md](docs/api.md) | 接口说明（用户端 / 班级域 / 学生会域 / 管理端） |
