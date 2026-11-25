@@ -32,6 +32,7 @@ const read = (p) => fs.readFileSync(p, 'utf8');
 const classJs = read(path.join(MINI, 'packageAdmin', 'class', 'class.js'));
 const classWxml = read(path.join(MINI, 'packageAdmin', 'class', 'class.wxml'));
 const classWxss = read(path.join(MINI, 'packageAdmin', 'class', 'class.wxss'));
+const attWxml = read(path.join(MINI, 'components', 'attendance', 'attendance.wxml'));
 const csJs = read(path.join(MINI, 'packageAdmin', 'class-status', 'class-status.js'));
 // 去注释后的代码：断言「源码里不再出现某标识符」时必须只看代码（注释里会提到被删掉的旧名字）
 const stripComments = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '');
@@ -262,17 +263,24 @@ ok(
 );
 ok('/ranking 请求带所选日期', /\/api\/class\/ranking', \{[^}]*date: this\.data\.runDate/.test(classJs));
 {
-  // 学生名单必须保持「今天」语义：/students 的参数块里绝不能出现 date
+  // 用户 2026-11-22「校园跑的日期选择应该能查看当天的未达标学生」：
+  // 本条旧口径（名单**不传** date、只看今天）已被需求推翻 —— 现在名单与督促都必须带 date: listDate。
+  // 反向断言的意图保留：**不能**再出现「不传 date」的 /students 调用（漏传就会又只能看今天）。
   const calls = classJs.match(/\/api\/class\/students', \{([\s\S]*?)\n\s*\}\);/g) || [];
-  ok('学生名单请求**不传** date（名单是今天语义，回看只改校园跑）', calls.length >= 1 && calls.every((c) => !/\bdate:/.test(c)), calls.length);
+  ok(
+    '学生名单请求都带 date: listDate（跟随校园跑所选日期，不再只看今天）',
+    calls.length >= 1 && calls.every((c) => /date:\s*this\.data\.listDate/.test(c)),
+    calls.length
+  );
 }
 {
   const body = fnBody(classJs, 'switchClass(e) {');
   ok('切换班级时把回看日期重置为今天（不串班回看）', /runDateView\(runToday, runToday\)/.test(body), body.slice(0, 160));
 }
 ok(
-  '回看态禁用督促名单（抽屉名单是今天语义，避免张冠李戴）',
-  /this\.data\.runIsPast\) return/.test(classJs) && /runPastTip/.test(classJs)
+  '回看态**允许**督促名单，且按所选日期取（不再被 runIsPast 拦下）',
+  !/this\.data\.tab !== 'run' \|\| this\.data\.runIsPast\) return/.test(classJs) &&
+    /async openNudge\(\) \{[\s\S]{0,900}?date: this\.data\.listDate/.test(classJs)
 );
 
 console.log('\n=== 六、前端：班超紧凑排版 + 记录卡片 + dayRecords（需求 1、2）===');
@@ -294,8 +302,8 @@ ok(
   countOf(classJs, /this\.clearBanchaoDayRecords\(\);/g)
 );
 ok(
-  '记录卡片是**同一个模板**（最近记录 + 当日分组复用，不写两套视觉）',
-  /<template name="bc-record">/.test(classWxml) && countOf(classWxml, /<template is="bc-record"/g) >= 2,
+  '记录卡片是**同一个模板**（检查记录全宽卡复用，不写两套视觉）',
+  /<template name="bc-record">/.test(classWxml) && countOf(classWxml, /<template is="bc-record"/g) >= 1,
   countOf(classWxml, /<template is="bc-record"/g)
 );
 ok(
@@ -316,7 +324,13 @@ ok(
     /banchaoDayTruncateText/.test(classWxml) &&
     /所选区间暂无检查记录/.test(classWxml)
 );
-ok('紧凑排版：明细两列网格 + 趋势迷你条（不再竖排 5 行）', /cls-bc-module-head/.test(classWxml) && /cls-bc-trend-bars/.test(classWxml) && /cls-bc-trend-col/.test(classWxml));
+ok(
+  '紧凑排版：明细/KPI 固定双列 Grid + 趋势迷你条（不再竖排 5 行）',
+  /cls-bc-module-head/.test(classWxml) && /cls-bc-trend-bars/.test(classWxml) && /cls-bc-trend-col/.test(classWxml) &&
+    /\.cls-bc-kpis\s*\{[^}]*display: grid[^}]*repeat\(2, minmax\(0, 1fr\)\)/.test(classWxss) &&
+    /\.cls-bc-modules\s*\{[^}]*display: grid[^}]*repeat\(2, minmax\(0, 1fr\)\)/.test(classWxss) &&
+    /\.cls-bc-module\s*\{[^}]*width: auto[^}]*min-width: 0/.test(classWxss)
+);
 
 // ---- 第三轮（用户 2026-11-20）：总评压缩 + KPI 双列卡 + 明细/记录双列 ----
 ok(
@@ -332,11 +346,110 @@ ok(
   /cls-bc-modules/.test(classWxml) && /cls-bc-module-desc/.test(classWxml) && !/tt-card cls-bc-modules/.test(classWxml)
 );
 ok(
-  '最近记录 = 同一 bc-record 模板 + 唯一双列容器（详细检查记录仍全宽列表）',
-  /cls-bc-records-grid/.test(classWxml) &&
-    /banchaoRecentGrid/.test(classWxml) &&
-    countOf(classWxml, /cls-bc-records-grid/g) === 1 &&
-    countOf(classWxml, /<template is="bc-record"/g) >= 2
+  '最近记录块已删（2026-11-23 用户要求：已有检查记录）；检查记录全宽卡复用 bc-record',
+  !/cls-bc-records-grid/.test(classWxml) &&
+    !/banchaoRecentGrid/.test(classWxml) &&
+    /cls-bc-day-card/.test(classWxml) &&
+    countOf(classWxml, /<template is="bc-record"/g) >= 1
+);
+ok(
+  '融合吸顶：周期 segment+picker 在 topbar 条件第二行，无独立 cls-sticky / --cls-head-h',
+  /cls-topbar-range" wx:if="\{\{tab === 'attendance'\}\}"/.test(classWxml) &&
+    !/cls-sticky/.test(classWxml) &&
+    !/--cls-head-h/.test(classWxss)
+);
+ok(
+  'iOS 分组标题：去橙竖条、灰字小标题（班级页与详情页同手法）',
+  /\.cls-page \.tt-section::before\s*\{[^}]*display: none/.test(classWxss) &&
+    /\.cls-page \.tt-section\s*\{[^}]*color: var\(--tt-text-3\)/.test(classWxss)
+);
+ok(
+  '边距单一口径：分组卡 margin 0（外层由 cls-list 提供），不再双重缩进',
+  /\.cls-group\s*\{[^}]*margin: 0/.test(classWxss)
+);
+ok(
+  '班级名 iOS 纯文本标题：不再使用胶囊背景 / 边框 / 阴影 / 内距（2026-11-24 用户要求）',
+  (() => {
+    const m = classWxss.match(/\.cls-classbar\s*\{([^}]*)\}/);
+    return !!m && !/(?:background|border|box-shadow|padding)\s*:/.test(m[1]) &&
+      /\.cls-classbar-name\s*\{[^}]*font-weight: 700/.test(classWxss);
+  })()
+);
+ok(
+  '出勤率并入本期报表所在聚合卡第一段：embedded 去掉组件面层与周期行（2026-11-24 用户要求）',
+  (() => {
+    const att = classWxml.indexOf('<attendance');
+    const aggr = classWxml.indexOf('tt-card tt-glass cls-bc-aggr');
+    const report = classWxml.indexOf('cls-bc-report-acts');
+    return att > aggr && report > att && /<attendance\s+embedded/.test(classWxml) &&
+      /wx:if="\{\{!rangeDriven && !embedded\}\}"/.test(attWxml) &&
+      /wx:elif="\{\{!embedded\}\}"/.test(attWxml);
+  })()
+);
+ok(
+  '聚合卡：出勤率 + 本期报表 + 得分趋势 + 班级榜前三 + 检查记录合为一块（2026-11-23/24 用户要求）',
+  /cls-bc-aggr/.test(classWxml) &&
+    /cls-bc-att-sec/.test(classWxml) &&
+    /cls-bc-report-acts/.test(classWxml) &&
+    /cls-bc-trend-bars/.test(classWxml) &&
+    /cls-bc-top-row/.test(classWxml) &&
+    /cls-bc-day-list/.test(classWxml) &&
+    /\.cls-bc-day-list\s*\{[^}]*background: var\(--td-bg-color-secondarycontainer\)/.test(classWxss) &&
+    !/tt-card tt-glass cls-bc-report"/.test(classWxml) &&
+    !/tt-card tt-glass cls-bc-trend"/.test(classWxml) &&
+    !/tt-card tt-glass cls-bc-top"/.test(classWxml)
+);
+ok(
+  '班超 hero 不重复班级名（顶栏已有班名，避免再占一行）',
+  !/cls-bc-hero-name/.test(classWxml) && !/cls-bc-hero-name/.test(classWxss)
+);
+ok(
+  '聚合卡内出勤率紧凑：统计 / 模块 chips 缩小、说明行不渲染，宽屏用 px 覆写',
+  /\.cls-bc-att \.tt-stat-value\s*\{[^}]*font-size: 30rpx/.test(classWxss) &&
+    /\.cls-bc-att \.at-mod\s*\{[^}]*padding: 6rpx 12rpx/.test(classWxss) &&
+    /\.cls-bc-att \.at-note\s*\{[^}]*display: none/.test(classWxss) &&
+    /\.screen-regular \.cls-bc-att \.tt-stat-value,[\s\S]{0,120}?font-size: 15px/.test(classWxss) &&
+    /\.screen-regular \.cls-bc-att \.at-mod,[\s\S]{0,120}?padding: 3px 7px/.test(classWxss)
+);
+ok(
+  '周期行单行封顶：topbar-range / period / chip 全 nowrap，周 chip 用短标签「第N周」（2026-11-24 用户「不算名称的两行」）',
+  /\.cls-topbar-range\s*\{[^}]*flex-wrap: nowrap/.test(classWxss) &&
+    /\.cls-period\s*\{[^}]*flex-wrap: nowrap/.test(classWxss) &&
+    /\.cls-period-chip\s*\{[^}]*flex-wrap: nowrap/.test(classWxss) &&
+    /第\{\{weekOptions\[weekIndex\]\.value\}\}周/.test(classWxml)
+);
+ok(
+  '次级行融入吸顶：学生=搜索+筛选+排序，校园跑=日期回看（主/次两行封顶）',
+  /cls-topbar-tools" wx:if="\{\{tab === 'students'\}\}"/.test(classWxml) &&
+    /cls-topbar-tools" wx:elif="\{\{tab === 'run'\}\}"/.test(classWxml) &&
+    !/cls-search-card/.test(classWxml) &&
+    !/cls-tools"/.test(classWxml)
+);
+ok(
+  '吸顶控件高度统一：--cls-ctl-h 单一令牌（宽屏 px 覆写）+ 三行布局（班级名独占一行、分段全宽一行，2026-11-24 用户「更改为三行显示」）',
+  /--cls-ctl-h: 64rpx/.test(classWxss) &&
+    /\.cls-page\.screen-regular,\s*\.cls-page\.screen-wide\s*\{[^}]*--cls-ctl-h: 32px/.test(classWxss) &&
+    /cls-topbar-main/.test(classWxml) &&
+    /\.cls-topbar-main\s*\{[^}]*flex-direction: column/.test(classWxss) &&
+    /\.cls-segment\s*\{[^}]*width: 100%/.test(classWxss) &&
+    countOf(classWxss, /height: var\(--cls-ctl-h\)/g) >= 5 &&
+    /--td-search-height: var\(--cls-ctl-h\)/.test(classWxss)
+);
+ok(
+  'tab 呼吸感（2026-11-24 用户「过于紧凑」「压缩了字」）：班级名全宽不截断、分段全宽、item 有横向内距、字号 26rpx',
+  (() => {
+    const bar = classWxss.match(/\.cls-classbar\s*\{([^}]*)\}/);
+    const item = classWxss.match(/\.cls-topbar \.tt-segment-item,\s*\.cls-panel \.tt-segment-item\s*\{([^}]*)\}/);
+    return !!bar && /flex: none/.test(bar[1]) && /max-width: 100%/.test(bar[1]) &&
+      !!item && /padding: 0 8rpx/.test(item[1]) &&
+      /--cls-ctl-fs: 26rpx/.test(classWxss) &&
+      /\.cls-topbar-main\s*\{[^}]*gap: 12rpx/.test(classWxss);
+  })()
+);
+ok(
+  '解释文本已删：roletip / 报表 tip / 页级解释页脚（只保留配置只读 footnote）',
+  !/cls-roletip/.test(classWxml) && !/cls-bc-report-tip/.test(classWxml) &&
+    countOf(classWxml, /class="tt-footer"/g) === 1
 );
 ok(
   '修掉「本今日还没有检查记录」：hero 备注整句由 JS 预计算，模板不再拼 `本{{rangeWord}}`',
@@ -645,6 +758,15 @@ ok(
   /async function request\(/.test(reqJs) && /\n  request,/.test(reqJs) && /module\.exports = \{/.test(reqJs)
 );
 ok('下载文件名兜底前缀不与其它临时文件混淆', /DOWNLOAD_FALLBACK_PREFIX/.test(reqJs));
+
+// ===== 2026-11-23 内容层重排版：widget 板 + 照片底记录卡 =====
+ok('数据概况 widget 板：达标率环 + 2×2 关键数 + 操作 chips', /cls-ov-ring/.test(classWxml) && /cls-ov-side/.test(classWxml) && /cls-ov-actions/.test(classWxml));
+ok('环的 conic-gradient 在 JS 预计算（模板只渲染内联 style）', /ringStyle: `background: conic-gradient\(/.test(classJs));
+ok('操作 chips 紧贴数据（未达标/名单/全校榜三入口在概况卡内）', /cls-ov-act" bind:tap="openUnachieved"/.test(classWxml) && /cls-ov-act" bind:tap="openStudentsTab"/.test(classWxml) && /cls-ov-act" bind:tap="openPublicRanking"/.test(classWxml));
+ok('记录卡有照片就以照片为底（cover + scrim + 内容层）', /cls-bc-cover/.test(classWxml) && /cls-bc-scrim/.test(classWxml) && /cls-bc-body/.test(classWxml) && /has-photo/.test(classWxml));
+ok('照片底卡 pill 显示总数且 catch:tap 预览（不冒泡成进详情）', /cls-bc-photo-pill" wx:if="\{\{hasPhotos\}\}" catch:tap="previewPhoto"/.test(classWxml) && /photoCountText: String\(photoCount\)/.test(classJs));
+ok('照片底卡文字压 scrim 上走白字（可读性）', /\.has-photo \.cls-bc-record-module[\s\S]{0,220}color: #fff/.test(classWxss));
+ok('榜单行 hairline 紧凑化', /\.cls-top \+ \.cls-top\s*\{[^}]*var\(--tt-line\)/.test(classWxss));
 
 console.log(failed ? `\n契约自检：失败 ${failed} 项` : '\n契约自检全部通过');
 process.exit(failed ? 1 : 0);

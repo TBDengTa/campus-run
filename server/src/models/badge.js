@@ -10,7 +10,7 @@ const badgeSchema = new mongoose.Schema(
     key: { type: String, required: true, unique: true },
     name: { type: String, required: true },
     description: { type: String, default: '' },
-    icon: { type: String, default: '' }, // 图片 URL（如 https://file.tangbo.tech/...）或图标名
+    icon: { type: String, default: '' }, // 图片 URL（如 https://cdn.example.com/...）或图标名
     type: {
       type: String,
       enum: [

@@ -60,10 +60,10 @@ function looksLikeRealMongoUri(rawLine) {
 // ---------- 自测模式 ----------
 if (process.argv.includes('--selftest')) {
   const cases = [
-    ['MONGO_URI=mongodb://mongo_X:secret@s1.tangbo.tech:27017/?authSource=admin', true, '真实连接串（域名+密码）'],
+    ['MONGO_URI=mongodb://mongo_X:secret@db.example.com:27017/?authSource=admin', true, '真实连接串（域名+密码）'],
     ['MONGO_URI=mongodb://root:Abc12345@10.0.0.5:27017', true, 'IPv4 + 密码'],
     ['MONGO_URI=mongodb://admin:p%40ss@db.example.com:27017', true, 'URL 编码密码 + 域名'],
-    ['  MONGO_URI=mongodb://usr:pwd@s1.tangbo.tech:27017', true, '带缩进的真实串'],
+    ['  MONGO_URI=mongodb://usr:pwd@db.example.com:27017', true, '带缩进的真实串'],
     ['MONGO_URI=mongodb://a:b@my-db.internal:27017', true, '内部域名带凭据'],
     ['MONGO_URI=mongodb+srv://u:p@cluster0.abcde.mongodb.net/test', true, 'mongodb+srv 云库'],
     ['MONGO_URI=mongodb://<用户名>:<密码>@127.0.0.1:27017/?authSource=admin', false, '文档占位符（中文+尖括号）'],

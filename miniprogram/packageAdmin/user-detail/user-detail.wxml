@@ -208,15 +208,16 @@
       </view>
     </block>
 
-    <!-- 班级视角：今日 / 本周摘要（无管理权限时的只读数据） -->
+    <!-- 班级视角：当日 / 本周摘要（无管理权限时的只读数据）
+         「当日」= viewDateLabel（我的班级 → 校园跑 选的历史日期；没选就是「今日」） -->
     <block wx:if="{{classOnly && classInfo}}">
       <view class="tt-section">
-        <text>今日与本周</text>
+        <text>{{viewDateLabel}}与本周</text>
         <text class="tt-section-extra">班级视角 · 只读</text>
       </view>
       <view class="tt-card ud-card">
         <view class="ud-kv">
-          <text>今日步数</text>
+          <text>{{viewDateLabel}}步数</text>
           <text class="ud-kv-v">{{classInfo.todayStepsText}} / {{classInfo.todayTargetText}} 步 · {{classInfo.achievedToday ? '已达标' : '未达标'}}</text>
         </view>
         <view class="ud-kv">

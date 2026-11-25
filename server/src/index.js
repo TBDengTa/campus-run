@@ -130,6 +130,25 @@ async function bootstrap() {
   } catch (e) {
     console.warn('[beidou] 幂等索引迁移失败（不影响启动，但跨用户撞 drawId 会串号）:', e.message);
   }
+  // ③d 北斗运动 v3→v4 配置迁移（铜版经济 → 九宫格随机盘面/图标）：只回填新字段，不覆盖管理员已调权重。
+  //     必须读原始文档判断版本（Mongoose 对新增字段有 schema default，直接读 doc 会误判为已迁移）。
+  try {
+    const { migrateBeidouConfig } = require('./services/beidou');
+    const m = await migrateBeidouConfig();
+    if (m && m.migrated) {
+      console.log(`[beidou] 配置已迁移到 v4（九宫格随机盘面/图标），回填：${(m.filled || []).join(', ') || '默认字段'}`);
+    }
+  } catch (e) {
+    console.warn('[beidou] v4 配置迁移失败（用户端会按默认值运行，建议手动检查 goal_config.beidou）:', e.message);
+  }
+  // ③e 北斗内置图标 seed（幂等、只补空 iconUrl/coinIconUrl，不覆盖管理员上传的图）
+  try {
+    const { seedBeidouBuiltinIcons } = require('./services/beidou');
+    const s = await seedBeidouBuiltinIcons();
+    if (s && s.seeded && s.seeded.length) console.log(`[beidou] 内置图标已补：${s.seeded.join(', ')}`);
+  } catch (e) {
+    console.warn('[beidou] 内置图标 seed 失败（不影响玩法，图标回退 emoji）:', e.message);
+  }
   // ④ 班级台账（class_profiles）：**仅在整表为空时**首次生成，之后由管理端「从学籍同步」按钮触发，
   //    避免每次启动都全表扫描 users（参考 AGENTS.md 关于启动期迁移必须只在首次生效的约定）
   const ClassProfile = require('./models/class-profile');

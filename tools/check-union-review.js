@@ -136,7 +136,7 @@ ok('批量失败不抛错整批（try/catch 逐条）', /try \{\s*await reviewOn
 console.log('\n[5] 小程序接线');
 ok('页面已登记进 app.json（packageUnion/review/review）', (APP.subpackages || []).some((p) => p.root === 'packageUnion' && p.pages.includes('review/review')));
 ok('工作台「待复核」进复审台', /goReviewList\(\)[\s\S]{0,140}packageUnion\/review\/review/.test(UNION_PAGE));
-ok('班超块「待复核」进同一页', /packageUnion\/review\/review/.test(read(MINI, 'components', 'banchao-block', 'banchao-block.js')));
+ok('首页待办行「待复核」进同一页', /packageUnion\/review\/review/.test(read(MINI, 'pages', 'home', 'home.js')));
 ok('前端拉队列接口', /\/api\/union\/review\/queue/.test(JS));
 ok('前端提交批量接口', /\/api\/union\/review\/batch/.test(JS));
 ok('分档来自服务端（不在前端写区间）', /data\.bands/.test(JS) && !/\$lte|0 ~ 2|2 ~ 5/.test(JS));

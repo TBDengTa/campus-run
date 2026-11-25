@@ -5,6 +5,7 @@
 //   无素材 / 图片加载失败 / 接口异常：直接进首页，不阻塞启动
 //   点击素材：上报点击后跳转外链或落地页；从落地页返回时直接进首页（不再倒计时）
 const auth = require('../../utils/request');
+const shareRef = require('../../utils/beidou-share');
 const { env } = require('../../utils/request');
 
 const SLOT_KEY = 'startup_banner'; // 启动页广告位（即开屏）
@@ -23,7 +24,9 @@ Page({
     flagTop: 0,
   },
 
-  onLoad() {
+  onLoad(options) {
+    // 分享卡归因：先存令牌再走登录闸门（未登录跳登录页后，登录完成仍能从 storage 上报）
+    shareRef.capture(options);
     // 未登录 / 已退出 / 游客：统一跳登录页，不展示开屏
     if (!getApp().requireLogin()) return;
     // 单页栈的非 tabBar 页会被微信加上「返回首页」按钮，开屏页必须隐藏

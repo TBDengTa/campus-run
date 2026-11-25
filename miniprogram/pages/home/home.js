@@ -1,5 +1,7 @@
 const auth = require('../../utils/request');
 const fmt = require('../../utils/format');
+const shareRef = require('../../utils/beidou-share');
+const dashboard = require('../../utils/dashboard');
 
 // 进首页自动同步微信运动的最小间隔（毫秒）：
 // 自动同步是「进页面就做」的动作，来回切 tab 很容易把接口打爆，
@@ -15,17 +17,9 @@ const AUTO_SYNC_MIN_GAP = 5 * 60 * 1000;
 // 时间戳在 refresh() 的成功路径末尾才记 —— 失败不占坑，网络抖动后切回来立刻能重试。
 const HOME_REFRESH_MIN_GAP = 30 * 1000;
 
-// ===== 可选插画素材：把图片放到下列路径即可自动启用（未放置时回退到 CSS 插画）=====
-//   顶部场景图：miniprogram/assets/home/hero.jpg（宽高比约 2.87:1，例如 1500×523；
-//   图内已含「唐唐快跑」标题与标语，放图后页面不再叠加文字，高度按图片比例自适应）
-//   hero 用 JPG：小程序 image 组件对 JPG **全平台无兼容门槛**，1500×523 实测 q85 = 74.2KB
-//   （同图 PNG 321.1KB、WebP q80 41.4KB）。WebP 虽然更小，但有 iOS 14 门槛且目标环境实测不显示，
-//   已弃用（不再做 platform/系统版本判断，避免多一套维护面）；PNG 仅作为可选兜底命名保留。
-//   4 个入口插画：miniprogram/assets/home/entry-water.png / entry-plan.png / entry-badge.png / entry-body.png（建议 240×240）
+// ===== 可选插画素材：把图片放到下列路径即可自动启用（未放置时回退到矢量图标）=====
+//   4 个小组件插画：miniprogram/assets/home/entry-water.png / entry-plan.png / entry-badge.png / entry-body.png（建议 240×240）
 //   入口小图保持 PNG：这类扁平小图 PNG 已经比 WebP 更小（WebP 无损/有损反而大 3%~40%），换格式没有收益
-const HERO_IMAGE_JPG = 'assets/home/hero.jpg';
-// 旧命名兜底：若目录里放的是 hero.png（例如设计给的是 PNG），不改代码也能生效
-const HERO_IMAGE_PNG = 'assets/home/hero.png';
 const ENTRY_IMAGES = {
   water: 'assets/home/entry-water.png',
   plan: 'assets/home/entry-plan.png',
@@ -33,7 +27,7 @@ const ENTRY_IMAGES = {
   body: 'assets/home/entry-body.png',
 };
 
-// 判断代码包内文件是否存在（不存在则用 CSS 插画兜底）
+// 判断代码包内文件是否存在（不存在则用矢量图标兜底）
 function assetExists(p) {
   try {
     wx.getFileSystemManager().accessSync(p);
@@ -43,21 +37,12 @@ function assetExists(p) {
   }
 }
 
-// 顶部场景图：优先 hero.jpg，其次旧名 hero.png（若存在），都没有则返回空串（WXML 回退 CSS 插画）
-function resolveHero() {
-  for (const p of [HERO_IMAGE_JPG, HERO_IMAGE_PNG]) {
-    if (assetExists(p)) return `/${p}`;
-  }
-  return '';
-}
-
 function resolveAssets() {
-  const hero = resolveHero();
   const entries = {};
   for (const key of Object.keys(ENTRY_IMAGES)) {
     entries[key] = assetExists(ENTRY_IMAGES[key]) ? `/${ENTRY_IMAGES[key]}` : '';
   }
-  return { hero, entries };
+  return { entries };
 }
 
 // 按时间给出问候语
@@ -127,24 +112,8 @@ function buildBanNotice(user, restrictions, appealPending) {
   };
 }
 
-// 管理端导航分类：与管理中枢**共用同一份数据**（utils/nav-groups.js）。
-// 以前这里与 hub.js 各写一套 HOME_ENTRIES / GROUPS + entryVisible，权限 key 与分组名都会漂移；
-// 用户要求「管理中枢也一并跟这样重新分类显示」，所以两处一律从共享模块取。
-const { homeGroups, navCtx } = require('../../utils/nav-groups');
-// 分类 → 条目 → 页面 的两级交互（与管理中枢共用同一套 Behavior，见 behaviors/nav-sheet.js）
-const navSheetBehavior = require('../../behaviors/nav-sheet');
-
-// 8 个分类各自的图标（分类按钮本身要一个图标，条目图标在浮层里显示）
-const NAV_GROUP_ICON = {
-  class: 'usergroup',
-  union: 'usergroup',
-  user: 'secured',
-  assessment: 'task-checked',
-  appeal: 'assignment-checked',
-  content: 'notification',
-  ads: 'play-circle',
-  system: 'setting',
-};
+// 三端响应式（compact/regular/wide，根节点挂 screen-* 类，见 behaviors/screen.js）
+const screenBehavior = require('../../behaviors/screen');
 
 const WEEK_LABELS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 
@@ -170,15 +139,15 @@ function toKmText(meters, fixed = 2) {
 }
 
 Page({
-  // 分类 → 条目 → 页面 的两级交互由 Behavior 提供（navSheet / navSheetVisible / onNavCellTap / onNavEntryTap）
-  behaviors: [navSheetBehavior],
+  behaviors: [screenBehavior],
 
   data: {
     loading: true,
     dateText: '',
     greetText: '你好',
-    // 插画素材（自动探测）
-    heroImage: '',
+    // iOS 大标题问候头：整句 JS 拼好（问候语 + 姓名），WXML 零运算
+    greetTitle: '你好',
+    // 小组件插画素材（自动探测）
     entryImages: { water: '', plan: '', badge: '', body: '' },
     // 今日数据
     steps: 0,
@@ -194,7 +163,6 @@ Page({
     goalAchieved: false,
     goalName: '',
     hasRecord: false,
-    loadingOverview: false,
     // 本周
     weekDays: [],
     weekly: null,
@@ -207,10 +175,6 @@ Page({
     noticeDuration: 12,
     // 跑分（学生端展示；教师/接口不可用时为空）
     points: null,
-    // 「我的班级」卡的刷新触发器（onShow 时更新，组件 observer 收到即重新拉取）
-    classRefreshAt: 0,
-    // 班超块 / 学生会块的刷新触发器（同上的机制，两个块共用一个触发器）
-    bcRefreshAt: 0,
     pointsToday: '',
     pointsWeek: '',
     pointsTotal: '',
@@ -226,16 +190,16 @@ Page({
     roleText: '学生',
     isTeacher: false,
     isManager: false,
-    // 快捷操作：8 个分类（我的班级 / 学生会 / 用户与权限 / 考核与目标 / 申诉审核 / 内容与通知 /
-    // 广告运营 / 系统设置），来自 utils/nav-groups.js 的 visibleGroups()，空分类整组不出现
-    mgrGroups: [],
-    // 分类按钮的图标（分类不是页面，得自己配一个图标给宫格用）
-    navGroupIcon: NAV_GROUP_ICON,
-    // 「数据概况 + 快捷操作」卡的显隐（与 isManager 解耦：班主任 / 班委无管理权限也要看到「我的班级」组）
-    showHomeEntries: false,
+    // 「身份与待办」单卡（首页唯一的身份面）：行模型全 JS 预计算，见 loadTodoRows。
+    // 操作入口一律收进工作台，这里只给计数行 + 行内直跳（多班班主任行 → 工作台选班）。
+    todoRows: [],
+    showTodoCard: false,
+    // 管理 dashboard（数据概况 + 平均步数排行）：管理员首页也要看（用户 2026-11-23 复核），
+    // 与工作台同一份取数实现 utils/dashboard.js；守卫 dashboard.view。
+    canDashboard: false,
     overview: null,
-    top3: null, // 平均步数前三（本周日均）：个人 / 班级
-    greetName: '', // 教师问候称呼（如「王老师」）
+    top3: null,
+    loadingOverview: false,
     // 获得徽章弹窗（自定义组件，替代 wx.showModal —— 纯文字看不到徽章长什么样）
     badgeAward: { visible: false, badges: [] },
   },
@@ -243,13 +207,13 @@ Page({
   onLoad() {
     // 未登录 / 已退出 / 游客：统一跳登录页，不执行任何业务逻辑
     if (!getApp().requireLogin()) return;
-    console.log('[compile-marker] home.js v3 已加载', new Date().toISOString());
     const d = fmt.parseDateKey(fmt.todayKey());
-    const { hero, entries } = resolveAssets();
+    const { entries } = resolveAssets();
+    const greet = greetByHour();
     this.setData({
       dateText: `${d.m}月${d.d}日 ${d.week}`,
-      greetText: greetByHour(),
-      heroImage: hero,
+      greetText: greet,
+      greetTitle: greet,
       entryImages: entries,
     });
   },
@@ -258,16 +222,28 @@ Page({
     // 未登录 / 已退出 / 游客：统一跳登录页，不执行任何业务逻辑
     if (!getApp().requireLogin()) return;
     this.syncTabBar();
+    // 分享卡归因：必须在 30 秒节流 return 之前触发（否则刚登录进首页恰好命中节流时不会上报）
+    this.flushShareRef();
     // 30 秒节流（HOME_REFRESH_MIN_GAP 处有完整说明）：刚全量刷过就不重复拉，
     // tabBar 选中态已在上面同步，登录态变化由 refreshUser 的 401 自愈兜底。
     const now = Date.now();
     if (this._lastFullRefreshAt && now - this._lastFullRefreshAt < HOME_REFRESH_MIN_GAP) return;
-    // 让「我的班级」卡（班主任/班委）与班超块 / 学生会块跟着首页一起刷新
-    this.setData({ classRefreshAt: now, bcRefreshAt: now });
     this.refresh();
     // 进页面自动同步微信运动（用户 2026-10-26「微信运动学生账户要进入页面自动同步」）。
     // 放在 refresh() 之后、且不 await：同步依赖 openid 会话，失败绝不能影响首页渲染。
     this.autoSyncWerun();
+  },
+
+  // 分享卡归因的客户端唯一入口：未登录/无 pending 时内部直接返回，不阻塞首页。
+  flushShareRef() {
+    shareRef
+      .flush()
+      .then((res) => {
+        if (res && res.rewarded) {
+          wx.showToast({ title: '已为好友助力', icon: 'none' });
+        }
+      })
+      .catch(() => {});
   },
 
   /**
@@ -318,11 +294,6 @@ Page({
     if (bar && typeof bar.setActive === 'function') bar.setActive('/pages/home/home');
   },
 
-  // 顶部插画解码失败的二次兜底：清空素材位，自动回退到 CSS 插画
-  onHeroError() {
-    if (this.data.heroImage) this.setData({ heroImage: '' });
-  },
-
   onPullDownRefresh() {
     this.refresh().finally(() => wx.stopPullDownRefresh());
   },
@@ -370,35 +341,19 @@ Page({
         banNotice = buildBanNotice(user, restrictions, appealPending);
       }
       const isManager = !!user.isManager;
-      const perms = user.effectivePermissions || [];
-      // 按权限 + 身份过滤的管理入口（WXML 无法调用方法，这里预计算）
-      // 分类与显隐判定统一走 utils/nav-groups.js —— 与管理中枢**同一份数据**，
-      // 用户要求「管理中枢也一并跟这样重新分类显示」，靠共享模块保证两处永不漂移。
-      // ctx 由 navCtx() 统一派生（含 canUnionScanJoin：只有主席团/部长/副部长/总管能「扫码加人」）。
-      const ctx = navCtx(user);
-      // 8 个分类（我的班级 / 学生会 / 用户与权限 / 考核与目标 / 申诉审核 / 内容与通知 / 广告运营 / 系统设置）。
-      // 首页用 homeGroups()：**纯学生会成员**看不到「学生会」分类（用户要求 —— 已有独立学生会卡片
-      // 与底部「学生会」tab，不必再列一排管理导航）；持 union.* 权限的管理员照旧可见（那是他们的入口）。
-      const mgrGroups = homeGroups(ctx);
-      // 「快捷操作」卡与 isManager 解耦：班主任 / 班委没有管理权限，但「我的班级」组正是给他们看的；
-      // 身份类条目的可见性由 nav-groups 的 only 条件保证，后台入口不会漏给无权限账号。
-      const showHomeEntries = mgrGroups.length > 0;
-      // 注：管理面板里不追加「管理中枢」宫格（产品要求）—— 底部导航的「管理」项（自定义 tabBar，按权限渲染）
-      // 与学生管理员/教师管理员都能用，管理面板里的快捷操作只保留具体的管理子模块入口。
       const isTeacher = user.role === 'teacher';
-      // 教师问候称呼：名字里已含「老师」就不再重复拼接
+      const canDashboard = dashboard.canViewDashboard(user);
+      // iOS 大标题问候头：整句在这里拼好（WXML 不拼三元，字段为空不会留下断句）
       const rawName = user.realName || user.nickname || user.account || '';
-      const greetName = !rawName ? '老师' : /老师/.test(rawName) ? rawName : `${rawName}老师`;
+      const greet = greetByHour();
       this.setData({
         isManager,
-        mgrGroups,
-        showHomeEntries,
-        canViewAds: perms.includes('*') || perms.includes('ad.view'),
+        canDashboard,
         role: user.role || 'student',
         roleText: isTeacher ? '教师' : '学生',
         isTeacher,
-        greetName,
-        greetText: greetByHour(),
+        greetText: greet,
+        greetTitle: rawName ? `${greet}，${rawName}` : greet,
       });
       // 跑分（学生才展示；接口不可用时隐藏整块）
       const points = pointsRes.status === 'fulfilled' ? pointsRes.value : null;
@@ -435,8 +390,10 @@ Page({
       });
       // 按广告图真实比例算高度（保证整张图完整显示）
       this.measureAdHeight(adList);
-      // 管理视角：拉取看板概览（无 dashboard.view 权限时静默忽略）
-      if (isManager) {
+      // 身份与待办单卡：按身份并发拉计数（不 await，任何一路失败只少一行）
+      this.loadTodoRows(user);
+      // 管理员首页的数据概况 / 排行（不 await，失败只少一张卡）
+      if (canDashboard) {
         this.loadOverview();
         this.loadTop3();
       }
@@ -531,37 +488,163 @@ Page({
     wx.navigateTo({ url: '/pages/badges/badges' });
   },
 
+  // 管理 dashboard：取数与格式化唯一实现在 utils/dashboard.js（工作台同一份）
   async loadOverview() {
     this.setData({ loadingOverview: true });
-    try {
-      const overview = await auth.get('/api/admin/dashboard/overview');
-      this.setData({
-        overview: { ...overview, stepsTodayText: fmt.formatNumber(overview.stepsToday) },
-      });
-    } catch (e) {
-      // 无 dashboard.view 权限，忽略：面板只显示快捷按钮
-    } finally {
-      this.setData({ loadingOverview: false });
-    }
+    const overview = await dashboard.fetchOverview();
+    this.setData({ overview, loadingOverview: false });
   },
 
-  // 平均步数前三（本周日均）：个人 / 班级
   async loadTop3() {
+    this.setData({ top3: await dashboard.fetchTop3() });
+  },
+
+  // 身份自愈（原 banchao-block.resolveUnionUser，组件删除后搬到这里）：
+  // 旧版本登录缓存 / 刚登录的占位对象可能缺 isUnionMember（undefined），
+  // 直接判会把成员误判成非成员且**不报错**。typeof 非 boolean 时主动 refreshUser 一次。
+  async resolveUnionUser() {
+    const me = getApp().globalData.userInfo || {};
+    if (typeof me.isUnionMember === 'boolean') return me;
     try {
-      const top3 = await auth.get('/api/admin/dashboard/top3');
-      const withText = (rows) =>
-        (rows || []).map((r) => ({ ...r, avgStepsText: fmt.formatNumber(r.avgSteps) }));
-      this.setData({
-        top3: {
-          rangeText: top3.rangeText,
-          individuals: withText(top3.individuals),
-          classes: withText(top3.classes),
-        },
-      });
+      const fresh = await getApp().refreshUser();
+      if (fresh) return fresh;
     } catch (e) {
-      // 无 dashboard.view 权限或接口异常：不显示排行块
-      this.setData({ top3: null });
+      /* 取不到就按非成员处理 */
     }
+    return me;
+  },
+
+  // 「身份与待办」单卡：首页唯一的身份面（用户 2026-11-23 首页重设计）。
+  // 操作入口全部在工作台，这里只给计数行 + 行内直跳；三路并发各自 catch，失败只少一行。
+  // 管理待办行按 **dashboard.view** 精确判定（isManager 只表示有任意权限，调 dashboard 接口会 403）。
+  async loadTodoRows(user) {
+    const me = await this.resolveUnionUser();
+    const perms = me.effectivePermissions || [];
+    const canDashboard = perms.includes('*') || perms.includes('dashboard.view');
+    const [unionRes, mineRes, overviewRes] = await Promise.all([
+      me.isUnionMember ? auth.get('/api/union/dashboard').catch(() => null) : Promise.resolve(null),
+      auth.get('/api/class/mine').catch(() => null),
+      canDashboard ? auth.get('/api/admin/dashboard/overview').catch(() => null) : Promise.resolve(null),
+    ]);
+    const rows = [];
+    if (unionRes) {
+      let entered = 0;
+      let expected = 0;
+      for (const m of unionRes.modules || []) {
+        // 早八这类「无记录=无迟到」的模块不计待办（与学生会页同口径）
+        if (m.optionalWhenMissing) continue;
+        entered += m.entered || 0;
+        expected += m.expected || 0;
+      }
+      rows.push({
+        key: 'union',
+        icon: 'app',
+        title: '学生会',
+        sub: me.unionText || '检查录入与复核',
+        valueText: expected ? `今日 ${entered}/${expected}` : '今日无待录',
+        url: '/pages/union/union',
+        tab: false,
+      });
+      if (unionRes.canReview && (unionRes.pendingReview || 0) > 0) {
+        rows.push({
+          key: 'review',
+          icon: 'assignment-checked',
+          title: '待复核',
+          sub: '学生会检查记录',
+          valueText: `${unionRes.pendingReview} 条`,
+          url: '/packageUnion/review/review',
+          tab: false,
+        });
+      }
+    }
+    const classes = (mineRes && mineRes.classes) || [];
+    if (mineRes && mineRes.role && classes.length) {
+      // 班主任 / 班委要看两类数据：班超（检查评比）与校园跑（达标），各一行。
+      // 班超走 /api/union/class/:className（与班级页同口径），校园跑走 /api/class/overview。
+      const [overs, bcs] = await Promise.all([
+        Promise.all(classes.map((c) => auth.get('/api/class/overview', { className: c }).catch(() => null))),
+        Promise.all(
+          classes.map((c) => auth.get(`/api/union/class/${encodeURIComponent(c)}`, { range: 'day' }).catch(() => null))
+        ),
+      ]);
+      let students = 0;
+      let achieved = 0;
+      let weekRateSum = 0;
+      let weekRateN = 0;
+      for (const o of overs) {
+        if (!o) continue;
+        students += o.studentCount || 0;
+        achieved += o.achievedToday || 0;
+        if (typeof o.weeklyRate === 'number') {
+          weekRateSum += o.weeklyRate;
+          weekRateN += 1;
+        }
+      }
+      const scores = bcs.filter((b) => b && typeof b.score === 'number').map((b) => b.score);
+      const single = classes.length === 1;
+      const roleText = mineRes.role === 'homeroom' ? '班主任' : '班委';
+      const classUrl = (tab) =>
+        single
+          ? `/packageAdmin/class/class?tab=${tab}&className=${encodeURIComponent(classes[0])}`
+          : '/pages/hub/hub';
+      const rank = single && bcs[0] && bcs[0].ranking ? bcs[0].ranking : null;
+      const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
+      const min = scores.length ? Math.min(...scores) : null;
+      // 班超行：单班给分数 + 全校名次；多班给均分 + 最低分（标明口径，不假装是单班分数）
+      rows.push({
+        key: 'banchao',
+        icon: 'chart-bar',
+        title: single ? classes[0] : `${classes.length} 个班 · ${roleText}`,
+        sub: single
+          ? rank && rank.rank
+            ? `全校第 ${rank.rank} / ${rank.total}`
+            : '今日班超'
+          : scores.length
+            ? `最低 ${fmt.scoreText(min)}`
+            : '今日暂无检查',
+        valueText: scores.length ? (single ? fmt.scoreText(scores[0]) : `均 ${fmt.scoreText(avg)}`) : '—',
+        url: classUrl('attendance'),
+        tab: !single,
+      });
+      // 校园跑行：今日达标人数（多班求和，率按和值算）+ 周达标率
+      rows.push({
+        key: 'run',
+        icon: 'play-circle',
+        title: single ? classes[0] : `${classes.length} 个班 · ${roleText}`,
+        sub: weekRateN
+          ? single
+            ? `周达标率 ${Math.round(weekRateSum)}%`
+            : `周达标率均 ${Math.round(weekRateSum / weekRateN)}%`
+          : '暂无跑步数据',
+        valueText: students ? `达标 ${achieved}/${students}` : '暂无学生',
+        url: classUrl('run'),
+        tab: !single,
+      });
+    }
+    if (overviewRes) {
+      const n = overviewRes.pendingAppeals || 0;
+      rows.push({
+        key: 'appeal',
+        icon: 'error-circle',
+        title: '申诉审核',
+        sub: '管理待办',
+        valueText: n ? `${n} 条待处理` : '暂无待处理',
+        url: '/packageAdmin/appeals/appeals',
+        tab: false,
+      });
+    }
+    this.setData({ todoRows: rows, showTodoCard: rows.length > 0 });
+  },
+
+  goTodoRow(e) {
+    const row = this.data.todoRows.find((r) => r.key === e.currentTarget.dataset.key);
+    if (!row) return;
+    if (row.tab) wx.switchTab({ url: row.url });
+    else wx.navigateTo({ url: row.url });
+  },
+
+  goWorkbench() {
+    wx.switchTab({ url: '/pages/hub/hub' });
   },
 
   applyToday(data) {
@@ -771,13 +854,6 @@ Page({
 
   goBanned() {
     wx.navigateTo({ url: '/pages/banned/banned' });
-  },
-
-  // 管理面板入口跳转（url 由权限过滤后的列表带出）
-  goAdminPage(e) {
-    if (e.currentTarget.dataset.url) {
-      wx.navigateTo({ url: e.currentTarget.dataset.url });
-    }
   },
 
   // 广告点击

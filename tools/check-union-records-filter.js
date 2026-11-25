@@ -203,9 +203,12 @@ const jsSrc = fs.readFileSync(path.join(MINI, 'packageUnion/records/records.js')
   ok('总管在列表里拿到全校范围（scope={}）', /else if \(await isRecordSteward\(req, identity\)\) \{\s*\n\s*scope = \{\};/.test(serverRoute));
   ok('总管可进复审台（不再先被 assertMember 拦掉）',
     /const steward = await isRecordSteward\(req, identity\);[\s\S]{0,120}if \(!steward\) assertMember\(identity\)/.test(serverRoute));
+  // 用户 2026-11-23：判定抽成 canViewClassFull（班超报表导出复用同一份判定），
+  // 断言改为盯「该函数里管家放行」+「/class/:className 调用它」—— 意图不变：总管能看班级全景。
   ok('总管可看班里检查全景（/class/:className 放行）',
-    /const isClassSteward = await isRecordSteward\(req, identity\);[\s\S]{0,120}!isClassSteward\) throw/.test(serverRoute),
-    (serverRoute.match(/const isClassSteward[^\n]*/) || ['未放行'])[0]);
+    /const isClassSteward = await isRecordSteward\(req, identity\);\s*\n\s*return \{ allowed: !!\(inUnionScope \|\| selfClass \|\| homeroom \|\| isClassSteward\)/.test(serverRoute) &&
+      /if \(!view\.allowed\) throw new ApiError\(403, 403002, NO_ACCESS\)/.test(serverRoute),
+    (serverRoute.match(/return \{ allowed[^\n]*/) || ['未放行'])[0]);
   // 关键：筛选与身份范围**求交集**，而不是被覆盖（旧写法 Object.assign(filter, scope) 会把筛选吃掉）
   ok('院校/系部/班级条件与 scope 求交集（不是覆盖）', /intersectClassCond\(/.test(bandChao) && /const classConds = \[query\.className, query\.classNames, scope && scope\.className\]/.test(bandChao));
   ok('交集为空时返回 $in: []（fail-closed → 0 条，不越权）', /\$in: \[\.\.\.new Set\(out\)\]/.test(bandChao));

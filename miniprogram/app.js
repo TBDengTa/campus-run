@@ -1,4 +1,5 @@
 const auth = require('./utils/request');
+const shareRef = require('./utils/beidou-share');
 
 App({
   globalData: {
@@ -7,7 +8,9 @@ App({
     today: null,
   },
 
-  onLaunch() {
+  onLaunch(options) {
+    // 分享卡冷启动：先把 bdshare 令牌落到本地（未登录也要存），登录后再上报
+    shareRef.capture(options);
     // 用户主动退出登录后不再静默登录（必须由登录页手动登录）
     if (auth.isLoggedOut()) return;
     this.ensureLogin().catch((e) => {
@@ -16,6 +19,13 @@ App({
         console.warn('[app] 静默登录失败（未配置后端或网络异常）:', e.message);
       }
     });
+  },
+
+  onShow(options) {
+    // 热启动：用户从分享卡切回来时 query 也能拿到令牌
+    shareRef.capture(options);
+    // 未登录/未绑定时 flush 内部直接返回，不会发请求
+    shareRef.flush().catch(() => {});
   },
 
   // 是否处于「已登录且已绑定名单账号」状态（游客 token 不算登录）

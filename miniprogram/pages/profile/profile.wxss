@@ -8,17 +8,19 @@
   padding-top: 12rpx;
 }
 
-/* ===== 顶部身份卡：异形（盾形拱底 + 装饰光环 + 斜向高光） =====
-   只在本页覆盖公共 .tt-hero 的形状，不影响 body-data / goal-plan 等页面 */
-.tt-hero.id-card {
-  padding: 34rpx 36rpx 92rpx;
+/* ===== 顶部身份卡：玻璃卡 + 异形（盾形拱底 + 装饰光环 + 斜向高光） =====
+   面层走 .tt-glass（app.wxss 令牌，wxml 已挂类），这里只覆盖形状与装饰，
+   不再写大色块橙渐变底；文字/学籍面板全部走令牌色（亮暗自动适配）。 */
+.id-card {
+  position: relative;
+  overflow: hidden;
+  padding: 34rpx 36rpx 64rpx;
   /* 8 值圆角语法做「盾形」拱底：左右下角各展开半个卡宽，底边形成平缓拱形 */
   border-radius: 40rpx 40rpx 50% 50% / 40rpx 40rpx 64rpx 64rpx;
-  box-shadow: 0 16rpx 40rpx rgba(255, 107, 0, 0.26), inset 0 2rpx 0 rgba(255, 255, 255, 0.28);
 }
 
-/* 右上装饰光环（公共 .tt-hero::after 的实心圆之外再加一圈细环，形成层次） */
-.tt-hero.id-card::before {
+/* 右上装饰光环（品牌浅橙细环，token 驱动暗色自适应） */
+.id-card::before {
   content: '';
   position: absolute;
   top: -176rpx;
@@ -26,10 +28,11 @@
   width: 400rpx;
   height: 400rpx;
   border-radius: 50%;
-  border: 20rpx solid rgba(255, 255, 255, 0.12);
+  border: 20rpx solid var(--tt-brand-soft);
+  pointer-events: none;
 }
 
-/* 斜向高光带 */
+/* 斜向高光带（品牌浅橙柔光） */
 .id-sheen {
   position: absolute;
   top: -40%;
@@ -39,9 +42,9 @@
   transform: rotate(20deg);
   background: linear-gradient(
     90deg,
-    rgba(255, 255, 255, 0) 0%,
-    rgba(255, 255, 255, 0.18) 50%,
-    rgba(255, 255, 255, 0) 100%
+    transparent 0%,
+    var(--tt-brand-soft) 50%,
+    transparent 100%
   );
   pointer-events: none;
 }
@@ -82,18 +85,18 @@
   height: 132rpx;
   border-radius: 50%;
   box-sizing: border-box;
-  border: 6rpx solid rgba(255, 255, 255, 0.72);
-  background: rgba(255, 255, 255, 0.25);
+  border: 6rpx solid var(--tt-glass-border);
+  background: var(--tt-brand-soft);
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  box-shadow: 0 8rpx 22rpx rgba(150, 55, 0, 0.18);
+  box-shadow: var(--tt-glass-shadow);
 }
 
 /* 未设置头像时的占位（稍亮一点，避免和已设置头像混淆） */
 .avatar-ph {
-  background: rgba(255, 255, 255, 0.3);
+  background: var(--tt-brand-soft-2);
 }
 
 .hero-info {
@@ -114,11 +117,11 @@
   font-size: 40rpx;
   font-weight: 700;
   letter-spacing: 1rpx;
-  color: #ffffff;
+  color: var(--tt-text-1);
 }
 
 .hero-name-ph {
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--tt-text-3);
   font-weight: 500;
 }
 
@@ -128,9 +131,9 @@
   border-radius: 999rpx;
   font-size: 22rpx;
   line-height: 1.4;
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.22);
-  border: 2rpx solid rgba(255, 255, 255, 0.36);
+  color: var(--tt-brand);
+  background: var(--tt-brand-soft);
+  border: 2rpx solid var(--tt-brand-soft-2);
 }
 
 /* 一行关键信息：院系 · 班级（无学籍时给出对应提示） */
@@ -138,7 +141,7 @@
   margin-top: 10rpx;
   font-size: 24rpx;
   line-height: 1.4;
-  color: rgba(255, 255, 255, 0.86);
+  color: var(--tt-text-2);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -151,8 +154,8 @@
   margin-top: 24rpx;
   padding: 18rpx 22rpx 4rpx;
   border-radius: var(--tt-radius-sm);
-  background: rgba(255, 255, 255, 0.16);
-  border: 2rpx solid rgba(255, 255, 255, 0.2);
+  background: var(--tt-brand-soft);
+  border: 2rpx solid var(--tt-brand-soft-2);
 }
 
 .enroll-cell {
@@ -169,7 +172,7 @@
 .enroll-k {
   flex-shrink: 0;
   font-size: 21rpx;
-  color: rgba(255, 255, 255, 0.75);
+  color: var(--tt-text-2);
 }
 
 .enroll-v {
@@ -177,7 +180,7 @@
   min-width: 0;
   font-size: 24rpx;
   font-weight: 500;
-  color: #ffffff;
+  color: var(--tt-text-1);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -190,7 +193,7 @@
   gap: 8rpx;
   margin-top: 2rpx;
   font-size: 21rpx;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--tt-text-3);
 }
 
 /* ===== 封禁提醒 ===== */
@@ -388,7 +391,8 @@
      不留这个空间，二维码说明与按钮会藏在胶囊后面。 */
   padding: 0 28rpx calc(140rpx + env(safe-area-inset-bottom));
   border-radius: 28rpx 28rpx 0 0;
-  background: var(--tt-card);
+  /* 面层走 .tt-glass-float（本文件在 app.wxss 之后，写 background 会盖掉玻璃）；
+     二维码本身的白底不动（两主题下都必须纯白可扫）。 */
   transform: translateY(110%);
   transition: transform 0.24s ease;
   max-height: 84vh;
@@ -499,4 +503,332 @@
 
 .pf-qr-foot {
   padding-top: 18rpx;
+}
+
+/* ============================================================
+   三端响应式（.screen-regular = iPad 双栏 / .screen-wide = Mac·PC 三栏）
+   卡片区 CSS 多列瀑布（同首页），.profile-cell 是最小卡片单元；
+   宽屏块内尺寸一律 px、禁 rpx。
+   ============================================================ */
+.profile-cell {
+  break-inside: avoid;
+}
+
+.screen-regular .profile-grid {
+  columns: 2;
+  column-gap: 16px;
+  padding: 0 16px;
+}
+
+.screen-wide .profile-grid {
+  columns: 3;
+  column-gap: 14px;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 18px;
+}
+
+.screen-regular .profile-grid .tt-card,
+.screen-wide .profile-grid .tt-card {
+  margin: 0 0 14px;
+}
+
+.screen-regular .profile-grid .tt-section,
+.screen-wide .profile-grid .tt-section {
+  margin: 4px 2px 10px;
+}
+
+/* ===== 身份卡 ===== */
+.screen-regular .id-card,
+.screen-wide .id-card {
+  padding: 17px 18px 32px;
+  border-radius: 20px 20px 50% 50% / 20px 20px 32px 32px;
+}
+
+.screen-wide .id-card {
+  width: calc(100% - 36px);
+  max-width: 1164px;
+  margin: 0 auto 14px;
+}
+
+.screen-regular .id-card::before,
+.screen-wide .id-card::before {
+  top: -88px;
+  right: -68px;
+  width: 200px;
+  height: 200px;
+  border-width: 10px;
+}
+
+.screen-regular .id-sheen,
+.screen-wide .id-sheen {
+  width: 66px;
+}
+
+.screen-regular .hero-body,
+.screen-wide .hero-body {
+  gap: 13px;
+}
+
+.screen-regular .avatar-btn,
+.screen-wide .avatar-btn,
+.screen-regular .avatar,
+.screen-wide .avatar {
+  width: 66px;
+  height: 66px;
+}
+
+.screen-regular .avatar,
+.screen-wide .avatar {
+  border-width: 3px;
+}
+
+.screen-regular .hero-name-row,
+.screen-wide .hero-name-row {
+  gap: 7px;
+}
+
+.screen-regular .hero-name,
+.screen-wide .hero-name {
+  height: 30px;
+  font-size: 20px;
+}
+
+.screen-regular .hero-role,
+.screen-wide .hero-role {
+  padding: 3px 11px;
+  font-size: 11px;
+  border-width: 1px;
+}
+
+.screen-regular .hero-meta,
+.screen-wide .hero-meta {
+  margin-top: 5px;
+  font-size: 12px;
+}
+
+.screen-regular .hero-qr-btn,
+.screen-wide .hero-qr-btn {
+  gap: 3px;
+  margin-left: 5px;
+  padding: 4px 9px;
+}
+
+.screen-regular .hero-qr-t,
+.screen-wide .hero-qr-t {
+  font-size: 11px;
+}
+
+.screen-regular .enroll-grid,
+.screen-wide .enroll-grid {
+  margin-top: 12px;
+  padding: 9px 11px 2px;
+  border-width: 1px;
+}
+
+.screen-regular .enroll-cell,
+.screen-wide .enroll-cell {
+  gap: 5px;
+  margin-bottom: 7px;
+  padding-right: 6px;
+}
+
+.screen-regular .enroll-k,
+.screen-wide .enroll-k {
+  font-size: 11px;
+}
+
+.screen-regular .enroll-v,
+.screen-wide .enroll-v {
+  font-size: 12px;
+}
+
+.screen-regular .enroll-tip,
+.screen-wide .enroll-tip {
+  gap: 4px;
+  font-size: 11px;
+}
+
+/* ===== 封禁 / 测试提示 / 广告位 ===== */
+.screen-regular .ban-banner,
+.screen-wide .ban-banner {
+  gap: 6px;
+  padding: 11px 13px;
+  font-size: 13px;
+}
+
+.screen-regular .dev-banner,
+.screen-wide .dev-banner {
+  gap: 6px;
+  padding: 9px 11px;
+  border-width: 1px;
+  font-size: 11px;
+}
+
+.screen-regular .profile-ad,
+.screen-wide .profile-ad {
+  min-height: 120px;
+}
+
+.screen-wide .ban-banner,
+.screen-wide .dev-banner,
+.screen-wide .profile-ad {
+  width: calc(100% - 36px);
+  max-width: 1164px;
+  margin: 0 auto 14px;
+}
+
+/* ===== 菜单 / 跑分 / 退出 ===== */
+.screen-regular .menu-card,
+.screen-wide .menu-card {
+  padding: 3px var(--tt-pad);
+}
+
+.screen-regular .menu-icon,
+.screen-wide .menu-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+}
+
+.screen-regular .menu-img,
+.screen-wide .menu-img {
+  width: 34px;
+  height: 34px;
+}
+
+.screen-regular .menu-label,
+.screen-wide .menu-label {
+  font-size: 14px;
+}
+
+.screen-regular .menu-sub,
+.screen-wide .menu-sub {
+  margin-top: 3px;
+  font-size: 11px;
+}
+
+.screen-regular .points-card,
+.screen-wide .points-card {
+  padding: 12px 4px;
+}
+
+.screen-regular .points-item,
+.screen-wide .points-item {
+  gap: 2px;
+}
+
+.screen-regular .points-v,
+.screen-wide .points-v {
+  font-size: 21px;
+}
+
+.screen-regular .points-l,
+.screen-wide .points-l {
+  font-size: 11px;
+}
+
+.screen-regular .points-line,
+.screen-wide .points-line {
+  width: 1px;
+  height: 26px;
+}
+
+.screen-regular .points-note,
+.screen-wide .points-note {
+  font-size: 11px;
+  line-height: 16px;
+  margin: 0 2px;
+}
+
+.screen-regular .logout-btn,
+.screen-wide .logout-btn {
+  padding: 14px 0;
+  font-size: 15px;
+}
+
+/* ===== 人物码抽屉：宽屏居中限宽（rpx 在宽窗口会放大数倍）===== */
+.screen-regular .pf-qr-sheet,
+.screen-wide .pf-qr-sheet {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 0 14px calc(88px + env(safe-area-inset-bottom));
+  border-radius: 14px 14px 0 0;
+}
+
+.screen-regular .pf-qr-grab,
+.screen-wide .pf-qr-grab {
+  width: 36px;
+  height: 4px;
+  margin: 8px auto 0;
+}
+
+.screen-regular .pf-qr-head,
+.screen-wide .pf-qr-head {
+  padding: 10px 0 4px;
+}
+
+.screen-regular .pf-qr-title,
+.screen-wide .pf-qr-title {
+  font-size: 16px;
+}
+
+.screen-regular .pf-qr-close,
+.screen-wide .pf-qr-close {
+  width: 28px;
+  height: 28px;
+}
+
+.screen-regular .pf-qr-body,
+.screen-wide .pf-qr-body {
+  padding: 5px 0 3px;
+}
+
+.screen-regular .pf-qr-name,
+.screen-wide .pf-qr-name {
+  font-size: 15px;
+}
+
+.screen-regular .pf-qr-meta,
+.screen-wide .pf-qr-meta {
+  margin-top: 3px;
+  font-size: 12px;
+}
+
+.screen-regular .pf-qr-code,
+.screen-wide .pf-qr-code {
+  margin: 11px 0;
+  padding: 12px 10px;
+  border-width: 1px;
+}
+
+.screen-regular .pf-qr-img,
+.screen-wide .pf-qr-img {
+  width: 230px;
+  height: 230px;
+  border-radius: 6px;
+}
+
+.screen-regular .pf-qr-code-t,
+.screen-wide .pf-qr-code-t {
+  font-size: 11px;
+  line-height: 17px;
+}
+
+.screen-regular .pf-qr-tip-line,
+.screen-wide .pf-qr-tip-line {
+  margin: 15px 0;
+  font-size: 13px;
+}
+
+.screen-regular .pf-qr-tip,
+.screen-wide .pf-qr-tip {
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.screen-regular .pf-qr-foot,
+.screen-wide .pf-qr-foot {
+  padding-top: 9px;
 }

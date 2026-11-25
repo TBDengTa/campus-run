@@ -3,7 +3,9 @@ const { wrap, ok, ApiError } = require('../../utils/response');
 const { makeUploader, publicUploadUrl } = require('../../utils/uploader');
 const FileObject = require('../../models/file-object');
 
-const upload = makeUploader();
+// 管理端上传不限体积（用户 2026-11-25「图片上传不上去」：2000px PNG 常超默认 5MB；
+// 与检查照片同口径 maxMb=0，nginx client_max_body_size 0 已放行；头像走独立路由仍保留自己的上限）
+const upload = makeUploader({ maxMb: 0 });
 
 // 「用途」→ 可上传该用途所需的权限（与 src/routes/admin/index.js 的挂载级权限一致）。
 // 挂载级放行 = ad.manage 或 file.manage 或 content.manage（多了 content.manage：徽章图标上传者只需要徽章管理权限）；
@@ -12,6 +14,8 @@ const CATEGORY_PERMS = {
   ad: ['ad.manage', 'file.manage'],
   other: ['file.manage'],
   badge: ['content.manage'],
+  // 北斗活动图标（九宫格图案 / 铜版图标）：配置管理员即可上传
+  beidou: ['config.manage'],
 };
 
 // 请求体 → 落库用途。未知/缺省值保持原行为落到 'other'（不因为新增校验把老调用方打成 400）。
@@ -31,7 +35,10 @@ function assertCategoryAllowed(req, category) {
   const perms = req.userPermissions || [];
   if (perms.includes('*')) return;
   if (need.some((p) => perms.includes(p))) return;
-  const label = category === 'badge' ? '徽章图标' : category === 'ad' ? '广告素材' : '文件';
+  const label = category === 'badge' ? '徽章图标'
+    : category === 'ad' ? '广告素材'
+      : category === 'beidou' ? '北斗图标'
+        : '文件';
   throw new ApiError(403, 403002, `无权限（上传${label}需要 ${need.join(' 或 ')}）`);
 }
 

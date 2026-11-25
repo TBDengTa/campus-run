@@ -1837,14 +1837,15 @@ ok('没有「??{」损坏的模板串（"${" 被写坏会显示源码片段）',
   ok('前端提交带 mode:set', /mode: 'set', password/.test(detJs));
 }
 
-// ===== 首页学生会卡片 / 导航栏：身份字段缺失时自愈（用户 2026-10-25）=====
+// ===== 首页待办卡 / 导航栏：身份字段缺失时自愈（用户 2026-10-25）=====
+// 2026-11-23 首页重设计：原 banchao-block 组件已删，自愈逻辑搬进 home.js::resolveUnionUser。
 {
-  const blockJs = readSrc(path.join(__dirname, '..', 'miniprogram', 'components', 'banchao-block', 'banchao-block.js'), 'utf8');
+  const homeJs = readSrc(path.join(__dirname, '..', 'miniprogram', 'pages', 'home', 'home.js'), 'utf8');
   const tabJs = readSrc(path.join(__dirname, '..', 'miniprogram', 'custom-tab-bar', 'index.js'), 'utf8');
-  // isUnionMember 是 /api/auth/me 现算下发的；旧缓存里没有该字段 → 卡片/导航项被误判为「非成员」且无提示
-  ok('卡片在身份字段缺失时自愈', /resolveUnionUser/.test(blockJs) && /typeof me\.isUnionMember === 'boolean'/.test(blockJs));
-  ok('卡片自愈会调 refreshUser', /resolveUnionUser[\s\S]{0,600}refreshUser\(\)/.test(blockJs));
-  ok('学生会模式必须用自愈后的 me', /mode === 'union'\) \{\s*\n\s*const me = await this\.resolveUnionUser\(\)/.test(blockJs));
+  // isUnionMember 是 /api/auth/me 现算下发的；旧缓存里没有该字段 → 待办行/导航项被误判为「非成员」且无提示
+  ok('待办卡在身份字段缺失时自愈', /resolveUnionUser/.test(homeJs) && /typeof me\.isUnionMember === 'boolean'/.test(homeJs));
+  ok('待办卡自愈会调 refreshUser', /resolveUnionUser[\s\S]{0,600}refreshUser\(\)/.test(homeJs));
+  ok('待办加载必须用自愈后的 me', /loadTodoRows[\s\S]{0,200}await this\.resolveUnionUser\(\)/.test(homeJs));
   ok('导航栏在身份字段缺失时自愈', /_unionProbe/.test(tabJs) && /typeof user\.isUnionMember !== 'boolean'/.test(tabJs));
 }
 

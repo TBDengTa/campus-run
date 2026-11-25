@@ -18,13 +18,85 @@ const beidouDrawSchema = new mongoose.Schema(
   {
     openid: { type: String, required: true },
     date: { type: String, required: true },
+    // 幂等键：转盘的 drawId / 九宫格的 playId 都写这里（唯一索引按人隔离）
     drawId: { type: String, required: true },
+    // 玩法：v3 起同一张流水表同时记转盘与九宫格；旧记录缺字段按 wheel 处理
+    game: { type: String, enum: ['wheel', 'grid'], default: 'wheel' },
     prizeKey: { type: String, default: '' },
-    type: { type: String, enum: ['steps', 'none', 'draw'], default: 'none' },
-    amount: { type: Number, default: 0 }, // steps = 步数；draw = 次数；none = 0
+    type: { type: String, enum: ['steps', 'coin', 'none', 'draw', 'mixed'], default: 'none' },
+    amount: { type: Number, default: 0 }, // steps=步数；coin=铜版；draw=返还；mixed=主奖励合计；none=0
+    // v4 九宫格：同一局可同时有铜版和步数，分别记合计
+    coinAmount: { type: Number, default: 0 },
+    stepsAmount: { type: Number, default: 0 },
     roll: { type: Number, default: 0 }, // 本次随机数（0~1），留证
-    index: { type: Number, default: 0 }, // 命中扇区下标（前端动画用，服务端下发）
-    capped: { type: Boolean, default: false }, // 本次是否因封顶被降级（true 时 type 必为 none）
+    index: { type: Number, default: 0 }, // 转盘扇区下标（九宫格恒 0）
+    capped: { type: Boolean, default: false }, // 是否因步数封顶被降级
+    coinCapped: { type: Boolean, default: false }, // 是否因游戏铜版上限被降级/部分扣减
+    pity: { type: Boolean, default: false }, // 本次是否由保底强制中奖
+
+    // 本局成本（铜版），对账用；旧记录为 0
+    cost: { type: Number, default: 0 },
+    // 结果快照：管理员改奖池后历史记录仍能显示当时的奖品名/概率/档位/稀有度
+    prizeLabel: { type: String, default: '' },
+    prizePercent: { type: Number, default: 0 },
+    tier: { type: String, enum: ['low', 'mid', 'high', 'none'], default: 'none' },
+    rarity: { type: String, enum: ['none', 'normal', 'rare', 'rarest'], default: 'none' },
+
+    // 九宫格：9 个符号 key + 中奖线（cells 是 0~8 的下标）
+    board: { type: [String], default: [] },
+    // v4：按图案分组的整局奖励（老虎机多线）
+    rewards: {
+      type: [
+        new mongoose.Schema(
+          {
+            symbolKey: { type: String, default: '' },
+            label: { type: String, default: '' },
+            type: { type: String, enum: ['coin', 'steps', 'none'], default: 'none' },
+            lines: { type: Number, default: 0 },
+            singleAmount: { type: Number, default: 0 },
+            amount: { type: Number, default: 0 },
+            tier: { type: String, enum: ['low', 'mid', 'high', 'none'], default: 'none' },
+          },
+          { _id: false }
+        ),
+      ],
+      default: [],
+    },
+    lines: {
+      type: [
+        new mongoose.Schema(
+          {
+            key: { type: String, default: '' },
+            label: { type: String, default: '' },
+            symbolKey: { type: String, default: '' },
+            symbolLabel: { type: String, default: '' },
+            type: { type: String, enum: ['coin', 'steps', 'none'], default: 'none' },
+            amount: { type: Number, default: 0 },
+            cells: { type: [Number], default: [] },
+          },
+          { _id: false }
+        ),
+      ],
+      default: [],
+    },
+
+    /**
+     * 可恢复的结算状态（不引入 Mongo 事务）：
+     *   pending → 已建流水、尚未扣款
+     *   debited → 已扣款、尚未发奖
+     *   settled → 已结算（正常终态）
+     *   failed  → 扣款失败（余额不足等；不再重试同一 playId）
+     * 同一 playId 重放时按状态续跑，钱只扣一次。
+     */
+    status: {
+      type: String,
+      enum: ['pending', 'debited', 'settled', 'failed'],
+      default: 'settled', // 旧记录没有状态，视为已结算
+    },
+    failReason: { type: String, default: '' },
+    // 步数是否已写入 run_records（崩溃恢复时避免重复 $inc）
+    stepsSettled: { type: Boolean, default: false },
+    balanceAfter: { type: Number, default: 0 },
 
     /**
      * 本次抽奖**消耗的那一次机会来自哪里**（用户 2026-11-12「抽奖来源筛选(签到、分享、视频)」）。
@@ -33,11 +105,12 @@ const beidouDrawSchema = new mongoose.Schema(
      *    次数是一个合并池（draw.total），抽奖时按固定优先级从各来源的余额里扣一笔，
      *    扣到谁就记谁。详见 services/beidou.js::pickSource 的注释。
      *
-     * 取值：video / share / checkin / prize（再来一次）/ unknown（老数据或余额异常）
+     * v3 起铜版是合并钱包，无法归属到某一来源，新记录统一记 wallet；
+     * 旧记录的 video/share/checkin/prize/unknown 保留作历史统计。
      */
     source: {
       type: String,
-      enum: ['video', 'share', 'checkin', 'prize', 'unknown'],
+      enum: ['video', 'share', 'checkin', 'prize', 'wallet', 'unknown'],
       default: 'unknown',
     },
   },
@@ -53,6 +126,8 @@ beidouDrawSchema.index({ openid: 1, date: 1 });
 beidouDrawSchema.index({ openid: 1, drawId: 1 }, { unique: true });
 // 管理端「中奖记录」按奖品筛选 + 倒序翻页
 beidouDrawSchema.index({ date: -1, prizeKey: 1 });
+// 管理端按玩法筛选 + 日期范围（转盘/九宫格）
+beidouDrawSchema.index({ game: 1, date: -1 });
 // 管理端按来源筛选 + 日期范围（两个维度常一起用，复合索引避免全表扫）
 beidouDrawSchema.index({ source: 1, date: -1 });
 

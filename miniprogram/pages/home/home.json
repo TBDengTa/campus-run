@@ -3,9 +3,6 @@
   "enablePullDownRefresh": true,
   "backgroundTextStyle": "dark",
   "usingComponents": {
-    "class-board": "/components/class-board/class-board",
-    "badge-award": "/components/badge-award/badge-award",
-    "banchao-block": "/components/banchao-block/banchao-block",
-    "t-popup": "tdesign-miniprogram/popup/popup"
+    "badge-award": "/components/badge-award/badge-award"
   }
 }

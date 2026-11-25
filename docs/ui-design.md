@@ -25,7 +25,7 @@ TDesign 变量同样被改造成橙色系（`--td-brand-color-*`、`--td-bg-colo
 
 语义色：成功 `--td-success-color-5` `#16a34a`、警告 `#f5a623`、错误 `--td-error-color-6` `#e5484d`。
 
-主视觉渐变（仅用于 hero/用户卡/排行榜我的卡片）：
+主视觉渐变（现仅用于排行榜「我的」卡片等未玻璃化场景；首页 hi-card 与「我的」身份卡已改玻璃卡，见 §1.2）：
 
 ```css
 background: linear-gradient(135deg, #ff9a3d 0%, #ff6b00 62%, #f25a00 100%);
@@ -44,9 +44,47 @@ box-shadow: 0 12rpx 32rpx rgba(255, 107, 0, 0.24);
   覆盖对象限于「令牌表达不了的页面私有配色」——典型是首页插画夜景（`pages/home/home.wxss`
   深蓝夜空/月光云/暗色草地）。通用面层色（卡片、chip、阴影）不进页面块，优先走令牌或换用现有令牌。
 - **叠在品牌橙渐变上的白字/白 chip/白徽标保持不动**（两主题下都成立）；二维码白底必须保留。
-- 硬编码雷区：页面背景色（曾踩 `pages/run/index` 的 `#e9edf2`）、悬浮玻璃底色、
-  `rgba(28,31,35,…)` 浅色投影——都要么走令牌、要么在页面暗色块里给出深色对应值。
+- 硬编码雷区：页面背景色（曾踩 `pages/run/index` 的 `#e9edf2`）、悬浮玻璃底色（一律走 `--tt-glass-*` 令牌，
+  见 §1.2，**禁止自写 rgba 或页面暗色块**）、`rgba(28,31,35,…)` 浅色投影——都要么走令牌、要么在页面暗色块里给出深色对应值。
   回归：`tools/check-dark-mode.js`。
+
+### 1.2 玻璃拟态（Glassmorphism 2.0，用户 2026-11-23）
+
+分层空间：**环境光背景（`.tt-ambient-page`）→ 玻璃卡片（`.tt-glass`）→ 悬浮玻璃层（`.tt-glass-float`，tabBar/弹层）**。
+玻璃令牌唯一来源在 `app.wxss`（亮/暗两套，页面只引用不自定义）：
+
+| 令牌 | 用途 | 浅色 | 深色 |
+|---|---|---|---|
+| `--tt-glass-bg` | 卡片面层 | `rgba(255,255,255,.62)` | `rgba(30,30,32,.55)` |
+| `--tt-glass-bg-strong` | 悬浮层更强的底 | `rgba(255,255,255,.78)` | `rgba(28,28,30,.62)` |
+| `--tt-glass-bg-hover` | hover 提亮 | `rgba(255,255,255,.76)` | `rgba(44,44,48,.66)` |
+| `--tt-glass-blur` / `-strong` | 背景模糊 | `blur(24px/32px) saturate(…)` | 同规格降饱和 |
+| `--tt-glass-border` | 细亮边（外描边环） | `rgba(255,255,255,.65)` | `rgba(255,255,255,.14)` |
+| `--tt-glass-edge` | 顶部内高光（光感边缘） | inset 白高光 | inset 弱白高光 |
+| `--tt-glass-shadow` | 柔性浮起（**禁重阴影**） | 6% 柔影 | 加深柔影 |
+| `--tt-glass-fallback` / `-strong` | 降级实底（≥94% 不透明） | 近白 | 近黑 |
+| `--tt-ambient` | 环境光背景（橙色 radial 柔光 + 渐变底） | 暖橙柔光 | 弱橙柔光 |
+
+硬约束（回退任何一条都会静默复发，回归 `tools/check-glass-ui.js`）：
+
+- blur 规格 **20~40px**；`backdrop-filter` 必须带 `-webkit-` 前缀（iOS WebView）。
+- **`@supports not` 降级链**：不支持 backdrop-filter 的机型回退 `--tt-glass-fallback*` 高不透明实底，
+  不能糊成透明一片。
+- 过渡一律 **200ms ease-out**；按压 `.tt-glass-press:active { scale(0.96) }`；
+  hover 提亮 + 轻微上浮只在 `@media (hover: hover)` 内（触屏不粘滞）；尊重 `prefers-reduced-motion`。
+- 用法：卡片写 `class="tt-card tt-glass"`（`.tt-card` 提供盒模型，`.tt-glass` 覆盖面层，
+  定义在其后同权重后置生效）；页面根节点挂 `.tt-ambient-page`。
+  组件内使用需 json `"styleIsolation": "apply-shared"`。
+- **悬浮层（tabBar / 抽屉 / 弹层）用 `.tt-glass-float`**（更强底 + blur 32px）。
+  已接线：home 分类条目浮层（`templates/nav-sheet`）、hub 选班抽屉、profile 人物码弹层。
+  ⚠️ **页面 wxss 在 app.wxss 之后生效**：浮层自己的规则里再写 `background` 会把玻璃面层整个盖掉
+  （不报错，只是静默回到实底），所以这些规则只留盒模型。`.tt-sheet` 的实底保留给未玻璃化的其它页面。
+- 覆盖范围：**导航系统 + 核心页（home / hub / profile）**；其余页面与水印相机页（固定暗色）不参与。
+- **核心页不许留裸 `.tt-card`**：环境光玻璃页里夹一张实底卡就是「漏改了一块」
+  （真实踩过：profile 的「运动与健康 / 账号与帮助」两张菜单卡漏挂 `tt-glass`）。
+- **公共交互类必须真的被 WXML 用上**：`.tt-glass-press` / `.tt-glass-hover` 只定义不接线 = 死代码，
+  真机上没有任何按压/悬停反馈。卡片级可点面（如 profile「累计数据」卡）两个都挂；
+  宫格按钮的按压反馈已由 `.tt-grid-item:active .tt-chip-icon` 提供，不必重复挂。
 
 ## 2. 形状与间距
 
@@ -61,6 +99,25 @@ box-shadow: 0 12rpx 32rpx rgba(255, 107, 0, 0.24);
 - 页底留白统一 `calc(48rpx + env(safe-area-inset-bottom))`。
 - 图标胶囊 `92rpx`、列表图标胶囊 `72~76rpx`、头像 `96~140rpx`。
 - 阴影一律使用 `--tt-card-shadow`（或 hero 专用橙色投影），不要自创 `rgba(0,0,0,.3)` 硬阴影。
+
+### 2.1 三端响应式（iPhone / iPad / Mac·PC）
+
+- **总开关：`app.json` 必须 `"resizable": true`**。官方「响应显示区域变化」明确：默认情况下显示区域尺寸
+  自页面初始化起就不变；iPad 屏幕旋转与 Windows/Mac 大屏模式（默认窗口变大 + 用户自由拉伸）都以该声明为前提。
+  缺它 → `wx.onWindowResize` 永不触发 → `screenMode` 恒 `compact` → 下面所有双栏/三栏版式在 iPad/PC 上
+  **完全不生效，且不报错、不白屏**（静态检查其余各条仍全绿，极难发现）。回归：`check-glass-ui.js` [7]。
+- **断点唯一实现 `utils/screen.js`**：compact `<600px` / regular `600~900px` / wide `>900px`
+  （`modeOf / currentMode / onResize`），禁止各页自拼窗口宽度判断。
+- 页面接 `behaviors/screen.js`（提供 `data.screenMode`，attached 监听转屏/改窗、detached 解绑），
+  根节点挂 `screen-{{screenMode}}`；tabBar 由 js 驱动挂 `.tabbar-wide` 类。
+- **令牌按设备重定义**：`.screen-regular { --tt-radius:20px; --tt-gap:16px; --tt-pad:20px; font-size:15px }`、
+  `.screen-wide { 18px/14px/18px/14px }` —— 圆角/间距随设备动态变化，引用令牌的盒模型自动跟进。
+- **宽屏块内一律 px、禁 rpx**（`.screen-regular/.screen-wide/.tabbar-wide` 选择器块；
+  rpx 按窗口宽换算，宽窗口会把字号/圆角放大数倍——wcamera 横屏踩过同类坑）。
+- **信息密度递增**：手机单列低密度（默认 rpx）→ iPad 双栏中密度（home/profile 卡片 `columns:2`、
+  hub 分组双栏 grid）→ Mac·PC 三栏高密度 dashboard（home/profile `columns:3`、
+  hub 左 300px sticky 身份栏 + 右 `repeat(auto-fill, minmax(280px,1fr))`，内容区 `max-width:1200px` 居中）。
+  columns 布局的卡片必须包一层 cell 并给 `break-inside: avoid`（否则卡片被从中间切开）。
 
 ## 3. 公共类（定义在 app.wxss，直接使用，勿重复实现）
 
@@ -107,41 +164,49 @@ box-shadow: 0 12rpx 32rpx rgba(255, 107, 0, 0.24);
 
 `app.json` 的 `tabBar.custom = true`，实际渲染由组件 `custom-tab-bar/index` 负责：
 
-- **形态**：悬浮胶囊（`left/right: 24rpx`、`height: 112rpx`、`border-radius: 999rpx`、柔和大投影），
-  **全部为普通导航项，不做中间凸起圆钮**；亮色白底 / 暗色深色玻璃
-  （`rgba(28,28,30,.96)`，wxss 内 `@media` 切换）。
+- **形态**：悬浮玻璃胶囊（`left/right: 24rpx`、`height: 112rpx`、`border-radius: 999rpx`），
+  **全部为普通导航项，不做中间凸起圆钮**；面层/模糊/描边/柔影全走 `--tt-glass-*` 令牌
+  （blur 32px + saturate、细亮边 + 顶部内高光 + 柔影，禁重阴影），亮暗随令牌自适配，
+  **wxss 内禁止硬编码色值与自写 `@media` 暗色块**；选中态 = 品牌橙软底药丸 + 橙色图标文字。
+  宽屏挂 `.tabbar-wide`：居中 560px、px 尺寸、外环亮边 1px。
+- **挂载契约（2026-11-23 真机报障后钉死）**：custom-tab-bar 由框架挂在**页面内容树之外**，
+  而令牌块选择器是 `page, .page` —— 所以 `index.json` 必须 `"styleIsolation": "apply-shared"`
+  **且** `index.wxml` 根节点必须挂 `page` 类，二者缺一不可。缺任一条时组件内所有 `var(--tt-*)`
+  在**计算值阶段**整条失效（background/box-shadow/color 全丢）= 「全宽平底黑图标栏」，
+  且其余静态断言依然全绿。回归：`check-glass-ui.js` [11]、`check-dark-mode.js` [2]。
 - **图标**：用 `t-icon` 矢量图标（选中用 `*-filled` 填充态，未选中用线性态），
-  **不传 `color` 属性**——着色在 `.tabbar-item` 层（`color` 可穿透组件边界继承，
-  图标 glyph 走 currentColor），亮色 `#9aa0a6`/`#ff6b00`、暗色 `rgba(255,255,255,.55)`/`#f09248`；
+  **不传 `color` 属性**——着色在 `.tabbar-item` 层（`color: var(--tt-text-3)`、选中 `var(--tt-brand)`，
+  图标 glyph 走 currentColor），颜色切换 200ms ease-out；
   不用位图，便于随主题换色；`assets/tabbar/*.png` 仅作为关闭 custom 时的原生兜底。
-- **角色差异**：学生 = 首页 / 跑步 / 记录 / 排行 / 我的；
-  教师（有管理权限）= 首页 / **管理** / 我的，其中「管理」指向 **管理中枢** `pages/hub/hub`（分类列出全部管理入口，
-  不再直接跳用户管理）；教师（无管理权限但是**班主任**）= 首页 / **班级** / 我的，指向 `packageAdmin/class/class`；
-  其余无权限教师 = 首页 / 公告 / 我的。
+- **角色差异（多身份统一工作台）**：学生 = 首页 / 跑步 / 记录 / 排行 / 我的；
+  学生 `canManage || isClassOfficer || isUnionMember` 任一成立 → 在「记录」后插唯一「工作台」项（6 项封顶）；
+  教师（有管理权限或班主任）= 首页 / **工作台** / 我的；其余无权限教师 = 首页 / 公告 / 我的。
   教师账号不参与运动记录与排名，故不展示跑步 / 记录 / 排行入口。
+  **禁止回潮「班委 / 学生会 / 管理各占一个动态位」**：多身份互相挤掉入口正是当年报障根源；
+  全部身份入口收进工作台页按身份分组（`utils/nav-groups.js` 单一数据源，「检查录入」= `unionEntry` 仅真实成员可见）。
 - **管理入口按权限、不按角色**（`buildList` 先判权限再判角色）：「有管理权限」= `/api/auth/me` 的
-  `effectivePermissions` 非空（含 `'*'` 通配）或 `isManager` 为真 —— **学生身份的管理员同样出现「管理」项**
-  （学生 5 项 → 首页 / 跑步 / 记录 / **管理** / 排行 / 我的，插在「记录」与「排行」之间），
-  点它 `switchTab` 到 `pages/hub/hub` 并 `setActive('/pages/hub/hub')`；hub 页自己按 `effectivePermissions` 过滤分组。
-  学生班委（`isClassOfficer`）仍是在「排行」与「我的」之间插「班级」；普通学生 5 项不变。
+  `effectivePermissions` 非空（含 `'*'` 通配）或 `isManager` 为真 —— **学生身份的管理员同样有工作台项**，
+  点它 `switchTab` 到 `pages/hub/hub` 并 `setActive('/pages/hub/hub')`；hub 页自己按权限与身份过滤分组。
 - **接入约定**：每个 tab 页在 `onShow` 中调用 `this.getTabBar().setActive('<自身路径>')`
   （页面根节点同时加 `.tt-page-tab`，底部留白 `200rpx + 安全区`，避免内容被悬浮胶囊遮挡）。
 - 非 tab 入口（管理端控制台 / 公告）在组件内用 `wx.navigateTo`，tab 页用 `wx.switchTab`。
 
-### 管理中枢 `pages/hub/hub`（**主包 tabBar 页**，教师端「管理」入口）
+### 工作台 `pages/hub/hub`（**主包 tabBar 页**，唯一动态导航项；原「管理中枢」）
 
-- **它是 tabBar 页而不是普通跳转页**：`app.json` 的 `tabBar.list` 含 `pages/hub/hub`，教师端自定义 tabBar 的「管理」
+- **它是 tabBar 页而不是普通跳转页**：`app.json` 的 `tabBar.list` 含 `pages/hub/hub`，底栏「工作台」
   项用 `switchTab` 进入 → **切换导航时底部栏常驻、可随时切回首页/我的**；页面根节点带 `.tt-page-tab`，
-  `onShow` 里调 `this.getTabBar().setActive('/pages/hub/hub')` 点亮选中态。学生端的自定义 tabBar 不渲染该项。
-- **定位**：把所有管理端入口**按分类**列出来，按 `effectivePermissions` 过滤（`'*'` 全显），
-  没有可用权限时给明确空状态而不是空白页。
-- **版式**：顶部 `.tt-hero` 身份卡（内容 = 管理中枢 / 角色胶囊 / 姓名·班级·一句说明），
-  下面每个分类一组：`.tt-section`（标题 + 右侧说明）+ `.tt-card` 内 `.tt-grid` 宫格（复用 `.tt-chip-icon` + `.tt-grid-text`）。
-- **分类**：我的班级 / 用户与权限 / 考核与目标 / 内容与通知 / 广告运营 / 系统设置。
-  「我的班级」调 `GET /api/class/mine`，仅班主任或班委显示（无管理权限也能进，对应班主任需求）。
-- **进入方式只有两处**（首页「快捷操作」里那枚「管理中枢」宫格已按产品要求移除，避免与底部导航重复）：
-  ① 自定义 tabBar 的「管理」项（`switchTab`，按 `effectivePermissions` 渲染，学生管理员同样有）；
-  ② 管理端内部的相互跳转（用户详情 / 权限组 / 各中枢子页）。
+  `onShow` 里调 `this.getTabBar().setActive('/pages/hub/hub')` 点亮选中态。
+- **定位**：把管理端 / 班级 / 学生会**全部入口按分类**列出来，按 `effectivePermissions` + 身份过滤
+  （`'*'` 全显），没有可用入口时给明确空状态而不是空白页；多身份不再互相挤占底栏位。
+- **版式**：顶部玻璃身份卡（`.tt-card.tt-glass` + 身份胶囊行：学生/教师、班委/班主任、学生会·部门、管理员），
+  下面每个分类一组：`.tt-section`（标题 + 右侧说明）+ `.tt-card.tt-glass` 内 `.tt-grid` 宫格
+  （复用 `.tt-chip-icon` + `.tt-grid-text`）；三端版式见 §2.1（iPad 分组双栏 / Mac·PC 左 sticky 身份栏 + 右网格）。
+- **分类**：我的班级（含管理员时标题为「班级管理」）/ 学生会 / 用户与权限 / 考核与目标 / 申诉审核 /
+  内容与通知 / 广告运营 / 系统设置（`utils/nav-groups.js` 单一数据源，与首页「快捷操作」共用）。
+  「我的班级」调 `GET /api/class/mine`，仅班主任或班委显示（无管理权限也能进）；多班先弹选班抽屉。
+- **进入方式只有两处**（首页「快捷操作」不放工作台宫格，避免与底部导航重复）：
+  ① 自定义 tabBar 的「工作台」项（`switchTab`，按权限与身份渲染，学生管理员 / 班委 / 学生会成员同样有）；
+  ② 管理端内部的相互跳转（用户详情 / 权限组 / 各工作台子页）。
 
 ## 5. 页面骨架
 
@@ -211,16 +276,26 @@ box-shadow: 0 12rpx 32rpx rgba(255, 107, 0, 0.24);
    `flex:1; min-width:0` 的 `<view>`（先例 `.ud-pwd-btn`、`.cls-sheet-btn`、`.rd-btn`），
    `tools/check-miniprogram.js` 已能扫出选择器里的 `*`。
 
-## 8. 首页（学生端）版式与插画素材位
+## 8. 首页版式（2026-11-23 重设计，仿 iOS）
 
-首页自上而下：**插画头 → 公告跑马灯 → 广告位（教师不展示）→ 今日目标 → 本周目标 → 管理面板（数据概览+快捷按钮，有权限时）→ 快捷入口 → 页脚**。
+**职责口径：首页 = 个人今日视图；工作台 = 管理 / 身份操作视图。** 首页不再列任何管理入口与身份操作卡
+（旧的学生会块 / 班超块 / 我的班级卡 / 管理面板八分类浮层全部移除，组件 `banchao-block` / `class-board` 与
+`behaviors/nav-sheet` / `templates/nav-sheet` 已删），多身份用户首页最多 5 块，操作一律收进工作台。
 
-- **插画头**（`.sky`）：两种形态自动切换。
-  - **有素材**（`assets/home/hero.jpg` 存在，旧名 `hero.png` 亦可）：`<image mode="widthFix">` 按**图片本身比例**铺满宽度，容器高度自适应
-    （1500×523 的图 → 750rpx 宽时约 262rpx 高），并且**不再叠加标题文字**（图内已含「唐唐快跑」与标语）。
-  - **无素材**：CSS 插画兜底 —— 高 `350rpx` 的天空渐变 + 圆角云朵 + 双层椭圆草地 + 虚线椭圆跑道 +
-    白色标题（四向蓝描边）与标语，标题区 `padding-top: 74rpx`、跑道 `bottom: 38rpx`。
-  - 公告条用 `margin-top: -20rpx` 叠在插画底边上，遮住图片与页面底色的接缝。
+首页自上而下：**iOS 大标题问候头 → 封禁条(条件) → 公告跑马灯(条件) → 广告卡(条件，紧跟公告下面) →
+[身份与待办单卡(条件) / 今日运动 widget / 1×4 快捷入口] → 页脚**。
+方括号内是 `.home-grid` 多列容器（compact 单列 / regular 双栏 / wide 三栏，`.home-cell` break-inside:avoid）。
+
+- **大标题问候头**（`.home-header`）：小字日期（`dateText`）+ 大号问候整句（`greetTitle`，JS 拼好「早上好，姓名」，
+  对所有角色显示，教师不再单独问候卡）。替代原 350rpx 天空插画与 hero 素材位（均已删）。
+- **身份与待办单卡**（`.todo-card`，`wx:if="{{showTodoCard}}"`）：首页唯一的身份面，iOS 分组列表行。
+  行 = 一个身份域的数据/待办：**学生会**（今日录入 x/y）、**待复核**（canReview 且有 pending）、
+  **班超**（班主任/班委：单班分数 + 全校名次，多班均分 + 最低分，走 `/api/union/class/:className?range=day`）、
+  **校园跑**（今日达标 x/y + 周达标率，走 `/api/class/overview`，多班求和）、**申诉待处理**（持 dashboard.view）。
+  **行内直跳**对应页（班超 → 班级页 attendance tab、校园跑 → run tab）；卡头一枚「工作台 ›」收全部操作入口。
+  行模型 `todoRows` 全在 `home.js::loadTodoRows` 预计算，WXML 零运算。
+  **多班班主任**聚合行 → switchTab 工作台选班（选班抽屉唯一实现在 hub，首页不建抽屉）。
+  身份字段缺失自愈：`home.js::resolveUnionUser`（`typeof isUnionMember === 'boolean'` 才可信，否则 refreshUser 一次）。
 - **公告跑马灯**：`.notice-viewport`（`overflow: hidden` 定高）+ `.notice-track`（两份文案 + `translateX(-50%)` 无限循环动画）。
   文案 ≤ 14 字不滚动（只渲染一份、不加 `.run`）；超过则 `animation-duration = clamp(字数 × 0.2, 8, 40)` 秒（约 125rpx/s）。
   文案由**当前生效的多条公告正文**拼接（标题兜底、换行压平、单条超 60 字截断、最多 5 条）——只显示第一条的标题会看起来像写死的错误文案。
@@ -238,32 +313,32 @@ box-shadow: 0 12rpx 32rpx rgba(255, 107, 0, 0.24);
 - **本周目标**：**步数 / 里程两项并排两列**（`.weekly-cols` 内两个 `.prog-col`，中间 2rpx 分隔线），每列「标签 + `x/y` + 橙色进度条」，
   数据取 `goal.weekly` 与本周（周一起）实际累计，右上角显示周区间（如 `10.12 - 10.18`）。
   紧凑比例：标题 24rpx、数值 19rpx、进度条高 `8rpx`。
-- **广告位**：卡片右上角固定「广告」标识（`.ad-flag`，右上 `12rpx`，半透明黑底白字 18rpx，`pointer-events: none`）。
+- **广告位**（`.home-ad`，**紧跟公告条下面**，用户 2026-11-23 复核；宽屏与内容区同宽居中）：
+  卡片右上角固定「广告」标识（`.ad-flag`，右上 `12rpx`，半透明黑底白字 18rpx，`pointer-events: none`）。
   图片用 `mode="aspectFit"`，**不裁切**；swiper 高度由 `measureAdHeight()` 按图片真实比例换算成 rpx 并写入内联 style
   （可用宽 702rpx = 750 − 卡片左右各 24rpx，限幅 120~420rpx）。`wx.getImageInfo` 失败（如未配置下载域名）时
   保持兜底 `250rpx`，配合 aspectFit 仍能完整显示。
   **圆角与其它卡片一致**：卡片 / swiper / 图片三层都写 `border-radius: var(--tt-radius)`，避免圆角被裁切得不一致。
   **教师账号无广告**：`GET /api/ads/slot/:key` 对教师角色直接返回空数组（服务端拦截为权威），首页 banner 不渲染、PV/点击不发生。
 
-- **紧凑比例**：整页按约 0.85 比例收紧（插画头 420→350rpx、卡片内边距 30→22rpx、7 天圆点 66→52rpx、
-  指标条数字 36→28rpx、入口图标 104→84rpx），如需再缩放，改 `pages/home/home.wxss` 里对应数值即可。
-- **快捷入口**：饮水管理 / 目标计划 / 徽章成就 / 身体数据（教师端为 饮水管理 / 身体数据 / 公告）。
+- **紧凑比例**：手机低密度 / iPad 中密度 / Mac·PC 高密度（宽屏块一律 px，见 §2.1）；
+  卡片内边距与字号在 `pages/home/home.wxss` 的 `.screen-regular / .screen-wide` 段按设备给值。
+- **快捷入口 1×4**（`.widget-card` 内 `.widget-grid` 四列，学生端；用户 2026-11-23 复核保持一行四个）：
+  饮水管理 / 目标计划 / 徽章成就 / 身体数据。一张玻璃卡内四列图标 + 名称；
+  图标位放 `assets/home/entry-*.png` 素材或回退 `t-icon`；
   「目标计划」「身体数据」是同一页，用 `?focus=plan|body` 让 `body-data` 页自动滚动到对应区块。
-- **管理面板（教师/管理员）**：**数据概览 + 快捷按钮**两段——不展示账户类型与权限数；
-  概览 4 格（总用户/今日活跃/今日步数/广告PV），**广告PV 格按 `canViewAds`（ad.view）显隐**，
-  服务端 overview 同步按 ad.view 过滤广告字段；无 `dashboard.view` 者只显示快捷按钮（overview 静默失败，不无限转圈）。
-  快捷按钮 = 按 `effectivePermissions` 过滤的管理子模块宫格（用户管理 / 申诉审核 / 广告管理 / 内容管理 / 运动考核 / 文件管理 / 系统配置）；
-  **不再在末尾追加「管理中枢」宫格**（产品要求：与底部导航的「管理」项重复），进管理中枢统一走底部导航。
-  **数据看板独立页已删除**（`packageAdmin/dashboard` 不存在）：教师底部 tab「管理」直达用户管理页，
-  首页/我的页内不再有「管理端控制台」按钮。
+  图标底色是首页私有场景色，暗色下改半透明 tint（`home.wxss` 暗色块），不贴亮色块在深玻璃上。
+- **管理 dashboard（数据概况 + 平均步数排行）**：**管理员首页第一张卡**（用户 2026-11-23 复核要求显示在主页）
+  与工作台顶部卡**两处共用**，取数与格式化唯一实现 `utils/dashboard.js`（`fetchOverview/fetchTop3/canViewDashboard`），
+  守卫 `dashboard.view`（isManager 不等于有看板权限）；样式公共段在 `app.wxss`（`.mgr-*` / `.rank-*`），两页不再各写一份。
+  **数据看板独立页已删除**（`packageAdmin/dashboard` 不存在）。
 
 ### 插画素材位（可选，放入即生效，无需改代码）
 首页与**「我的」页**都在页面加载时用 `wx.getFileSystemManager().accessSync` 探测以下代码包文件，
-存在则用图片、不存在则回退（首页 → CSS 插画；「我的」页 → 原 `t-icon` 矢量图标）：
+存在则用图片、不存在则回退矢量图标（首页小组件瓷砖 / 「我的」页菜单行）：
 
 | 素材 | 路径 | 建议尺寸 |
 |---|---|---|
-| 顶部场景图（图内含标题文字） | `miniprogram/assets/home/hero.jpg` | 宽高比 2.87:1（现用 1500×523），JPG q85 约 74KB；PNG 命名 `hero.png` 亦可作兜底 |
 | 入口-饮水管理 | `miniprogram/assets/home/entry-water.png` | 240×240（原图 512×512 压缩后 ~9KB） |
 | 入口-目标计划 | `miniprogram/assets/home/entry-plan.png` | 240×240 |
 | 入口-徽章成就 | `miniprogram/assets/home/entry-badge.png` | 240×240 |
@@ -278,17 +353,14 @@ box-shadow: 0 12rpx 32rpx rgba(255, 107, 0, 0.24);
 WXML 里 `wx:if="{{entryImages.xxx}}"` 用 `<image mode="aspectFit" class="menu-img">`、`wx:else` 回退原 `t-icon`，
 图标位尺寸不变（68rpx，见 `profile.wxss` 的 `.menu-icon` / `.menu-img`）。
 
-路径常量在 `pages/home/home.js` 顶部的 `HERO_IMAGE_JPG` / `HERO_IMAGE_PNG` / `ENTRY_IMAGES` 与 `pages/profile/profile.js` 的 `ENTRY_IMAGES`，
+路径常量在 `pages/home/home.js` 顶部的 `ENTRY_IMAGES` 与 `pages/profile/profile.js` 的 `ENTRY_IMAGES`，
 目录内另有 `assets/home/README.md`、`assets/profile/README.md` 给设计/运营看。
 （注意：不要用 WXSS `background-image` 引用尚不存在的文件，会导致构建报错；统一走上面的运行时探测。
 原始大图放仓库根目录 `.design-src/`（已 gitignore，不入包），压缩后再放进 `assets/home/`。）
 
-**大图格式与体积（实测）**：`hero` 这类 1500×523 满幅插画 ——
-**JPG q85 + progressive = 74.2KB（采用）** ／ PNG 调色板 256 = 321.1KB（已到 PNG 压缩极限，再压只剩量化降色）／
-WebP q80 = 41.4KB（更小，但 `image` 组件 iOS 需 14+，目标环境实测不显示 → **已弃用**，仓库不再存 WebP）。
-画质：JPG q85 RMSE 2.49 / PSNR 40.2dB，**优于** PNG 调色板 256 的 3.03 / 38.5dB（JPG q80 更小 64.4KB，但推荐 q85）。
-所以 `hero` 只保留 `hero.jpg`；若把 `hero.png` 放回该目录，`resolveHero()` 会自动兜底用它（无需改代码）。
-`<image bind:error="onHeroError">` 保留为二次兜底：解码失败就清空 `heroImage` → 回退 CSS 插画。
+**图片格式与体积（实测结论保留）**：满幅插画（原 hero，已随 2026-11-23 重设计删除）当年实测
+JPG q85 + progressive = 74.2KB 优于 PNG 调色板 256 = 321.1KB；WebP q80 更小但 `image` 组件 iOS 需 14+、
+目标环境实测不显示 → **已弃用**，仓库不再存 WebP。
 240×240 的入口小图**统一保持 PNG**：实测这类扁平小图的 WebP 反而比 PNG 大 3%~40%，换格式没有收益。
 
 ### 8.1 开屏广告页与卡片广告位
@@ -338,6 +410,17 @@ WebP q80 = 41.4KB（更小，但 `image` 组件 iOS 需 14+，目标环境实测
     ② **概率公示由服务端算**（`prizes[].percent`），页面「规则说明」只拼字符串。自己算必然与配置漂移；
     ③ **封顶提示要在抽到空奖之前就能看到**（`.bd-cap` 常驻条 + 规则区说明），
        而不是等用户抽到「谢谢参与」才解释 —— 那是「系统骗人」的观感来源。
+  - **北斗运动 3.0（铜版经济 + 九宫格连线 + 好友点击归因）**：同一页面 `pages/reward` 再整体改写，
+    结构为「播报 → 铜版余额卡 → 转盘/九宫格切换 → 玩法区 → 签到 → 任务 → 今日入账 → 最近记录 → 规则 → 中奖弹层」。
+    四条 UI 硬约束（详见 `docs/beidou-economy-plan.md`）：
+    ① **九宫格只翻牌、不连线、不随机**：`board/lines/prize/percent/pity 文案`全部服务端下发，前端只按 `lines.cells` 高亮；
+    ② **分享按钮只把预生成的 `share.path` 交给 `onShareAppMessage`**，页面加载时由 `/today` 预取令牌；
+       真正发铜版发生在好友点开并上报后，前端不做归因；
+    ③ **概率/保底/上限文案由服务端拼**（`draw.pity.text` / `grid.pity.text` / `rarityText`），前端不自己算；
+    ④ **铜版/九宫格各自的配色走 `--bd-*` 令牌**（`--bd-coin-*` / `--bd-grid-*`），规则内不写裸色；
+       九宫格翻牌用 `transform/opacity`，`onHide/onUnload` 清 timer 并直接展示终态。
+    后台配置页改为「概览 + 基础/转盘/九宫格/任务/流水五个 Tab + 固定保存栏」，
+    输入防抖调 `POST /beidou-preview` 显示归一概率/EV/警告；只读账号所有输入 disabled、增删/保存 `wx:if="{{canManage}}"`。
   - **插屏节流**（常量在 `pages/reward/reward.js` 头部）：`INTERSTITIAL_SESSION_MAX = 3`（本次运行最多 3 次）、
     **每次进入最多 1 次**（`onShow` 重入不重复弹）、`show()` 失败 catch 静默**且不占额度**；
     计数器是模块级（跨页面重进累计），回调 `onLoad/onError/onClose` 只注册一次。
@@ -417,40 +500,58 @@ WebP q80 = 41.4KB（更小，但 `image` 组件 iOS 需 14+，目标环境实测
   注意：计划库里有**同名但不同性别**的计划（如 2 条 `BMI正常·激进版`），去重必须按 `_id`，不能按 `name`。
 - **身体数据 `pages/body-data`**：橙色 `tt-hero` BMI 概览（无数据显示灰色「待完善」）→ 关键指标四列 → **首屏横幅（ad-banner，在编辑表单之前）** → 编辑表单（性别/身高/体重/强度偏好，斤↔kg 可切换）→ **目标计划只留跳转入口**（数值不在此重复展示）。
   数据读取注意：`GET /api/goal/body-data` 返回的是 `{ bodyData, currentPlan, planName, autoMatched, effective }`，**字段在 `bodyData` 里**，不要按扁平对象读。
-- **我的班级 `packageAdmin/class/class`**（班主任 / 班委；**页面名与入口名都是「我的班级」**）：
-  顶部身份卡（班级名 + `班主任`/`班委 · 仅查看` 胶囊 + 多班切换）→ 4 个页内 tab：
-  **学生名单 / 校园跑 / 班超联赛 / 班级配置**。
+- **我的班级 `packageAdmin/class/class`**（班主任 / 班委；**页面名与入口名都是「我的班级」**；
+  2026-11-23 iOS 重排版：紧凑 + 玻璃 + 三端）：
+  **吸顶头**（`.cls-topbar` 玻璃悬浮层 = 纯文本班级标题 + iOS 分段控制器 `.tt-segment` 四 tab）→
+  宽屏左栏常驻班级列表（`.cls-side`，280px）+ 主内容；4 个页内 tab：**学生名单 / 校园跑 / 班超联赛 / 班级配置**。
+  - **多班管理**：单班 = 班名 + 角色胶囊；多班 = 「班名 ▾」点弹**页内选班抽屉**（`.cls-pick-sheet`，
+    复用 `.tt-sheet` 骨架）；宽屏左栏直接点班切换。切换唯一实现 `switchClass`（全量重置、runDate 回今天）。
+  - **单一吸顶头**（2026-11-23 融合）：`.cls-topbar` 一层吸顶 = 纯文本班级标题 + 分段控制器；
+    班超 tab 时条件第二行 `.cls-topbar-range` = 周期 segment（今日/本周/本月）+ 周期 picker。
+    **除名称行外只允许一行**（2026-11-24）：`.cls-topbar-range / .cls-period / .cls-period-chip` 全 `flex-wrap: nowrap`
+    + `overflow: hidden`；周 chip 只显示短标签「第N周」，完整日期段在 picker 选项与 hero / section extra。
+    **不再有两层吸顶、不再有 `--cls-head-h` 偏移变量**（单吸顶元素无需偏移）。
+  - **iOS 分组标题**：`.cls-page .tt-section` 覆写为灰字小标题（24rpx/400/text-3、去橙竖条），
+    与记录详情页 `.rd-page .tt-section` 同手法；extra 同灰。
+  - **出勤率并入报表**（2026-11-24）：`<attendance embedded>` 作为聚合卡第一段、本期报表之前；
+    组件不再渲染自带卡片面层与周期行，父页 `.cls-bc-att` 缩小统计与模块 chips、说明行 `display:none`，宽屏用 px 覆写。
+    **最近记录块已删**（已有检查记录 dayRecords，不重复一块）。
+  - **聚合卡**（2026-11-23 追加，2026-11-24 再融合）：出勤率 + 本期报表 + 得分趋势 + 班级榜前三 合为单张玻璃卡 `.cls-bc-aggr`
+    （卡内灰字小标题 + hairline 分段；报表三动作 / 趋势条 / 前三行类名不变）。
+  - **次级行融入吸顶**：`.cls-topbar-tools`（学生 = 搜索 + 筛选 + 排序；校园跑 = 日期回看 picker + 回看标签 + 今天），
+    主/次两行封顶；筛选面板仍条件展开在内容区。解释文本（roletip / 报表 tip / 解释页脚）均删。
+  - **控件高度统一**（2026-11-24）：`--cls-ctl-h`（64rpx / 宽屏 32px，定义在 `.cls-page` 与
+    `.cls-page.screen-*`）驱动纯文本班级标题 / 分段外框 / 搜索（`--td-search-height` 等变量继承）/
+    筛选排序 chip / 日期 chip；主行 `.cls-topbar-main` = 纯文本班级标题 + 分段并排；
+    班级标题无 padding / background / border / box-shadow（28rpx/700，宽屏 15px），胶囊族只用于分段与 chips，
+    灰底 `--td-bg-color-component`（暗色自动跟随），分段内 item = 控件高 − 2×内衬。
+  - **边距单一口径**：外 `var(--tt-gap)` + 内 `var(--tt-pad)`；`.cls-group` margin 0（外层由 `.cls-list` 提供，
+    修掉双重缩进 48rpx）；wide 档 `.cls-main` 内横向 margin 显式归零与 topbar 对齐
+    （**不用 `--tt-gap:0`**，会连纵向间距一起清零）。
+  - **紧凑规格**：学生名单 = 单张玻璃卡内分组列表行（`.cls-row` 88rpx + hairline，首行无线）；
+    **数据概况 = iOS widget 板**（`.cls-ov-ring` 达标率环 + 右 2×2 关键数 + 底部操作 chips：
+    未达标 / 学生名单 / 全校榜，操作紧贴数据；环的 conic-gradient 由 `loadOverview` 预计算 `ringStyle`）；
+    **检查记录有照片就以照片为卡底**（`.cls-bc-cover` 首张铺满 + `.cls-bc-scrim` 渐变压文字，
+    白字 + 「照片 N」pill `catch:tap` 预览；无照片保持分组行）；榜单 = 玻璃卡内列表行（hairline + 奖牌徽标）；
+    KPI 2×2 / 检查明细双列保留但降 padding 与字号；配置项 = 分组行（右 t-switch / chevron）。
+    全卡 `.tt-glass`，暗色随令牌；宽屏段一律 px。
   - 「**班超联赛**」tab（原「班级考勤」改名；2026-10-19 并入原独立页 `pages/banchao/banchao`，该页已删除）：
     吸顶周期选择（今日选日期 / 本周选当月第几周 / 本月选 1-12 月，**周选项 label 带日期段**：
-    「第2周(10月8日至10月14日)」）→ 总评 hero（区间平均分 + 记录数 + 全校名次）→ 检查明细（5 模块）→
-    得分趋势 → 最近记录 → 班级榜前三 → **班级考勤组件**（同一区间驱动，故不渲染自带周期条）。
+    「第2周(10月8日至10月14日)」）→ 总评 hero（班超分 + JS 预计算备注）→ KPI 2×2 → 检查明细（5 模块）→
+    聚合卡（出勤率 / 本期报表 / 得分趋势 / 班级榜前三）→ 所选区间全部检查记录。
     口径与「班超排名」页一致：日 = `date`，周 = `month` + `weekNo`，月 = `month`；
     **周是从当月 1 日起算的完整 7 天、不按月末截断**（10月第5周 = 10月29日至11月4日）；
     前端唯一实现是 `utils/period.js`（与服务端 `band-chao.js::monthWeekRange` 逐例对齐，改动必须两处同步）。
   - 名单（分页 + 搜索 + 「今日未达标」筛选 + 排序 chips）；
-    **班主任**可「督促未达标学生」（抽屉列出未达标名单，可复制到剪贴板）；
-    **班委** `canNudge:false`，**不渲染任何操作按钮**，卡片上直接写明「仅查看模式…」。
-    两种身份同一页面，用 `role/readonly/canNudge` 控制，不要写两个页面。
+    **督促未达标**按 `capabilities.nudge`（**班主任与班委都放行**，服务端 /api/class/mine 下发）；
+    无该能力时不渲染操作按钮，卡片写明「仅查看…」。两种身份同一页面，用 `role/readonly/capabilities` 控制，不要写两个页面。
   > ⚠️ 命名三层别混（2026-10-19 用户纠正）：**入口名 / 页面名 = 我的班级**；
   > **页内第三个 tab = 班超联赛**（原「班级考勤」）；**管理员全校台账 = 班级管理**（`packageAdmin/class-manage`）。
-- **本班数据概况卡 `components/class-board`**（首页用）：概况四格 + 本班前三名 + 全校班级名次 + 我的班级入口；
-  **无班级身份时整块不渲染**（`show:false`，所以学生端首页可无条件放置）；属性 `title/className/showManage/refreshAt`，
-  事件 `ready/manage/student/classchange`，方法 `reload()`。组件内用 `app.wxss` 公共类必须声明 `"styleIsolation": "apply-shared"`。
-  **多班（班主任被分配多个班）时卡片可左右滑动切换**：用原生 `<swiper>`（`current` + `bindchange`），
-  每个班各拉一份 `/api/class/overview` + `/api/class/ranking`（带 `className`），滑动是纯手势切换、不再发请求
-  —— 切到哪班就显示哪班的数字，不会出现「卡片换了数字没换」；班级名 / 身份胶囊 / 全校名次 / 「n/N」在 swiper 之外固定不滑，
-  卡片底部另有圆点 + `n/N` 指示器（可点选）。
-  **高度：首屏量一次当前可见卡的真实高度后冻结**（不再用「按 wxss 估的固定常量」——估高了会在卡片下方留白）：
-  `load`/`reload` 的 `setData` 回调 + `wx.nextTick` 后，用 `createSelectorQuery()` 量
-  `.cb-swiper-item >>> .cb-card`（取不到退回第一个 `.cb-card`）的 `boundingClientRect().height`，
-  换算成 rpx 存进 `cardHeight` 并置 `heightLocked:true`；**之后切换班级不再测量、不再变化**（高度恒定）。
-  量到 0 / 明显超出屏幕就丢弃本次结果、保留兜底常量 `FALLBACK_HEIGHT_RPX = 560rpx`，`setTimeout` 120ms 重试一次，仍失败就用兜底值。
-  `.cb-card` 的内联 `--cb-card-h` 与 `.cb-swiper` 的内联 `height` 是**同一个值**（单班则由 `min-height: var(--cb-card-h)` 生效）
-  → 卡片高 ≡ 容器高、**卡片下方零白区、切换班级高度零变化、单班多班视觉一致**。
-  绝不给 `.cb-swiper` 写 `min-height`、绝不用「所有卡取最高」——两者都会让容器高于卡片（已踩过两次）。
-  **卡片按紧凑口径排版**（同样信息更矮约 16%，3 行满卡 716rpx → 603rpx）：前三名行 60→52rpx、管理入口 88→76rpx、
-  卡片上下 padding 20/18→16/14、`.cb-stats`/`.cb-goal`/`.cb-top3` 的 margin+padding 各收 4~6rpx、概况数值 40→36rpx。
-  单班时 `multi:false` → **不渲染 swiper、不显示任何滑动控件**（同一高度口径）。
+- **本班数据概况 / 前三名 / 全校名次**：承载页是 `packageAdmin/class/class`（「我的班级」入口，页内班超联赛 tab）；
+  首页只以「身份与待办」单卡的一行计数出现（今日达标 x/y），多班进工作台选班。
+  原首页组件 `components/class-board` 与 `components/banchao-block` 已于 2026-11-23 首页重设计时删除
+  （多身份各挂一张操作卡是「操作乱套」的根因）；班级页的多班滑动 / 高度冻结 / 前三回退口径见该页注释与
+  `tools/check-class-ui.js`，**不要**为首页重新引入同类组件。
 - **跑分：首页/我的/记录/排行统一口径**：数字用 `.num-font` + `--tt-brand`，文案为「今日/本周/累计跑分」；
   首页在「今日目标」卡内用浅色三格（`.today-points`），我的页面用独立卡（`.points-card`）；
   **教师账号不参与跑分**（相关块整体隐藏，不是显示 0）。

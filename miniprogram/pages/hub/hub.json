@@ -1,5 +1,5 @@
 {
-  "navigationBarTitleText": "管理中枢",
+  "navigationBarTitleText": "工作台",
   "usingComponents": {
     "t-popup": "tdesign-miniprogram/popup/popup"
   }

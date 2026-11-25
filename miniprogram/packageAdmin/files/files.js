@@ -12,6 +12,7 @@ const CATS = [
   { key: 'avatar', label: '头像' },
   { key: 'ad', label: '广告' },
   { key: 'badge', label: '徽章' },
+  { key: 'beidou', label: '北斗图标' },
   { key: 'check_photo', label: '检查照片' },
   { key: 'other', label: '其他' },
 ];

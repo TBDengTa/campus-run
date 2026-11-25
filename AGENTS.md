@@ -96,13 +96,43 @@
   头像链路不受影响（仍保留自己的 5MB 上限）。上传接口**不加**每用户限频（用户 2026-11-09「不加」）。
   任何一层把上限加回来都会让大图传不上去，回归：`tools/check-traffic-headers.js` + `tools/verify-check-photo-unlimited.js`。
 
-## UI 约定（白橙设计系统）
+## UI 约定（白橙设计系统 + 玻璃拟态）
 - 配色/圆角/间距一律使用 `app.wxss` 中的 `--tt-*` 令牌与 `.tt-*` 公共类，禁止在页面里硬编码品牌色或旧蓝色（`#0052d9`）。
+- **玻璃拟态（用户 2026-11-23「导航栏改成 iOS 玻璃拟态 + 三端适配」）**：玻璃令牌 `--tt-glass-*` / `--tt-ambient`
+  **唯一来源在 `app.wxss`**（亮/暗两套），页面只引用不自定义。卡片写 `class="tt-card tt-glass"`
+  （`.tt-glass` 定义在 `.tt-card` 之后同权重后置生效），可点面加 `.tt-glass-press`（按压 scale 0.96）、
+  宽屏可悬停面加 `.tt-glass-hover`（hover 提亮只在 `@media (hover:hover)` 内）；页面根挂 `.tt-ambient-page`（环境光渐变底）。
+  blur 24/32px（规格 20~40px）、过渡 200ms ease-out、细亮边+内高光+柔影（禁重阴影）；
+  **必须带 `-webkit-backdrop-filter` 前缀 + `@supports not` 降级到 `--tt-glass-fallback*` 实底**（老机型不支持时不能糊成透明一片），
+  并尊重 `prefers-reduced-motion`。组件内用公共类需 json `"styleIsolation":"apply-shared"`。
+  **核心页不许留裸 `.tt-card`**（环境光玻璃页里夹一张实底卡 = 漏改，profile 两张菜单卡真踩过），
+  且 `.tt-glass-press` / `.tt-glass-hover` **必须真的被 WXML 用上**（只定义不接线 = 真机没有任何按压/悬停反馈）。
+- **三端响应式**：断点唯一实现 `utils/screen.js`（compact <600px / regular 600~900px / wide >900px），
+  页面接 `behaviors/screen.js`（data.screenMode），根节点挂 `screen-{{screenMode}}`；
+  tabBar 用 js 驱动的 `.tabbar-wide` 类。**`app.json` 必须 `"resizable": true`** —— 官方「响应显示区域变化」明确：
+  缺它时显示区域尺寸自页面初始化起就不变（iPad 不随屏幕旋转、Windows/Mac 不进大屏模式也不能拉伸窗口），
+  `wx.onWindowResize` 永不触发 → screenMode 恒 compact → 双栏/三栏在 iPad/PC 上**完全不生效且不报错**。
+  **宽屏块（`.screen-regular/.screen-wide/.tabbar-wide`）内一律 px 禁 rpx**
+  （rpx 按窗口宽换算，宽窗口会把字号/圆角放大数倍）。布局：手机单列低密度 / iPad 双栏（home/profile `columns:2`、hub 分组双栏 grid）/
+  Mac·PC 三栏高密度（home/profile `columns:3`、hub 左 300px sticky 身份栏+右 `auto-fill minmax(280px,1fr)`）。
+  目前仅导航系统+核心页（home/hub/profile）玻璃化，其余页面与水印相机页（固定暗色）不参与。
 - 底部导航为**自定义 tabBar**（`custom-tab-bar/`，`app.json` 中 `tabBar.custom = true`）：
-  白橙悬浮胶囊 + 中间凸起圆钮，按角色变化（学生 5 项；教师 3 项）。
+  **玻璃悬浮胶囊（无中间凸起圆钮），颜色全走令牌、文件内禁止硬编码色值/自写 @media 暗色块**。
+  **挂载契约（2026-11-23 真机「平底黑栏」报障后钉死）**：custom-tab-bar 挂在**页面内容树之外**，
+  令牌块选择器是 `page, .page` —— `index.json` 必须 `"styleIsolation":"apply-shared"` **且**
+  `index.wxml` 根节点必须挂 `page` 类，缺一不可；缺任一条组件内所有 `var(--tt-*)` 在计算值阶段整条失效
+  （background/box-shadow/color 全丢 = 全宽平底黑图标），而其余静态断言仍全绿。
+  **多身份统一「工作台」（用户 2026-11-23）**：动态项永远只有 1 个 `WORKBENCH_TAB`（`/pages/hub/hub`）——
+  学生 canManage/isClassOfficer/isUnionMember 任一成立 → 在「记录」后插工作台（6 项封顶）；
+  教师有权限或班主任 → 首页/工作台/我的，否则首页/公告/我的。全部身份入口收进工作台页按身份分组
+  （`utils/nav-groups.js` 单一数据源；学生会「检查录入」= `unionEntry` 条目，**仅真实成员可见**，与旧 UNION_TAB 同口径）。
+  **禁止回潮「班委/学生会/管理各占一个动态位」的旧方案**（多身份互相挤掉入口正是当年报障根源）。
   **新增/改名的 tab 页必须在 `onShow` 里调 `this.getTabBar().setActive('<路径>')`，页面根节点加 `.tt-page-tab`。**
 - 详细规范见 `docs/ui-design.md`（新增页面必须遵守）。
 - 大数字用 `.num-font`，格式化统一走 `utils/format.js`。
+- 回归：`tools/check-glass-ui.js`（玻璃令牌单一来源/blur 规格/降级链/宽屏禁 rpx/三端布局/工作台契约/
+  **[11] tabBar 令牌可达性：apply-shared + 根 page 类 + 被引用令牌亮暗都有定义**）
+  + `check-nav-groups.js`（角色矩阵+tabBar 工作台单槽+unionEntry）+ `check-dark-mode.js`（tabBar 令牌驱动 + 挂载契约断言）。
 
 ## 组织归属（院校 → 系部）解析：`services/org-resolve.js`
 - **唯一实现**：`orgResolve.resolveDepartment()/resolveDepartmentSync()`。录入台对象列表、写入/名单的
@@ -541,6 +571,70 @@
   界面文案是「16.3 万条 · 取 2 万条训练」，未达上限时只说「N 条样本」。
   **新增任何「样本量/数据量」展示都必须给 totalRows**，只给 rows 必然又变成恒定值。
 
+## 北斗运动 3.0（铜版经济 + 九宫格连线 + 好友点击归因）
+
+> 用户 2026-11-22 定稿；权威说明 `docs/beidou-economy-plan.md`。下面 v2 段落仅保留「转盘服务端定结果 / 幂等 / 播报 / 签到断签」等仍有效的部分，冲突处以 v3 为准。
+
+- **任务只发铜版**：看视频/签到/分享每次 1 铜版，**不再加抽奖次数、不写 run_records**。
+  旧 `/share/report` 只回 `success:false + deprecated:true`；旧 `/video/report`、`/checkin` 路径保留但只发铜版。
+- **分享必须好友点开**：页面加载时预生成 `bdshare` 令牌（`/pages/splash/splash?bdshare=...`），
+  接收方 app/splash 先存本地、登录后 `utils/beidou-share.js::flush()` 调 `POST /share/click`；
+  自己点、同一好友每天重复点、分享者每日超限、令牌过期、教师/封禁/限制登录都不发。
+  前端**不得**在点击分享时直接发奖，也不得自己归因。
+- **两个玩法都扣/发铜版**：转盘 `/draw`、九宫格 `/grid/play`；结果（index/board/lines/rewards/prize/percent）只由服务端定。
+  九宫格是**老虎机式随机盘面**：9 格按图案 `weight` 独立抽；横/竖/斜 8 条线，每条线发该图案单线奖；
+  可同时中多条线（最多 8 条，可铜版+步数混合）。前端只做卷轴展示/高亮，不得自己连线。
+  **九宫格展示层 = 老虎机卷轴**（2026-11-24 用户「改为老虎机一样的那种转盘」，纯前端、服务端零改动）：
+  3 列卷轴垂直滚动、逐列减速停（1200/1900/2600ms，曲线 `cubic-bezier(0.3,0.3,0.15,1)` 近匀速快转→末段制动）；
+  滚动装饰帧 = 管理端 symbols 候选**按固定顺序循环**（零随机、纯视觉、不参与判奖，装饰帧 16+8c），
+  **每列停位由服务端 board 唯一决定**
+  （末端 3 帧 = board 该列 3 格，board 行主序、列 c 取 c/c+3/c+6）；停轴完成由**兜底 timer 权威驱动**
+  （transitionend 只是提前量，vm 桩/部分 iOS 不触发它）；两拍启动（新挂载节点一拍带目标 transform 无过渡）；
+  双态渲染：滚动中 reel、停稳/中断同一拍换回静态 9 格（onHide 立即终态，不残留半滚动画）；
+  `grid.cells[].revealed/win` 语义不变（停轴=该列 revealed，win 只来自服务端 lines）；
+  reduced-motion 探针直接出终态；停轴「咔哒」复用现有 spin 音（不新增音频文件）。
+  **机框 chrome（2026-11-25 用户给参考图「做成赌场老虎机那样」）**：枪灰金属机身 `.bd-machine` +
+  顶部 24 珠金色跑马灯牌（复用 bulb-blink 奇偶交替、滚动提速）+ 银包边 `.bd-bezel` +
+  **恒内宽 `.bd-window` 双态共用**（常驻窗分隔×2 + 中部玻璃压线）+ 台面三 glossy 按钮
+  （红=去赚铜版 / 绿=看概率[#rules 自动展开] / 金=开一局）+ 底座投币口 +
+  **右侧可点拉杆 = 开一局同入口**（onLeverTap 同步栈调 playGrid 保 sfx 手势 + 下压回弹动画；
+  双入口竞态由 playGrid 首行守卫兜底）。**卷轴白两态 = 真实卷轴 intentional**：
+  label/「?」固定深色令牌（--bd-reel-label/--bd-grid-q 亮暗同），tint 暗色也浅；
+  **strip 过冲否决**（停位底边贴视窗底，过冲露底；回弹只走停稳 scale 脉冲）。
+  几何/时序细节见 `docs/beidou-lottery-ui-plan.md`「九宫格卷轴展示层」；
+  回归：`check-page-runtime`（停位=board/逐列停/中断/reduced-motion/失败恢复）+ `check-beidou-lottery`（buildReels 零随机反向断言）。
+- **九宫格图标/铜版图标由管理员上传**：`grid.symbols[].iconUrl`、`coinIconUrl`；上传用途 `beidou`（`config.manage`）；
+  用户端显示图片，缺失/加载失败回退 emoji/「铜」字。`grid.outcomes` 是 v3 旧结果表，保留但不再参与玩法。
+- **管理端九宫格编辑三条硬约束（用户 2026-11-25「编辑会被刷新」「概率要获奖概率」）**：
+  ① 派生字段（percentText/typeIndex/tierIndex/expectedLinesText）**点路径回写**——
+  `decorateConfig`/`recalcOdds` 禁止整数组替换 `config.beidou.grid.symbols`/`prizes`
+  （整数组替换 + 数值强转会在编辑中途重置输入框：中文 IME/小数点/清空）；
+  ② `onSymbolField` 的 weight/amount **保留原始字符串**（空串/「0.」强转 0 是重置根因之一），
+  归一由服务端 normalize 在预览/保存时做；
+  ③ 编辑态概率 = **单局获奖概率 `winPercent`**（开一局 ≥1 线该图案，8 线共享格子不独立，
+  `1-(1-p³)^8` 会高估；唯一实现 `beidou-grid.js::lineWinProbability` 容斥精确，
+  255 子集 (sign,|并集|) 模块级预计算；`normalizeSymbols` 下发，管理端只展示不算）。
+  **编辑框填的是目标获奖概率%（`winTarget`），服务端 `cellProbForWinProbability` 二分反解单格概率→权重**
+  （用户 2026-11-25「权重调的是单局获奖概率」）；未填目标的符号（含空白）按现有权重占比分剩余概率；
+  Σp>1 不可实现→目标按比例缩放，以显示值为准；schema 必须放行 winTarget（严格字段否则保存被 stripped）。
+  回归：`check-beidou-lottery` [11]（512 态枚举独立交叉核对 + 反解往返 + 点路径反向断言）。
+- **内置图案图标（同日「上传不上去请直接添加」）**：皇冠/红星/1 铜币随仓库部署在 `server/public/beidou/*.png`
+  （`/beidou` 静态挂载、短缓存不 immutable）；启动 `seedBeidouBuiltinIcons` **只补空** iconUrl（star/crown）
+  与 coinIconUrl，绝不覆盖管理员上传的图；幂等、无 PUBLIC_BASE_URL 时跳过。管理端上传不限体积
+  （makeUploader maxMb=0）+ PC chooseMedia 不可用回退 chooseImage。
+- **用户端两个展示闸门（同日）**：中奖线胶囊 `wx:if="{{grid.lines.length && !grid.revealing}}"`
+  （滚动中露奖=剧透）；拉杆下压走常驻节点两拍 transition（见 docs §13）。
+- **钱包/流水唯一实现**：`services/beidou-wallet.js`；余额只经它增减，`(openid, idemKey)` 流水唯一，
+  扣款 CAS + 保底进度同一次更新，余额永不为负；`beidou_draws.status` 支持同一 `playId` 续跑。
+- **保底**：转盘/九宫格各自连续未中到 `afterLosses` 后下一局必中低档奖；中奖清零、跨天保留。
+- **产出上限**：`economy.dailyGameCoinCap`（游戏铜版）、`draw.dailyStepsCap`（步数）、任务/分享每日上限；
+  高价值奖低权重，后台 `beidou-preview` 显示返奖率/高价值占比预警，`beidou-economy` 看实际发放。
+- **旧 API 全部保留**：`/today`、`/draw`、`/video/report`、`/checkin`、`/share/report`、`/winners`、
+  `/api/reward-video/*`；旧字段继续下发（旧任务字段为 0）。配置迁移 `migrateBeidouConfig()` 幂等，
+  只在启动期按**原始文档** `version<4` 回填，不覆盖管理员已调权重。
+- 回归：`tools/check-beidou-lottery.js`、`tools/check-beidou-grid.js`、`tools/verify-beidou-lottery.js`、
+  `tools/check-page-runtime.js`（用户页/后台页）。
+
 ## 北斗运动 2.0（签到 + 转盘抽步数 + 看视频/分享得次数）
 - **方案与口径唯一说明：`docs/beidou-lottery-plan.md`**（改这块之前必读）。用户 2026-11-11 定稿：
   看视频只给次数不发步数 / 没有免费次数 / 奖池只有步数·空奖·再来一次 / 点分享即计次 / 签到 7 天阶梯 / 改造现有页面。
@@ -595,8 +689,18 @@
 - **音效是运行时合成 WAV，不放 mp3**（主包已超 2MB）。① 失败一律静默，绝不影响入账；
   ② `prewarm()` 必须在**点抽奖的同一手势栈**（iOS 非手势创建的音频可能永久静音且无报错）；
   ③ `obeyMuteSwitch=true`；页面喇叭开关 + 管理端总开关 `beidou.sfxEnabled`。
-- **动效按稀有度分三档**（全都中奖=全都平淡）；空奖不做成惩罚；全用 CSS `transform/opacity`，
+- **动效按稀有度分档**（v4 起全中奖档都炸裂、逐档递进，见下；旧「全都中奖=全都平淡」已被用户修订）；空奖不做成惩罚；全用 CSS `transform/opacity`，
   **不用 canvas 粒子**（低端机正卡在最需要炫的时刻）。
+  **FX v3 炫彩爆发（2026-11-25 用户「要炫酷多彩像拼多多」）**：rarest = 彩带 20（8 色 3 形两段式中心爆发）
+  + 光芒 16（四暖色，**窄条化**是前提：满幅层 12 条 ≈31MB GPU → 窄条 16 条 ≈2MB）+ 金币雨 14
+  + 星光 ✦✧×8 + 全屏闪光×1 + 彩色冲击波×3。
+  **FX v4 全档炸裂（同日用户「所有等级奖项都要炸裂特效」，覆盖旧「全都中奖=全都平淡」口径）**：
+  normal = 彩带 10/金币 5/星光 4/冲击波 1/震屏 sm；rare = 14/8/6/2/md；rarest = 20/14/8/3/lg；
+  **none 仍克制**（用户确认空奖不算奖项档）。**震屏只挂 `.bd-fx` 自身**（fixed 祖先加 transform
+  会改 containing block 使弹层错位）+ 负 inset overscan 防露边；vibrate normal medium / rare heavy。
+  fx 层尊重 `prefers-reduced-motion`（CSS reduce 块 + JS lite 闸粒子不生成 DOM、fxShake ''）；
+  同屏动画节点预算 ≤~85（根视图 is-fx 暂停背景灯珠/win 脉冲），新粒子不加 will-change；
+  `fxSparks`/`fxShake` 清空点缺一即泄漏（检查器钉死）。
 - ⚠️ `recent.atText` 曾是恒空 bug（服务端只给 `at`，WXML 渲染 `atText`）；现由服务端拼好下发。
 - **版式红线（2026-11-13 用户截图）**：① 次数条 `.bd-stat` 必须走**正常文档流**，
   早先 `position:absolute; top:-52rpx` 把它压在转盘上方，正好叠在播报条上 →
@@ -762,16 +866,31 @@
   排除该同学（与公开榜一致），但它不拦未达标名单（督促看的不是排名，班主任视角本就全量可见）。
   学生自己开「不参与排名」挡的是公开榜单曝光，挡不住自己班主任的督促。
 - 班级统计口径与首页数据概况一致；班级排名只统计 `role != 'teacher'` 的学生。
-- **本班前三：真正的根因是 viewOf 丢字段**（用户 2026-11-04「依旧没有显示」）：
-  首页 `class-board` 组件的 `viewOf()` 负责把单班卡数据搬进 `currentCard`，曾把 `top`
-  （前三名单）整字段漏掉 → `wx:for="{{currentCard.top}}"` 永远渲染不出、恒落空态——
-  **改数据层之前先核对 wxml 绑定的每个 `currentCard.*` 字段 viewOf 是否都转发**，
+- **本班前三：真正的根因是 viewOf 丢字段**（用户 2026-11-04「依旧没有显示」，历史教训保留）：
+  当年首页 `class-board` 组件的 `viewOf()` 把单班卡数据搬进 `currentCard` 时漏了 `top`（前三名单）整字段
+  → `wx:for="{{currentCard.top}}"` 永远渲染不出、恒落空态——**改数据层之前先核对 wxml 绑定的每个字段是否都转发**，
   漏一个字段就是「界面永远空白」的静默 bug。回退逻辑（用户 2026-11-03「本周不够就显本日」）
-  保留在 `buildCard`：本周有效（weekSteps>0）人数 < 3 且今日有效人数更多时改显本日前三——
+  保留在 `packageAdmin/class` 班级页 `loadRanking`：本周有效（weekSteps>0）人数 < 3 且今日有效人数更多时改显本日前三——
   注意**今日 ⊆ 本周**（todaySteps>0 必然 weekSteps>0，周区间含今天），真实数据下该回退
-  几乎不会触发，它只是数据异常时的护栏；正常情况本周有几个显示几个。两处前端
-  （`packageAdmin/class` 班级页 `loadRanking` 与 `class-board` `buildCard`）规则必须一致；
+  几乎不会触发，它只是数据异常时的护栏；正常情况本周有几个显示几个。
   空态文案覆盖双口径（「今日与本周都还没有人产生运动记录」），回退说明句整句 JS 预计算。
+  （首页 `class-board` / `banchao-block` 组件已于 2026-11-23 首页重设计删除，见下条首页职责契约。）
+- **首页职责契约（用户 2026-11-23「板块太多、多身份操作乱套，仿 iOS 重设计」+ 同日四条复核）**：
+  首页 = **个人今日视图**（大标题问候头 → 封禁条 → 公告 → **广告(紧跟公告下)** →
+  [身份待办单卡 / 今日运动 widget / **1×4 快捷入口**] → 页脚）；
+  全部管理 / 身份**操作**入口收进工作台（`pages/hub/hub`）。
+  **数据概况 + 平均步数排行只在管理员首页显示**（用户 2026-11-24「工作台去掉数据概况」，
+  此前 2026-11-23 曾两处显示，现已移出工作台），取数唯一实现 `utils/dashboard.js`，
+  样式公共段在 `app.wxss`（`.mgr-*`/`.rank-*`），守卫 `dashboard.view`。
+  **工作台 = iOS 设置式分组列表**（2026-11-24 重排版）：灰字 footnote 标题（去橙竖条）+
+  玻璃分组卡 + hairline 行（`hub-row`：图标/名称/chevron，点行直跳），我的班级 chips 并入班级分组同一张卡；
+  三端布局不变（regular 双栏 / wide 左 300px sticky 身份栏 + 右 `auto-fill minmax(280px,1fr)`）。
+  首页唯一的身份面是「身份与待办」单卡（`home.js::loadTodoRows` 预计算行模型，行内直跳）：
+  教师(班主任)/班委要有**班超行**（分数+全校名次，`/api/union/class/:className`）与**校园跑行**（达标 x/y+周达标率），
+  学生会要有录入/待复核行；多班聚合行 → switchTab 工作台选班，**首页不建选班抽屉**。
+  **禁止回潮「按身份各挂一张操作卡 / 首页管理面板八分类浮层 / 2×2 瓷砖 / 广告放末位」**
+  （`banchao-block` / `class-board` / `behaviors/nav-sheet` / `templates/nav-sheet` / `nav-groups.homeGroups` 已删，别再引入）。
+  回归：`tools/check-nav-groups.js` 角色矩阵（待办行显隐 + 行 url/tab + 首页 dashboard 显隐 + 工作台已移除数据概况）。
 - **班级状态总览**（用户 2026-10-29「增加班级状态页面显示所有班级的考勤、校园跑达标(日、周)，
   并且可以复制到文本如未达标班级等」）：页面 `/packageAdmin/class-status/class-status`，
   接口 `GET /api/admin/class/status-board`（前缀已挂 `class.view`，**不新开权限项** ——
@@ -969,6 +1088,40 @@
   （hasAnyCheck / totalDeduct / copy=att / att 参数 / 复用文案条件）、`check-page-runtime.js`
   （自动开列后补请求 / 派生口径 / 口径不重查 / 单多排版 / KPI 四卡三态）、
   `verify-class-status.js` [13][14][15]（双口径对账 / 筛到 0 行 hasAnyCheck 仍真 / 复制文案跟随显示列）。
+- **我的班级 iOS 重排版（用户 2026-11-23「重新美化排版…紧凑…符合 iOS」）**：
+  吸顶头 `.cls-topbar`（玻璃悬浮层）= 纯文本班级标题 + **iOS 分段控制器**（公共 `.tt-segment`，替代旧四等分橙渐变 tab）；
+  多班 = 「班名 ▾」**页内选班抽屉**（`.cls-pick-sheet`）+ 宽屏左栏常驻班级列表（280px，零新接口）；
+  切换唯一实现仍是 `switchClass`（全量重置、runDate 回今天）。
+  **单一吸顶头**（2026-11-23 融合）：`.cls-topbar` 一层 = 班级标题 + 分段控制器；班超 tab 条件第二行
+  `.cls-topbar-range` = 周期 segment + picker。**无第二层吸顶、无 `--cls-head-h` 偏移变量**。
+  **iOS 分组标题**（灰字小标题去橙竖条，班级页与记录详情页同手法）；**最近记录块已删**（已有检查记录 dayRecords）。
+  **聚合卡**（2026-11-23 追加，2026-11-24 再融合）：出勤率 + 本期报表 + 得分趋势 + 班级榜前三 合为单张玻璃卡 `.cls-bc-aggr`
+  （卡内 iOS footnote 小标题 + hairline 分段）；**次级行融入吸顶** `.cls-topbar-tools`
+  （学生=搜索+筛选+排序、校园跑=日期回看；工具行与周期行共用同一条件槽位，禁止再叠常驻行）；
+  **控件高度单一令牌 `--cls-ctl-h`**（2026-11-24 用户「TAB高度都不统一」：64rpx，
+  `.cls-page.screen-regular/.screen-wide` 覆写 32px）：班级标题 / 分段 / 搜索（`--td-search-*`
+  变量继承进 t-search）/ 筛选排序 chip / 日期 chip 全部同高；胶囊族只用于分段与 chips；
+  **三行布局（2026-11-24 用户「更改为三行显示」，覆盖同日早先「并排两行」口径）** `.cls-topbar-main`
+  纵向排列：班级名独占一行（全宽不截断）→ 分段控制器独占一行全宽 → 条件周期/工具行；
+  并排会截断班名、挤扁 tab（用户截图「26级金融科技…」），**禁止回潮并排**；角色胶囊只 regular 露出；
+  **班级名无框**（2026-11-24）：`.cls-classbar` 不再有 padding / background / border / box-shadow，标题用 28rpx/700（宽屏 15px）。
+  **出勤率嵌入**（2026-11-24）：`<attendance embedded>` 作为 `.cls-bc-aggr` 第一段、本期报表之前；组件 embedded 模式
+  不渲染自带卡片面层与周期行，父页 `.cls-bc-att` 缩小统计/chips、**说明行 display:none**，宽屏用 px 覆写。
+  周期行 segment 按内容不拉伸 + **周 chip 短标签「第N周」**（完整日期段只在 picker 选项与 hero/section extra），
+  `.cls-topbar-range / .cls-period / .cls-period-chip` 全 `flex-wrap: nowrap` + overflow hidden，
+  保证除名称行外**只有一行**（用户 2026-11-24「不算名称的两行」）；
+  **解释文本均删**（roletip / 报表 tip / 页级解释页脚 / attendance 解释页脚；只保留配置只读 footnote）。
+  **边距单一口径**：外 tt-gap + 内 tt-pad；cls-group margin 0（外层 cls-list 提供，修双重缩进）；
+  wide 档 cls-main 横向 margin 显式归零（**禁 `--tt-gap:0`**，会清零纵向间距）。
+  紧凑规格：名单 = 玻璃卡内分组行（`.cls-row` 88rpx + hairline 首行无线）；
+  **数据概况 = widget 板**（达标率环 `ringStyle` JS 预计算 + 2×2 关键数 + 操作 chips 紧贴数据）；
+  **检查记录有照片就以照片为卡底**（cover + scrim + 白字 + 「照片 N」pill catch:tap 预览；无照片保持分组行）；
+  榜单 = 列表行 hairline + 奖牌徽标；配置 = 分组行；全卡 `.tt-glass`（页面卡块**不得自写 background/box-shadow**，否则盖掉玻璃面层）；
+  接 `behaviors/screen.js` + 根类 `screen-{{screenMode}}`/`tt-ambient-page`；宽屏段一律 px。
+  **督促按 `capabilities.nudge`（班主任与班委都放行）**——旧「仅班主任」注释已修正，别再按注释收紧。
+  **禁止回潮**：hero 橙渐变大色块 / 橙渐变 tab / 行卡独立白底 / 横滑班级 chips 藏 hero。
+  回归：`check-glass-ui.js`（class 入宽屏清单/behavior/裸 tt-card/cls-sheet 禁 background）、
+  `check-dark-mode.js` [4b]、`check-page-runtime.js`（选班抽屉/切班重置/分段在 WXML）、`check-class-ui.js`（钉死类名不变）。
 
 - **班超分新公式 + 导出工作簿（用户 2026-11-20 第四轮定稿，改这两块之前必读）**：
   用户原话「班级状态中的班超分的计算规则为 10 − 卫生、查宿、晚自习、早操的扣分值×10% − 任意考勤
@@ -1068,8 +1221,9 @@
   导出预览失败**不再弹「预览失败」死路**，而是 toast 后**直接降级导出 xlsx**（后端支持就仍能导出），
   降级也失败时弹窗写明「后端可能还是旧版本，请重启/部署最新后端」并给「复制表格文本」兜底。
   **排查顺序**：先确认后端已重启（新接口 `format=json` 返回 `{code:0,data:{columns,total,sheets}}`，
-  `curl` 一下即可）、再确认手机端小程序是重新上传后的版本（删除小程序重进 / 清缓存；版本号一直固定
-  2.0.11，不能靠版本号判断构建新旧，只能靠功能特征：行内矩形块 / 图片块版式）。
+  `curl` 一下即可）、再确认手机端小程序是重新上传后的版本（删除小程序重进 / 清缓存；版本号曾长期固定
+  2.0.11，2026-11-25 起正式发布为 2.0.13，但仍不能只靠版本号判断构建新旧，要结合功能特征：
+  行内矩形块 / 图片块版式）。
 
 - **导出 Excel 的美化与「说人话」口径（用户 2026-11-21「太难看了」「其他老师也看不懂」）**：
   ① **必须用 `exceljs` 生成 xlsx**（`server/package.json` 已加依赖；社区版 `xlsx` 的样式是 Pro 功能，

@@ -1,117 +1,5 @@
-/* 分类条目浮层样式（共用模板 templates/nav-sheet.wxml） */
-@import "/templates/nav-sheet.wxss";
-
 .home-page {
   padding: 0 0 calc(160rpx + env(safe-area-inset-bottom));
-}
-
-/* ============================================================
-   顶部插画头（CSS 近似；放入 assets/home/hero.jpg 后自动替换）
-   ============================================================ */
-.sky {
-  position: relative;
-  height: 350rpx;
-  overflow: hidden;
-  background: linear-gradient(180deg, #9fd8ff 0%, #c6e9ff 46%, #e9f8ff 100%);
-}
-
-/* 有插画素材时：高度由图片比例决定（widthFix 自动撑高），不再叠加文字 */
-.sky-has-image {
-  height: auto;
-  background: none;
-}
-
-.sky-img {
-  display: block;
-  width: 100%;
-}
-
-/* 云朵 */.sky-cloud {
-  position: absolute;
-  background: #ffffff;
-  border-radius: 999rpx;
-  opacity: 0.92;
-}
-
-.cloud-1 {
-  left: 10rpx;
-  top: 26rpx;
-  width: 120rpx;
-  height: 48rpx;
-  box-shadow: 44rpx 10rpx 0 -10rpx #ffffff, 82rpx -12rpx 0 -18rpx #ffffff;
-}
-
-.cloud-2 {
-  right: 36rpx;
-  top: 24rpx;
-  width: 84rpx;
-  height: 36rpx;
-  opacity: 0.72;
-}
-
-.cloud-3 {
-  right: -50rpx;
-  top: 126rpx;
-  width: 220rpx;
-  height: 72rpx;
-  opacity: 0.5;
-}
-
-/* 草地（两层椭圆弧做地平线层次） */
-.sky-hill-back {
-  position: absolute;
-  left: -30%;
-  right: -10%;
-  bottom: -40rpx;
-  height: 196rpx;
-  border-radius: 50%;
-  background: linear-gradient(180deg, #dcf5bd 0%, #b6e488 100%);
-}
-
-.sky-hill {
-  position: absolute;
-  left: -16%;
-  right: -16%;
-  bottom: -82rpx;
-  height: 220rpx;
-  border-radius: 50%;
-  background: linear-gradient(180deg, #b7e884 0%, #79c13c 100%);
-}
-
-/* 跑道（虚线椭圆弧）：底部留白避免被悬浮公告条压住 */
-.sky-track {
-  position: absolute;
-  left: 50%;
-  bottom: 38rpx;
-  width: 390rpx;
-  height: 112rpx;
-  margin-left: -195rpx;
-  border: 5rpx dashed rgba(255, 255, 255, 0.85);
-  border-radius: 50%;
-}
-
-/* 标题 */
-.sky-body {
-  position: relative;
-  z-index: 2;
-  padding-top: 74rpx;
-  text-align: center;
-}
-
-.sky-title {
-  font-size: 48rpx;
-  font-weight: 800;
-  letter-spacing: 6rpx;
-  color: #ffffff;
-  text-shadow: 2rpx 0 0 #5aa9e6, -2rpx 0 0 #5aa9e6, 0 2rpx 0 #5aa9e6, 0 -2rpx 0 #5aa9e6,
-    0 5rpx 0 #4a97d6, 0 8rpx 16rpx rgba(45, 110, 170, 0.22);
-}
-
-.sky-slogan {
-  margin-top: 10rpx;
-  font-size: 21rpx;
-  letter-spacing: 3rpx;
-  color: #3f7ba8;
 }
 
 /* ============================================================
@@ -123,7 +11,7 @@
   display: flex;
   align-items: center;
   gap: 12rpx;
-  margin: -20rpx var(--tt-gap) var(--tt-gap);
+  margin: 0 var(--tt-gap) var(--tt-gap);
   padding: 16rpx 22rpx;
   border-radius: var(--tt-radius-sm);
   background: linear-gradient(135deg, #ff9a3d 0%, #ff6b00 70%);
@@ -175,7 +63,7 @@
   display: flex;
   align-items: center;
   gap: 12rpx;
-  margin: -20rpx var(--tt-gap) var(--tt-gap);
+  margin: 0 var(--tt-gap) var(--tt-gap);
   padding: 16rpx 20rpx;
   border-radius: var(--tt-radius-sm);
   background: linear-gradient(135deg, #ff6a5e 0%, #e5484d 58%, #c02f38 100%);
@@ -595,250 +483,6 @@
 }
 
 /* ============================================================
-   教师问候（替代原来的「教师账号不参与运动排名」说明块）
-   ============================================================ */
-.hi-card {
-  position: relative;
-  margin: 0 var(--tt-gap) var(--tt-gap);
-  padding: 30rpx 32rpx;
-  border-radius: var(--tt-radius);
-  overflow: hidden;
-  background: linear-gradient(135deg, #ffb066 0%, var(--tt-brand) 100%);
-  box-shadow: 0 10rpx 26rpx rgba(255, 107, 0, 0.22);
-}
-
-.hi-card::after {
-  content: '';
-  position: absolute;
-  right: -90rpx;
-  top: -110rpx;
-  width: 260rpx;
-  height: 260rpx;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.16);
-}
-
-.hi-main {
-  position: relative;
-  z-index: 1;
-  font-size: 36rpx;
-  font-weight: 700;
-  line-height: 1.35;
-  color: #fff;
-}
-
-.hi-sub {
-  position: relative;
-  z-index: 1;
-  margin-top: 12rpx;
-  font-size: 24rpx;
-  line-height: 1.6;
-  color: rgba(255, 255, 255, 0.92);
-}
-
-.hi-date {
-  position: relative;
-  z-index: 1;
-  margin-top: 18rpx;
-  font-size: 22rpx;
-  color: rgba(255, 255, 255, 0.78);
-}
-
-/* ============================================================
-   管理视角
-   ============================================================ */
-.mgr-panel {
-  border: 2rpx solid var(--tt-brand-soft-2);
-  padding: 24rpx;
-}
-
-.mgr-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 20rpx;
-}
-
-.mgr-title {
-  display: flex;
-  align-items: center;
-  gap: 10rpx;
-  font-size: 27rpx;
-  font-weight: 600;
-  color: var(--tt-text-1);
-}
-
-.mgr-stats {
-  display: flex;
-  margin-bottom: 14rpx;
-}
-
-.mgr-stat {
-  flex: 1;
-  text-align: center;
-}
-
-.mgr-num {
-  font-size: 26rpx;
-  font-weight: 700;
-  color: var(--tt-brand);
-  white-space: nowrap;
-}
-
-.mgr-label {
-  font-size: 20rpx;
-  margin-top: 4rpx;
-}
-
-.mgr-loading {
-  display: flex;
-  justify-content: center;
-  padding: 12rpx 0 18rpx;
-}
-
-/* ===== 平均步数排行（本周日均）：个人 / 班级 两列 ===== */
-.mgr-head-sub {
-  margin-top: 8rpx;
-  padding-top: 16rpx;
-}
-
-/* 快捷操作的分类小标题（班级管理 / 学生会 / 更多管理）：
-   比 .mgr-title 轻一档，只做宫格分组，不抢「数据概况」「快捷操作」的层级 */
-.mgr-sub {
-  margin: 4rpx 0 10rpx;
-  font-size: 23rpx;
-  font-weight: 600;
-  color: var(--tt-text-2);
-}
-
-/* 「快捷操作」独立卡（班主任 / 班委也看得到）：标题是卡内第一行，不像管理面板里那样需要上间距 */
-.mgr-head-card {
-  margin-top: 0;
-}
-
-.rank-cols {
-  display: flex;
-  align-items: stretch;
-}
-
-.rank-col {
-  flex: 1;
-  min-width: 0;
-  padding-right: 16rpx;
-}
-
-.rank-col-right {
-  padding-right: 0;
-  padding-left: 16rpx;
-  border-left: 2rpx solid var(--tt-line);
-}
-
-.rank-col-title {
-  margin-bottom: 8rpx;
-  font-size: 22rpx;
-  color: var(--tt-text-3);
-}
-
-.rank-row {
-  display: flex;
-  align-items: center;
-  gap: 10rpx;
-  padding: 8rpx 0;
-}
-
-.rank-no {
-  flex-shrink: 0;
-  width: 34rpx;
-  height: 34rpx;
-  border-radius: 10rpx;
-  text-align: center;
-  line-height: 34rpx;
-  font-size: 20rpx;
-  font-weight: 700;
-  color: #fff;
-  background: var(--td-gray-color-5, #c6c6c6);
-}
-
-.rank-no-1 {
-  background: linear-gradient(135deg, #ffb400, #ff8a00);
-}
-
-.rank-no-2 {
-  background: linear-gradient(135deg, #b9c2cc, #98a3ae);
-}
-
-.rank-no-3 {
-  background: linear-gradient(135deg, #e0a06a, #c9803f);
-}
-
-.rank-main {
-  flex: 1;
-  min-width: 0;
-}
-
-.rank-name {
-  display: block;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  font-size: 24rpx;
-  color: var(--tt-text-1);
-}
-
-.rank-sub {
-  display: block;
-  margin-top: 2rpx;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  font-size: 19rpx;
-  color: var(--tt-text-3);
-}
-
-.rank-value {
-  flex-shrink: 0;
-  font-size: 24rpx;
-  font-weight: 700;
-  color: var(--tt-brand);
-}
-
-.rank-empty {
-  padding: 18rpx 0;
-  font-size: 22rpx;
-  color: var(--tt-text-3);
-}
-
-/* ============================================================
-   快捷入口
-   ============================================================ */
-.entry-card {
-  padding: 16rpx 10rpx;
-}
-
-.entry-card .tt-grid-item {
-  padding: 10rpx 0;
-}
-
-.entry-card .tt-grid-text {
-  margin-top: 10rpx;
-  font-size: 21rpx;
-}
-
-.entry-icon {
-  width: 84rpx;
-  height: 84rpx;
-  border-radius: 26rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.entry-img {
-  width: 84rpx;
-  height: 84rpx;
-}
-
-/* ============================================================
    广告（右上角「广告」标识；高度由 JS 按图片比例设置，aspectFit 保证整图可见）
    圆角与其它卡片保持一致（--tt-radius），卡片/轮播/图片三层都圆角，避免裁切差异
    ============================================================ */
@@ -879,42 +523,632 @@
 }
 
 /* ============================================================
-   夜间模式：顶部插画夜景化（深蓝夜空 + 月光云 + 暗色草地）
-   插画配色是首页私有场景色，不进全局令牌（docs/ui-design.md）；
-   有 hero 图素材时（.sky-has-image）本块自动失效，无需处理
+   三端响应式（.screen-regular = iPad 双栏 / .screen-wide = Mac·PC 三栏）
+   由 behaviors/screen.js 在根节点挂类；宽屏块内尺寸一律 px、禁 rpx
+   （rpx 按窗口宽换算，宽窗口会把字号/圆角放大数倍）。
+   卡片区用 CSS 多列瀑布：条件卡片（wx:if）增减时不留网格空洞，
+   .home-cell 是最小卡片单元（break-inside:avoid 防跨列截断）。
    ============================================================ */
+.home-cell {
+  break-inside: avoid;
+}
+
+.screen-regular.home-page,
+.screen-wide.home-page {
+  padding-bottom: calc(88px + env(safe-area-inset-bottom));
+}
+
+.screen-regular .home-grid {
+  columns: 2;
+  column-gap: 16px;
+  padding: 0 16px;
+}
+
+.screen-wide .home-grid {
+  columns: 3;
+  column-gap: 14px;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 18px;
+}
+
+.screen-regular .home-grid .tt-card,
+.screen-wide .home-grid .tt-card {
+  margin: 0 0 14px;
+}
+
+.screen-regular .home-grid .tt-section,
+.screen-wide .home-grid .tt-section {
+  margin: 4px 2px 10px;
+}
+
+/* ===== 公告条 / 封禁条 ===== */
+.screen-regular .notice-bar,
+.screen-wide .notice-bar {
+  gap: 6px;
+  margin: -10px 16px 14px;
+  padding: 8px 11px;
+}
+
+.screen-regular .notice-viewport,
+.screen-wide .notice-viewport {
+  height: 17px;
+}
+
+.screen-regular .notice-text,
+.screen-wide .notice-text {
+  font-size: 12px;
+  line-height: 17px;
+  padding-right: 30px;
+}
+
+.screen-regular .ban-banner,
+.screen-wide .ban-banner {
+  gap: 6px;
+  margin: -10px 16px 14px;
+  padding: 8px 10px;
+}
+
+.screen-regular .ban-banner-icon,
+.screen-wide .ban-banner-icon {
+  width: 28px;
+  height: 28px;
+}
+
+.screen-regular .ban-banner-title,
+.screen-wide .ban-banner-title {
+  font-size: 13px;
+}
+
+.screen-regular .ban-banner-sub,
+.screen-wide .ban-banner-sub {
+  margin-top: 2px;
+  font-size: 10px;
+}
+
+.screen-regular .ban-banner-cta,
+.screen-wide .ban-banner-cta {
+  gap: 2px;
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+.screen-wide .notice-bar,
+.screen-wide .ban-banner {
+  width: calc(100% - 36px);
+  max-width: 1164px;
+  margin: -10px auto 14px;
+}
+
+/* ===== 今日目标卡 ===== */
+.screen-regular .today-card,
+.screen-wide .today-card {
+  padding: 12px;
+}
+
+.screen-regular .today-head,
+.screen-wide .today-head {
+  gap: 6px;
+}
+
+.screen-regular .today-title,
+.screen-wide .today-title {
+  font-size: 15px;
+}
+
+.screen-regular .today-plan,
+.screen-wide .today-plan {
+  padding: 3px 7px;
+  font-size: 10px;
+}
+
+.screen-regular .today-sync,
+.screen-wide .today-sync {
+  gap: 3px;
+  padding: 4px 9px;
+  font-size: 11px;
+}
+
+.screen-regular .today-sub,
+.screen-wide .today-sub {
+  gap: 4px;
+  margin-top: 5px;
+  font-size: 11px;
+}
+
+.screen-regular .today-goal-label,
+.screen-wide .today-goal-label {
+  font-size: 12px;
+}
+
+.screen-regular .today-goal-value,
+.screen-wide .today-goal-value {
+  font-size: 21px;
+}
+
+.screen-regular .today-goal-unit,
+.screen-wide .today-goal-unit,
+.screen-regular .today-goal-right,
+.screen-wide .today-goal-right {
+  font-size: 11px;
+}
+
+.screen-regular .today-points,
+.screen-wide .today-points {
+  margin-top: 9px;
+  padding: 8px 4px;
+}
+
+.screen-regular .today-points-item,
+.screen-wide .today-points-item {
+  gap: 2px;
+}
+
+.screen-regular .today-points-v,
+.screen-wide .today-points-v {
+  font-size: 17px;
+}
+
+.screen-regular .today-points-l,
+.screen-wide .today-points-l {
+  font-size: 10px;
+}
+
+.screen-regular .today-points-line,
+.screen-wide .today-points-line {
+  width: 1px;
+  height: 22px;
+}
+
+.screen-regular .week-days,
+.screen-wide .week-days {
+  margin: 10px 0;
+}
+
+.screen-regular .day-chip,
+.screen-wide .day-chip {
+  gap: 3px;
+}
+
+.screen-regular .day-ring,
+.screen-wide .day-ring {
+  width: 28px;
+  height: 28px;
+}
+
+.screen-regular .day-ring.achieved,
+.screen-wide .day-ring.achieved {
+  box-shadow: 0 2px 6px rgba(255, 107, 0, 0.26);
+}
+
+.screen-regular .day-ring.today,
+.screen-wide .day-ring.today {
+  box-shadow: 0 0 0 2px rgba(255, 107, 0, 0.35);
+}
+
+.screen-regular .day-ring.today.achieved,
+.screen-wide .day-ring.today.achieved {
+  box-shadow: 0 0 0 2px rgba(255, 107, 0, 0.35), 0 2px 6px rgba(255, 107, 0, 0.26);
+}
+
+.screen-regular .day-ring-inner,
+.screen-wide .day-ring-inner {
+  width: 21px;
+  height: 21px;
+}
+
+.screen-regular .day-ico,
+.screen-wide .day-ico {
+  width: 13px;
+  height: 13px;
+}
+
+.screen-regular .day-label,
+.screen-wide .day-label,
+.screen-regular .day-value,
+.screen-wide .day-value {
+  font-size: 9px;
+}
+
+.screen-regular .stat-bar,
+.screen-wide .stat-bar {
+  border-radius: 10px;
+}
+
+.screen-regular .stat-bar-item,
+.screen-wide .stat-bar-item {
+  padding: 7px 0;
+}
+
+.screen-regular .stat-bar-item + .stat-bar-item::before,
+.screen-wide .stat-bar-item + .stat-bar-item::before {
+  width: 1px;
+}
+
+.screen-regular .stat-bar-value,
+.screen-wide .stat-bar-value {
+  font-size: 14px;
+}
+
+.screen-regular .stat-bar-label,
+.screen-wide .stat-bar-label {
+  margin-top: 2px;
+  font-size: 9px;
+}
+
+.screen-regular .today-empty,
+.screen-wide .today-empty {
+  gap: 4px;
+  margin-top: 8px;
+  padding: 7px 0;
+  border-radius: 8px;
+  font-size: 11px;
+}
+
+.screen-regular .card-split,
+.screen-wide .card-split {
+  height: 1px;
+  margin: 10px 0 8px;
+}
+
+.screen-regular .weekly-head,
+.screen-wide .weekly-head {
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.screen-regular .weekly-title,
+.screen-wide .weekly-title {
+  font-size: 12px;
+}
+
+.screen-regular .weekly-target,
+.screen-wide .weekly-target {
+  font-size: 9px;
+}
+
+.screen-regular .weekly-cols,
+.screen-wide .weekly-cols {
+  gap: 12px;
+}
+
+.screen-regular .prog-col + .prog-col,
+.screen-wide .prog-col + .prog-col {
+  padding-left: 12px;
+  border-left-width: 1px;
+}
+
+.screen-regular .prog-top,
+.screen-wide .prog-top {
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.screen-regular .prog-label,
+.screen-wide .prog-label,
+.screen-regular .prog-value,
+.screen-wide .prog-value {
+  font-size: 10px;
+}
+
+.screen-regular .prog-track,
+.screen-wide .prog-track {
+  height: 4px;
+}
+
+.screen-regular .ad-flag,
+.screen-wide .ad-flag {
+  right: 6px;
+  top: 6px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 9px;
+  line-height: 13px;
+  letter-spacing: 1px;
+}
+
+/* ============================================================
+   iOS 大标题问候头（2026-11-23 首页重设计）
+   小字日期 + 大号问候整句（整句 home.js 预计算）；替代原 350rpx 天空插画。
+   ============================================================ */
+.home-header {
+  padding: 24rpx var(--tt-gap) 8rpx;
+}
+
+.home-header-date {
+  font-size: 24rpx;
+  letter-spacing: 1rpx;
+  color: var(--tt-text-3);
+}
+
+.home-header-title {
+  margin-top: 6rpx;
+  font-size: 56rpx;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--tt-text-1);
+}
+
+/* ===== 身份与待办单卡：iOS 分组列表行（首页唯一的身份面）===== */
+.todo-card {
+  padding: 8rpx var(--tt-pad);
+}
+
+.todo-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16rpx 0 8rpx;
+}
+
+.todo-head-title {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: var(--tt-text-2);
+}
+
+.todo-head-link {
+  display: flex;
+  align-items: center;
+  gap: 2rpx;
+  font-size: 24rpx;
+  color: var(--tt-brand);
+}
+
+.todo-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  min-height: 96rpx;
+  padding: 12rpx 0;
+}
+
+/* hairline 分隔：左缩进对齐图标右侧（iOS 分组列表手法） */
+.todo-row-line {
+  border-top: 1rpx solid var(--tt-line);
+}
+
+.todo-row:active {
+  opacity: 0.7;
+}
+
+.todo-icon {
+  flex-shrink: 0;
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 16rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--tt-brand-soft);
+}
+
+.todo-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.todo-title {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.todo-sub {
+  margin-top: 4rpx;
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.todo-value {
+  flex-shrink: 0;
+  font-size: 26rpx;
+  color: var(--tt-text-2);
+}
+
+/* ===== 快捷入口 1×4（一张玻璃卡内四列；用户 2026-11-23 复核保持一行四个）===== */
+.widget-card {
+  padding: 12rpx 8rpx;
+}
+
+.widget-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.widget-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6rpx;
+  padding: 12rpx 0;
+}
+
+.widget-tile:active {
+  opacity: 0.7;
+}
+
+.widget-icon {
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 18rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.widget-icon-water {
+  background: #eef6ff;
+}
+
+.widget-icon-plan {
+  background: var(--tt-brand-soft);
+}
+
+.widget-icon-badge {
+  background: #fff8e6;
+}
+
+.widget-icon-body {
+  background: #eafaf1;
+}
+
+.widget-img {
+  width: 72rpx;
+  height: 72rpx;
+}
+
+.widget-label {
+  font-size: 24rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+/* 图标底色是首页私有场景色：暗色下改半透明 tint，避免亮色块贴在深玻璃上 */
 @media (prefers-color-scheme: dark) {
-  .sky {
-    background: linear-gradient(180deg, #1a2745 0%, #2a3d66 46%, #3f5a8a 100%);
+  .widget-icon-water {
+    background: rgba(47, 124, 246, 0.18);
   }
 
-  .sky-cloud {
-    background: rgba(255, 255, 255, 0.16);
+  .widget-icon-badge {
+    background: rgba(245, 166, 35, 0.18);
   }
 
-  .cloud-1 {
-    box-shadow: 44rpx 10rpx 0 -10rpx rgba(255, 255, 255, 0.16),
-      82rpx -12rpx 0 -18rpx rgba(255, 255, 255, 0.16);
+  .widget-icon-body {
+    background: rgba(22, 163, 74, 0.18);
   }
+}
 
-  .sky-hill-back {
-    background: linear-gradient(180deg, #335130 0%, #2a4429 100%);
-  }
+/* ===== 大标题 / 待办卡 / 小组件：宽屏 px（禁 rpx）===== */
+.screen-regular .home-header {
+  padding: 14px 16px 6px;
+}
 
-  .sky-hill {
-    background: linear-gradient(180deg, #25402b 0%, #1b3220 100%);
-  }
+.screen-wide .home-header {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 14px 18px 6px;
+}
 
-  .sky-track {
-    border-color: rgba(255, 255, 255, 0.4);
-  }
+.screen-regular .home-header-date,
+.screen-wide .home-header-date {
+  font-size: 12px;
+  letter-spacing: 0;
+}
 
-  .sky-title {
-    text-shadow: 2rpx 0 0 #22406e, -2rpx 0 0 #22406e, 0 2rpx 0 #22406e, 0 -2rpx 0 #22406e,
-      0 5rpx 0 #1a3258, 0 8rpx 16rpx rgba(8, 16, 38, 0.5);
-  }
+.screen-regular .home-header-title {
+  margin-top: 3px;
+  font-size: 26px;
+}
 
-  .sky-slogan {
-    color: #9db8df;
-  }
+.screen-wide .home-header-title {
+  margin-top: 3px;
+  font-size: 24px;
+}
+
+.screen-regular .todo-card,
+.screen-wide .todo-card {
+  padding: 4px 14px;
+}
+
+.screen-regular .todo-head,
+.screen-wide .todo-head {
+  padding: 8px 0 4px;
+}
+
+.screen-regular .todo-head-title,
+.screen-wide .todo-head-title {
+  font-size: 13px;
+}
+
+.screen-regular .todo-head-link,
+.screen-wide .todo-head-link {
+  gap: 1px;
+  font-size: 12px;
+}
+
+.screen-regular .todo-row,
+.screen-wide .todo-row {
+  gap: 10px;
+  min-height: 48px;
+  padding: 6px 0;
+}
+
+.screen-regular .todo-row-line,
+.screen-wide .todo-row-line {
+  border-top-width: 1px;
+}
+
+.screen-regular .todo-icon,
+.screen-wide .todo-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+}
+
+.screen-regular .todo-title,
+.screen-wide .todo-title {
+  font-size: 14px;
+}
+
+.screen-regular .todo-sub,
+.screen-wide .todo-sub {
+  margin-top: 2px;
+  font-size: 11px;
+}
+
+.screen-regular .todo-value,
+.screen-wide .todo-value {
+  font-size: 13px;
+}
+
+.screen-regular .widget-card,
+.screen-wide .widget-card {
+  padding: 6px 4px;
+}
+
+.screen-regular .widget-tile,
+.screen-wide .widget-tile {
+  gap: 3px;
+  padding: 6px 0;
+}
+
+.screen-regular .widget-icon,
+.screen-wide .widget-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+}
+
+.screen-regular .widget-img,
+.screen-wide .widget-img {
+  width: 36px;
+  height: 36px;
+}
+
+.screen-regular .widget-label,
+.screen-wide .widget-label {
+  font-size: 12px;
+}
+
+/* ===== 广告位（紧跟公告条）：宽屏与内容区同宽居中 ===== */
+.screen-regular .home-ad {
+  padding: 0 16px;
+}
+
+.screen-wide .home-ad {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 18px;
+}
+
+.screen-regular .home-ad .tt-card,
+.screen-wide .home-ad .tt-card {
+  margin: 0 0 14px;
 }

@@ -8,9 +8,22 @@
   padding-bottom: calc(40rpx + env(safe-area-inset-bottom));
 }
 
+/* iOS 分组 footnote 标题（2026-11-23 用户要求：橙竖条不符合 iOS）：
+   灰字小标题、无竖条；extra 同灰。宽屏 px 覆写见文末。 */
 .cls-page .tt-section {
-  margin: 6rpx var(--tt-gap) 12rpx;
-  font-size: 28rpx;
+  margin: 0 var(--tt-gap) 8rpx;
+  font-size: 24rpx;
+  font-weight: 400;
+  color: var(--tt-text-3);
+}
+
+.cls-page .tt-section::before {
+  display: none;
+}
+
+.cls-page .tt-section .tt-section-extra {
+  color: var(--tt-text-3);
+  font-weight: 400;
 }
 
 /* ===== 无身份空状态 / 无权限说明 ===== */
@@ -42,116 +55,14 @@
   margin-top: 32rpx;
 }
 
-/* ===== 1. 顶部身份卡 ===== */
-.tt-hero.cls-hero {
-  padding: 26rpx 28rpx 24rpx;
-  border-radius: 32rpx;
-  margin-bottom: 16rpx;
-}
-
-.cls-hero-top {
-  display: flex;
-  align-items: center;
-  gap: 14rpx;
-}
-
-.cls-hero-name {
-  flex: 1;
-  min-width: 0;
-  font-size: 40rpx;
-  font-weight: 700;
-  color: #fff;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.cls-hero-role {
-  flex-shrink: 0;
-  padding: 5rpx 16rpx;
-  border-radius: 999rpx;
-  font-size: 21rpx;
-  color: #fff;
-  background: rgba(255, 255, 255, 0.24);
-}
-
-.cls-hero-sub {
-  margin-top: 10rpx;
-  font-size: 23rpx;
-  line-height: 34rpx;
-  color: rgba(255, 255, 255, 0.88);
-}
-
-.cls-hero-classes {
-  margin-top: 16rpx;
-  white-space: nowrap;
-}
-
-.cls-hero-class {
-  display: inline-block;
-  margin-right: 12rpx;
-  padding: 6rpx 20rpx;
-  border-radius: 999rpx;
-  font-size: 22rpx;
-  color: rgba(255, 255, 255, 0.92);
-  background: rgba(255, 255, 255, 0.18);
-  border: 2rpx solid rgba(255, 255, 255, 0.28);
-}
-
-.cls-hero-class.active {
-  color: var(--tt-brand-deep);
-  font-weight: 600;
-  background: #fff;
-  border-color: #fff;
-}
-
-.cls-hero-class:active {
-  opacity: 0.85;
-}
-
-/* ===== 2. 四个 tab（页面内状态切换，分包页不能用原生 tabBar） ===== */
-.cls-tabs {
-  display: flex;
-  gap: 10rpx;
-  margin: 0 var(--tt-gap) 16rpx;
-}
-
-.cls-tab {
-  flex: 1;
-  text-align: center;
-  padding: 16rpx 0;
-  border-radius: var(--tt-radius-sm);
-  font-size: 25rpx;
-  color: var(--tt-text-2);
-  background: var(--tt-card);
-  box-shadow: var(--tt-card-shadow);
-}
-
-.cls-tab.active {
-  color: #fff;
-  font-weight: 600;
-  background: linear-gradient(135deg, #ff9a3d, var(--tt-brand));
-}
-
-.cls-tab:active {
-  opacity: 0.85;
-}
-
 /* ===== 3. 概况六格（校园跑 tab：人数 / 活跃 / 达标率 / 班级日均 / 跑分 / 全校名次） ===== */
 .tt-card.cls-overview {
-  padding: 12rpx 22rpx 18rpx;
+  padding: 8rpx 16rpx 14rpx;
   margin-bottom: 16rpx;
-}
-
-/* 第二行统计：与第一行之间加一条分隔线，避免六个数糊成一片 */
-.cls-overview .tt-stat-row + .tt-stat-row {
-  margin-top: 16rpx;
-  padding-top: 16rpx;
-  border-top: 2rpx solid var(--tt-line);
 }
 
 .cls-overview .tt-stat-value {
-  font-size: 34rpx;
+  font-size: 32rpx;
   overflow: hidden;
   white-space: nowrap;
 }
@@ -214,7 +125,7 @@
   display: flex;
   align-items: center;
   gap: 14rpx;
-  padding: 16rpx;
+  padding: 12rpx 14rpx;
   border-radius: var(--tt-radius-sm);
   background: var(--tt-brand-soft);
 }
@@ -277,7 +188,12 @@
   display: flex;
   align-items: center;
   gap: 14rpx;
-  padding: 13rpx 0;
+  padding: 10rpx 0;
+}
+
+/* 榜单行 hairline（iOS 分组列表手法，2026-11-23 紧凑化） */
+.cls-top + .cls-top {
+  border-top: 1rpx solid var(--tt-line);
 }
 
 .cls-rankbar + .cls-top {
@@ -289,14 +205,14 @@
 }
 
 .cls-top-no {
-  width: 44rpx;
-  height: 44rpx;
+  width: 36rpx;
+  height: 36rpx;
   flex-shrink: 0;
-  border-radius: 14rpx;
+  border-radius: 10rpx;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 24rpx;
+  font-size: 22rpx;
   font-weight: 700;
   color: var(--tt-text-2);
   background: var(--td-bg-color-component);
@@ -327,7 +243,7 @@
 
 .cls-top-name {
   max-width: 260rpx;
-  font-size: 28rpx;
+  font-size: 26rpx;
   font-weight: 600;
   color: var(--tt-text-1);
   overflow: hidden;
@@ -393,28 +309,23 @@
 
 /* ===== 校园跑 tab：日期回看（用户 2026-11-20「校园跑要跟班超联赛中同样拥有日期选择」）=====
    日期胶囊与班超 tab 的周期胶囊同款视觉；回看态右侧出现「回看 10月19日」标签 + 「今天」按钮。 */
-.cls-rundate {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10rpx;
-  margin: 0 var(--tt-gap) 14rpx;
-}
+/* 日期回看 chip / 标签 / 今天按钮（容器已融入吸顶次级行 cls-topbar-tools） */
 
 .cls-rundate-chip {
   display: flex;
   align-items: center;
   gap: 8rpx;
-  padding: 10rpx 18rpx;
+  height: var(--cls-ctl-h);
+  padding: 0 20rpx;
+  box-sizing: border-box;
   border-radius: 999rpx;
-  font-size: 25rpx;
+  font-size: var(--cls-ctl-fs);
   color: var(--tt-text-1);
-  background: var(--tt-card);
-  box-shadow: var(--tt-card-shadow);
+  background: var(--td-bg-color-component);
 }
 
 .cls-rundate-chip:active {
-  background: var(--tt-brand-soft);
+  background: var(--td-bg-color-component-active);
 }
 
 .cls-rundate-date {
@@ -422,7 +333,11 @@
 }
 
 .cls-rundate-tag {
-  padding: 4rpx 16rpx;
+  display: inline-flex;
+  align-items: center;
+  height: var(--cls-ctl-h);
+  padding: 0 16rpx;
+  box-sizing: border-box;
   border-radius: 999rpx;
   font-size: 21rpx;
   color: var(--tt-brand-deep);
@@ -431,7 +346,11 @@
 
 .cls-rundate-today {
   margin-left: auto;
-  padding: 8rpx 24rpx;
+  display: flex;
+  align-items: center;
+  height: var(--cls-ctl-h);
+  padding: 0 24rpx;
+  box-sizing: border-box;
   border-radius: 999rpx;
   font-size: 23rpx;
   font-weight: 600;
@@ -493,114 +412,172 @@
   color: var(--tt-text-3);
 }
 
-/* ===== 6. 班级考勤（主包 components/attendance 组件）=====
-   组件内部用 .tt-card / .at-periods 自带左右 var(--tt-gap) 外边距（与 banchao-block / class-board 同约定），
-   所以这里只留一个零内距的包裹层：联调时若组件改成不带外边距，只需给 .cls-att 加 padding: 0 var(--tt-gap) */
-.cls-att {
+/* ===== 出勤率嵌入聚合卡（2026-11-24）：父卡接管面层，统计/模块 chips 紧凑排版 ===== */
+.cls-bc-att .at-root {
+  padding-top: 0;
+}
+
+.cls-bc-att .at-card-embedded {
   padding: 0;
+}
+
+.cls-bc-att .tt-stat-value {
+  font-size: 30rpx;
+  line-height: 1.1;
+}
+
+.cls-bc-att .tt-stat-label {
+  margin-top: 4rpx;
+  font-size: 20rpx;
+}
+
+.cls-bc-att .at-mods {
+  gap: 8rpx;
+  margin-top: 10rpx;
+}
+
+.cls-bc-att .at-mod {
+  gap: 6rpx;
+  padding: 6rpx 12rpx;
+  border-radius: 999rpx;
+}
+
+.cls-bc-att .at-mod-name {
+  font-size: 20rpx;
+}
+
+.cls-bc-att .at-mod-rate {
+  font-size: 26rpx;
+}
+
+.cls-bc-att .at-mod-rate.is-muted {
+  font-size: 20rpx;
+}
+
+/* 嵌入聚合卡时不渲染说明行（解释文本均删口径），只留统计 + 模块 chips */
+.cls-bc-att .at-note {
+  display: none;
+}
+
+.cls-bc-att .at-loading,
+.cls-bc-att .at-error {
+  padding: 16rpx 0;
+}
+
+.cls-bc-att .tt-empty {
+  padding: 20rpx 0;
+}
+
+.cls-bc-aggr-sec.cls-bc-att-sec {
+  padding-top: 10rpx;
 }
 
 /* ===== 6b. 班超 tab（原 pages/banchao/banchao 的内容并进来）=====
    视觉语言与原班超页保持一致（同一批令牌与字号），只把 class 前缀从 .bc- 换成 .cls-bc- 避免与其它页冲突。 */
 
-/* 吸顶：周期切换 + 周期选择。留白用 padding 不用 margin —— margin 区域透明，
-   吸顶时下方内容会从两侧缝隙里透出来滚过去（docs/union-ui-b-round.md 记过这条通用规则）。 */
-.cls-sticky {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  padding: 0 var(--tt-gap) 8rpx;
-  background: var(--tt-bg-page);
-}
-
-.cls-ranges {
-  display: flex;
-  gap: 12rpx;
-  padding-top: 8rpx;
-}
-
-.cls-range-item {
-  flex: 1;
-  text-align: center;
-  padding: 12rpx 0;
-  font-size: 25rpx;
-  color: var(--tt-text-2);
-  background: var(--tt-card);
-  border-radius: var(--tt-radius-sm);
-  box-shadow: var(--tt-card-shadow);
-}
-
-.cls-range-item.active {
-  color: #ffffff;
-  background: var(--tt-brand);
-  font-weight: 600;
-}
-
 .cls-period {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 12rpx;
-  margin-top: 8rpx;
+  flex-wrap: nowrap;
+  gap: 8rpx;
+  overflow: hidden;
+}
+
+.cls-period picker {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .cls-period-chip {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
   display: flex;
   align-items: center;
+  flex-wrap: nowrap;
   gap: 6rpx;
-  padding: 8rpx 16rpx;
+  height: var(--cls-ctl-h);
+  padding: 0 14rpx;
+  box-sizing: border-box;
   border-radius: 999rpx;
-  font-size: 23rpx;
+  font-size: var(--cls-ctl-fs);
   color: var(--tt-text-1);
-  background: var(--tt-card);
-  box-shadow: var(--tt-card-shadow);
+  background: var(--td-bg-color-component);
+  overflow: hidden;
+}
+
+/* 长周标签（「第2周(10月8日至10月14日)」）收省略号，保证次级行不折行变三行 */
+.cls-period-chip text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .cls-period-chip:active {
   background: var(--tt-brand-soft);
 }
 
-/* 班超 tab 的 section 间距再收一档（用户 2026-11-20「紧凑排版」）：只压留白，字号不动 */
-.cls-page .tt-section.cls-bc-section {
-  margin: 0 var(--tt-gap) 8rpx;
+.cls-bc-aggr-hero {
+  position: relative;
+  padding: 28rpx 0 24rpx;
+  overflow: hidden;
 }
 
-/* 总评 hero（压缩：上下内边距 18→14rpx、分数 52→44rpx；名次移出 hero 后只剩「分数 + 一行整句」） */
-.cls-bc-hero {
-  padding: 14rpx 22rpx 12rpx;
-  border-radius: var(--tt-radius);
-  margin-bottom: 16rpx;
+.cls-bc-aggr-hero::after {
+  content: '';
+  position: absolute;
+  right: -80rpx;
+  top: -110rpx;
+  width: 260rpx;
+  height: 260rpx;
+  border-radius: 50%;
+  background: var(--tt-brand-soft);
+  pointer-events: none;
+}
+
+.cls-bc-hero-top,
+.cls-bc-hero-main {
+  position: relative;
+  z-index: 1;
 }
 
 .cls-bc-hero-top {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
+  gap: 16rpx;
+}
+
+.cls-bc-hero-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
   gap: 12rpx;
 }
 
-.cls-bc-hero-name {
-  font-size: 28rpx;
-  font-weight: 600;
-  color: #ffffff;
-  max-width: 400rpx;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+.cls-bc-hero-kicker {
+  font-size: 22rpx;
+  line-height: 30rpx;
+  color: var(--tt-text-3);
 }
 
 .cls-bc-hero-range {
   flex-shrink: 0;
+  padding-top: 4rpx;
   font-size: 22rpx;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--tt-text-3);
 }
 
-/* 主数据（班超分）单独一行，次数据（区间 · 记录数 · 有记录天数）是它下面的一整句 */
 .cls-bc-hero-main {
   display: flex;
-  align-items: baseline;
-  gap: 8rpx;
-  margin-top: 2rpx;
+  align-items: flex-end;
+  gap: 20rpx;
+  margin-top: 12rpx;
 }
 
 .cls-bc-hero-score {
@@ -611,57 +588,52 @@
 }
 
 .cls-bc-hero-score-v {
-  font-size: 44rpx;
+  font-size: 60rpx;
   font-weight: 700;
-  color: #ffffff;
   line-height: 1;
+  color: var(--tt-brand);
 }
 
 .cls-bc-hero-score-u {
-  font-size: 22rpx;
-  color: rgba(255, 255, 255, 0.85);
+  font-size: 24rpx;
+  color: var(--tt-brand-deep);
 }
 
-/* 次要整句：整句由 JS 预计算（banchaoHeroNote），这里只负责单行 + 过长省略
-   —— 区间 / 条数 / 天数三段都在里面，模板不拼字符串 */
 .cls-bc-hero-note {
-  display: block;
-  margin-top: 6rpx;
-  font-size: 20rpx;
-  line-height: 28rpx;
-  color: rgba(255, 255, 255, 0.88);
+  flex: 1;
+  min-width: 0;
+  padding-bottom: 4rpx;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+  text-align: right;
+  font-size: 22rpx;
+  line-height: 30rpx;
+  color: var(--tt-text-3);
 }
 
-/* ===== 总评 hero 下方 2×2 KPI 卡（用户 2026-11-20）=====
-   4 张卡 = 今日达标率 / 本周达标率 / 全校班超名次 / 本期检查记录：
-   主数据 36rpx 大字 + 次标签 19rpx 灰 + 辅助 18rpx；达标率卡带 6rpx 进度轨。
-   数据由 buildBanchaoKpis() 生成（overview 与班超详情两个接口谁后到都补齐）。 */
+/* KPI 2×2 inset 圆角块（iOS widget 感）：浅底 + 留白，替代十字 hairline 密排 */
 .cls-bc-kpis {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12rpx;
-  margin: 0 var(--tt-gap) 16rpx;
 }
 
 .cls-bc-kpi {
-  width: calc(50% - 6rpx);
+  width: auto;
+  min-width: 0;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 2rpx;
-  padding: 14rpx 16rpx;
+  padding: 16rpx;
   border-radius: var(--tt-radius-sm);
-  background: var(--tt-card);
-  box-shadow: var(--tt-card-shadow);
+  background: var(--td-bg-color-secondarycontainer);
 }
 
 .cls-bc-kpi-value {
-  font-size: 36rpx;
+  font-size: 34rpx;
   font-weight: 700;
-  line-height: 44rpx;
+  line-height: 42rpx;
   color: var(--tt-text-1);
   overflow: hidden;
   white-space: nowrap;
@@ -669,15 +641,14 @@
 }
 
 .cls-bc-kpi-label {
-  font-size: 19rpx;
-  line-height: 26rpx;
+  font-size: 22rpx;
+  line-height: 30rpx;
   color: var(--tt-text-3);
 }
 
-/* 达标率进度轨：底轨 --tt-line，填充品牌色（宽度 = 达标率百分比，JS 算好） */
 .cls-bc-kpi-track {
-  height: 6rpx;
-  margin-top: 6rpx;
+  height: 4rpx;
+  margin-top: 8rpx;
   border-radius: 999rpx;
   background: var(--tt-line);
   overflow: hidden;
@@ -690,33 +661,66 @@
 }
 
 .cls-bc-kpi-aux {
-  font-size: 18rpx;
-  line-height: 26rpx;
+  margin-top: 4rpx;
+  font-size: 20rpx;
+  line-height: 28rpx;
   color: var(--tt-text-2);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 
-/* 检查明细：2 列独立卡片（用户 2026-11-20「由竖排改两列网格，行高收紧」）。
-   5 张模块卡各自是白卡（不再共用一张大卡）：第一行模块名 + 得分，第二行部门·指标，第三行扣分。 */
-.cls-bc-modules {
+.cls-bc-report-acts {
   display: flex;
-  flex-wrap: wrap;
   gap: 12rpx;
-  margin: 0 var(--tt-gap) 16rpx;
 }
 
+.cls-bc-report-act {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
+  padding: 18rpx 8rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-brand-soft);
+  font-size: 24rpx;
+  color: var(--tt-text-1);
+  white-space: nowrap;
+}
+
+.cls-bc-report-act.is-busy {
+  opacity: 0.5;
+}
+
+.cls-bc-report-canvas {
+  position: fixed;
+  left: -9999rpx;
+  top: 0;
+  width: 750px;
+  height: 2000px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.cls-bc-modules {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12rpx;
+}
+
+/* 模块块与 KPI 同一套 inset 浅底圆角（iOS 分组感），不再用描边小盒密排 */
 .cls-bc-module {
-  width: calc(50% - 6rpx);
+  width: auto;
+  min-width: 0;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 2rpx;
-  padding: 10rpx 12rpx;
+  gap: 4rpx;
+  padding: 16rpx;
   border-radius: var(--tt-radius-sm);
-  background: var(--tt-card);
-  box-shadow: var(--tt-card-shadow);
+  background: var(--td-bg-color-secondarycontainer);
 }
 
 .cls-bc-module-head {
@@ -731,7 +735,7 @@
 .cls-bc-module-name {
   flex: 1;
   min-width: 0;
-  font-size: 23rpx;
+  font-size: 24rpx;
   font-weight: 500;
   color: var(--tt-text-2);
   overflow: hidden;
@@ -741,8 +745,8 @@
 
 /* 部门 + 指标整句（如「学生会 · 迟到 1 人」）：拼接在 JS 里做，模板只渲染整句 */
 .cls-bc-module-desc {
-  font-size: 18rpx;
-  line-height: 26rpx;
+  font-size: 22rpx;
+  line-height: 30rpx;
   color: var(--tt-text-3);
   overflow: hidden;
   white-space: nowrap;
@@ -751,7 +755,7 @@
 
 .cls-bc-module-score {
   flex-shrink: 0;
-  font-size: 30rpx;
+  font-size: 32rpx;
   font-weight: 600;
   color: var(--tt-brand);
 }
@@ -769,8 +773,8 @@
 }
 
 .cls-bc-module-deduct {
-  font-size: 18rpx;
-  line-height: 26rpx;
+  font-size: 22rpx;
+  line-height: 30rpx;
   color: var(--tt-text-3);
 }
 
@@ -779,25 +783,19 @@
   color: var(--td-error-color-6, #d54941);
 }
 
-/* 检查明细为空态：占满整行（两列网格下不能只占半格），并给回白卡底
-   —— 容器本身不再是 tt-card，空态若只是裸文字会像漏渲染 */
 .cls-bc-modules .cls-bc-empty {
   width: 100%;
-  border-radius: var(--tt-radius-sm);
-  background: var(--tt-card);
-  box-shadow: var(--tt-card-shadow);
+  padding: 20rpx 0;
 }
 
 /* 得分趋势：单行迷你条形（最近 7 天，用户 2026-11-20「压成单行迷你条形」）。
    每一列 = 分数文案 + 竖向迷你条（高度 = 得分 ÷ 满分）+ 日期。 */
-.cls-bc-trend {
-  padding: 14rpx 18rpx 12rpx;
-}
+/* 趋势迷你条（容器已并入聚合卡 cls-bc-aggr） */
 
 .cls-bc-trend-bars {
   display: flex;
   align-items: flex-end;
-  gap: 6rpx;
+  gap: 8rpx;
 }
 
 .cls-bc-trend-col {
@@ -806,18 +804,18 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4rpx;
+  gap: 6rpx;
 }
 
 .cls-bc-trend-value {
-  font-size: 20rpx;
-  line-height: 26rpx;
+  font-size: 22rpx;
+  line-height: 28rpx;
   color: var(--tt-text-1);
 }
 
 .cls-bc-trend-track {
   width: 100%;
-  height: 56rpx;
+  height: 48rpx;
   border-radius: 8rpx;
   background: var(--tt-line);
   display: flex;
@@ -832,8 +830,8 @@
 }
 
 .cls-bc-trend-label {
-  font-size: 18rpx;
-  line-height: 24rpx;
+  font-size: 20rpx;
+  line-height: 26rpx;
   color: var(--tt-text-3);
   white-space: nowrap;
 }
@@ -842,16 +840,91 @@
    每条 = 模块名 + 状态 + 扣分 ｜ 受检对象 + 日期 ｜ 检查人 + 复核人 ｜ 实际数据摘要 ｜ 照片缩略图。
    间距收紧（行内 12rpx），一屏内可读多条。 */
 .cls-bc-records {
-  margin: 0 var(--tt-gap) 16rpx;
-  padding: 0 var(--tt-pad);
+  margin: 0;
+  padding: 0;
 }
 
 .cls-bc-record {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1rpx solid var(--tt-line);
+}
+
+/* 内容层：无照片时就是普通分组行；有照片时叠在 cover+scrim 之上 */
+.cls-bc-body {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   gap: 6rpx;
   padding: 10rpx 0;
-  border-bottom: 1rpx solid var(--tt-line);
+}
+
+/* 照片底卡（2026-11-23 用户要求「有照片就以照片为底」） */
+.cls-bc-record.has-photo {
+  border-bottom: none;
+  border-radius: var(--tt-radius-sm);
+  overflow: hidden;
+  min-height: 240rpx;
+  margin-bottom: 12rpx;
+}
+
+.cls-bc-cover {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.cls-bc-scrim {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.34) 0%, rgba(0, 0, 0, 0.06) 42%, rgba(0, 0, 0, 0.66) 100%);
+}
+
+.has-photo .cls-bc-body {
+  padding: 14rpx 16rpx;
+  min-height: 240rpx;
+  box-sizing: border-box;
+  justify-content: flex-end;
+}
+
+.has-photo .cls-bc-record-module,
+.has-photo .cls-bc-record-target,
+.has-photo .cls-bc-record-date,
+.has-photo .cls-bc-record-person,
+.has-photo .cls-bc-record-metric {
+  color: #fff;
+}
+
+.has-photo .cls-bc-record-person.is-pending {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.has-photo .cls-bc-record-status {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+
+.has-photo .cls-bc-record-deduct {
+  color: #fff;
+}
+
+.cls-bc-photo-pill {
+  align-self: flex-end;
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  padding: 4rpx 14rpx;
+  border-radius: 999rpx;
+  background: rgba(0, 0, 0, 0.42);
+  color: #fff;
+  font-size: 20rpx;
 }
 
 .cls-bc-record:last-child {
@@ -993,113 +1066,23 @@
   color: var(--tt-brand-deep);
 }
 
-/* ===== 最近记录：2 列紧凑卡片（用户 2026-11-20）=====
-   模板 bc-record 只保留一份（不复制第二套视觉），这里在**容器内**做紧凑覆盖：
-   · 每张卡宽 calc(50% - 6rpx)、白底圆角阴影、padding 12rpx、去掉列表分隔线；
-   · 照片缩略图 56rpx、间距 6rpx；字号比全宽列表小一档（模块 24rpx / 正文 18rpx）。
-   下方「班级考勤 · 检查记录」（dayRecords 全宽列表）不加这个容器，仍是详细版。 */
-.cls-bc-records-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12rpx;
-  margin: 0 var(--tt-gap) 16rpx;
-}
-
-.cls-bc-records-grid .cls-bc-record {
-  width: calc(50% - 6rpx);
-  box-sizing: border-box;
-  gap: 4rpx;
-  padding: 12rpx;
-  border-bottom: none;
-  border-radius: var(--tt-radius-sm);
-  background: var(--tt-card);
-  box-shadow: var(--tt-card-shadow);
-}
-
-.cls-bc-records-grid .cls-bc-record-module {
-  font-size: 24rpx;
-}
-
-.cls-bc-records-grid .cls-bc-record-tags {
-  gap: 8rpx;
-}
-
-.cls-bc-records-grid .cls-bc-record-status {
-  padding: 1rpx 8rpx;
-  font-size: 18rpx;
-}
-
-.cls-bc-records-grid .cls-bc-record-deduct {
-  font-size: 20rpx;
-}
-
-.cls-bc-records-grid .cls-bc-record-meta {
-  gap: 6rpx;
-  font-size: 18rpx;
-}
-
-/* 半宽卡里受检对象可占的宽度只剩一半：让它自己收缩省略，日期永远留得下 */
-.cls-bc-records-grid .cls-bc-record-target {
-  flex: 1;
-  min-width: 0;
-  max-width: none;
-}
-
-.cls-bc-records-grid .cls-bc-record-people {
-  gap: 2rpx 10rpx;
-}
-
-.cls-bc-records-grid .cls-bc-record-person {
-  font-size: 18rpx;
-  line-height: 26rpx;
-}
-
-.cls-bc-records-grid .cls-bc-record-metric {
-  font-size: 18rpx;
-  line-height: 26rpx;
-}
-
-.cls-bc-records-grid .cls-bc-photos {
-  gap: 6rpx;
-  margin-top: 0;
-}
-
-.cls-bc-records-grid .cls-bc-photo {
-  width: 56rpx;
-  height: 56rpx;
-}
-
-.cls-bc-records-grid .cls-bc-photo-more {
-  padding: 1rpx 8rpx;
-  font-size: 17rpx;
-}
-
-.cls-bc-records-grid .cls-bc-photo-mask {
-  font-size: 17rpx;
-}
-
-.cls-bc-records-grid .cls-bc-record-appeal {
-  font-size: 17rpx;
-}
-
 /* ===== 班级考勤 · 检查记录（按模块分组，卡片与最近记录共用 .cls-bc-record）===== */
 .cls-bc-day-note {
-  margin: 0 var(--tt-gap) 8rpx;
-  padding: 0 2rpx;
-  font-size: 21rpx;
-  line-height: 30rpx;
+  margin: 0 0 6rpx;
+  font-size: 20rpx;
+  line-height: 28rpx;
   color: var(--tt-text-3);
 }
 
 .cls-bc-day-group {
-  margin-bottom: 14rpx;
+  margin-bottom: 12rpx;
 }
 
 .cls-bc-day-head {
   display: flex;
   align-items: center;
   gap: 12rpx;
-  margin: 0 var(--tt-gap) 6rpx;
+  margin: 0 0 8rpx;
 }
 
 .cls-bc-day-title {
@@ -1114,9 +1097,8 @@
   color: var(--tt-text-3);
 }
 
-/* 分组卡片只留左右内边距，行间距交给 .cls-bc-record，避免「每组一张厚卡片」把页面撑长 */
-.tt-card.cls-bc-day-card {
-  padding: 0 var(--tt-pad);
+.cls-bc-day-card {
+  padding: 0;
   margin-bottom: 0;
 }
 
@@ -1129,16 +1111,13 @@
 }
 
 /* 班级榜前三（间距收紧：行高 10rpx，卡片不再有额外上下留白） */
-.cls-bc-top {
-  margin: 0 var(--tt-gap) 16rpx;
-  padding: 2rpx var(--tt-pad);
-}
+/* 榜前三行（容器已并入聚合卡 cls-bc-aggr） */
 
 .cls-bc-top-row {
   display: flex;
   align-items: center;
   gap: 16rpx;
-  padding: 10rpx 0;
+  padding: 14rpx 0;
   border-bottom: 1rpx solid var(--tt-line);
 }
 
@@ -1177,7 +1156,11 @@
 }
 
 .cls-bc-top-name {
-  font-size: 27rpx;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 26rpx;
   color: var(--tt-text-1);
 }
 
@@ -1226,8 +1209,8 @@
   display: flex;
   align-items: center;
   gap: 16rpx;
-  padding: 18rpx 0;
-  border-bottom: 2rpx solid var(--tt-line);
+  padding: 12rpx 0;
+  border-bottom: 1rpx solid var(--tt-line);
 }
 
 .cls-fitem:last-child {
@@ -1591,40 +1574,54 @@
   margin: 0 var(--tt-gap) 16rpx;
 }
 
-.cls-search-card {
-  padding: 12rpx 14rpx;
-  border-radius: var(--tt-radius);
-  background: var(--tt-card);
-  box-shadow: var(--tt-card-shadow);
-}
-
-.cls-search-card t-search {
+/* 搜索框已融入吸顶次级行：t-search 内部尺寸/底色/字号全走 --td-search-* 变量（可继承进组件），
+   高度与其余控件同一令牌；外部类只清 input 的 rpx min-height（宽屏会放大溢出的唯一来源） */
+.cls-topbar-search t-search {
   display: block;
   width: 100%;
 }
 
-/* 工具行：筛选（带条件角标）/ 排序（显示当前排序） */
-.cls-tools {
-  display: flex;
-  align-items: center;
-  gap: 12rpx;
-  margin-top: 12rpx;
-}
-
-.cls-tool {
-  position: relative;
+.cls-topbar-search {
   flex: 1;
   min-width: 0;
-  height: 64rpx;
+  --td-search-height: var(--cls-ctl-h);
+  --td-search-padding: 0 20rpx;
+  --td-search-bg-color: var(--td-bg-color-component);
+  --td-search-font-size: var(--cls-ctl-fs);
+}
+
+.cls-search-root {
+  display: block;
+  width: 100%;
+}
+
+.cls-search-box {
+  overflow: hidden;
+}
+
+.cls-search-input {
+  min-height: 0;
+  height: 100%;
+  line-height: normal;
+}
+
+/* 工具行：筛选（带条件角标）/ 排序（显示当前排序） */
+/* 筛选/排序 chip：吸顶次级行内联（不再独占一行），高度走统一令牌 */
+.cls-tool {
+  position: relative;
+  flex: none;
+  min-width: 0;
+  height: var(--cls-ctl-h);
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6rpx;
-  border-radius: 16rpx;
-  font-size: 24rpx;
+  padding: 0 22rpx;
+  box-sizing: border-box;
+  border-radius: 999rpx;
+  font-size: var(--cls-ctl-fs);
   color: var(--tt-text-2);
-  background: var(--tt-card);
-  border: 2rpx solid var(--tt-line);
+  background: var(--td-bg-color-component);
 }
 
 .cls-tool:active {
@@ -1634,7 +1631,6 @@
 .cls-tool.is-on {
   color: var(--tt-brand);
   background: var(--tt-brand-soft);
-  border-color: var(--tt-brand-soft-2);
 }
 
 .cls-tool-dot {
@@ -1676,12 +1672,6 @@
 .cls-seg {
   flex: 1;
   min-width: 0;
-}
-
-/* 公共分段控件在管理端压缩一档（与用户管理页同参数） */
-.tt-segment-item.cls-seg-item {
-  padding: 12rpx 0;
-  font-size: 25rpx;
 }
 
 .cls-panel-foot {
@@ -1746,27 +1736,22 @@
   margin-top: 12rpx;
 }
 
-/* 行卡片：一行一人，独立白卡（不叠 .tt-card，避免二次内缩） */
+/* 分组列表行（2026-11-23 iOS 重排版）：一行一人，叠在 .cls-group 玻璃卡内，
+   hairline 分隔（首行无线），不再独立白卡 —— 密度与 iOS 设置列表一致。 */
 .cls-row {
   display: flex;
   align-items: center;
   gap: 16rpx;
-  padding: 16rpx 18rpx;
-  margin-bottom: 12rpx;
-  border-radius: var(--tt-radius-sm);
-  background: var(--tt-card);
-  box-shadow: 0 2rpx 8rpx rgba(28, 31, 35, 0.05);
+  min-height: 88rpx;
+  padding: 12rpx 0;
 }
 
-/* 夜间：行卡片描边分层 + 投影加深（app.wxss .card 同手法的局部版） */
-@media (prefers-color-scheme: dark) {
-  .cls-row {
-    box-shadow: 0 0 0 1rpx var(--tt-card-border), 0 2rpx 8rpx rgba(0, 0, 0, 0.3);
-  }
+.cls-row + .cls-row {
+  border-top: 1rpx solid var(--tt-line);
 }
 
 .cls-row:active {
-  background: var(--tt-brand-soft);
+  opacity: 0.7;
 }
 
 .cls-avatar {
@@ -1908,7 +1893,7 @@
 /* 分页卡片（名单行已各自成卡，分页单独一张） */
 .tt-card.cls-pager-card {
   margin: 4rpx 0 0;
-  padding: 6rpx 20rpx 12rpx;
+  padding: 6rpx var(--tt-pad) 12rpx;
 }
 
 /* 按钮式分页：上一页 / 页码 / 下一页（不做触底加载） */
@@ -2120,4 +2105,974 @@
 
 .cls-room-pick-t.is-empty {
   color: var(--tt-text-2);
+}
+
+/* ============================================================
+   2026-11-23 iOS 重排版：吸顶头 / 分组列表 / 紧凑网格 / 宽屏左栏
+   单一吸顶元素 cls-topbar（班超 tab 条件第二行 = 周期 segment + picker），
+   不再需要偏移变量；水平边距单一口径：外 var(--tt-gap) + 内 var(--tt-pad)。
+   ============================================================ */
+/* 吸顶头：主行（纯文本班级标题 + 分段控制器）+ 条件次级行；面层走 .tt-glass-float（wxml 已挂类）。
+   控件高度单一令牌 --cls-ctl-h：班级标题 / 分段 / 搜索 / 筛选排序 chip / 日期 chip 全部同高，
+   宽屏换 px（令牌在 .cls-page.screen-* 上覆写），杜绝「TAB 高度不统一」。 */
+.cls-page {
+  --cls-ctl-h: 64rpx;
+  --cls-ctl-pad: 4rpx;
+  --cls-ctl-fs: 26rpx;
+}
+
+.cls-page.screen-regular,
+.cls-page.screen-wide {
+  --cls-ctl-h: 32px;
+  --cls-ctl-pad: 2px;
+  --cls-ctl-fs: 12px;
+}
+
+.cls-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  /* 底部留白：tt-card 只有下 margin，吸顶头不留底距会与首张卡贴成一块平板（2026-11-24 用户截图） */
+  margin: 0 var(--tt-gap) 16rpx;
+  padding: 16rpx var(--tt-pad);
+  border-radius: var(--tt-radius);
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+}
+
+.cls-topbar-main {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12rpx;
+  min-width: 0;
+}
+
+/* 三行布局（2026-11-24 用户「更改为三行显示」）：班级名独占一行完整展示，
+   分段控制器独占一行全宽 —— 并排会截断班名、挤扁 tab */
+.cls-classbar {
+  flex: none;
+  min-width: 0;
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  height: var(--cls-ctl-h);
+}
+
+.cls-classbar-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 28rpx;
+  font-weight: 700;
+  color: var(--tt-text-1);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cls-classpick {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+}
+
+.cls-classpick:active {
+  opacity: 0.7;
+}
+
+.cls-classpick-name {
+  min-width: 0;
+  font-size: 28rpx;
+  font-weight: 700;
+  color: var(--tt-text-1);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cls-role-chip {
+  flex-shrink: 0;
+  background: var(--tt-brand-soft);
+  color: var(--tt-brand);
+}
+
+/* 手机主行宽度预算给班名与分段：角色胶囊只在 regular 露出（wide 班级条整体隐藏） */
+.cls-topbar .cls-role-chip {
+  display: none;
+  padding: 4rpx 12rpx;
+  font-size: 20rpx;
+}
+
+/* 分段控制器紧凑覆写（公共 .tt-segment 无宽屏段，宽屏 px 见文末） */
+.cls-segment {
+  flex: none;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+}
+
+/* 顶栏与筛选面板的分段同一高度口径（外框 = 控件高，内 item = 控件高 - 2×内衬） */
+.cls-topbar .tt-segment,
+.cls-panel .tt-segment {
+  height: var(--cls-ctl-h);
+  padding: var(--cls-ctl-pad);
+  box-sizing: border-box;
+}
+
+.cls-topbar .tt-segment-item,
+.cls-panel .tt-segment-item {
+  height: calc(var(--cls-ctl-h) - var(--cls-ctl-pad) * 2);
+  min-width: 0;
+  padding: 0 8rpx;
+  box-sizing: border-box;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  line-height: calc(var(--cls-ctl-h) - var(--cls-ctl-pad) * 2);
+  font-size: var(--cls-ctl-fs);
+}
+
+/* 角色说明：正常流 footnote，不进吸顶（避免偏移变量失配） */
+/* 角色解释文本已删（2026-11-23 用户要求） */
+
+/* 宽屏左栏 + 主内容；compact/regular 左栏隐藏 */
+.cls-layout {
+  display: block;
+}
+
+.cls-side {
+  display: none;
+}
+
+.cls-main {
+  min-width: 0;
+}
+
+.cls-side-card {
+  padding: 8rpx 16rpx;
+}
+
+.cls-side-title {
+  padding: 12rpx 0 8rpx;
+  font-size: 24rpx;
+  font-weight: 600;
+  color: var(--tt-text-2);
+}
+
+.cls-side-item {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  min-height: 72rpx;
+  padding: 8rpx 0;
+}
+
+.cls-side-item + .cls-side-item {
+  border-top: 1rpx solid var(--tt-line);
+}
+
+.cls-side-item:active {
+  opacity: 0.7;
+}
+
+.cls-side-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 26rpx;
+  color: var(--tt-text-1);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cls-side-item.active .cls-side-name {
+  color: var(--tt-brand);
+  font-weight: 600;
+}
+
+.cls-side-role {
+  flex-shrink: 0;
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+}
+
+/* 学生名单分组卡：行叠在玻璃卡内（行样式见 .cls-row） */
+.cls-group {
+  /* 外层横距由 .cls-list 提供（单一口径），这里只留内 padding，避免双重缩进 */
+  margin: 0;
+  padding: 4rpx var(--tt-pad);
+}
+
+/* 融合第二行：周期 segment + picker 同一行同高（面层在 topbar，这里禁 background）。
+   强制 nowrap：窄屏上也不允许折成第三行（用户 2026-11-24「不算名称的两行」）。 */
+.cls-topbar-range {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 8rpx;
+  min-width: 0;
+}
+
+/* 校园跑六格：3 列 × 2 行紧凑网格（替代原两行 tt-stat-row + 分隔线） */
+.cls-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12rpx 0;
+  padding: 8rpx 0;
+}
+
+/* 周期分段（班超 tab 吸顶条内）：复用 .tt-segment，高度走统一令牌；宽度按内容不拉伸 */
+.cls-ranges {
+  flex: none;
+  margin: 0;
+}
+
+.cls-topbar .cls-range-item {
+  flex: none;
+  padding: 0 16rpx;
+}
+
+/* 页内选班抽屉滚动区（与卫生区抽屉同一套确定高度约定） */
+.cls-pick-sheet {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.cls-pick-body {
+  flex: none;
+  min-height: 0;
+  max-height: 46vh;
+}
+
+.tt-sheet-item.is-on {
+  background: var(--tt-brand-soft);
+}
+
+/* ===== 宽屏（iPad / Mac·PC）：一律 px，禁 rpx ===== */
+.screen-regular .cls-topbar {
+  margin: 0 16px 10px;
+  padding: 8px var(--tt-pad);
+  border-radius: 14px;
+  gap: 6px;
+}
+
+.screen-regular .cls-topbar-main {
+  gap: 6px;
+}
+
+.screen-regular .cls-classbar {
+  flex-basis: auto;
+  max-width: 100%;
+  padding: 0;
+  gap: 5px;
+}
+
+.screen-regular .cls-classbar-name,
+.screen-regular .cls-classpick-name {
+  font-size: 15px;
+}
+
+.screen-regular .cls-topbar .cls-role-chip {
+  display: inline-flex;
+  padding: 2px 8px;
+  font-size: 10px;
+}
+
+.screen-regular .cls-roletip {
+  margin: 6px 16px 10px;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.screen-regular .cls-group {
+  padding: 2px var(--tt-pad);
+}
+
+.screen-regular .cls-row {
+  min-height: 44px;
+  padding: 6px 0;
+  gap: 10px;
+}
+
+.screen-regular .cls-row + .cls-row {
+  border-top-width: 1px;
+}
+
+.screen-regular .cls-stat-grid {
+  gap: 8px 0;
+  padding: 4px 0;
+}
+
+/* Mac·PC：左栏常驻班级列表 + 右主内容 */
+
+.screen-wide .cls-layout {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 18px;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 18px;
+  align-items: start;
+}
+
+.screen-wide .cls-side {
+  display: block;
+  position: sticky;
+  top: 70px;
+}
+
+.screen-wide .cls-side-card {
+  margin: 0 0 14px;
+  padding: 4px 14px;
+}
+
+.screen-wide .cls-side-title {
+  padding: 8px 0 6px;
+  font-size: 12px;
+}
+
+.screen-wide .cls-side-item {
+  min-height: 40px;
+  padding: 5px 0;
+  gap: 8px;
+}
+
+.screen-wide .cls-side-item + .cls-side-item {
+  border-top-width: 1px;
+}
+
+.screen-wide .cls-side-name {
+  font-size: 13px;
+}
+
+.screen-wide .cls-side-role {
+  font-size: 10px;
+}
+
+/* 宽屏左栏已常驻班级列表 → 顶栏班级条隐藏，偏移只算分段控制器 */
+.screen-wide .cls-classbar {
+  display: none;
+}
+
+.screen-wide .cls-topbar {
+  margin: 0 0 10px;
+  padding: 8px var(--tt-pad);
+  border-radius: 14px;
+  gap: 6px;
+}
+
+.screen-wide .cls-topbar-main {
+  gap: 6px;
+}
+
+.screen-wide .cls-roletip {
+  margin: 0 0 10px;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.screen-wide .cls-group {
+  padding: 2px var(--tt-pad);
+}
+
+.screen-wide .cls-row {
+  min-height: 44px;
+  padding: 6px 0;
+  gap: 10px;
+}
+
+.screen-wide .cls-row + .cls-row {
+  border-top-width: 1px;
+}
+
+.screen-wide .cls-stat-grid {
+  gap: 8px 0;
+  padding: 4px 0;
+}
+
+/* ===== 数据概况 widget 板（2026-11-23）：达标率环 + 2×2 关键数 + 操作 chips ===== */
+.cls-ov-main {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding: 8rpx 0;
+}
+
+.cls-ov-ring {
+  width: 148rpx;
+  height: 148rpx;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cls-ov-ring-in {
+  width: 112rpx;
+  height: 112rpx;
+  border-radius: 50%;
+  background: var(--tt-card);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2rpx;
+}
+
+.cls-ov-rate {
+  font-size: 36rpx;
+  font-weight: 700;
+  color: var(--tt-text-1);
+}
+
+.cls-ov-rate-l {
+  font-size: 18rpx;
+  color: var(--tt-text-3);
+}
+
+.cls-ov-side {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12rpx 16rpx;
+}
+
+.cls-ov-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2rpx;
+  min-width: 0;
+}
+
+.cls-ov-v {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: var(--tt-text-1);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cls-ov-l {
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+}
+
+.cls-ov-actions {
+  display: flex;
+  gap: 12rpx;
+  margin-top: 12rpx;
+}
+
+.cls-ov-act {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6rpx;
+  padding: 12rpx 0;
+  border-radius: 999rpx;
+  background: var(--tt-brand-soft);
+  color: var(--tt-brand);
+  font-size: 23rpx;
+  font-weight: 600;
+}
+
+.cls-ov-act:active {
+  opacity: 0.7;
+}
+
+/* ===== widget 板 / 照片底卡：宽屏 px ===== */
+.screen-regular .cls-ov-main,
+.screen-wide .cls-ov-main {
+  gap: 12px;
+  padding: 4px 0;
+}
+
+.screen-regular .cls-ov-ring,
+.screen-wide .cls-ov-ring {
+  width: 74px;
+  height: 74px;
+}
+
+.screen-regular .cls-ov-ring-in,
+.screen-wide .cls-ov-ring-in {
+  width: 56px;
+  height: 56px;
+}
+
+.screen-regular .cls-ov-rate,
+.screen-wide .cls-ov-rate {
+  font-size: 18px;
+}
+
+.screen-regular .cls-ov-rate-l,
+.screen-wide .cls-ov-rate-l {
+  font-size: 9px;
+}
+
+.screen-regular .cls-ov-side,
+.screen-wide .cls-ov-side {
+  gap: 8px 12px;
+}
+
+.screen-regular .cls-ov-v,
+.screen-wide .cls-ov-v {
+  font-size: 15px;
+}
+
+.screen-regular .cls-ov-l,
+.screen-wide .cls-ov-l {
+  font-size: 10px;
+}
+
+.screen-regular .cls-ov-actions,
+.screen-wide .cls-ov-actions {
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.screen-regular .cls-ov-act,
+.screen-wide .cls-ov-act {
+  padding: 6px 0;
+  gap: 3px;
+  font-size: 12px;
+}
+
+.screen-regular .cls-bc-record.has-photo,
+.screen-wide .cls-bc-record.has-photo {
+  min-height: 120px;
+  margin-bottom: 8px;
+  border-radius: 10px;
+}
+
+.screen-regular .has-photo .cls-bc-body,
+.screen-wide .has-photo .cls-bc-body {
+  padding: 8px 10px;
+  min-height: 120px;
+}
+
+.screen-regular .cls-bc-photo-pill,
+.screen-wide .cls-bc-photo-pill {
+  padding: 2px 8px;
+  gap: 3px;
+  font-size: 10px;
+}
+
+/* ===== 融合第二行 / iOS 标题：宽屏 px ===== */
+.screen-regular .cls-topbar-range,
+.screen-wide .cls-topbar-range {
+  gap: 6px;
+}
+
+.screen-regular .cls-topbar .cls-range-item,
+.screen-wide .cls-topbar .cls-range-item {
+  padding: 0 12px;
+}
+
+.screen-regular .cls-period,
+.screen-wide .cls-period {
+  gap: 6px;
+}
+
+.screen-regular .cls-period-chip,
+.screen-wide .cls-period-chip {
+  padding: 0 10px;
+  gap: 4px;
+}
+
+.screen-regular .cls-page .tt-section,
+.screen-wide .cls-page .tt-section {
+  margin: 0 var(--tt-gap) 6px;
+  font-size: 12px;
+}
+
+.screen-regular .cls-page .tt-section .tt-section-extra,
+.screen-wide .cls-page .tt-section .tt-section-extra {
+  font-size: 11px;
+}
+
+/* Mac·PC：主内容横距归零，与 topbar / 左栏边对齐（只动横向，纵向间距保留）。
+   不用 --tt-gap:0 —— 那会把 tt-card 的 margin-bottom 一起清零。 */
+.screen-wide .cls-main .tt-card,
+.screen-wide .cls-main .tt-hero,
+.screen-wide .cls-main .cls-bc-kpis,
+.screen-wide .cls-main .cls-bc-modules,
+.screen-wide .cls-main .cls-bc-report,
+.screen-wide .cls-main .cls-bc-trend,
+.screen-wide .cls-main .cls-bc-top,
+.screen-wide .cls-main .tt-section,
+.screen-wide .cls-main .cls-bc-att,
+.screen-wide .cls-main .cls-list,
+.screen-wide .cls-main .cls-overview-sub,
+.screen-wide .cls-main .tt-footer {
+  margin-left: 0;
+  margin-right: 0;
+}
+
+/* ===== 吸顶次级行（2026-11-23：搜索/筛选/排序、日期回看融入顶栏，主/次两行封顶）===== */
+.cls-topbar-tools {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+}
+
+.cls-bc-aggr {
+  padding: 0 var(--tt-pad);
+  overflow: hidden;
+}
+
+/* iOS 分组感：段与段之间靠留白分隔（不再每段一条 hairline 密排成表格） */
+.cls-bc-aggr-sec {
+  padding: 24rpx 0;
+}
+
+.cls-bc-kpi-sec {
+  padding-top: 0;
+}
+
+.cls-bc-aggr-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14rpx;
+  margin-bottom: 16rpx;
+  font-size: 24rpx;
+  line-height: 32rpx;
+  color: var(--tt-text-3);
+}
+
+.cls-bc-aggr-extra {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+.cls-bc-day-sec {
+  padding-bottom: 8rpx;
+}
+
+.cls-bc-day-list {
+  padding: 0 16rpx;
+  border-radius: var(--tt-radius-sm);
+  background: var(--td-bg-color-secondarycontainer);
+  overflow: hidden;
+}
+
+.cls-bc-day-list .cls-bc-day-group:first-child .cls-bc-day-head {
+  padding-top: 12rpx;
+}
+
+.cls-bc-day-list .cls-bc-record:last-child {
+  border-bottom: 0;
+}
+
+/* ===== 次级行 / 聚合卡：宽屏 px ===== */
+.screen-regular .cls-topbar-tools,
+.screen-wide .cls-topbar-tools {
+  gap: 6px;
+}
+
+.screen-regular .cls-tool,
+.screen-wide .cls-tool {
+  padding: 0 12px;
+  gap: 4px;
+}
+
+.screen-regular .cls-topbar-search,
+.screen-wide .cls-topbar-search {
+  --td-search-padding: 0 12px;
+}
+
+.screen-regular .cls-rundate-chip,
+.screen-wide .cls-rundate-chip {
+  padding: 0 12px;
+  gap: 5px;
+}
+
+.screen-regular .cls-rundate-tag,
+.screen-wide .cls-rundate-tag {
+  padding: 0 10px;
+  font-size: 10px;
+}
+
+.screen-regular .cls-rundate-today,
+.screen-wide .cls-rundate-today {
+  padding: 0 14px;
+  font-size: 12px;
+}
+
+.screen-regular .cls-bc-aggr,
+.screen-wide .cls-bc-aggr {
+  padding: 0 var(--tt-pad);
+}
+
+.screen-regular .cls-bc-aggr-hero,
+.screen-wide .cls-bc-aggr-hero {
+  padding: 16px 0 14px;
+}
+
+.screen-regular .cls-bc-hero-kicker,
+.screen-wide .cls-bc-hero-kicker,
+.screen-regular .cls-bc-hero-range,
+.screen-wide .cls-bc-hero-range {
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.screen-regular .cls-bc-hero-score-v,
+.screen-wide .cls-bc-hero-score-v {
+  font-size: 34px;
+}
+
+.screen-regular .cls-bc-hero-score-u,
+.screen-wide .cls-bc-hero-score-u {
+  font-size: 12px;
+}
+
+.screen-regular .cls-bc-hero-note,
+.screen-wide .cls-bc-hero-note {
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.screen-regular .cls-bc-kpis,
+.screen-wide .cls-bc-kpis {
+  gap: 8px;
+}
+
+.screen-regular .cls-bc-kpi,
+.screen-wide .cls-bc-kpi {
+  padding: 10px;
+  border-radius: 10px;
+}
+
+.screen-regular .cls-bc-kpi-value,
+.screen-wide .cls-bc-kpi-value {
+  font-size: 20px;
+  line-height: 24px;
+}
+
+.screen-regular .cls-bc-kpi-label,
+.screen-wide .cls-bc-kpi-label,
+.screen-regular .cls-bc-kpi-aux,
+.screen-wide .cls-bc-kpi-aux {
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.screen-regular .cls-bc-kpi-track,
+.screen-wide .cls-bc-kpi-track {
+  height: 3px;
+  margin-top: 4px;
+}
+
+.screen-regular .cls-bc-modules,
+.screen-wide .cls-bc-modules {
+  gap: 8px;
+}
+
+.screen-regular .cls-bc-module,
+.screen-wide .cls-bc-module {
+  width: auto;
+  gap: 3px;
+  padding: 10px;
+  border-radius: 10px;
+}
+
+.screen-regular .cls-bc-module-name,
+.screen-wide .cls-bc-module-name {
+  font-size: 13px;
+}
+
+.screen-regular .cls-bc-module-score,
+.screen-wide .cls-bc-module-score {
+  font-size: 18px;
+}
+
+.screen-regular .cls-bc-module-desc,
+.screen-wide .cls-bc-module-desc,
+.screen-regular .cls-bc-module-deduct,
+.screen-wide .cls-bc-module-deduct {
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.screen-regular .cls-bc-report-acts,
+.screen-wide .cls-bc-report-acts {
+  gap: 8px;
+}
+
+.screen-regular .cls-bc-report-act,
+.screen-wide .cls-bc-report-act {
+  gap: 5px;
+  padding: 10px 6px;
+  font-size: 12px;
+}
+
+.screen-regular .cls-bc-trend-track,
+.screen-wide .cls-bc-trend-track {
+  height: 28px;
+  border-radius: 6px;
+}
+
+.screen-regular .cls-bc-trend-value,
+.screen-wide .cls-bc-trend-value {
+  font-size: 12px;
+  line-height: 15px;
+}
+
+.screen-regular .cls-bc-trend-label,
+.screen-wide .cls-bc-trend-label {
+  font-size: 11px;
+  line-height: 13px;
+}
+
+.screen-regular .cls-bc-top-row,
+.screen-wide .cls-bc-top-row {
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom-width: 1px;
+}
+
+.screen-regular .cls-bc-top-no,
+.screen-wide .cls-bc-top-no {
+  width: 22px;
+  height: 22px;
+  line-height: 22px;
+  font-size: 11px;
+}
+
+.screen-regular .cls-bc-top-name,
+.screen-wide .cls-bc-top-name {
+  max-width: 360px;
+  font-size: 12px;
+}
+
+.screen-regular .cls-bc-top-score,
+.screen-wide .cls-bc-top-score {
+  font-size: 14px;
+}
+
+.screen-regular .cls-bc-day-sec,
+.screen-wide .cls-bc-day-sec {
+  padding-bottom: 2px;
+}
+
+.screen-regular .cls-bc-day-list,
+.screen-wide .cls-bc-day-list {
+  padding: 0 12px;
+  border-radius: 10px;
+}
+
+.screen-regular .cls-bc-day-list .cls-bc-day-group:first-child .cls-bc-day-head,
+.screen-wide .cls-bc-day-list .cls-bc-day-group:first-child .cls-bc-day-head {
+  padding-top: 8px;
+}
+
+.screen-regular .cls-bc-day-note,
+.screen-wide .cls-bc-day-note {
+  margin-bottom: 4px;
+  font-size: 10px;
+  line-height: 15px;
+}
+
+.screen-regular .cls-bc-day-group,
+.screen-wide .cls-bc-day-group {
+  margin-bottom: 8px;
+}
+
+.screen-regular .cls-bc-day-head,
+.screen-wide .cls-bc-day-head {
+  gap: 6px;
+  margin-bottom: 5px;
+}
+
+.screen-regular .cls-bc-day-title,
+.screen-wide .cls-bc-day-title {
+  font-size: 12px;
+}
+
+.screen-regular .cls-bc-day-count,
+.screen-wide .cls-bc-day-count {
+  font-size: 10px;
+}
+
+.screen-regular .cls-bc-aggr-sec,
+.screen-wide .cls-bc-aggr-sec {
+  padding: 14px 0;
+}
+
+.screen-regular .cls-bc-aggr-head,
+.screen-wide .cls-bc-aggr-head {
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.screen-regular .cls-bc-aggr-extra,
+.screen-wide .cls-bc-aggr-extra {
+  font-size: 11px;
+}
+
+.screen-regular .cls-bc-att .tt-stat-value,
+.screen-wide .cls-bc-att .tt-stat-value {
+  font-size: 15px;
+}
+
+.screen-regular .cls-bc-att .tt-stat-label,
+.screen-wide .cls-bc-att .tt-stat-label {
+  margin-top: 2px;
+  font-size: 10px;
+}
+
+.screen-regular .cls-bc-att .at-mods,
+.screen-wide .cls-bc-att .at-mods {
+  gap: 4px;
+  margin-top: 5px;
+}
+
+.screen-regular .cls-bc-att .at-mod,
+.screen-wide .cls-bc-att .at-mod {
+  gap: 3px;
+  padding: 3px 7px;
+}
+
+.screen-regular .cls-bc-att .at-mod-name,
+.screen-wide .cls-bc-att .at-mod-name {
+  font-size: 10px;
+}
+
+.screen-regular .cls-bc-att .at-mod-rate,
+.screen-wide .cls-bc-att .at-mod-rate {
+  font-size: 13px;
+}
+
+.screen-regular .cls-bc-att .at-mod-rate.is-muted,
+.screen-wide .cls-bc-att .at-mod-rate.is-muted {
+  font-size: 10px;
+}
+
+.screen-regular .cls-bc-att .at-loading,
+.screen-wide .cls-bc-att .at-loading,
+.screen-regular .cls-bc-att .at-error,
+.screen-wide .cls-bc-att .at-error {
+  padding: 8px 0;
+}
+
+.screen-regular .cls-bc-att .tt-empty,
+.screen-wide .cls-bc-att .tt-empty {
+  padding: 10px 0;
+}
+
+.screen-regular .cls-bc-aggr-sec.cls-bc-att-sec,
+.screen-wide .cls-bc-aggr-sec.cls-bc-att-sec {
+  padding-top: 6px;
 }

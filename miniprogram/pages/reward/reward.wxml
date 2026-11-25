@@ -1,9 +1,16 @@
 <!-- 教师拦截：blocked=true 时整页不渲染 -->
-<view class="page tt-page bd-page" wx:if="{{!blocked}}">
+<view class="page tt-page bd-page {{fx ? 'is-fx' : ''}}" wx:if="{{!blocked}}">
+
+  <!-- ===== 页头 ===== -->
+  <view class="bd-hero">
+    <text class="bd-hero-title">北斗运动</text>
+    <text class="bd-hero-sub">步数换铜版 · 天天开奖</text>
+  </view>
 
   <!-- ===== 中奖播报（常驻一行，竖向轮播）===== -->
   <view class="bd-feed">
     <view class="bd-feed-icon">🎉</view>
+    <text class="bd-feed-badge">播报</text>
     <view class="bd-feed-track" wx:if="{{feed.length}}">
       <view class="bd-feed-item {{item.isMine ? 'is-mine' : ''}}" wx:for="{{feed}}" wx:key="index" wx:if="{{index === feedIndex}}">
         <text class="bd-feed-name">{{item.nameMasked}}</text>
@@ -18,182 +25,374 @@
     </view>
   </view>
 
-  <!-- ===== 次数条（独立一行：早先是 absolute 压在播报条上，两行字叠在一起）===== -->
-  <view class="bd-stat">
-    <view class="bd-stat-left">
-      <text class="bd-stat-num num-font">{{remaining}}</text>
-      <text class="bd-stat-unit">次可抽</text>
-    </view>
-    <text class="bd-stat-sep">·</text>
-    <text class="bd-stat-earned">今日已得 {{earned.steps || 0}} 步</text>
-    <!-- 音效开关：很多人在地铁上打开，必须能一键关 -->
-    <view class="bd-sfx {{sfxMuted || !sfxEnabled ? 'is-off' : ''}}" bind:tap="toggleSfx">
-      <t-icon name="{{sfxMuted || !sfxEnabled ? 'sound-mute' : 'sound'}}" size="30rpx" color="{{sfxMuted || !sfxEnabled ? 'var(--tt-text-3)' : 'var(--tt-brand)'}}" />
-    </view>
-  </view>
-
-  <!-- ===== 转盘区 ===== -->
-  <view class="bd-wheel-wrap">
-    <!-- 外圈光晕（稀有/最稀有亮，旋转中轻微呼吸） -->
-    <view class="bd-glow {{fx === 'rare' || fx === 'rarest' ? 'is-on' : ''}} {{fx === 'rarest' ? 'is-gold' : ''}}" catch:tap="noop"></view>
-
-    <!-- 指针：固定在 12 点、尖端朝下（用户对「转盘」的默认预期） -->
-    <view class="bd-pointer {{spinning ? 'is-spin' : ''}}"></view>
-
-    <!-- 盘面：**转的是它**。8 个 clip-path 楔形（不用 conic-gradient：安卓兼容性差会渲染成纯色）。
-         文字用径向排布，所以盘面停在任何角度都整齐。 -->
-    <view class="bd-wheel {{spinning ? 'is-spinning' : ''}}" style="transform: rotate({{rotateDeg}}deg);" bind:transitionend="onSpinEnd">
-      <!-- 扇形只画底色：它被 clip-path 裁成楔形，文字放进去会被**扇形边缘切掉**，
-           一截一截的正是「转盘乱」的主因。 -->
-      <view
-        class="bd-sector bd-sector-{{item.tint}} {{activeIndex === index ? 'is-hit' : ''}}"
-        wx:for="{{sectors}}"
-        wx:key="key"
-        style="clip-path: {{item.clip}}; -webkit-clip-path: {{item.clip}};"
-      ></view>
-      <!-- 文字独立一层：不被裁剪，且作为 .bd-wheel 的子节点跟着盘面一起转。
-           单行 + 径向（textDeg=±90），所以停下后依然整齐。 -->
-      <view
-        class="bd-label {{activeIndex === index ? 'is-hit' : ''}}"
-        wx:for="{{sectors}}"
-        wx:key="key"
-        style="transform: rotate({{item.midDeg}}deg) translateY(-168rpx) rotate({{item.textDeg}}deg);"
-      >
-        <text class="bd-sector-val bd-v-{{item.tint}}">{{item.labelText}}</text>
+  <!-- ===== 铜版余额卡 ===== -->
+  <view class="bd-wallet">
+    <view class="bd-wallet-main">
+      <view class="bd-coin-badge">
+        <image class="bd-coin-img" wx:if="{{coin.iconUrl}}" src="{{coin.iconUrl}}" mode="aspectFit" binderror="onCoinIconError" />
+        <text wx:else>铜</text>
       </view>
-      <!-- 扇区分隔线（纯装饰） -->
-      <view class="bd-wedge" wx:for="{{sectors}}" wx:key="key" style="transform: rotate({{item.startDeg}}deg);"></view>
-      <!-- 内圈白环：把中心按钮与格子分开，视觉上「盘」才成立 -->
-      <view class="bd-inner-ring"></view>
+      <view class="bd-wallet-nums">
+        <text class="bd-wallet-balance num-font">{{coin.balance}}</text>
+        <text class="bd-wallet-unit">{{coinName}}</text>
+      </view>
+      <view class="bd-sfx {{sfxMuted || !sfxEnabled ? 'is-off' : ''}}" bind:tap="toggleSfx">
+        <t-icon name="{{sfxMuted || !sfxEnabled ? 'sound-mute' : 'sound'}}" size="30rpx" color="{{sfxMuted || !sfxEnabled ? 'var(--tt-text-3)' : 'var(--tt-brand)'}}" />
+      </view>
     </view>
-
-    <!-- 中心抽奖按钮（没次数时是「赚次数」，点了滚到任务区） -->
-    <view class="bd-center {{spinning ? 'is-spinning' : ''}} {{enabled === false ? 'is-disabled' : ''}} {{remaining <= 0 && enabled !== false ? 'is-empty' : ''}}" bind:tap="tapCenter">
-      <text class="bd-center-main">{{centerMain}}</text>
-      <text class="bd-center-sub" wx:if="{{centerSub}}">{{centerSub}}</text>
-    </view>
-
-    <!-- 最稀有的爆点横幅 -->
-    <view class="bd-burst" wx:if="{{fx === 'rarest'}}">
-      <text class="bd-burst-text">🎊 恭喜抽中稀有奖</text>
+    <view class="bd-wallet-sub">
+      <text class="bd-wallet-line">{{coinLine}}</text>
+      <view class="bd-wallet-cap" wx:if="{{coin.dailyGameCap > 0}}">
+        <text class="bd-wallet-cap-t">游戏产出 {{coin.gameEarnedToday}}/{{coin.dailyGameCap}}</text>
+        <view class="bd-wallet-bar">
+          <view class="bd-wallet-bar-fill" style="width: {{coinCapPercent}}%;"></view>
+        </view>
+      </view>
     </view>
   </view>
 
-  <!-- 封顶 / 次数用尽提示（必须在抽到空奖之前就能看到） -->
-  <view class="bd-cap" wx:if="{{capText}}">
-    <t-icon name="{{cap.capped ? 'error-circle' : 'info-circle'}}" size="26rpx" color="{{cap.capped ? 'var(--td-warning-color-5)' : 'var(--tt-text-3)'}}" />
-    <text class="bd-cap-text">{{capText}}</text>
+  <!-- ===== 玩法切换 ===== -->
+  <view class="bd-modes {{mode === 'grid' ? 'is-grid' : ''}}">
+    <view class="bd-modes-thumb"></view>
+    <view class="bd-mode {{mode === 'wheel' ? 'is-on' : ''}} {{!wheel.enabled ? 'is-disabled' : ''}}" bind:tap="switchMode" data-mode="wheel">
+      <t-icon name="gift" size="28rpx" color="{{mode === 'wheel' ? '#fff' : 'var(--tt-brand)'}}" />
+      <text>转盘</text>
+      <text class="bd-mode-cost">{{wheel.cost}} {{coinName}}</text>
+    </view>
+    <view class="bd-mode {{mode === 'grid' ? 'is-on' : ''}} {{!grid.enabled ? 'is-disabled' : ''}}" bind:tap="switchMode" data-mode="grid">
+      <t-icon name="grid-view" size="28rpx" color="{{mode === 'grid' ? '#fff' : 'var(--tt-brand)'}}" />
+      <text>九宫格</text>
+      <text class="bd-mode-cost">{{grid.cost}} {{coinName}}</text>
+    </view>
   </view>
-  <view class="bd-cap" wx:if="{{remaining <= 0 && enabled}}">
-    <t-icon name="info-circle" size="26rpx" color="var(--tt-text-3)" />
-    <text class="bd-cap-text" bind:tap="scrollToTasks">次数用完了，去做任务赚次数 ›</text>
-  </view>
+
+  <!-- ===== 转盘 ===== -->
+  <block wx:if="{{mode === 'wheel'}}">
+    <view class="bd-stat">
+      <view class="bd-stat-left">
+        <text class="bd-stat-num num-font">{{wheel.remaining}}</text>
+        <text class="bd-stat-unit">次可抽</text>
+      </view>
+      <text class="bd-stat-sep">·</text>
+      <text class="bd-stat-earned">{{wheel.pity.text}}</text>
+    </view>
+
+    <view class="bd-wheel-wrap">
+      <view class="bd-glow {{fx === 'rare' || fx === 'rarest' ? 'is-on' : ''}} {{fx === 'rarest' ? 'is-gold' : ''}}" catch:tap="noop"></view>
+      <view class="bd-rim {{spinning ? 'is-spin' : ''}}">
+        <view class="bd-rim-light" wx:for="{{rimLights}}" wx:key="k" style="transform: rotate({{item.deg}}deg) translateY(-278rpx);"></view>
+      </view>
+      <view class="bd-pointer {{spinning ? 'is-spin' : ''}}"></view>
+      <view class="bd-wheel {{spinning ? 'is-spinning' : ''}}" style="transform: rotate({{rotateDeg}}deg);" bind:transitionend="onSpinEnd">
+        <view
+          class="bd-sector bd-sector-{{item.tint}} {{activeIndex === index ? 'is-hit' : ''}}"
+          wx:for="{{sectors}}"
+          wx:key="key"
+          style="clip-path: {{item.clip}}; -webkit-clip-path: {{item.clip}};"
+        ></view>
+        <view
+          class="bd-label {{activeIndex === index ? 'is-hit' : ''}}"
+          wx:for="{{sectors}}"
+          wx:key="key"
+          style="transform: rotate({{item.midDeg}}deg) translateY(-168rpx) rotate({{item.textDeg}}deg);"
+        >
+          <text class="bd-sector-val bd-v-{{item.tint}}">{{item.labelText}}</text>
+        </view>
+        <view class="bd-wedge" wx:for="{{sectors}}" wx:key="key" style="transform: rotate({{item.startDeg}}deg);"></view>
+        <view class="bd-inner-ring"></view>
+      </view>
+
+      <view class="bd-center {{spinning ? 'is-spinning' : ''}} {{enabled === false ? 'is-disabled' : ''}} {{wheel.remaining <= 0 && enabled !== false ? 'is-empty' : ''}}" bind:tap="tapCenter">
+        <text class="bd-center-main">{{centerMain}}</text>
+        <text class="bd-center-sub" wx:if="{{centerSub}}">{{centerSub}}</text>
+      </view>
+
+      <view class="bd-burst" wx:if="{{fx === 'rarest'}}">
+        <text class="bd-burst-text">🎊 恭喜抽中稀有奖</text>
+      </view>
+    </view>
+
+    <!-- 封顶 / 次数用尽提示（必须在抽到空奖之前就能看到） -->
+    <view class="bd-cap" wx:if="{{capText}}">
+      <t-icon name="{{cap.capped ? 'error-circle' : 'info-circle'}}" size="26rpx" color="{{cap.capped ? 'var(--td-warning-color-5)' : 'var(--tt-text-3)'}}" />
+      <text class="bd-cap-text">{{capText}}</text>
+    </view>
+    <view class="bd-cap" wx:if="{{wheel.remaining <= 0 && enabled}}">
+      <t-icon name="info-circle" size="26rpx" color="var(--tt-text-3)" />
+      <text class="bd-cap-text" bind:tap="scrollToTasks">次数用完了，去做任务赚铜版 ›</text>
+    </view>
+  </block>
+
+  <!-- 减弱动效探针（常驻，两种玩法下都要能读到） -->
+  <view class="bd-reel-probe" />
+
+  <!-- ===== 九宫格 ===== -->
+  <block wx:if="{{mode === 'grid'}}">
+    <view class="bd-stat">
+      <view class="bd-stat-left">
+        <text class="bd-stat-num num-font">{{grid.cost}}</text>
+        <text class="bd-stat-unit">{{coinName}}/局</text>
+      </view>
+      <text class="bd-stat-sep">·</text>
+      <text class="bd-stat-earned">{{grid.pity.text}}</text>
+    </view>
+
+    <view class="bd-grid-wrap">
+      <view class="bd-slot-row">
+        <view class="bd-machine">
+          <view class="bd-marquee {{grid.revealing ? 'is-spin' : ''}}">
+            <view class="bd-marquee-bulb" wx:for="{{marqueeLights}}" wx:key="k" />
+          </view>
+          <view class="bd-bezel">
+            <view class="bd-window">
+              <!-- 卷轴态：三列垂直滚动、逐列停轴；停位严格 = 服务端 board（末端 3 帧），装饰帧纯视觉 -->
+              <view class="bd-reels" wx:if="{{grid.revealing && grid.reels.length}}">
+                <view class="bd-reel {{reel.stopped ? 'is-stopped' : ''}}" wx:for="{{grid.reels}}" wx:for-item="reel" wx:key="col">
+                  <view
+                    class="bd-reel-strip"
+                    style="transform: translateY(-{{reel.offsetRpx}}rpx); transition-duration: {{reel.durationMs}}ms;"
+                    bind:transitionend="onReelTransitionEnd"
+                    data-col="{{reel.col}}"
+                  >
+                    <view
+                      class="bd-gcell bd-reel-frame {{frame.type === 'coin' ? 'is-coin' : (frame.type === 'steps' ? 'is-steps' : '')}}"
+                      wx:for="{{reel.frames}}"
+                      wx:for-item="frame"
+                      wx:key="k"
+                    >
+                      <image class="bd-gcell-img" wx:if="{{frame.iconUrl}}" src="{{frame.iconUrl}}" mode="aspectFit" binderror="onReelIconError" data-col="{{reel.col}}" data-fidx="{{frame.k}}" />
+                      <text class="bd-gcell-icon" wx:else>{{frame.icon}}</text>
+                      <text class="bd-gcell-label" wx:if="{{frame.label}}">{{frame.label}}</text>
+                    </view>
+                  </view>
+                  <view class="bd-reel-speed {{reel.stopped ? 'is-off' : ''}}" />
+                  <view class="bd-reel-shade" />
+                  <view class="bd-reel-glass" />
+                  <view class="bd-reel-glint" />
+                </view>
+              </view>
+              <view class="bd-grid" wx:else>
+                <!-- 静态态：首局前「?」占位 / 停稳与中断后的终态盘面 -->
+                <view
+                  class="bd-gcell {{item.revealed ? 'is-revealed' : ''}} {{item.win ? 'is-win' : ''}} {{item.type === 'coin' ? 'is-coin' : (item.type === 'steps' ? 'is-steps' : '')}}"
+                  wx:for="{{grid.cells}}"
+                  wx:key="index"
+                >
+                  <image class="bd-gcell-img" wx:if="{{item.revealed && item.iconUrl}}" src="{{item.iconUrl}}" mode="aspectFit" binderror="onCellIconError" data-index="{{index}}" />
+                  <text class="bd-gcell-icon" wx:elif="{{item.revealed}}">{{item.icon}}</text>
+                  <text class="bd-gcell-icon bd-gcell-q" wx:else>?</text>
+                  <text class="bd-gcell-label" wx:if="{{item.revealed && item.label}}">{{item.label}}</text>
+                </view>
+              </view>
+              <view class="bd-window-sep bd-window-sep-1" />
+              <view class="bd-window-sep bd-window-sep-2" />
+              <view class="bd-glass-line" />
+            </view>
+          </view>
+          <view class="bd-console">
+            <view class="bd-slot-btn is-red" hover-class="bd-press" bind:tap="scrollToTasks">去赚铜版</view>
+            <view class="bd-slot-btn is-green" hover-class="bd-press" bind:tap="scrollToRules">看概率</view>
+            <view
+              class="bd-slot-btn is-gold {{(!grid.canPlay || grid.revealing || coin.balance < grid.cost) ? 'is-disabled' : ''}}"
+              hover-class="bd-press"
+              bind:tap="playGrid"
+            >{{grid.revealing ? '开奖中…' : (coin.balance < grid.cost ? '铜版不足' : (grid.canPlay ? '开一局' : '次数已用完'))}}</view>
+          </view>
+          <view class="bd-base">
+            <view class="bd-coinslot" />
+          </view>
+        </view>
+        <view class="bd-lever {{leverPulled ? 'is-pulled' : ''}} {{grid.revealing ? 'is-busy' : ''}}" bind:tap="onLeverTap">
+          <view class="bd-lever-track" />
+          <view class="bd-lever-arm" />
+          <view class="bd-lever-ball" />
+          <view class="bd-lever-pivot" />
+        </view>
+      </view>
+      <!-- 中奖线胶囊停稳后才出现：滚动中露奖会剧透（用户 2026-11-25） -->
+      <view class="bd-grid-lines" wx:if="{{grid.lines.length && !grid.revealing}}">
+        <text class="bd-grid-line" wx:for="{{grid.lines}}" wx:key="key">{{item.prizeText || item.label}}</text>
+      </view>
+      <view class="bd-grid-result">{{grid.resultText}}</view>
+    </view>
+
+    <view class="bd-cap" wx:if="{{capText}}">
+      <t-icon name="{{cap.capped ? 'error-circle' : 'info-circle'}}" size="26rpx" color="{{cap.capped ? 'var(--td-warning-color-5)' : 'var(--tt-text-3)'}}" />
+      <text class="bd-cap-text">{{capText}}</text>
+    </view>
+    <view class="bd-cap">
+      <t-icon name="info-circle" size="26rpx" color="var(--tt-text-3)" />
+      <text class="bd-cap-text">任意一行 / 一列 / 对角线连成 3 个相同奖品图案即中奖；空白图案不兑奖</text>
+    </view>
+  </block>
 
   <!-- ===== 签到（7 格压成一条横条）===== -->
   <view class="bd-strip bd-checkin" wx:if="{{checkin.enabled}}">
     <view class="bd-checkin-days">
-      <!-- 每天显示**给什么**（早先只写一个「大」字，等于没说） -->
-      <view class="bd-cl {{item.signed ? 'is-signed' : ''}} {{item.isToday ? 'is-today' : ''}} {{item.big ? 'is-big' : ''}}" wx:for="{{checkin.cells}}" wx:key="dayNo">
+      <view class="bd-cl {{item.signed ? 'is-signed' : ''}} {{item.isToday ? 'is-today' : ''}} {{item.isBig ? 'is-big' : ''}}" wx:for="{{checkin.cells}}" wx:key="dayNo">
+        <view class="bd-cl-check" wx:if="{{item.signed}}">
+          <t-icon name="check" size="18rpx" color="var(--tt-brand-deep)" />
+        </view>
         <text class="bd-cl-d">{{item.dayNo}}</text>
-        <text class="bd-cl-r">{{item.rewardDrawText}}</text>
-        <text class="bd-cl-s" wx:if="{{item.rewardStepsText}}">{{item.rewardStepsText}}</text>
+        <text class="bd-cl-r">{{item.rewardCoinText || ''}}</text>
+        <text class="bd-cl-s">铜</text>
       </view>
     </view>
-    <view class="bd-strip-btn {{(checkin.done) ? 'is-done' : ''}}" bind:tap="doCheckin">
+    <view class="bd-strip-btn {{(checkin.done) ? 'is-done' : ''}}" hover-class="bd-press" bind:tap="doCheckin">
       {{checkin.done ? '已签到' : '签到'}}
     </view>
   </view>
-  <!-- 今天签到能拿什么：写在横条下面一行，不点也能知道值不值 -->
   <view class="bd-checkin-hint" wx:if="{{checkin.enabled && checkin.todayRewardText}}">
     <text class="bd-checkin-hint-t">{{checkin.done ? '今日已领' : '今日签到可得'}} {{checkin.todayRewardText}}</text>
   </view>
 
-  <!-- ===== 任务（两个并排胶囊）===== -->
+  <!-- ===== 任务 ===== -->
   <view class="bd-tasks" id="tasks">
-    <view class="bd-task {{((video.dailyLimit > 0 && video.count >= video.dailyLimit) || !enabled || !video.drawPerWatch) ? 'is-disabled' : ''}}" bind:tap="watch">
-      <t-icon name="play-circle" size="30rpx" color="var(--tt-brand)" />
-      <text class="bd-task-t">看视频</text>
-      <text class="bd-task-v">+{{video.drawPerWatch}}次</text>
+    <view class="bd-task {{((video.dailyLimit > 0 && video.count >= video.dailyLimit) || !enabled || !video.enabled || !video.coinPerWatch) ? 'is-disabled' : ''}}" hover-class="bd-press" bind:tap="watch">
+      <view class="bd-task-medal">
+        <t-icon name="play-circle" size="36rpx" color="var(--tt-brand-deep)" />
+      </view>
+      <view class="bd-task-info">
+        <text class="bd-task-t">看视频</text>
+        <text class="bd-task-sub">看完即得</text>
+      </view>
+      <text class="bd-task-v">+{{video.coinPerWatch}} {{coinName}}</text>
     </view>
-    <button class="bd-task bd-share {{((share.dailyLimit > 0 && share.count >= share.dailyLimit) || !enabled || !share.drawPerShare) ? 'is-disabled' : ''}}"
-      open-type="share" bind:tap="onShareTap">
-      <t-icon name="usergroup-add" size="30rpx" color="var(--tt-brand)" />
-      <text class="bd-task-t">邀请</text>
-      <text class="bd-task-v">+{{share.drawPerShare}}次</text>
+    <button class="bd-task bd-share {{(!share.ready || !enabled || !share.enabled) ? 'is-disabled' : ''}}"
+      hover-class="bd-press" open-type="{{share.ready ? 'share' : ''}}" bind:tap="onShareTap">
+      <view class="bd-task-medal">
+        <t-icon name="usergroup-add" size="36rpx" color="var(--tt-brand-deep)" />
+      </view>
+      <view class="bd-task-info">
+        <text class="bd-task-t">邀请好友</text>
+        <text class="bd-task-sub">好友点开才算</text>
+      </view>
+      <text class="bd-task-v">+{{share.coinPerClick}} {{coinName}}</text>
     </button>
   </view>
 
-  <!-- ===== 今日已入账（一行文字）===== -->
+  <!-- ===== 今日已入账 ===== -->
   <view class="bd-earned">
     <text class="bd-earned-label">今日已入账</text>
     <text class="bd-earned-val">{{earnedLine}}</text>
   </view>
 
-  <!-- ===== 我的最近中奖（服务端下发 5 条，时间文案也已拼好）===== -->
+  <!-- ===== 我的最近中奖 ===== -->
   <view class="bd-recent" wx:if="{{recent.length}}">
     <view class="bd-recent-head">
-      <text class="bd-recent-title">我的最近中奖</text>
+      <text class="bd-recent-title">我的最近记录</text>
       <text class="bd-recent-count">近 {{recent.length}} 次</text>
     </view>
     <view class="bd-recent-row {{item.type === 'none' ? 'is-none' : ''}}" wx:for="{{recent}}" wx:key="index">
       <text class="bd-recent-gift">{{item.type === 'none' ? '·' : '🎁'}}</text>
+      <text class="bd-recent-game">{{item.game === 'grid' ? '九宫格' : '转盘'}}</text>
       <text class="bd-recent-prize">{{item.prizeLabel}}</text>
       <text class="bd-recent-tag" wx:if="{{item.rarity === 'rarest'}}">最稀有</text>
       <text class="bd-recent-tag is-rare" wx:elif="{{item.rarity === 'rare'}}">稀有</text>
-      <text class="bd-recent-tag is-cap" wx:if="{{item.capped}}">封顶</text>
+      <text class="bd-recent-tag is-cap" wx:if="{{item.capped || item.coinCapped}}">封顶</text>
+      <text class="bd-recent-tag is-pity" wx:if="{{item.pity}}">保底</text>
       <text class="bd-recent-time">{{item.atText}}</text>
     </view>
   </view>
 
-  <!-- ===== 规则（默认折叠：概率区间在折叠时也可见）===== -->
-  <view class="bd-rules">
+  <!-- ===== 规则 ===== -->
+  <view class="bd-rules" id="rules">
     <view class="bd-rules-head" bind:tap="toggleRules">
+      <view class="bd-rules-icon">
+        <t-icon name="info-circle" size="28rpx" color="var(--tt-brand)" />
+      </view>
       <text class="bd-rules-title">规则与概率</text>
       <text class="bd-rules-brief">{{rarityText}}</text>
       <t-icon name="{{showRules ? 'chevron-up' : 'chevron-down'}}" size="26rpx" color="var(--tt-text-3)" />
     </view>
     <view class="bd-rules-body" wx:if="{{showRules}}">
       <view class="bd-rule-row">
-        <text class="bd-rule-k">中奖概率</text>
+        <text class="bd-rule-k">转盘概率</text>
         <text class="bd-rule-v">{{oddsText || '暂未配置奖池'}}</text>
       </view>
       <view class="bd-rule-row">
+        <text class="bd-rule-k">九宫格概率</text>
+        <text class="bd-rule-v">{{gridOddsText || '暂未配置结果'}}</text>
+      </view>
+      <view class="bd-rule-row">
+        <text class="bd-rule-k">多线</text>
+        <text class="bd-rule-v">同一局每条线分别按该图案单线奖累计，最多 8 条；例：皇冠单线 1 铜版，2 线就是 2 铜版</text>
+      </view>
+      <view class="bd-rule-row">
+        <text class="bd-rule-k">保底</text>
+        <text class="bd-rule-v">连续未中到设定次数后，下一局必中低档奖（转盘：{{wheel.pity.text}}；九宫格：{{grid.pity.text}}）；中奖后重新计数</text>
+      </view>
+      <view class="bd-rule-row">
         <text class="bd-rule-k">步数上限</text>
-        <text class="bd-rule-v" wx:if="{{cap.cap > 0}}">每日最多 {{cap.cap}} 步，超出后步数奖变「谢谢参与」</text>
+        <text class="bd-rule-v" wx:if="{{cap.cap > 0}}">每日最多 {{cap.cap}} 步，超出后步数奖会降级</text>
         <text class="bd-rule-v" wx:else>当前未设上限</text>
       </view>
       <view class="bd-rule-row">
-        <text class="bd-rule-k">连续签到</text>
-        <text class="bd-rule-v">第 3、7 天额外发步数，断签从第 1 天重来</text>
+        <text class="bd-rule-k">每日铜版</text>
+        <text class="bd-rule-v" wx:if="{{coin.dailyGameCap > 0}}">游戏产出最多 {{coin.dailyGameCap}} {{coinName}}/天；任务与分享另有次数上限</text>
+        <text class="bd-rule-v" wx:else>游戏产出当前不限</text>
+      </view>
+      <view class="bd-rule-row">
+        <text class="bd-rule-k">邀请规则</text>
+        <text class="bd-rule-v">好友点开分享卡并登录后，你才 +{{share.coinPerClick}} {{coinName}}；自己点、重复点、每日超过 {{share.dailyLimit || '不限'}} 次都不计</text>
       </view>
       <view class="bd-rule-row">
         <text class="bd-rule-k">奖励去向</text>
-        <text class="bd-rule-v">写入当日运动记录，排行榜 / 跑分 / 徽章同步生效</text>
+        <text class="bd-rule-v">步数写入当日运动记录；{{coinName}}只用于本活动，不可提现</text>
       </view>
     </view>
   </view>
 
-  <!-- ===== 中奖弹层（三档动效）===== -->
-  <!-- 点遮罩可收起（卡片内部 catch:tap 拦住，不会误关） -->
-  <view class="bd-fx bd-fx-{{fxRarity}} {{fx ? 'is-on' : ''}}" wx:if="{{fx}}" bind:tap="closeFx">
-    <!-- 光晕（稀有及以上） -->
+  <!-- ===== 中奖弹层 ===== -->
+  <view class="bd-fx bd-fx-{{fxRarity}} {{fxShake ? 'bd-fx-shake-' + fxShake : ''}} {{fx ? 'is-on' : ''}}" wx:if="{{fx}}" bind:tap="closeFx">
+    <view class="bd-rays" wx:if="{{fx === 'rarest'}}">
+      <view class="bd-ray" wx:for="{{fxRays}}" wx:key="k" style="transform: rotate({{item.deg}}deg);"></view>
+    </view>
     <view class="bd-fx-halo" wx:if="{{fx === 'rare' || fx === 'rarest'}}"></view>
-    <!-- 彩带（只有最稀有） -->
-    <block wx:if="{{fx === 'rarest'}}">
-      <view class="bd-confetti" wx:for="{{confetti}}" wx:key="k"
-        style="left: {{item.left}}%; animation-delay: {{item.delay}}ms; animation-duration: {{item.dur}}ms;"></view>
-    </block>
+    <view class="bd-fx-flash" wx:if="{{fxShake}}" />
+    <view class="bd-ring bd-ring-1" wx:if="{{fxShake}}" />
+    <view class="bd-ring bd-ring-2" wx:if="{{fxShake === 'md' || fxShake === 'lg'}}" />
+    <view class="bd-ring bd-ring-3" wx:if="{{fxShake === 'lg'}}" />
+    <view class="bd-coin" wx:for="{{coinRain}}" wx:key="k"
+      style="left: {{item.left}}%; width: {{item.size}}rpx; height: {{item.size}}rpx; animation-delay: {{item.delay}}ms; animation-duration: {{item.dur}}ms;">
+      <view class="bd-coin-face">
+        <image class="bd-coin-img" wx:if="{{coin.iconUrl}}" src="{{coin.iconUrl}}" mode="aspectFit" binderror="onCoinIconError" />
+        <text class="bd-coin-text" wx:else>铜</text>
+      </view>
+    </view>
     <view class="bd-card {{fx === 'rarest' ? 'is-gold' : ''}}" catch:tap="noop">
+      <view class="bd-card-ribbon" wx:if="{{fxRarity !== 'normal'}}">{{fxRarity === 'rarest' ? '稀有大奖' : '恭喜中奖'}}</view>
       <view class="bd-card-icon">
         <t-icon name="{{lastPrize.icon}}" size="56rpx" color="{{lastPrize.type === 'none' ? 'var(--tt-text-3)' : '#fff'}}" />
       </view>
       <text class="bd-card-title">{{lastPrize.text}}</text>
-      <text class="bd-card-sub" wx:if="{{lastPrize.type === 'steps'}}">已计入今日运动记录</text>
-      <text class="bd-card-sub" wx:elif="{{lastPrize.type === 'draw'}}">次数已回补，可以接着抽</text>
-      <text class="bd-card-sub" wx:elif="{{lastPrize.capped}}">今日步数额度已用完</text>
+      <view class="bd-card-amount" wx:if="{{fxAmountText}}">
+        <text class="bd-card-amount-num num-font">{{fxAmountText}}</text>
+        <text class="bd-card-amount-unit" wx:if="{{fxAmountUnit}}">{{fxAmountUnit}}</text>
+      </view>
+      <text class="bd-card-sub" wx:if="{{lastPrize.type === 'coin'}}">已到账 {{coinName}} 余额</text>
+      <text class="bd-card-sub" wx:elif="{{lastPrize.type === 'steps'}}">已计入今日运动记录</text>
+      <text class="bd-card-sub" wx:elif="{{lastPrize.type === 'mixed'}}">铜版与步数已分别入账</text>
+      <text class="bd-card-sub" wx:elif="{{lastPrize.type === 'draw'}}">本局消耗已返还，可以接着抽</text>
+      <text class="bd-card-sub" wx:elif="{{lastPrize.capped || lastPrize.coinCapped}}">今日奖励额度已用完</text>
       <text class="bd-card-sub" wx:else>再试一次运气</text>
-      <view class="bd-card-btn" bind:tap="draw" wx:if="{{remaining > 0 && lastPrize.type !== 'none'}}">再抽一次</view>
-      <view class="bd-card-close" catch:tap="closeFx">{{remaining > 0 ? '收下' : '知道了'}}</view>
+      <text class="bd-card-tag" wx:if="{{lastPrize.pity}}">保底命中</text>
+      <view class="bd-card-btn" bind:tap="draw" wx:if="{{lastPrize.game !== 'grid' && wheel.remaining > 0 && lastPrize.type !== 'none'}}">再抽一次</view>
+      <view class="bd-card-btn" bind:tap="playGrid" wx:if="{{lastPrize.game === 'grid' && grid.canPlay && lastPrize.type !== 'none'}}">再开一局</view>
+      <view class="bd-card-close" catch:tap="closeFx">{{(lastPrize.game === 'grid' ? grid.canPlay : wheel.remaining > 0) ? '收下' : '知道了'}}</view>
     </view>
+    <!-- 彩带/星光飞在卡片上方（pointer-events:none，不挡点遮罩关闭）；数组只在 rarest/rare 非空 -->
+    <view
+      class="bd-confetti bd-confetti-d-{{item.dir}} bd-confetti-t-{{item.tone}} bd-confetti-s-{{item.shape}}"
+      wx:for="{{confetti}}"
+      wx:key="k"
+      style="animation-delay: {{item.delay}}ms; animation-duration: {{item.dur}}ms;"
+    ></view>
+    <text
+      class="bd-spark bd-spark-t-{{item.tone}}"
+      wx:for="{{fxSparks}}"
+      wx:key="k"
+      style="left: {{item.x}}%; top: {{item.y}}%; animation-delay: {{item.delay}}ms; animation-duration: {{item.dur}}ms;"
+    >{{item.ch}}</text>
   </view>
 </view>

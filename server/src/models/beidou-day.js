@@ -43,16 +43,48 @@ const beidouDaySchema = new mongoose.Schema(
       capped: { type: Boolean, default: false }, // 今日是否已触及步数封顶（前端据此提示）
     },
 
+    /**
+     * ===== 北斗运动 3.0：铜版日计数 =====
+     * 余额在 `beidou_wallet`（跨天），这里只记**当日**的产出/消耗，供封顶与页面展示。
+     * `gameEarned` 是 `dailyGameCoinCap` 的唯一判定依据；refunded 是「再来一次」返还，
+     * 不计入 gameEarned（否则返还也会把当日额度吃掉）。
+     */
+    coin: {
+      earned: { type: Number, default: 0 },
+      spent: { type: Number, default: 0 },
+      fromVideo: { type: Number, default: 0 },
+      fromCheckin: { type: Number, default: 0 },
+      fromShare: { type: Number, default: 0 },
+      fromWheel: { type: Number, default: 0 },
+      fromGrid: { type: Number, default: 0 },
+      gameEarned: { type: Number, default: 0 },
+      refunded: { type: Number, default: 0 },
+      gameCapHit: { type: Number, default: 0 }, // 今日被游戏铜版上限降级/部分扣减的次数
+    },
+
+    // 每日局数（0 = 不限；原子占用，防止并发超玩）
+    wheel: {
+      plays: { type: Number, default: 0 },
+    },
+    grid: {
+      plays: { type: Number, default: 0 },
+    },
+
     // 看视频：watchIds 是幂等凭据（同 services/steps.js 的 $slice:-50 写法）
     video: {
       count: { type: Number, default: 0 },
       watchIds: { type: [String], default: [] },
+      coin: { type: Number, default: 0 },
     },
 
-    // 分享：lastAt 用于服务端最小间隔（纯技术防连点，不是次数上限）
+    // 分享：lastAt 保留旧字段；clicks/rewarded/coin 是 v3 好友点击归因计数
     share: {
       count: { type: Number, default: 0 },
       lastAt: { type: Date, default: null },
+      clicks: { type: Number, default: 0 },
+      rewarded: { type: Number, default: 0 },
+      coin: { type: Number, default: 0 },
+      lastClickAt: { type: Date, default: null },
     },
 
     // 签到：streak = 当日签到**之后**的连续天数（1 起）
@@ -61,6 +93,7 @@ const beidouDaySchema = new mongoose.Schema(
       at: { type: Date, default: null },
       streak: { type: Number, default: 0 },
       award: {
+        coin: { type: Number, default: 0 },
         draw: { type: Number, default: 0 },
         steps: { type: Number, default: 0 },
       },

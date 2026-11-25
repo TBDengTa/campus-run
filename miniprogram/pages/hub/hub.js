@@ -1,7 +1,9 @@
 const auth = require('../../utils/request');
+const screenBehavior = require('../../behaviors/screen');
 
-// 管理中枢：把管理端全部入口按「分类」列出来（教师端导航「管理」指向本页，不再直接跳用户管理）
-// 每项按权限过滤：perms 为 '*'（超级管理员）或含该项 perm 才显示
+// 工作台（原管理中枢，用户 2026-11-23 多身份导航整合）：把管理端 / 班级 / 学生会全部入口
+// 按「分类」列出来，底栏唯一动态项「工作台」指向本页（学生管理员 / 班委 / 学生会成员 / 教师共用）。
+// 每项按权限过滤：perms 为 '*'（超级管理员）或含该项 perm 才显示；身份组走 only 判定。
 //
 // 命名口径（用户明确要求，全仓库统一；2026-10-19 用户澄清后以此为准）：
 //   · 「我的班级」= 班主任 / 班委管**自己名下的班**的**入口名**，指向 /packageAdmin/class/class；
@@ -18,16 +20,17 @@ const auth = require('../../utils/request');
 //              'unionMember' = 仅学生会成员 / 学生会管理权限（面向学生会域接口的项）。
 //   为什么用「身份」而不是权限：班级域（/api/class/*）与学生会域（/api/union/*）走的是成员资格校验，
 //   不是 requirePermission（见 AGENTS.md），班主任 / 班委 / 学生会成员本来就没有管理权限。
-// 分类与显隐判定统一在 utils/nav-groups.js（管理中枢与首页「快捷操作」共用同一份数据，
-// 用户要求两处分类一致 —— 只有单一数据源才能真正不漂移）
+// 分类与显隐判定统一在 utils/nav-groups.js（工作台是全部管理/身份入口的**唯一**平铺面；
+// 首页只留「身份与待办」计数卡，行内直跳或进本页 —— 2026-11-23 首页重设计后的职责分工）
 const { visibleGroups, navCtx } = require('../../utils/nav-groups');
 
 const CLASS_FOLD_LIMIT = 3; // 「我的班级」chips 折叠时展示的班数（多于 3 个班默认折叠）
 
-// 交互差异（用户明确要求，别改）：
-//   管理中枢 = **分类 + 按钮平铺**，点按钮直接进页面；
-//   首页「快捷操作」= 宫格按钮只显示分类名，点分类弹浮层列条目（见 pages/home + behaviors/nav-sheet）。
+// 交互：iOS 设置式分组列表，点行直接进页面（不弹浮层）。
+// 数据概况已按用户 2026-11-24 要求移出工作台（管理员首页保留），本页只做入口平铺。
 Page({
+  behaviors: [screenBehavior],
+
   data: {
     loading: true,
     groups: [],
@@ -35,6 +38,8 @@ Page({
     roleText: '',
     classText: '',
     hasAny: false,
+    // 身份胶囊（只展示不切换）：学生/教师 + 班委/班主任 + 学生会·部门 + 管理员
+    identities: [],
     // ===== 我的班级（班主任多班：折叠展示 + 进入前先选班）=====
     classes: [],
     classRole: '', // homeroom | officer
@@ -100,10 +105,27 @@ Page({
         };
       });
 
+      // 身份胶囊行：基础角色 + 班级身份（/api/class/mine 服务端确认）+ 学生会（部门名取
+      // me.unionRoles[].deptName，与水印相机同口径，前端不自算）+ 管理身份（effectivePermissions）。
+      const identities = [
+        { icon: 'user-circle', label: me && me.role === 'teacher' ? '教师' : '学生' },
+      ];
+      if (classRole) {
+        identities.push({ icon: 'usergroup', label: classRole === 'homeroom' ? '班主任' : '班委' });
+      }
+      if (me && me.isUnionMember) {
+        const dept = ((me.unionRoles || []).find((r) => r && r.deptName) || {}).deptName;
+        identities.push({ icon: 'app', label: dept ? `学生会 · ${dept}` : '学生会' });
+      }
+      if (ctx.isAdmin) {
+        identities.push({ icon: 'secured', label: isSuper ? '超级管理员' : '管理员' });
+      }
+
       this.setData({
         loading: false,
         groups,
         hasAny: groups.length > 0,
+        identities,
         name: (me && (me.realName || me.nickname)) || '',
         roleText: me && me.role === 'teacher' ? '教师' : '学生',
         classText: (me && me.className) || '',
@@ -119,7 +141,7 @@ Page({
     }
   },
 
-  // 分类下的按钮：点按钮**直接进页面**（管理中枢是平铺交互，不弹浮层 —— 用户明确要求）。
+  // 分组下的行：点行**直接进页面**（工作台是平铺交互，不弹浮层 —— 用户明确要求）。
   // 唯一例外：「我的班级」对多班班主任要先选班，所以走 openClassEntry。
   // 注意：这里必须按**条目 key** 特判，而条目 key 由 utils/nav-groups.js 定义（当前是 'classMy'）。
   // 曾经踩过两次的坑：① 把 key 从 class 改成 classManage 却仍判 'class'；② 拆分「我的班级 / 班级管理」时

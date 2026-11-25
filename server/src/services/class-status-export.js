@@ -1047,4 +1047,16 @@ module.exports = {
   SUMMARY_ROW_LIMIT,
   CLASS_SHEET_LIMIT,
   ATTENDANCE_ROW_LIMIT,
+  // 版式工具：classes/class-report-export.js（班超日报/周报/月报）复用同一套配色与排版，
+  // 不许那边再写一份「品牌橙 + 微软雅黑」的字面量（同一样式两处维护必然漂移）。
+  XLSX_COLORS,
+  XLSX_BORDER,
+  XLSX_FONT,
+  humanDay,
+  styleSheetTitle,
+  styleSheetSubtitle,
+  styleHeaderRow,
+  styleSectionTitle,
+  styleDataRows,
+  styleNoteBlock,
 };

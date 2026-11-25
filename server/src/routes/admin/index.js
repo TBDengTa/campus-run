@@ -38,7 +38,7 @@ router.use('/class', requirePermission('class.view'), require('./class-profile')
 router.use('/files', requirePermission('file.view'), require('./files'));
 // 上传：广告素材/文件管理任一即可；content.manage 是为了徽章图标（挂在 /content 下、只需徽章管理权限），
 // 具体能传哪个「用途」由 routes/admin/upload.js 的 CATEGORY_PERMS 逐项校验
-router.use('/upload', requireAnyPermission(['ad.manage', 'file.manage', 'content.manage']), require('./upload'));
+router.use('/upload', requireAnyPermission(['ad.manage', 'file.manage', 'content.manage', 'config.manage']), require('./upload'));
 
 // 权限组管理（增删改，需 permission.manage）
 router.use('/permission-groups', requirePermission('permission.manage'), require('./permission-groups'));

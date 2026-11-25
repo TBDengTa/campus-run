@@ -197,6 +197,18 @@ function createApp() {
     })
   );
 
+  // 北斗内置图案图标（皇冠/红星/铜币，用户 2026-11-25「上传不上去请直接添加」）：
+  // 随仓库部署的静态资源，启动 seed 只补空 iconUrl；内容随版本可能换 → 短缓存不 immutable。
+  app.use(
+    '/beidou',
+    express.static(path.join(__dirname, '../public/beidou'), {
+      maxAge: '1h',
+      setHeaders(res) {
+        res.set('X-Content-Type-Options', 'nosniff');
+      },
+    })
+  );
+
   // 小程序 API 一律不缓存（2026-11-09 EO 流量排查补的防护，改之前先读这段）：
   // 之前 /api/* 20 组路由**没有任何 Cache-Control**，而 console 域早就有了 no-store ——
   // 也就是说「会不会被 EO/CDN 边缘缓存」完全听天由命：EO 若按默认/扩展名规则缓存了

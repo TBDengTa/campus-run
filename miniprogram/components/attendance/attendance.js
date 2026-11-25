@@ -458,6 +458,8 @@ Component({
     },
     // 父驱动时用于文案的周期键（day|week|month），只影响「今日 10月19日」这类前缀
     rangePeriod: { type: String, value: 'day' },
+    // 嵌入父级聚合卡时去掉自带卡片面层与周期行，由父页统一排版（默认 false，独立用法不变）
+    embedded: { type: Boolean, value: false },
   },
 
   data: {

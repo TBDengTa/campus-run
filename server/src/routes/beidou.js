@@ -85,7 +85,7 @@ router.post(
     if (!guardWrite(req, res)) return;
     const result = await beidouSvc.drawRound(req.user, { drawId: (req.body || {}).drawId });
     if (!result.success) {
-      // 业务性失败（次数不足 / 太频繁）统一 200 + success:false，
+      // 业务性失败（余额不足 / 太频繁）统一 200 + success:false，
       // 让客户端能展示可读提示；只有鉴权与限制才用 4xx
       return ok(res, result);
     }
@@ -100,7 +100,24 @@ router.post(
   })
 );
 
-// 看视频完成上报：{ watchId } → 加抽奖次数（**不再发步数**，这是 2.0 的核心口径变更）
+// 九宫格连线：{ playId } → 服务端出盘/定线/发奖，前端只翻牌
+router.post(
+  '/grid/play',
+  wrap(async (req, res) => {
+    if (!guardWrite(req, res)) return;
+    const result = await beidouSvc.playGrid(req.user, { playId: (req.body || {}).playId });
+    if (!result.success) return ok(res, result);
+    let newBadges = [];
+    if (result.prize && result.prize.type === 'steps') {
+      const refreshed = await stepsSvc.postSyncRefresh(req.user, [todayKey()]);
+      newBadges = refreshed.newBadges || [];
+    }
+    const earned = await rewardVideoSvc.earnedToday(req.user.openid, todayKey());
+    ok(res, { ...result, earned, newBadges });
+  })
+);
+
+// 看视频完成上报：{ watchId } → 发 1 铜版（**不发次数/步数**）
 router.post(
   '/video/report',
   wrap(async (req, res) => {
@@ -110,7 +127,29 @@ router.post(
   })
 );
 
-// 分享上报：{ shareId } → 加抽奖次数
+// 分享令牌：页面加载时预生成（onShareAppMessage 不能异步等网络）
+router.post(
+  '/share/intent',
+  wrap(async (req, res) => {
+    if (!guardWrite(req, res)) return;
+    const cfg = await beidouSvc.loadConfig();
+    if (!cfg.enabled || !cfg.share.enabled) return ok(res, { success: false, message: '分享暂未开放' });
+    const data = await beidouSvc.ensureShareToken(req.user, cfg);
+    ok(res, { success: true, ...data });
+  })
+);
+
+// 好友点开分享卡后上报：只有另一个已登录用户点开，分享者才拿铜版
+router.post(
+  '/share/click',
+  wrap(async (req, res) => {
+    if (!guardWrite(req, res)) return;
+    const result = await beidouSvc.reportShareClick(req.user, { token: (req.body || {}).token });
+    ok(res, result);
+  })
+);
+
+// 旧分享上报：保留路径，但点一下不再发奖（必须好友点开）
 router.post(
   '/share/report',
   wrap(async (req, res) => {
@@ -120,7 +159,7 @@ router.post(
   })
 );
 
-// 签到：连续 7 天阶梯（第 3/7 天直发步数，受每日封顶约束）
+// 签到：连续 7 天阶梯（每天 +1 铜版；不再发次数/步数）
 router.post(
   '/checkin',
   wrap(async (req, res) => {

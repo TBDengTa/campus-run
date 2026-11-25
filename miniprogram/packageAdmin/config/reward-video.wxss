@@ -1,5 +1,27 @@
 @import "config.wxss";
 
+/* 来源标签 / 阴影令牌：铜版流水按来源着色，蓝紫区分两个任务来源，与品牌橙的游戏产出拉开。
+   亮色一套，暗色在下方 media 重写（本页令牌合法携带 hex，check-dark-mode 裸色检查只针对 reward.wxss）。 */
+page {
+  --rv-src-video-fg: #1a6fd4;
+  --rv-src-video-bg: #e8f1fd;
+  --rv-src-share-fg: #7b4bd4;
+  --rv-src-share-bg: #f0e9fd;
+  --rv-card-shadow: 0 4rpx 14rpx rgba(0, 0, 0, 0.04);
+  --rv-tab-glow: 0 6rpx 14rpx rgba(255, 107, 0, 0.24);
+}
+
+@media (prefers-color-scheme: dark) {
+  page {
+    --rv-src-video-fg: #7db4f5;
+    --rv-src-video-bg: #16233a;
+    --rv-src-share-fg: #b79bf0;
+    --rv-src-share-bg: #241a3a;
+    --rv-card-shadow: 0 4rpx 14rpx rgba(0, 0, 0, 0.4);
+    --rv-tab-glow: 0 6rpx 14rpx rgba(240, 146, 72, 0.3);
+  }
+}
+
 /* 北斗运动配置页私有：两行标签（标题 + 说明）与底部说明块 */
 .rv-flabel {
   flex-shrink: 0;
@@ -54,12 +76,12 @@
 
 .rv-prize-idx {
   flex-shrink: 0;
-  width: 40rpx;
-  height: 40rpx;
-  line-height: 40rpx;
+  width: 36rpx;
+  height: 36rpx;
+  line-height: 36rpx;
   text-align: center;
   border-radius: 50%;
-  font-size: 22rpx;
+  font-size: 20rpx;
   font-weight: 700;
   color: var(--tt-brand-deep);
   background: var(--tt-brand-soft);
@@ -75,6 +97,8 @@
 /* 归一后概率：颜色强调，因为这是要与用户端公示对齐的数字 */
 .rv-prize-pct {
   flex-shrink: 0;
+  min-width: 96rpx;
+  text-align: right;
   font-size: 24rpx;
   font-weight: 700;
   color: var(--tt-brand);
@@ -89,12 +113,19 @@
   justify-content: center;
 }
 
+/* 2×2 紧凑网格：行1 两个 picker（类型/档位），行2 数量+权重。
+   用 flex-wrap + 半宽（与 bd-grid2 同手法，不依赖 display:grid 的机型兼容）。 */
 .rv-prize-body {
   display: flex;
-  align-items: center;
-  gap: 14rpx;
-  margin-top: 14rpx;
-  padding-left: 54rpx;
+  flex-wrap: wrap;
+  gap: 10rpx;
+  margin-top: 12rpx;
+}
+
+.rv-prize-body > .rv-prize-picker,
+.rv-prize-body > .rv-prize-num {
+  width: calc(50% - 5rpx);
+  flex: none;
 }
 
 .rv-prize-picker {
@@ -104,7 +135,10 @@
 .rv-prize-pick {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 6rpx;
+  width: 100%;
+  box-sizing: border-box;
   padding: 8rpx 18rpx;
   border-radius: 12rpx;
   font-size: 23rpx;
@@ -134,6 +168,11 @@
   font-size: 24rpx;
   color: var(--tt-text-1);
   background: var(--td-bg-color-component);
+}
+
+.rv-prize-input.is-readonly {
+  color: var(--tt-text-2);
+  background: transparent;
 }
 
 .rv-add {
@@ -189,12 +228,12 @@
   display: flex;
   align-items: center;
   gap: 12rpx;
-  padding: 10rpx 0;
+  padding: 6rpx 0;
 }
 
 .rv-filter-label {
   flex-shrink: 0;
-  width: 72rpx;
+  width: 60rpx;
   font-size: 22rpx;
   color: var(--tt-text-3);
 }
@@ -233,11 +272,11 @@
   flex: 1;
   display: flex;
   flex-wrap: wrap;
-  gap: 10rpx;
+  gap: 8rpx;
 }
 
 .rv-chip {
-  padding: 8rpx 18rpx;
+  padding: 6rpx 14rpx;
   border-radius: 999rpx;
   font-size: 21rpx;
   color: var(--tt-text-2);
@@ -263,12 +302,26 @@
   color: var(--tt-text-3);
 }
 
+/* 流水行两行版式：top（姓名+学号班级 左 / 奖品 右），meta（来源/封顶/消耗/时间 自动换行） */
 .rv-draw {
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+  padding: 16rpx 0;
+  border-top: 2rpx solid var(--tt-line);
+}
+
+.rv-draw-top {
   display: flex;
   align-items: center;
   gap: 12rpx;
-  padding: 18rpx 0;
-  border-top: 2rpx solid var(--tt-line);
+}
+
+.rv-draw-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8rpx;
 }
 
 .rv-draw-main {
@@ -290,14 +343,6 @@
   color: var(--tt-text-3);
 }
 
-/* 来源 + 奖品 + 封顶 一组，靠右 */
-.rv-draw-tags {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 8rpx;
-}
-
 /* 来源标签：不同来源不同底色，一眼分得出 */
 .rv-draw-src {
   padding: 2rpx 12rpx;
@@ -307,13 +352,13 @@
 }
 
 .rv-src-video {
-  color: #1a6fd4;
-  background: #e8f1fd;
+  color: var(--rv-src-video-fg);
+  background: var(--rv-src-video-bg);
 }
 
 .rv-src-share {
-  color: #7b4bd4;
-  background: #f0e9fd;
+  color: var(--rv-src-share-fg);
+  background: var(--rv-src-share-bg);
 }
 
 .rv-src-checkin {
@@ -333,8 +378,8 @@
 
 .rv-draw-prize {
   flex-shrink: 0;
-  font-size: 24rpx;
-  font-weight: 600;
+  font-size: 26rpx;
+  font-weight: 700;
   color: var(--tt-brand-deep);
 }
 
@@ -349,6 +394,7 @@
 
 .rv-draw-date {
   flex-shrink: 0;
+  margin-left: auto;
   font-size: 20rpx;
   color: var(--tt-text-3);
 }
@@ -365,4 +411,520 @@
   text-align: center;
   font-size: 24rpx;
   color: var(--tt-text-3);
+}
+
+/* ===== 北斗运动 v3：概览 / Tab / 九宫格符号与结果 / 经济概览 ===== */
+/* 用户 2026-11-22「紧凑排版」：配置页字段密度整体收紧，Tab 吸顶，长页少滚动 */
+.cfg-page .cfg-card {
+  padding: 14rpx 18rpx;
+  margin-bottom: 12rpx;
+}
+
+.cfg-page .cfg-fitem {
+  padding: 10rpx 0;
+  gap: 10rpx;
+  min-height: 58rpx;
+}
+
+.cfg-page .rv-flabel {
+  width: 220rpx;
+}
+
+.cfg-page .cfg-switch-label {
+  font-size: 24rpx;
+}
+
+.cfg-page .cfg-fdesc {
+  font-size: 18rpx;
+  line-height: 1.3;
+}
+
+.cfg-page .cfg-input {
+  height: 54rpx;
+  padding: 0 12rpx;
+  font-size: 23rpx;
+}
+
+.cfg-page .rv-prize,
+.cfg-page .rv-sym {
+  padding: 14rpx 0;
+}
+
+.cfg-page .rv-prize-body,
+.cfg-page .rv-sym-body {
+  gap: 8rpx;
+  margin-top: 8rpx;
+}
+
+.cfg-page .rv-prize-input,
+.cfg-page .rv-sym-key {
+  height: 50rpx;
+}
+
+.cfg-page .rv-prize-pick {
+  min-height: 50rpx;
+}
+
+.cfg-page .rv-fnote {
+  margin-top: 12rpx;
+  padding-top: 12rpx;
+  font-size: 19rpx;
+  line-height: 1.45;
+}
+
+.cfg-page .tt-section {
+  margin: 14rpx 0 8rpx;
+}
+
+.cfg-page .rv-filter {
+  padding: 10rpx 0;
+}
+
+.cfg-page .rv-filter-row {
+  margin-bottom: 8rpx;
+}
+
+.cfg-page .rv-ms {
+  padding: 8rpx 0;
+}
+
+.cfg-page .bd-overview {
+  padding: 12rpx 16rpx;
+}
+
+.cfg-page .bd-ov-num {
+  font-size: 30rpx;
+}
+
+.cfg-page .bd-warn-text {
+  font-size: 19rpx;
+}
+
+.cfg-page .bd-warn {
+  padding: 8rpx 12rpx;
+  margin-top: 8rpx;
+}
+
+/* 两列紧凑字段区 */
+.bd-grid2 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 10rpx 16rpx;
+}
+
+.bd-grid2 > .cfg-fitem {
+  width: calc(50% - 8rpx);
+  flex-direction: column;
+  align-items: stretch;
+  border-top: 2rpx solid var(--tt-line);
+  padding: 10rpx 0;
+}
+
+.bd-grid2 > .cfg-fitem:first-child,
+.bd-grid2 > .cfg-fitem:nth-child(2) {
+  border-top: 0;
+}
+
+.bd-grid2 > .cfg-fitem-switch {
+  flex-direction: row;
+  align-items: center;
+}
+
+.bd-grid2 .rv-flabel {
+  width: auto;
+}
+
+/* 列向单元里的输入框：基线 .cfg-input 的 flex:0 0 260rpx 是给「行内定宽」用的，
+   在列向 flex 里会变成 260rpx 高度（截图里那种巨型空框）。必须 flex:none 回到按高度设定。 */
+.bd-grid2 .cfg-input {
+  width: 100%;
+  flex: none;
+  height: 54rpx;
+  box-sizing: border-box;
+  text-align: left;
+}
+
+/* 保底选择器 */
+.bd-select {
+  min-width: 0;
+}
+
+.bd-select-val {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8rpx;
+  min-height: 54rpx;
+  padding: 0 14rpx;
+  border-radius: 10rpx;
+  background: var(--tt-bg-page);
+  font-size: 22rpx;
+  color: var(--tt-text-1);
+}
+
+.bd-select-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 紧凑说明块（双线/保底口径） */
+.bd-help {
+  margin-top: 12rpx;
+  padding: 12rpx 16rpx;
+  border-radius: 12rpx;
+  background: var(--tt-bg-page);
+}
+
+.bd-help-t {
+  display: block;
+  font-size: 22rpx;
+  font-weight: 700;
+  color: var(--tt-brand-deep);
+  margin-top: 6rpx;
+}
+
+.bd-help-t:first-child {
+  margin-top: 0;
+}
+
+.bd-help-v {
+  display: block;
+  margin-top: 2rpx;
+  font-size: 20rpx;
+  line-height: 1.45;
+  color: var(--tt-text-3);
+}
+
+.bd-overview {
+  background: var(--tt-brand-soft);
+}
+
+/* 吸顶托底：实底 + 底边线，避免长页滚动时内容从透明胶囊后面穿过去 */
+.bd-tabs-bar {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  margin: 12rpx 0;
+  padding: 8rpx 0;
+  background: var(--tt-bg-page);
+  border-bottom: 2rpx solid var(--tt-line);
+}
+
+.bd-ov-row {
+  display: flex;
+  gap: 12rpx;
+}
+
+.bd-ov-item {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6rpx;
+  padding: 10rpx 0;
+}
+
+.bd-ov-num {
+  font-size: 34rpx;
+  font-weight: 800;
+  color: var(--tt-brand-deep);
+}
+
+.bd-ov-label {
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+}
+
+/* 概览长句拆成 2×2 四小格（数字 + 标签 + 分隔线），比一整行密排文字易扫读 */
+.bd-ov-facts {
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: 10rpx;
+  padding-top: 12rpx;
+  border-top: 2rpx solid var(--tt-line);
+}
+
+.bd-ov-fact {
+  width: 50%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4rpx;
+  padding: 8rpx 0;
+}
+
+.bd-ov-fact:nth-child(2n) {
+  border-left: 2rpx solid var(--tt-line);
+}
+
+.bd-ov-fact:nth-child(n+3) {
+  border-top: 2rpx solid var(--tt-line);
+}
+
+.bd-ov-fact-num {
+  font-size: 30rpx;
+  font-weight: 800;
+  color: var(--tt-brand-deep);
+}
+
+.bd-ov-fact-label {
+  font-size: 18rpx;
+  color: var(--tt-text-3);
+}
+
+.bd-ov-loading {
+  margin-top: 8rpx;
+  font-size: 20rpx;
+  color: var(--tt-brand);
+}
+
+.bd-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 8rpx;
+  margin-top: 10rpx;
+  padding: 12rpx 16rpx;
+  border-radius: 12rpx;
+  background: var(--td-warning-color-1);
+}
+
+.bd-warn-text {
+  flex: 1;
+  font-size: 21rpx;
+  line-height: 1.45;
+  color: var(--td-warning-color-7);
+}
+
+.bd-tabs {
+  display: flex;
+  gap: 10rpx;
+  margin: 0;
+  padding: 8rpx;
+  border-radius: 999rpx;
+  background: var(--tt-card);
+  box-shadow: var(--rv-card-shadow);
+}
+
+.bd-tab {
+  flex: 1;
+  min-height: 62rpx;
+  line-height: 62rpx;
+  text-align: center;
+  border-radius: 999rpx;
+  font-size: 24rpx;
+  color: var(--tt-text-2);
+}
+
+.bd-tab.is-on {
+  color: #fff;
+  font-weight: 700;
+  background: var(--tt-brand);
+  box-shadow: var(--rv-tab-glow);
+}
+
+/* 九宫格符号行 */
+.rv-sym {
+  padding: 20rpx 0;
+  border-top: 2rpx solid var(--tt-line);
+}
+
+.rv-sym-head {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.rv-sym-icon {
+  flex-shrink: 0;
+  width: 72rpx;
+  height: 54rpx;
+  text-align: center;
+  font-size: 32rpx;
+  border-radius: 10rpx;
+  background: var(--tt-bg-page);
+}
+
+.rv-sym-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 26rpx;
+  color: var(--tt-text-1);
+}
+
+.rv-sym-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10rpx;
+  margin-top: 12rpx;
+}
+
+.rv-sym-body > .rv-prize-picker,
+.rv-sym-body > .rv-prize-num {
+  width: calc(50% - 5rpx);
+  flex: none;
+}
+
+.rv-sym-key {
+  width: 180rpx;
+  height: 54rpx;
+  padding: 0 12rpx;
+  font-size: 22rpx;
+  border-radius: 10rpx;
+  background: var(--tt-bg-page);
+  color: var(--tt-text-2);
+}
+
+/* 经济概览 */
+.bd-eco-row {
+  display: flex;
+  gap: 12rpx;
+}
+
+.bd-eco-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6rpx;
+}
+
+.bd-eco-num {
+  font-size: 34rpx;
+  font-weight: 800;
+  color: var(--tt-brand-deep);
+}
+
+.bd-eco-label {
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+}
+
+.bd-eco-games {
+  margin-top: 14rpx;
+  padding-top: 12rpx;
+  border-top: 2rpx solid var(--tt-line);
+}
+
+.bd-eco-game {
+  display: flex;
+  flex-direction: column;
+  gap: 4rpx;
+  padding: 8rpx 0;
+}
+
+.bd-eco-game-t {
+  font-size: 24rpx;
+  font-weight: 700;
+  color: var(--tt-text-1);
+}
+
+/* 每玩法长句拆成五小格（局数/消耗/产出/返奖率/保底），竖分隔线对齐 */
+.bd-eco-facts {
+  display: flex;
+  margin-top: 6rpx;
+}
+
+.bd-eco-fact {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4rpx;
+  padding: 6rpx 0;
+  border-left: 2rpx solid var(--tt-line);
+}
+
+.bd-eco-fact:first-child {
+  border-left: 0;
+}
+
+.bd-eco-fact-num {
+  font-size: 26rpx;
+  font-weight: 800;
+  color: var(--tt-brand-deep);
+}
+
+.bd-eco-fact-label {
+  font-size: 18rpx;
+  color: var(--tt-text-3);
+}
+
+.rv-draw-cost {
+  font-size: 20rpx;
+  color: var(--tt-text-3);
+}
+
+/* v4 图案图标上传 / 紧凑图案行 */
+.rv-sym-preview {
+  flex-shrink: 0;
+  width: 64rpx;
+  height: 64rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12rpx;
+  background: var(--tt-bg-page);
+  overflow: hidden;
+}
+
+.rv-sym-img {
+  width: 100%;
+  height: 100%;
+}
+
+.rv-sym-emoji {
+  font-size: 36rpx;
+  line-height: 1;
+}
+
+.rv-sym-ops {
+  flex-shrink: 0;
+  display: flex;
+  gap: 8rpx;
+}
+
+.rv-mini-btn {
+  min-width: 76rpx;
+  height: 48rpx;
+  line-height: 48rpx;
+  padding: 0 12rpx;
+  text-align: center;
+  border-radius: 10rpx;
+  font-size: 21rpx;
+  color: var(--tt-brand-deep);
+  background: var(--tt-brand-soft);
+}
+
+.rv-mini-btn.is-ghost {
+  color: var(--tt-text-3);
+  background: var(--tt-bg-page);
+}
+
+.rv-sym-stat {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10rpx;
+  margin-top: 8rpx;
+}
+
+.rv-sym-chip {
+  padding: 4rpx 14rpx;
+  border-radius: 999rpx;
+  font-size: 19rpx;
+  color: var(--tt-brand-deep);
+  background: var(--tt-brand-soft);
+}
+
+.rv-icon-field {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  flex-wrap: wrap;
 }

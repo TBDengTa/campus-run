@@ -48,10 +48,12 @@ async function save(page) {
   const payload = {};
   for (const key of page.sectionKeys || []) payload[key] = config[key];
   try {
-    await auth.put('/api/admin/config', payload);
+    const res = await auth.put('/api/admin/config', payload);
     wx.showToast({ title: '配置已保存', icon: 'success' });
+    return res;
   } catch (e) {
     wx.showToast({ title: e.message, icon: 'none' });
+    return null;
   } finally {
     page.setData({ saving: false });
   }

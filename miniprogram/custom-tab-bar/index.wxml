@@ -1,4 +1,7 @@
-<view class="tabbar">
+<!-- 根节点必须挂 page 类：custom-tab-bar 挂在页面内容树之外，app.wxss 的令牌块
+     选择器是 page, .page —— 不挂这个类，组件里所有 var(--tt-*) 在计算值阶段失效，
+     底栏会退化成「全宽平底黑图标」（2026-11-23 真机截图报障）。json 的 apply-shared 同理缺一不可。 -->
+<view class="page tabbar {{screenMode !== 'compact' ? 'tabbar-wide' : ''}}">
   <view
     class="tabbar-item {{selected === index ? 'active' : ''}}"
     wx:for="{{list}}"
@@ -6,10 +9,12 @@
     data-index="{{index}}"
     bind:tap="onTap"
   >
-    <t-icon
-      name="{{selected === index ? item.activeIcon : item.icon}}"
-      size="46rpx"
-    />
-    <text class="tabbar-text">{{item.text}}</text>
+    <view class="tabbar-pill">
+      <t-icon
+        name="{{selected === index ? item.activeIcon : item.icon}}"
+        size="{{iconSize}}"
+      />
+      <text class="tabbar-text">{{item.text}}</text>
+    </view>
   </view>
 </view>

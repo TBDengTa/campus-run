@@ -1,5 +1,6 @@
 {
   "darkmode": true,
+  "resizable": true,
   "networkTimeout": {
     "request": 60000,
     "uploadFile": 600000,
@@ -96,7 +97,7 @@
     "list": [
       {
         "pagePath": "pages/hub/hub",
-        "text": "管理",
+        "text": "工作台",
         "iconPath": "assets/tabbar/home.png",
         "selectedIconPath": "assets/tabbar/home-active.png"
       },

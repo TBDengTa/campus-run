@@ -1,14 +1,14 @@
 /**
- * 管理端导航分类（管理中枢 pages/hub 与首页「快捷操作」**共用同一份数据**）
+ * 管理端导航分类（工作台 pages/hub 的**唯一**入口数据源）
  *
- * 为什么要抽出来：这两处以前各写一套 GROUPS / allEntries，结果同名页面的权限 key、
- * 入口数量、分组名都会漂移（历史就发生过）。用户明确要求「管理中枢也跟这样重新分类显示」——
- * 只有单一数据源才能真正做到一致，所以两处都从这里取。
+ * 为什么要抽出来：首页与管理中枢以前各写一套 GROUPS / allEntries，结果同名页面的权限 key、
+ * 入口数量、分组名都会漂移（历史就发生过）。2026-11-23 首页重设计后首页不再列管理入口
+ * （只留「身份与待办」计数卡），全部入口收进工作台平铺 —— 单一数据源只剩一个消费方，更不会再漂移。
  *
  * 分层：
  *   NAV_GROUPS  8 个分类按钮（用户钦定的分类与顺序），每个分类下的条目按权限过滤
  *   entryVisible()  统一的显隐判定：perm（权限 key）+ only（身份：班级/学生会/成员）
- *   hasAnyEntry()   首页据此决定「快捷操作」卡是否渲染
+ *   visibleGroups() 工作台据此渲染分组宫格
  *
  * 注意：这里的 key 只是**入口 key**（用于 wx:key），真正的鉴权在服务端；
  * 前端 perm 过滤只是不给用户看到点了必然 403 的入口。
@@ -48,6 +48,11 @@ const NAV_GROUPS = [
     title: '学生会',
     only: 'unionMember',
     items: [
+      // 检查录入（用户 2026-11-23 多身份统一工作台）：底栏「学生会」tab 已并入「工作台」，
+      // 成员的录入入口必须在这里补上，否则学生会成员失去检查录入入口。
+      // only:'unionEntry' = **仅真实成员**（与旧 UNION_TAB 的 isUnionMember 判定同口径）：
+      // 持 union.view 的非成员管理员进 /pages/union/union 会被成员资格校验拒绝，不给假入口。
+      { key: 'unionEntry', perm: '', only: 'unionEntry', icon: 'app', label: '检查录入', url: '/pages/union/union' },
       // 「学生会成员」入口（用户 2026-10-28「我希望所有主席团可以进入到这个学生会成员中」）：
       //   ⚠️ 旧实现只写 perm:'union.view'，而**主席团是学生、没有任何管理权限** ——
       //      他们在管理中枢里根本看不到「学生会成员」，尽管服务端 assertMemberManager 明确放行主席团。
@@ -281,6 +286,8 @@ function entryVisible(item, ctx) {
   if (item.only === 'unionManager' && !c.canUnionScanJoin) return false;
   // 「学生会成员」入口：干部（无管理权限的学生）与持 union.view 的管理员都能进（见 navCtx.canViewMembers）
   if (item.only === 'unionMembersEntry' && !c.canViewMembers) return false;
+  // 检查录入：仅真实学生会成员（与旧底栏 UNION_TAB 同口径；非成员管理员会被成员资格校验拒绝）
+  if (item.only === 'unionEntry' && !c.isUnionMember) return false;
   // 检查记录：学生会成员（按身份范围）或学生会总管（全校）；纯 union.view 不放行（服务端会 403）
   if (item.only === 'unionRecords' && !(c.isUnionMember || isSuper || perms.includes('union.steward'))) {
     return false;
@@ -336,62 +343,11 @@ function visibleGroups(ctx) {
   return out;
 }
 
-// 首页「快捷操作」卡是否渲染：有任何可见入口就渲染（与 isManager 解耦 ——
-// 班主任 / 班委没有管理权限，但「我的班级」组必须能看到）
-function hasAnyEntry(ctx) {
-  return visibleGroups(ctx).length > 0;
-}
-
-// ===== 首页「快捷操作」的额外过滤（**不影响管理中枢**）=====
-// 用户明确要求：学生会**学生**不再在首页快捷操作里看到「学生会」分类 ——
-// 他们已经有独立的学生会卡片（首页学生会块）与底部「学生会」tab，再列一排管理导航是重复的。
-//
-// ⚠️ 为什么不能直接从 NAV_GROUPS 删掉这个分组：这份数据是**管理中枢与首页共用**的同一份源
-//   （见文件头注释）。删分组会连管理中枢一起消失，**持 union.view/union.manage 的管理员**（学生处、
-//   团委）会失去「学生会成员 / 学生会配置」的入口 —— 那是他们唯一的入口。
-//   所以只在**首页**这一侧排除，管理中枢保持原样。
-//
-// 判定口径：**纯学生会成员**（has 身份但没有该分类下的任何 perm）才排除；
-//   持 union.* 权限的管理员照旧显示（他们要在这里进成员/配置页）。
-const HOME_EXCLUDED_GROUPS = new Set(['union']);
-
-function homeGroups(ctx) {
-  const groups = visibleGroups(ctx);
-  const perms = (ctx && ctx.perms) || [];
-  const isSuper = !!(ctx && ctx.isSuper) || perms.includes('*');
-  return groups.filter((g) => {
-    if (!HOME_EXCLUDED_GROUPS.has(g.key)) return true;
-    // 该分类下只要有一条是「靠权限进来的」就保留整组（管理员的入口不能丢）。
-    //
-    // ⚠️ 除了看 item.perm，还要看「靠 union.* 权限进来」的条目（用户 2026-10-28）：
-    //   「学生会成员」改成 only:'unionMembersEntry' 后 perm 是空串，
-    //   如果只判 item.perm，持 union.view 的管理员在**首页**就看不到「学生会」分类了
-    //   （他们唯一的入口）。这里把这类身份条目也按「是否靠 union.* 权限」算进来。
-    return g.items.some((it) => {
-      if (it.perm && (isSuper || perms.includes(it.perm))) return true;
-      // unionMembersEntry 的权限来源就是 union.view / union.steward（见 navCtx.canViewMembers）
-      if (it.only === 'unionMembersEntry') {
-        return isSuper || perms.includes('union.view') || perms.includes('union.steward');
-      }
-      return false;
-    });
-  });
-}
-
-// 首页快捷操作卡是否渲染（按上面过滤后的结果判定）：只有学生会身份、没有管理入口的账号，
-// 不再因为「学生会」组而显示一整张快捷操作卡；但「我的班级」这类身份组仍会让它显示。
-function hasHomeEntry(ctx) {
-  return homeGroups(ctx).length > 0;
-}
-
 module.exports = {
   NAV_GROUPS,
   GROUP_TINT,
   entryVisible,
   visibleGroups,
-  hasAnyEntry,
-  homeGroups,
-  hasHomeEntry,
   navCtx,
   canUnionScanJoin,
 };

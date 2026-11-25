@@ -1,5 +1,7 @@
 const auth = require('../../utils/request');
 const fmt = require('../../utils/format');
+// 三端响应式（compact/regular/wide，根节点挂 screen-* 类，见 behaviors/screen.js）
+const screenBehavior = require('../../behaviors/screen');
 
 // ===== 可选插画素材：把 PNG 放到下列路径即可自动启用（未放置时回退到矢量图标）=====
 //   实现与首页「插画素材位」完全一致（见 docs/ui-design.md 第 8 节）：
@@ -65,6 +67,8 @@ function heroMetaOf(user, enroll, isTeacher) {
 }
 
 Page({
+  behaviors: [screenBehavior],
+
   data: {
     user: null,
     enroll: enrollOf(null),

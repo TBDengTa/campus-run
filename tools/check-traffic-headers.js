@@ -29,7 +29,10 @@ const APP_JS = read('server', 'src', 'app.js');
 // 缺失时跳过 nginx 段（那些断言只能在本机跑），不能让整个检查器崩溃。
 const NGINX_CONF = (() => {
   try {
-    return read('deploy', 'nginx', 'ttr.tangbo.tech.conf');
+    // 不在代码里写死站点文件名（真实域名是红线）：取 deploy/nginx 下任意 .conf。
+    const dir = path.join(ROOT, 'deploy', 'nginx');
+    const name = fs.readdirSync(dir).find((n) => n.endsWith('.conf'));
+    return name ? fs.readFileSync(path.join(dir, name), 'utf8') : '';
   } catch (e) {
     return '';
   }

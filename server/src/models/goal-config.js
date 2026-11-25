@@ -98,74 +98,184 @@ const goalConfigSchema = new mongoose.Schema(
      *      这两条本身没有成本上限，全靠这个封顶兜住排行榜与跑分）。
      */
     beidou: {
+      // 配置版本：v2（抽奖次数）→ v3（铜版经济）→ v4（九宫格随机盘面/图标）。
+      version: { type: Number, default: 4 },
       enabled: { type: Boolean, default: true },
       // 音效总开关（用户 2026-11-12「增加点音效」）：关掉后用户端连 WAV 都不合成。
       // 音效是运行时**代码合成**的（主包已超限，不放 mp3），见 utils/sfx.js。
       sfxEnabled: { type: Boolean, default: true },
-      // 看视频：看完给几次抽奖机会（**不再发步数**）
+      // 虚拟积分展示名。用户原文用「铜版」，后台可改名（如「铜板」）。
+      coinName: { type: String, default: '铜版' },
+      // 铜版图标（管理员上传；空 = 用户端回退「铜」字徽章）
+      coinIconUrl: { type: String, default: '' },
+      // 首次进入活动一次性赠送（0 = 不送）
+      welcomeCoins: { type: Number, default: 10 },
+
+      /**
+       * ===== 经济与产出策略（v3）=====
+       * 任务只发固定铜版、不直接发奖；高价值奖低权重。
+       * 返奖率只做后台预警（payoutWarnPercent），真正硬约束是下面两个上限。
+       */
+      economy: {
+        // 游戏内铜版产出上限（转盘 + 九宫格共用；0 = 不限）
+        dailyGameCoinCap: { type: Number, default: 200 },
+        // 后台预览预警：铜版期望返还 / 单局成本 ≥ 该百分比时提示（不硬拦保存）
+        payoutWarnPercent: { type: Number, default: 100 },
+        // 后台预览预警：高价值奖权重占比 > 该百分比时提示
+        highTierWarnPercent: { type: Number, default: 10 },
+      },
+
+      // 转盘（v3）：消耗 / 每日局数 / 保底
+      wheel: {
+        enabled: { type: Boolean, default: true },
+        cost: { type: Number, default: 5 },
+        maxPerDay: { type: Number, default: 0 }, // 0 = 不限
+        pity: {
+          afterLosses: { type: Number, default: 5 }, // 0 = 关闭保底
+          prizeKey: { type: String, default: 'coin_2' }, // 空 = 自动挑最低档
+        },
+      },
+
+      // 看视频：+铜版（不再发次数/步数）。旧 drawPerWatch 保留但不再使用。
       video: {
-        drawPerWatch: { type: Number, default: 1 },
-        dailyLimit: { type: Number, default: 10 }, // 每日可看次数上限
-        adUnitId: { type: String, default: '' }, // 空 = 用客户端内置默认广告位
+        enabled: { type: Boolean, default: true },
+        coinPerWatch: { type: Number, default: 1 },
+        drawPerWatch: { type: Number, default: 0 }, // 【已废弃】仅兼容旧配置/旧客户端展示
+        dailyLimit: { type: Number, default: 10 },
+        adUnitId: { type: String, default: '' },
       },
-      // 分享：点分享即给次数（微信没有分享成功回调，见方案 §2 R2）
+
+      // 分享：好友点开才给铜版（不再点一下就发次数）。旧字段保留但不再使用。
       share: {
-        drawPerShare: { type: Number, default: 1 },
-        dailyLimit: { type: Number, default: 0 }, // 0 = 不限（遵 D11）
-        minIntervalSec: { type: Number, default: 5 }, // 服务端最小间隔，纯技术防连点
+        enabled: { type: Boolean, default: true },
+        coinPerClick: { type: Number, default: 1 },
+        dailyLimit: { type: Number, default: 3 }, // 分享者每天最多拿几次（0 = 不限）
+        tokenExpireDays: { type: Number, default: 7 },
+        drawPerShare: { type: Number, default: 0 }, // 【已废弃】
+        minIntervalSec: { type: Number, default: 0 }, // 【已废弃】
       },
-      // 签到：连续 7 天阶梯，断签重置
+
+      // 签到：连续 7 天阶梯，断签重置；只发铜版（旧 draw/steps 保留但不再生效）
       checkin: {
         enabled: { type: Boolean, default: true },
-        // 数组下标 0 = 连续第 1 天；长度即周期长度
         milestones: {
           type: [
             new mongoose.Schema(
               {
-                draw: { type: Number, default: 1 },
+                coin: { type: Number, default: 1 },
+                draw: { type: Number, default: 0 },
                 steps: { type: Number, default: 0 },
               },
               { _id: false }
             ),
           ],
           default: () => [
-            { draw: 1, steps: 0 },
-            { draw: 1, steps: 0 },
-            { draw: 2, steps: 200 },
-            { draw: 1, steps: 0 },
-            { draw: 1, steps: 0 },
-            { draw: 1, steps: 0 },
-            { draw: 3, steps: 500 },
+            { coin: 1, draw: 0, steps: 0 },
+            { coin: 1, draw: 0, steps: 0 },
+            { coin: 1, draw: 0, steps: 0 },
+            { coin: 1, draw: 0, steps: 0 },
+            { coin: 1, draw: 0, steps: 0 },
+            { coin: 1, draw: 0, steps: 0 },
+            { coin: 1, draw: 0, steps: 0 },
           ],
         },
-        // 超过周期后：true = 回到第 1 天重来；false = 一直按周期最后一天发
         loopAfter: { type: Boolean, default: true },
       },
-      draw: {
-        maxPerDay: { type: Number, default: 0 }, // 0 = 不限（遵 D11）
-        dailyStepsCap: { type: Number, default: 3000 }, // 每日抽奖/签到累计发步数上限（必需）
+
+      // 九宫格连线（v4）：老虎机式随机盘面，横/竖/斜多线分别计奖
+      grid: {
+        enabled: { type: Boolean, default: true },
+        cost: { type: Number, default: 6 },
+        maxPerDay: { type: Number, default: 0 },
+        pity: {
+          afterLosses: { type: Number, default: 5 },
+          // 保底图案（空 = 自动挑最低单线奖的奖品图案）
+          symbolKey: { type: String, default: 'star' },
+          // 【已废弃】v3 的保底结果 key；迁移时映射到 symbolKey
+          outcomeKey: { type: String, default: '' },
+        },
+        symbols: {
+          type: [
+            new mongoose.Schema(
+              {
+                key: { type: String, required: true },
+                label: { type: String, default: '' },
+                icon: { type: String, default: '' }, // emoji 兜底
+                iconUrl: { type: String, default: '' }, // 管理员上传的图片
+                type: { type: String, enum: ['coin', 'steps', 'none'], default: 'none' },
+                amount: { type: Number, default: 0 }, // 每条线的奖励（不是整局总额）
+                weight: { type: Number, default: 10 }, // 单格出现权重
+                // 目标单局获奖概率%（管理端填概率反解权重，用户 2026-11-25）；空串=权重模式
+                winTarget: { type: String, default: '' },
+                tier: { type: String, enum: ['low', 'mid', 'high', 'none'], default: 'low' },
+              },
+              { _id: false }
+            ),
+          ],
+          default: () => [
+            { key: 'star', label: '星星', icon: '⭐', type: 'coin', amount: 5, weight: 30, tier: 'low' },
+            { key: 'medal', label: '奖牌', icon: '🏅', type: 'coin', amount: 10, weight: 15, tier: 'mid' },
+            { key: 'foot', label: '足迹', icon: '👣', type: 'steps', amount: 100, weight: 15, tier: 'mid' },
+            { key: 'crown', label: '皇冠', icon: '👑', type: 'coin', amount: 1, weight: 10, tier: 'high' },
+            { key: 'blank', label: '空白', icon: '▫', type: 'none', amount: 0, weight: 30, tier: 'none' },
+          ],
+        },
+        // 【已废弃】v3 的「0/1/2 线结果表」：保留字段但不参与生成/发奖，后台不再展示
+        outcomes: {
+          type: [
+            new mongoose.Schema(
+              {
+                key: { type: String, required: true },
+                label: { type: String, default: '' },
+                lines: { type: Number, default: 0 }, // 0 / 1 / 2
+                symbolKey: { type: String, default: '' },
+                weight: { type: Number, default: 0 },
+              },
+              { _id: false }
+            ),
+          ],
+          default: () => [
+            { key: 'none', label: '没有连线', lines: 0, symbolKey: '', weight: 60 },
+            { key: 'line_star', label: '星星连线', lines: 1, symbolKey: 'star', weight: 22 },
+            { key: 'line_medal', label: '奖牌连线', lines: 1, symbolKey: 'medal', weight: 10 },
+            { key: 'line_foot', label: '足迹连线', lines: 1, symbolKey: 'foot', weight: 5 },
+            { key: 'line_crown', label: '皇冠连线', lines: 1, symbolKey: 'crown', weight: 2 },
+            { key: 'line_double_star', label: '星星双线', lines: 2, symbolKey: 'star', weight: 0.9 },
+            { key: 'line_double_crown', label: '皇冠双线', lines: 2, symbolKey: 'crown', weight: 0.1 },
+          ],
+        },
       },
-      // 奖池：type 只有 steps / none / draw 三种（用户 2026-11-11 确认，不发跑分/徽章/实物）
+
+      // 旧段保留：dailyStepsCap 仍是步数封顶唯一依据；maxPerDay 作为 wheel.maxPerDay 的迁移来源
+      draw: {
+        maxPerDay: { type: Number, default: 0 },
+        dailyStepsCap: { type: Number, default: 3000 },
+      },
+
+      // 转盘奖池：type 增加 coin（v3）；tier 用于后台高价值奖占比预警
       prizes: {
         type: [
           new mongoose.Schema(
             {
               key: { type: String, required: true },
               label: { type: String, default: '' },
-              type: { type: String, enum: ['steps', 'none', 'draw'], default: 'none' },
-              amount: { type: Number, default: 0 }, // steps = 步数；draw = 次数；none = 0
+              type: { type: String, enum: ['steps', 'coin', 'none', 'draw'], default: 'none' },
+              amount: { type: Number, default: 0 },
               weight: { type: Number, default: 1 },
+              tier: { type: String, enum: ['low', 'mid', 'high', 'none'], default: 'low' },
             },
             { _id: false }
           ),
         ],
         default: () => [
-          { key: 'steps_100', label: '100 步', type: 'steps', amount: 100, weight: 30 },
-          { key: 'steps_300', label: '300 步', type: 'steps', amount: 300, weight: 16 },
-          { key: 'steps_800', label: '800 步', type: 'steps', amount: 800, weight: 6 },
-          { key: 'steps_1500', label: '1500 步', type: 'steps', amount: 1500, weight: 2 },
-          { key: 'again', label: '再来一次', type: 'draw', amount: 1, weight: 8 },
-          { key: 'none', label: '谢谢参与', type: 'none', amount: 0, weight: 38 },
+          { key: 'coin_2', label: '2 铜版', type: 'coin', amount: 2, weight: 30, tier: 'low' },
+          { key: 'coin_5', label: '5 铜版', type: 'coin', amount: 5, weight: 14, tier: 'mid' },
+          { key: 'steps_100', label: '100 步', type: 'steps', amount: 100, weight: 20, tier: 'low' },
+          { key: 'steps_300', label: '300 步', type: 'steps', amount: 300, weight: 10, tier: 'mid' },
+          { key: 'steps_800', label: '800 步', type: 'steps', amount: 800, weight: 4, tier: 'high' },
+          { key: 'coin_20', label: '20 铜版', type: 'coin', amount: 20, weight: 2, tier: 'high' },
+          { key: 'again', label: '再来一次', type: 'draw', amount: 1, weight: 6, tier: 'none' },
+          { key: 'none', label: '谢谢参与', type: 'none', amount: 0, weight: 14, tier: 'none' },
         ],
       },
     },

@@ -72,57 +72,73 @@ BMI 预设计划（bmiMin~bmiMax × 强度偏好匹配，`isDefault` 全局唯�
 被 user_goals 引用中的计划禁止硬删，只能停用）；用户身体数据（height/weight/bmi/bmiLevel）；
 用户当前生效计划（autoMatched 标记，**快照式**：修改计划不回填已应用用户）。
 
-## 北斗运动 2.0（签到 + 转盘抽步数 + 做任务赚次数）
+## 北斗运动 3.0（铜版经济 + 转盘 + 九宫格连线）
 
-方案与口径：`docs/beidou-lottery-plan.md`。旧 `goal_config.rewardVideo` 段**原样保留**（存量记录与历史统计仍用），
-本节的 `beidou` 段是新增的独立配置，两者互不覆盖。
+方案与口径：`docs/beidou-economy-plan.md`。旧 `goal_config.rewardVideo` 段与 v2 的 `beidou` 旧字段**原样保留**，
+v3 新增字段由启动期 `services/beidou-config.js::migrateBeidouConfig()` 幂等回填。
 
 ### goal_config.beidou（配置段，不是独立集合）
 | 字段 | 说明 |
 |---|---|
-| enabled | 总开关；关闭后用户端整页只读 |
-| video.drawPerWatch / dailyLimit / adUnitId | 看视频每次给几次、每日可看次数（0=不限）、广告位 |
-| share.drawPerShare / dailyLimit / minIntervalSec | 邀请每次给几次、每日上限（0=不限）、**服务端最小间隔（防连点，非次数上限）** |
-| checkin.enabled / milestones[] / loopAfter | 签到开关、7 天阶梯（`{draw, steps}`）、满一轮后是否重来 |
-| draw.maxPerDay | 每日抽奖次数上限（**0 = 不限**，用户 2026-11-11 定） |
-| draw.dailyStepsCap | **每日步数奖励上限（默认 3000，唯一成本闸门）**：达标后步数奖降级为空奖 |
-| prizes[] | `{key, label, type: steps\|none\|draw, amount, weight}`，≤8 项 |
+| version | 配置版本；`<3` 时启动迁移回填新字段（不覆盖管理员已调权重） |
+| enabled / sfxEnabled / coinName / welcomeCoins | 总开关、音效、铜版展示名、首次赠送 |
+| economy.dailyGameCoinCap | **每日游戏铜版产出上限**（转盘+九宫格共用；0=不限） |
+| economy.payoutWarnPercent / highTierWarnPercent | 后台返奖率/高价值占比预警线（只预警不硬拦） |
+| wheel.cost / maxPerDay / pity | 转盘成本、每日局数、保底（连续未中 N 局后必中低档奖） |
+| grid.cost / maxPerDay / pity / symbols[] | 九宫格成本、保底图案、图案表（`weight` 单格权重、`amount` 每条线奖励、`iconUrl` 上传图标） |
+| grid.outcomes[] | v3 旧「0/1/2 线结果表」：保留但**不再参与生成/发奖**，后台不再展示 |
+| video.enabled / coinPerWatch / dailyLimit / adUnitId | 看视频 +铜版（旧 `drawPerWatch` 保留但为 0） |
+| share.enabled / coinPerClick / dailyLimit / tokenExpireDays | 好友点开才 +铜版（旧 `drawPerShare` 保留但为 0） |
+| checkin.enabled / milestones[] / loopAfter | 签到阶梯 `{coin}`；旧 `draw/steps` 保留但归零 |
+| draw.maxPerDay / dailyStepsCap | 旧段；**dailyStepsCap 仍是步数封顶唯一依据** |
+| prizes[] | `{key,label,type:steps\|coin\|none\|draw,amount,weight,tier}`，≤8 项 |
+
+### beidou_wallet（每人一份，`openid` 唯一）
+`balance / totalEarned / totalSpent / taskEarned / gameEarned / refunded / welcomeGranted /
+luck.wheelLosses / luck.gridLosses / luck.wheelPityCount / luck.gridPityCount`。
+
+- 余额**只允许**经 `services/beidou-wallet.js` 增减；扣款用 `balance` CAS，余额永不为负。
+- 保底计数跨天保留，与扣款同一次 CAS 更新；中奖清零。
+
+### beidou_coin_logs（铜版流水）
+`openid / date / delta(正发负扣) / balanceAfter / source(welcome|video|checkin|share|wheel|grid|refund) /
+game(wheel|grid) / refId / idemKey / note`。
+
+- `(openid, idemKey)` **unique** 是幂等闸门：`welcome / video:<watchId> / checkin:<date> /
+  share:<clickId> / cost:<drawId> / prize:<drawId> / refund:<drawId>`。
+- 不变量：钱包余额 = 该用户全部流水 `delta` 之和；`beidou_day.coin.*` 按日与流水对账。
+
+### beidou_share_links / beidou_share_clicks（好友点击归因）
+- `links`：`token` 唯一、`ownerOpenid+date` 唯一、`expiresAt`、`clicks/rewarded`。
+- `clicks`：`(ownerOpenid, visitorOpenid, date)` **unique**（同一好友每天只助力一次）、`rewarded/coin`。
+- 只有另一个已登录用户点开并上报才给分享者发铜版；自己点/重复点/过期/超限都不发。
 
 ### beidou_day（每人每天一份，`openid+date` 唯一）
-所有计数收敛到这一份文档，抽奖并发安全用 `draw.used` 做 CAS 版本号。
-
 | 字段 | 说明 |
 |---|---|
-| openid + date | 复合唯一索引（重复签到/重复建档的硬拦截） |
-| draw.total / used | 今日**获得**总次数 / 今日**已抽**次数（后者是 CAS 版本号） |
-| draw.fromVideo / fromShare / fromCheckin / fromPrize | 各来源计数（排查「次数哪来的」用） |
-| draw.stepsAwarded | **今日抽奖+签到累计发出的步数**（封顶判定唯一依据，新增发步数路径必须累加） |
-| draw.capped | 今日是否已触及封顶（前端常驻提示用） |
-| video.count / watchIds[≤50] | 看视频计数与幂等凭据 |
-| share.count / lastAt | 分享计数与最小间隔时间戳 |
-| checkin.done / at / streak / award | 签到状态；`streak` = 当日签到**后**的连续天数 |
+| draw.* | v2 旧字段全部保留（`stepsAwarded/capped` 仍用于步数封顶；`total/used` 仅供旧客户端展示） |
+| coin.earned / spent / from* / gameEarned / refunded / gameCapHit | 当日铜版产出/消耗（`gameEarned` 是游戏上限唯一依据） |
+| wheel.plays / grid.plays | 每日局数（原子占用） |
+| video.count / watchIds[≤50] / coin | 看视频计数、幂等、当日铜版 |
+| share.clicks / rewarded / coin / lastClickAt | 好友点击计数与当日分享奖励 |
+| checkin.done / at / streak / award{coin,draw,steps} | 签到状态；v3 只发 coin |
 
 索引：`(openid, date)` unique
 
-### beidou_draws（抽奖流水，审计与概率公示核对）
-每次抽奖一条：`openid` / `date` / `drawId` / `prizeKey` / `type` / `amount` / `roll`（随机数留证）/
-`index`（命中扇区）/ `capped`（是否因封顶被降级）/ `source`（本笔机会的来源）。
+### beidou_draws（游戏流水，审计与概率公示核对）
+每次转盘/九宫格一条：`openid / date / drawId(=playId) / game / prizeKey / type / amount / roll /
+index / board / lines / rewards / coinAmount / stepsAmount / cost / prizeLabel / prizePercent / tier / rarity / capped / coinCapped /
+pity / status / stepsSettled / balanceAfter / source`。
 
-- `source` 取值 `video 看视频 / share 邀请 / checkin 签到 / prize 再来一次 / unknown 老数据`。
-  ⚠️ 它是**账本归属**而不是「用户从哪个页面点进来」：次数是一个合并池（`beidou_day.draw.total`），
-  抽奖时按固定优先级 `prize → checkin → video → share` 从各来源余额里扣一笔，扣到谁就记谁
-  （唯一实现 `services/beidou.js::pickSource`；优先级写死在代码里不进配置 —— 调松等于全员稀有/统计口径漂移）。
-  配对字段是 `beidou_day.draw.usedVideo/usedShare/usedCheckin/usedPrize`，
-  不变量：**∑used\* == draw.used**，且每个 `used* <= from*`。
-- 索引：`(openid, date)`、`(openid, drawId)` **unique**、`(date:-1, prizeKey)`、`(source, date:-1)`（管理端按来源+日期筛）
-- ⚠️ **幂等索引必须含 `openid`，不能是 `drawId` 全局唯一**：
-  客户端 drawId 是「时间戳+随机串」，跨用户理论上会撞。全局唯一时后来者撞上别人的记录 →
-  被幂等分支当成「重复提交」→ 返回**别人的奖品与 index**，自己次数不扣、步数不发，
-  而接口回 `success:true`，日志毫无痕迹。幂等语义从来是「同一个人同一笔」。
-  旧库的 `drawId_1 unique` 由启动迁移 `services/beidou.js::migrateDrawIdIndex()` 显式删除
-  （Mongoose 只新建缺失索引、不会替换已存在的旧索引，与 `dorms.js::migrateSlotIndex` 同一类陷阱）。
-- **管理端只读**（`GET /api/admin/config/beidou-draws`，支持 `dateFrom/dateTo/source/prizeKey` 筛选 + 分面计数）：
-  不允许补发或撤销 —— 改流水会让概率公示与实际发放对不上；要补偿走「人工发徽章」等独立链路。
+- 九宫格 `type` 可为 `mixed`（同一局同时有铜版和步数）；`rewards[]` 按图案分组，`lines[]` 可 0~8 条。
+
+- `type` 增加 `coin`；`source` 增加 `wallet`（v3 铜版为合并钱包，无法归属单一来源）。
+- `status`：`pending → debited → settled`（`failed` 扣款失败），同一 `playId` 重放按状态续跑，钱只扣一次。
+- 索引：`(openid, date)`、`(openid, drawId)` **unique**（按人幂等，九宫格 playId 也写这里）、
+  `(date:-1, prizeKey)`、`(game, date:-1)`、`(source, date:-1)`。
+- **幂等索引必须含 `openid`**：旧库的 `drawId_1 unique` 由启动迁移 `migrateDrawIdIndex()` 显式删除。
+- **管理端只读**（`GET /api/admin/config/beidou-draws`，支持 `dateFrom/dateTo/game/source/prizeKey/type` + 分面），
+  另提供 `beidou-coin-logs` 与 `beidou-economy` 只读对账；不允许补发或撤销。
 
 ## 排行榜
 
@@ -143,7 +159,7 @@ BMI 预设计划（bmiMin~bmiMax × 强度偏好匹配，`isDefault` 全局唯�
 
 ### reward_video_records（**2.0 起只读历史**）
 `openid + date`（唯一）→ `watchCount / stepsEarned / watchIds[]`。
-北斗运动 2.0 起不再写入（看视频改为加抽奖次数，落在 `beidou_day.video`），本表保留存量数据供历史统计与对账。
+北斗运动 2.0 起不再写入（看视频改为加次数），v3 起改为加**铜版**（落在 `beidou_day.video` 与 `beidou_coin_logs`），本表保留存量数据供历史统计与对账。
 
 ### ban_records
 封禁/解封流水：`userId / openid / action(ban|unban) / banType / reason / durationDays / bannedUntil / operator`。

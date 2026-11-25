@@ -87,57 +87,52 @@
 
 `GET /today` 今日次数/剩余（保留给老客户端展示） · `POST /report` **只回 `{success:false, deprecated:true}`，不再发步数**。
 
-> 北斗运动 2.0 起，「看视频」不再直接发步数，改为发**抽奖次数**（见下方 `/api/beidou`）。
+> 北斗运动 2.0 起，「看视频」不再直接发步数；v3 起改为发 **1 铜版**（见下方 `/api/beidou`）。
 > 旧接口刻意保留而不下线：老版本小程序缓存未更新时仍会调用，直接 404 会让它们弹错误框；
 > 回一句「已升级」既不会误伤，也不会被静默利用继续刷步。
 
-## 北斗运动 /api/beidou（签到 + 转盘抽步数 + 做任务赚次数）
+## 北斗运动 /api/beidou（铜版经济 + 转盘 + 九宫格连线）
 
-方案与口径唯一说明：`docs/beidou-lottery-plan.md`。
+方案与口径唯一说明：`docs/beidou-economy-plan.md`（v2 旧方案见 `docs/beidou-lottery-plan.md`，冲突处以 v3 为准）。
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | /today | 页面首屏一次拿全：可抽次数 / 奖池归一概率 / 8 格扇区表 / 签到状态 / 今日已入账四项 / 最近 5 条中奖 / 封顶状态 |
-| POST | /draw | `{drawId}` → **服务端定结果**，返回 `{index, prize, capped, remaining, earned, newBadges}`；`index` 是最终停住的扇区下标 |
-| POST | /video/report | `{watchId}` → 加抽奖次数（**不发步数**）；同一 watchId 幂等 |
-| POST | /share/report | `{shareId}` → 加抽奖次数；服务端最小间隔去重 |
-| POST | /checkin | 连续签到；第 3/7 天按阶梯额外发步数（受每日封顶约束） |
-| GET | /winners?limit=20 | 中奖播报（滚动条数据源）：`{ items: [{ nameMasked, prizeLabel, rarity, atText, isMine }], rarityText }` |
+| GET | /today | 首屏一次拿全：铜版余额/今日产出、转盘（成本/次数/奖池/扇区/保底）、九宫格（成本/图案权重/单线奖/保底）、看视频/分享/签到、封顶、今日步数、最近 5 条 |
+| POST | /draw | `{drawId}` → 转盘，扣铜版；返回 `{index, prize, capped, coinCapped, pity, cost, balance, coin, remaining, earned, newBadges}` |
+| POST | /grid/play | `{playId}` → 九宫格，扣铜版；返回 `{board, lines, rewards, coinAmount, stepsAmount, rewardText, prize, cost, balance, capped, coinCapped, pity}` |
+| POST | /video/report | `{watchId}` → +铜版（不发次数/步数）；同一 watchId 幂等 |
+| POST | /checkin | 连续签到 → +铜版（不发次数/步数） |
+| POST | /share/intent | 生成/复用当日分享令牌 → `{token, path, expiresAt}` |
+| POST | /share/click | `{token}` → 好友点开上报；只有另一个已登录用户点开才给分享者发铜版 |
+| POST | /share/report | **旧接口保留**，只回 `{success:false, deprecated:true}` |
+| GET | /winners?limit=20 | 播报：`{items:[{nameMasked,prizeLabel,game,rarity,linesText,atText,isMine}], rarityText}` |
 
-播报四条口径（`items` 已过滤）：姓名**只下发脱敏串**（`services/name-mask.js::maskName`，完整姓名永不出服务端）；
-`privacy.exitRanking` 的学生不进播报；封禁/教师不进；同一人最多 2 条防刷屏；`type='none'`（谢谢参与）不播报。
+口径：
+
+- **任务只发铜版**：看视频/签到/分享不再加抽奖次数、不写 `run_records`。分享必须好友点开（自己点、重复点、超限、过期都不发）。
+- **两个玩法都扣铜版、都可能发铜版**：转盘 5/次、九宫格 6/次（可配）；`draw` 类型按本局成本返还。
+- **结果只由服务端定**：转盘 `roll/index/prize`、九宫格 `board/lines/rewards` 全在服务端；前端只停位/翻牌。
+- **九宫格是老虎机式随机盘面**：横/竖/斜 8 条线，每条线发该图案单线奖；可同时中多条线（含铜版+步数混合），空白成线不兑奖。
+- **保底**：连续未中到阈值后下一局必中低档奖；两个玩法独立计数，中奖清零。
+- **上限**：`economy.dailyGameCoinCap`（游戏铜版产出）、`draw.dailyStepsCap`（步数）、任务/分享每日上限；余额永不为负。
+- **旧字段兼容**：`draw.remaining/total/used/maxPerDay/prizes/sectors`、`video.drawPerWatch`、`share.drawPerShare`、`checkin.milestones[].draw/steps` 继续下发（旧任务字段为 0，旧客户端不会多发次数）。
 
 **管理端**（`/api/admin/config/*`，读要 `config.view`、写要 `config.manage`）：
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | /beidou-draws | 中奖记录明细，**只读**。筛选参数 `dateFrom` / `dateTo`（`YYYY-MM-DD` 闭区间，非法值忽略、倒序自动纠正）、`source`、`prizeKey`、`page` / `limit`。返回 `{ list, total, filters, facets, sourceNote }`，`facets.source` 是**排除 source 自身后**的分面计数（否则选了「视频」就只剩视频一项有数，看不出别的来源有多少） |
-| GET | /beidou-draws/sources | 来源口径说明：`{ order, text, textLong, note }`，全部取自 `beidou.js` 的唯一定义 |
+| GET | / | 返回 `beidou` 可编辑配置 + `beidouEffective`（归一概率/EV/警告） |
+| PUT | / | 保存 `beidou`（`normalizeBeidouInput` 夹紧；数组整体替换） |
+| POST | /beidou-preview | 用**与保存同一份**归一/EV 逻辑预览草稿 + 警告（不写库） |
+| GET | /beidou-draws | 游戏流水，只读；`dateFrom/dateTo/game/source/prizeKey/type` 筛选 + 分面 |
+| GET | /beidou-coin-logs | 铜版流水，只读；日期/来源/游戏/方向 + 合计 + 分面 |
+| GET | /beidou-economy | 流通量、区间发放/回收、按来源、按玩法局数/消耗/产出/保底/返奖率 |
+| GET | /beidou-draws/sources | 来源口径说明（v3 铜版为合并钱包，新流水 source=wallet；旧记录来源仅历史） |
 
-**`sourceNote`**（列表接口直接下发）= 来源口径整句，由 `SOURCE_ORDER` 生成
-（`抽奖次数是一个合并池，抽奖时按 再来一次 → 签到 → 看视频 → 邀请 的优先级…`）。
-页面**原样渲染**，不要硬编码这句：早先它写死在 WXML 里，改了优先级顺序页面还在说老规矩，
-管理员会按反的说明去理解数据（`check-beidou-lottery` 第 [8b] 节有反向断言）。
+> `source` 在 v3 新记录里统一为 `wallet`：铜版是**合并钱包**，无法像旧「次数池」那样归属到单一来源。
+> 要看当前产出结构请用「铜版流水 / 经济概览」。旧记录仍保留 `video/share/checkin/prize/unknown`。
 
-`list[]` 每条含 `realName / studentId / className / prizeLabel / sourceText / capped / roll / index`：
-`sourceText` 与 `prizeLabel` 由服务端拼好下发（前端不自己映射中文，避免与服务端漂移）；
-`roll` / `index` 是留证字段，用于证明结果不是后台改出来的。
-
-> ⚠️ `source` 是**账本归属**，不是「用户从哪个页面点进来」：抽奖次数是一个合并池，
-> 扣减优先级固定为 `prize（再来一次）→ checkin → video → share`，扣到哪个来源就记哪个。
-> 不变量 `∑used* == draw.used`。改造前落库的老文档没有 `used*` 字段，抽奖前由
-> `services/beidou.js::alignLegacyUsage()` 一次性补齐（不对齐会把新抽奖全部错归到同一个来源，
-> 来源统计整片失真且不报任何错）；索引本身的迁移是启动期的 `migrateDrawIdIndex()`，两件事别混。
-
-三条口径：
-- **步数只有两个出口**：转盘（`/draw`）与签到阶梯（`/checkin`）。看视频、分享只加次数。
-- **抽奖结果只由服务端定**：`roll` / `index` / `prize` 全在服务端算，前端只负责把第 `index` 格转到指针下；
-  扇区顺序也由服务端下发（`draw.sectors`），**前端不得重排**，否则会出现「停在 A 却发 B」。
-- **每日步数封顶（`draw.dailyStepsCap`，默认 3000）**：达到后步数奖**当场降级为「谢谢参与」**并置 `capped:true`，
-  活动照常进行（不是报错）。这是「次数不限 + 点分享即给」前提下**唯一的成本闸门**。
-
-教师账号与限制账号的处理与 `/api/reward-video` 一致：教师 → `200 + {success:false}`（不用 403003），
-限制登录 → `403 403001`，微信同步受限 → `403 403004`。
+教师/限制账号与 `/api/reward-video` 一致：教师 → `200 + {success:false}`；限制登录 → `403 403001`；微信同步受限 → `403 403004`。
 
 ## 喝水 /api/water
 
@@ -262,7 +257,7 @@
 | 内容 | `/content/announcements | /content/changelogs | /content/holidays | /content/organizations | /content/badges` 的增删改查 |
 | 配置 | `GET|PUT /config`（目标/分时段/反作弊/激励视频） |
 | 班级 | `GET /class/profiles`（台账列表） · `GET|PUT /class/:className/profile` · **`GET /class/status-board?attRange=week&quick&department&keyword`**（全校班级状态总览，见下） · **`GET /class/status-export?attRange=week|month&…`**（导出考勤 CSV，同下筛选参数） |
-| 上传 | `POST /upload`（multipart，字段 file，返回图片 URL；`POST /upload/check-photo` 检查照片**不限体积 / 张数**） |
+| 上传 | `POST /upload`（multipart，字段 file，返回图片 URL；用途 `ad/badge/beidou/other`；`POST /upload/check-photo` 检查照片**不限体积 / 张数**） |
 
 ### GET /api/admin/class/status-board（班级状态总览）
 

@@ -1,17 +1,16 @@
 /**
- * 检查器：北斗运动 2.0（签到 + 转盘抽步数 + 看视频/分享得次数）的静态契约。
+ * 检查器：北斗运动 3.0（铜版经济 + 转盘 + 九宫格连线 + 好友点击归因）的静态契约。
  *
- * 方案与口径的唯一说明：docs/beidou-lottery-plan.md。本文件盯的是**改完之后最容易静默坏掉**的几条：
+ * 方案与口径唯一说明：docs/beidou-economy-plan.md。本文件盯的是**改完之后最容易静默坏掉**的几条：
  *
- *   ① 抽奖结果只由服务端定（roll / index / prize 全在 service 里算）；
- *      前端不得自己排扇区、不得用「停位对应的前端数组项」当结果 —— 那会出现「停在 A 却发 B」。
- *   ② 概率公示必须由服务端算（percent 字段），前端只展示：自己算会与配置漂移。
- *   ③ 奖池非法（权重全 0 / 全删）必须回退默认奖池，不能变成「保存成功但没人能中奖」。
- *   ④ 每日步数封顶是**唯一成本闸门**（用户 2026-11-11 定了「次数不限 + 点分享即给」）：
- *      抽奖与签到都必须过 capRemaining，且封顶时步数奖降级为空奖（不是报错）。
- *   ⑤ 幂等靠 drawId 唯一索引（弱网重试/连点），不能只靠 if 判断。
- *   ⑥ 教师四处（抽奖/看视频/分享/签到）都要拦；旧 /api/reward-video/report 必须不再发步数。
- *   ⑦ 断签必须重置（streak 按昨天推），不能用累计天数。
+ *   ① 结果只由服务端定：转盘 index / 九宫格 board+lines / 概率 / 保底全在 service，
+ *      前端不得自己随机、自己排扇区、自己连线；
+ *   ② 任务（看视频/签到/分享）只发铜版，不得再写 `draw.total` / run_records；
+ *   ③ 分享必须好友点开（token + share/click），旧 share/report 只回 deprecated；
+ *   ④ 钱包只经 beidou-wallet 增减，流水幂等键 `(openid, idemKey)` 唯一；余额不为负；
+ *   ⑤ 两个玩法都扣铜版、都发铜版；dailyGameCoinCap / dailyStepsCap / 分享日上限是硬约束；
+ *   ⑥ 保底连续未中触发、中奖清零；九宫格生成器线数必须精确；
+ *   ⑦ 旧后端 API 全部保留（路径 + 旧字段），不得删除。
  *
  * 运行：node tools/check-beidou-lottery.js
  */
@@ -30,278 +29,292 @@ function ok(name, cond, detail) {
 }
 
 const svc = readS('services/beidou.js');
+const cfg = readS('services/beidou-config.js');
+const walletSvc = readS('services/beidou-wallet.js');
+const gridSvc = readS('services/beidou-grid.js');
 const route = readS('routes/beidou.js');
 const oldRoute = readS('routes/reward-video.js');
 const adminCfg = readS('routes/admin/config.js');
 const model = readS('models/goal-config.js');
 const dayModel = readS('models/beidou-day.js');
 const drawModel = readS('models/beidou-draw.js');
+const walletModel = readS('models/beidou-wallet.js');
+const logModel = readS('models/beidou-coin-log.js');
+const shareLinkModel = readS('models/beidou-share-link.js');
+const shareClickModel = readS('models/beidou-share-click.js');
 const pageJs = readM('pages/reward/reward.js');
 const pageWxml = readM('pages/reward/reward.wxml');
 const pageWxss = readM('pages/reward/reward.wxss');
-const pageSfx = readM('utils/sfx.js');
+const shareUtil = readM('utils/beidou-share.js');
+const appSrc = readM('app.js');
+const splash = readM('pages/splash/splash.js');
+const home = readM('pages/home/home.js');
+const adminJs = readM('packageAdmin/config/reward-video.js');
 const adminWxml = readM('packageAdmin/config/reward-video.wxml');
-const appSrc = readS('app.js');
-// server/src/index.js：启动期迁移都挂在这里（score-scale / dorms / union / beidou）
 const indexJs = readS('index.js');
 
 // ===== ① 结果只由服务端定 =====
-console.log('[1] 抽奖结果只由服务端定');
-ok('服务端用 crypto.randomInt 生成随机数（不用 Math.random）', /crypto\.randomInt\(/.test(svc) && !/Math\.random\(\).*roll/.test(svc));
-ok('pickPrize 在服务端按权重求命中项', /function pickPrize\(prizes, sectors, roll\)/.test(svc));
-ok('service 下发 index（前端只做停位）', /index,/.test(svc) && /sectors/.test(svc));
-ok('前端不自己排扇区顺序（sectors 直接来自接口）', /data\.draw\.sectors/.test(pageJs));
-ok('前端停位角度用 DEG_PER_SECTOR 常量（不是硬编码 45/22.5）',
+console.log('[1] 结果只由服务端定');
+ok('服务端用 crypto.randomInt 生成随机数（不用 Math.random 定结果）',
+  /crypto\.randomInt\(/.test(svc) && !/Math\.random\(\)[\s\S]{0,30}roll/.test(svc));
+ok('转盘 pickPrize 在 service（配置模块）里按权重求命中项',
+  /function pickPrize\(prizes, sectors, roll\)/.test(cfg));
+ok('九宫格盘面由服务端生成（gridSvc.drawBoard）', /gridSvc\.drawBoard\(/.test(svc));
+ok('九宫格线检测/奖励统计只在服务端（findLines/evaluateBoard）',
+  /function findLines\(board, symbols\)/.test(gridSvc) && /function evaluateBoard\(board, symbols\)/.test(gridSvc));
+ok('前端不自己生成盘面/算连线（反向断言）',
+  !/findLines\(/.test(pageJs) && !/function\s+lineCount/.test(pageJs) && !/Math\.random\(\)[\s\S]{0,40}board/.test(pageJs));
+ok('前端转盘扇区直接来自接口 draw.sectors', /draw\.sectors|wheel\.sectors/.test(pageJs));
+ok('前端停位角度用 DEG_PER_SECTOR（不硬编码 45/22.5）',
   /centerDeg = safeIndex \* DEG_PER_SECTOR \+ DEG_PER_SECTOR \/ 2/.test(pageJs));
-ok('前端展示的是服务端下发的 prize（不是停位数组项）',
-  /const p = result\.prize \|\| \{\}/.test(pageJs));
-ok('前端有 transitionend 收口 + 兜底定时器（低端机不卡死）',
-  /bind:transitionend="onSpinEnd"/.test(pageWxml) && /_spinTimer = setTimeout\(finish/.test(pageJs));
+ok('前端展示服务端下发的 prize（不是停位数组项）', /const p = result\.prize \|\| \{\}/.test(pageJs));
+ok('九宫格结果使用服务端 board/lines', /result\.board/.test(pageJs) && /result\.lines/.test(pageJs));
+ok('转盘 transitionend + 兜底定时器', /bind:transitionend="onSpinEnd"/.test(pageWxml) && /_spinTimer = setTimeout\(finish/.test(pageJs));
 
-// ===== ①b 抽奖页版式与音效的几个易回退点 =====
-// 次数条早先是 `position:absolute; top:-52rpx` 压在转盘上方，正好叠在播报条上
-// （用户截图里「刚抽中 100步」与「0 次可抽」两行字重在一起）。它本来就在盘上方，
-// 绝对定位零收益高代价 —— 这里反向断言，防止有人再「顺手」改回去。
-ok('次数条走正常文档流（不绝对定位压在播报条上）',
-  /class="bd-stat"/.test(pageWxml) && !/class="bd-count"/.test(pageWxml) && !/\.bd-count\s*\{/.test(pageWxss));
-// 转盘文字要正，必须同时满足三条（缺一条就是用户说的「乱」）：
-//   ① 文字独立成层（放进 clip-path 扇形会被楔形边缘切掉一截）；
-//   ② 径向排布 textDeg=±90（旋转对称 → 盘面停在任何角度都整齐）；
-//   ③ 盘面转、指针固定（指针歪着停会让人以为坏了）
-ok('扇区文字独立成层（不被 clip-path 楔形切掉）',
-  /class="bd-label/.test(pageWxml) && /\.bd-label\s*\{/.test(pageWxss));
-ok('文字单行径向（labelText + textDeg=±90）',
-  /labelText/.test(pageJs) && /rotate\(\{\{item\.midDeg\}\}deg\)[^"]*rotate\(\{\{item\.textDeg\}\}deg\)/.test(pageWxml) &&
-    /textDeg:\s*midDeg > 180 && midDeg < 360 \? 90 : -90/.test(pageJs));
-ok('盘面旋转（rotateDeg 绑在 .bd-wheel 上）',
-  /class="bd-wheel[^"]*"\s+style="transform: rotate\(\{\{rotateDeg\}\}deg\)/.test(pageWxml));
-ok('指针固定不旋转（反向断言：指针上没有 rotate 内联样式）',
-  /class="bd-pointer[^"]*"/.test(pageWxml) &&
-    !/class="bd-pointer[^"]*"\s+style="transform:\s*rotate/.test(pageWxml));
-// 签到格子必须写清「给什么」（早先只有一个「大」字）
-ok('签到格子显示每日奖励（不是「大」字占位）',
-  /rewardDrawText/.test(pageWxml) && /rewardStepsText/.test(pageJs) && !/item\.big \? '大'/.test(pageWxml));
-// 中心按钮三态由 JS 预计算；「没次数」必须变成可点的下一步动作
-ok('中心按钮文案由 JS 预计算（模板不写三元）', /centerMain/.test(pageWxml) && /function buildCenterState/.test(pageJs));
-ok('没次数时中心是「赚次数」而不是死按钮',
-  /main: '赚次数', sub: '去做任务'/.test(pageJs) && /bind:tap="tapCenter"/.test(pageWxml));
-// 音效：管理端总开关必须真的拦播放（早先只进 data、从没被读过 = 假开关）
-ok('sfxEnabled 真的拦住播放（不是只存进 data）',
-  /const audio = this\.data\.sfxEnabled !== false;/.test(pageJs) && /if \(audio\) sfx\.play/.test(pageJs));
-// iOS 上 3.2 秒后再 play 会被静默拦掉 —— 必须在点抽奖那一 tick 先响一声
-ok('点抽奖时在手势栈里先发一声（解锁 iOS 音频）',
-  /sfx\.play\('spin'\)/.test(pageJs) && /spin: 'bd_spin\.wav'/.test(pageSfx));
-ok('音效失败后用户手动开音效可以重试一次', /function reset\(\)/.test(pageSfx) && /sfx\.reset && sfx\.reset\(\)/.test(pageJs));
+// ===== ② 任务只发铜版 =====
+console.log('\n[2] 任务只发铜版');
+ok('看视频不再累加 draw.total（反向断言）',
+  !/reportVideo[\s\S]{0,1600}'draw\.total'/.test(svc));
+ok('签到不再累加 draw.total / 发步数（反向断言）',
+  !/async function checkin[\s\S]{0,3000}'draw\.total'/.test(svc)
+  && !/async function checkin[\s\S]{0,3000}'draw\.stepsAwarded'/.test(svc));
+ok('看视频发铜版（creditTaskCoin / coinPerWatch）', /source: 'video'/.test(svc) && /coinPerWatch/.test(cfg));
+ok('签到发铜版（source: checkin）', /source: 'checkin'/.test(svc));
+ok('签到阶梯只认 coin（旧 draw/steps 归零）',
+  /draw: 0,\s*\n\s*steps: 0/.test(cfg) && /normalizeMilestones/.test(cfg));
+ok('签到固定 7 天（脏数据截断/补齐 + dayNo 稳定 key）',
+  /milestoneCount: 7/.test(cfg) && /slice\(0, LIMITS\.milestoneCount\)/.test(cfg)
+  && /dayNo: i \+ 1/.test(cfg) && /wx:key="dayNo"/.test(adminWxml));
+ok('签到输入走独立 index handler（不拼 {{index}} 路径）',
+  /onMilestoneField/.test(adminWxml) && /onMilestoneField\(e\)/.test(adminJs));
+ok('分享旧接口只回 deprecated，不再发奖', /deprecated: true/.test(svc) && /分享后需好友点开/.test(svc));
+ok('旧 /api/reward-video/report 仍只回 success:false', /deprecated:\s*true/.test(oldRoute) && /success:\s*false/.test(oldRoute));
 
-// ===== ② 概率公示由服务端算 =====
-console.log('\n[2] 概率公示');
-ok('normalizePrizes 产出 percent 字段', /percent:\s*Math\.round\(/.test(svc));
-ok('前端只拼字符串、不自己算百分比', /function buildOddsText\(prizes\)/.test(pageJs) && /p\.percent/.test(pageJs));
-ok('前端没有把 weight 直接除以总权重算公示', !/\/\s*total\s*\*\s*100/.test(pageJs));
-ok('用户端规则区展示 oddsText', /oddsText/.test(pageWxml));
-ok('管理端也显示归一后概率（percentText）', /percentText/.test(readM('packageAdmin/config/reward-video.js')));
+// ===== ③ 钱包/流水 =====
+console.log('\n[3] 铜版钱包与流水');
+ok('钱包余额只由 wallet 服务增减（beidou.js 不直接改 balance）',
+  !/BeidouWallet\.updateOne[\s\S]{0,200}balance/.test(svc) && !/BeidouWallet\.findOneAndUpdate[\s\S]{0,200}balance/.test(svc));
+ok('钱包有 CAS 扣款（balance 条件 + 保底计数同一次更新）',
+  /balance:\s*\{\s*\$gte:\s*amount\s*\}/.test(walletSvc) && /\[lossField\]:\s*oldLosses/.test(walletSvc));
+ok('流水幂等键 (openid, idemKey) 唯一',
+  /index\(\{\s*openid:\s*1,\s*idemKey:\s*1\s*\},\s*\{\s*unique:\s*true\s*\}/.test(logModel));
+ok('creditCoins 先写幂等流水再动余额', /const log = await writeLog[\s\S]{0,500}\$inc:\s*inc/.test(walletSvc));
+ok('debitCoins 余额不足不写流水', /reason: 'insufficient'/.test(walletSvc));
+ok('钱包余额默认 0、保底计数跨天保留', /balance:\s*\{\s*type:\s*Number,\s*default:\s*0\s*\}/.test(walletModel) && /wheelLosses/.test(walletModel));
 
-// ===== ③ 非法奖池回退默认 =====
-console.log('\n[3] 奖池非法回退');
-ok('空奖池/全非法 → 回退 DEFAULT_PRIZES', /if \(!out\.length\) return normalizePrizes\(DEFAULT_PRIZES\)/.test(svc));
-ok('weight <= 0 的项被剔除（不会画出永远抽不到的扇区）', /if \(!weight\) continue/.test(svc));
-ok('step 奖 amount = 0 被剔除', /amount = clampInt\(p\.amount, LIMITS\.prizeSteps, 1\) \|\| 0;/.test(svc));
-ok('奖项数上限 8（扇区数）', /prizeCount:\s*8/.test(svc));
-ok('扇区固定 8 格', /SECTOR_COUNT = 8/.test(svc));
+// ===== ④ 封顶与保底 =====
+console.log('\n[4] 封顶与保底');
+ok('每日游戏铜版上限是唯一判定（gameCapRemaining）',
+  /function gameCapRemaining\(day, cfg\)/.test(walletSvc) && /dailyGameCoinCap/.test(cfg));
+ok('转盘 coin 奖受游戏上限约束，部分发放/降级',
+  /applyWheelCaps/.test(svc) && /coinCap\.left/.test(svc));
+ok('步数奖受 dailyStepsCap 约束并降级为空奖',
+  /stepsCap\.cap && finalPrize\.amount > stepsCap\.left/.test(svc) && /dailyStepsCap/.test(cfg));
+ok('九宫格同样走 coin/steps 双封顶', /applyGridCaps/.test(svc));
+ok('两个玩法都有保底（连续未中到阈值必中）',
+  /pickPityWheel/.test(svc) && /pickPityGrid/.test(svc) && /afterLosses/.test(cfg));
+ok('保底进度与扣款同一次 CAS（不会并发写乱）',
+  /luck\.\$\{game\}Losses|\[lossField\]/.test(walletSvc) && /nextLosses/.test(walletSvc));
+ok('中奖后保底计数清零', /nextLosses = .*type === 'none' \? losses \+ 1 : 0/.test(svc));
+ok('每日游戏铜版上限默认 200', /dailyGameCoinCap:\s*\{\s*type:\s*Number,\s*default:\s*200/.test(model));
+ok('每日步数上限默认 3000', /dailyStepsCap:\s*\{\s*type:\s*Number,\s*default:\s*3000/.test(model));
 
-// ===== ④ 每日步数封顶（唯一成本闸门）=====
-console.log('\n[4] 每日步数封顶');
-ok('capRemaining 是唯一封顶判定', /function capRemaining\(day, cfg\)/.test(svc));
-ok('抽奖的步数奖过封顶并降级为空奖', /if \(cap\.cap && prize\.amount > cap\.left\)/.test(svc));
-ok('降级时把 index 也改成空奖所在扇区（否则停位与结果不符）',
-  /const hit = cfg\.sectors\.indexOf\(nonePrize\.key\);[\s\S]{0,80}index = hit >= 0 \? hit /.test(svc));
-ok('奖池里没有 none 项时**合成**一个 0 步空奖来降级（否则封顶是假的）',
-  /find\(\(p\) => p\.type === 'none'\) \|\| \{[\s\S]{0,160}type: 'none'/.test(svc));
-ok('降级记 capped 标记（前端可提示，不报错）', /capped: true|draw\.capped/.test(svc));
-ok('签到步数同样过 capRemaining（不另开额度）',
-  /const cap = capRemaining\(day, cfg\);[\s\S]{0,200}steps = Math\.max\(0, Math\.min\(steps, cap\.left\)\)/.test(svc));
-ok('发步数时累加 draw.stepsAwarded', /'draw\.stepsAwarded'/.test(svc));
-ok('默认封顶 3000 步', /dailyStepsCap:\s*\{\s*type:\s*Number,\s*default:\s*3000/.test(model));
-ok('前端在封顶时有提示文案', /capText/.test(pageJs) && /capText/.test(pageWxml));
+// ===== ⑤ 九宫格 =====
+console.log('\n[5] 九宫格连线');
+ok('固定 8 条线（3 行 3 列 2 对角线）', /const LINES = \[/.test(gridSvc) && /row0/.test(gridSvc) && /diag1/.test(gridSvc));
+ok('只把奖品符号成线算中奖（空白不算）', /sym\.type === SYMBOL_TYPE_NONE/.test(gridSvc));
+ok('老虎机式随机盘面：按 weight 独立抽 9 格', /function drawBoard\(symbols/.test(gridSvc) && /pickWeighted/.test(gridSvc));
+ok('多线/混合奖励由 evaluateBoard 统一统计', /function evaluateBoard\(board, symbols\)/.test(gridSvc) && /coinAmount/.test(gridSvc) && /stepsAmount/.test(gridSvc));
+ok('盘面返回 9 格 + 中奖线 + 图标 URL', /BOARD_SIZE = 9/.test(gridSvc) && /boardCells/.test(gridSvc) && /iconUrl/.test(gridSvc));
+ok('保底强制至少 1 线（pitySymbol）', /pitySymbol/.test(gridSvc));
+ok('前端只做卷轴展示（停位=board、revealed/win 由服务端结果驱动）',
+  /grid\.cells/.test(pageWxml) && /result\.board/.test(pageJs) && /finishGridReveal/.test(pageJs)
+  && /board\[c \+ r \* 3\]/.test(pageJs));
+{
+  const buildReelsSrc = pageJs.slice(pageJs.indexOf('function buildReels'), pageJs.indexOf('function myMaskedName'));
+  ok('卷轴装饰帧确定性循环（buildReels 零随机，反向断言）',
+    buildReelsSrc.length > 0 && !/Math\.random/.test(buildReelsSrc));
+}
+ok('前端格子显示上传图标（iconUrl）', /iconUrl/.test(pageJs) && /item\.iconUrl/.test(pageWxml));
+ok('铜版图标上传字段（coinIconUrl）', /coinIconUrl/.test(cfg) && /coinIconUrl/.test(readS('models/goal-config.js')));
+ok('图案有单格权重 + 单线奖 + 图标 URL',
+  /weight/.test(readS('models/goal-config.js')) && /iconUrl/.test(readS('models/goal-config.js')));
+ok('上传用途 beidou（config.manage 可传）',
+  /beidou: \['config\.manage'\]/.test(readS('routes/admin/upload.js'))
+  && /'config\.manage'/.test(readS('routes/admin/index.js'))
+  && /beidou/.test(readM('packageAdmin/files/files.js')));
+ok('后台有图案上传/清除 + 铜版图标上传',
+  /uploadSymbolIcon/.test(adminJs) && /uploadCoinIcon/.test(adminJs)
+  && /uploadSymbolIcon/.test(adminWxml) && /uploadCoinIcon/.test(adminWxml));
+ok('后台不再展示 v3 结果表（反向断言）',
+  !/config\.beidou\.grid\.outcomes/.test(adminWxml) && !/onOutcomeField/.test(adminJs));
 
-// ===== ⑤ 幂等 =====
-console.log('\n[5] 幂等（drawId / watchId）');
-// ⚠️ 这里必须钉成「(openid, drawId) 按人唯一」，不能只写「drawId 有唯一索引」：
-//    旧实现是 drawId 全局唯一，两个用户撞出同一个 drawId 时，后来者会撞上别人的记录，
-//    被幂等分支当成「重复提交」→ 返回**别人的奖品与 index**，自己次数不扣、步数不发，
-//    而接口返回 success:true，日志里毫无痕迹。幂等的语义从来都是「同一个人同一笔」。
-ok('drawId 唯一索引必须含 openid（按人隔离）',
-  /index\(\{ openid: 1, drawId: 1 \}, \{ unique: true \}\)/.test(drawModel));
-ok('禁止 drawId 全局唯一索引回潮（反向断言）',
-  !/index\(\{\s*drawId:\s*1\s*\},\s*\{\s*unique:\s*true\s*\}\)/.test(drawModel));
-ok('幂等查询带 openid（不能只按 drawId 查）',
-  /BeidouDraw\.findOne\(\{ openid, drawId: nonce \}\)/.test(svc));
-ok('幂等重放查询没有「只按 drawId」的写法（反向断言）',
-  !/findOne\(\{ drawId: nonce \}\)/.test(svc));
-ok('抽奖先查重复 drawId 并返回上次结果', /if \(dup\)[\s\S]{0,300}duplicated:\s*true/.test(svc));
-ok('CAS 用 draw.used 做版本号', /'draw\.used':\s*day\.draw\.used/.test(svc));
-ok('唯一键冲突时回滚已占用的次数', /'draw\.used':\s*-1/.test(svc));
-ok('看视频 watchId 幂等（数组去重）', /video\.watchIds \|\| \[\]\)\.includes\(nonce\)/.test(svc));
-ok('前端每次请求生成新的 nonce', /function makeNonce\(prefix\)/.test(pageJs));
-// 索引换了必须显式迁移：Mongoose 只新建缺失索引，不会替换已存在的旧索引
-ok('有 drawId 索引迁移函数', /async function migrateDrawIdIndex\(\)/.test(svc));
-ok('迁移里显式 dropIndex 旧的全局 drawId_1', /dropIndex\('drawId_1'\)/.test(svc));
-ok('index.js 启动期调用该迁移（与 dorms/union 同一模式）', /migrateDrawIdIndex/.test(indexJs));
+// ===== ⑥ 分享归因 =====
+console.log('\n[6] 分享归因（好友点开才算）');
+ok('分享令牌是 crypto.randomBytes 随机串', /crypto\.randomBytes\(16\)\.toString\('hex'\)/.test(svc));
+ok('令牌模型 token 唯一 + owner+date 唯一', /token:.*unique: true/.test(shareLinkModel) && /ownerOpenid: 1, date: 1/.test(shareLinkModel));
+ok('分享点击按 (owner,visitor,date) 唯一（同一好友每天一次）',
+  /ownerOpenid: 1, visitorOpenid: 1, date: 1/.test(shareClickModel));
+ok('自己点不算', /link\.ownerOpenid === openid/.test(svc) && /不能给自己助力/.test(svc));
+ok('分享者每日上限', /share\.dailyLimit && rewarded >= cfg\.share\.dailyLimit/.test(svc));
+ok('令牌过期拒绝', /expiresAt.*Date\.now\(\)/.test(svc) && /分享链接已过期/.test(svc));
+ok('好友点击后才给分享者发铜版（share: 流水）', /source: 'share'/.test(svc) && /idemKey: `share:\$\{String\(click\._id\)\}`/.test(svc));
+ok('前端分享路径带 bdshare 令牌', /share\.path|bdshare/.test(pageJs) && /bdshare/.test(shareUtil));
+ok('前端不再调用旧 /share/report', !/\/api\/beidou\/share\/report/.test(pageJs));
+ok('splash/app 捕获令牌（未登录也存）', /shareRef\.capture\(options\)/.test(splash) && /shareRef\.capture\(options\)/.test(appSrc));
+ok('home 登录后 flush（且在 30 秒节流 return 之前）',
+  /this\.flushShareRef\(\)/.test(home)
+  && home.indexOf('this.flushShareRef()') < home.indexOf('HOME_REFRESH_MIN_GAP) return')
+  && /shareRef\s*\.\s*flush\(\)/.test(home));
 
-// ===== ⑥ 教师拦截 + 旧接口降级 =====
-console.log('\n[6] 教师拦截与旧接口');
-ok('routes/beidou 有 guardWrite 统一闸门', /function guardWrite\(req, res\)/.test(route));
-ok('guardWrite 里有 isTeacher 判定', /stepsSvc\.isTeacher\(req\.user\)/.test(route));
-ok('四个写接口都过 guardWrite', (route.match(/if \(!guardWrite\(req, res\)\) return;/g) || []).length >= 4);
-ok('抽奖接口也过 sync 限制（403004）', /anticheat\.activeRestriction\(req\.user, 'sync'\)/.test(route));
-ok('旧 /api/reward-video/report 只回 success:false', /deprecated:\s*true/.test(oldRoute) && /success:\s*false/.test(oldRoute));
-ok('旧接口不再调用 reportRewardVideo（不再发步数）', !/reportRewardVideo\(/.test(oldRoute));
-ok('app.js 挂载了 /api/beidou', /app\.use\('\/api\/beidou'/.test(appSrc));
+// ===== ⑦ 旧 API 保留 + 教师闸门 =====
+console.log('\n[7] 旧 API 与教师闸门');
+for (const p of ['/today', '/draw', '/video/report', '/checkin', '/share/report', '/winners']) {
+  ok(`旧路径 ${p} 保留`, route.includes(`'${p}'`) || route.includes(`"${p}"`));
+}
+ok('新增 /grid/play', /router\.post\(\s*'\/grid\/play'/.test(route));
+ok('新增 /share/intent 与 /share/click',
+  /router\.post\(\s*'\/share\/intent'/.test(route) && /router\.post\(\s*'\/share\/click'/.test(route));
+ok('所有写接口过 guardWrite',
+  (route.match(/if \(!guardWrite\(req, res\)\) return;/g) || []).length >= 7);
+ok('旧 today 兼容字段仍在（draw.remaining/prizes/sectors、video.drawPerWatch、share.drawPerShare）',
+  /draw: \{[\s\S]{0,1200}remaining/.test(svc) && /drawPerWatch: 0/.test(svc) && /drawPerShare: 0/.test(svc));
+ok('旧 /api/reward-video 仍挂载', /app\.use\('\/api\/reward-video'/.test(readS('app.js')));
 
-// ===== ⑦ 断签重置 =====
-console.log('\n[7] 签到断签重置');
-ok('streak 按昨天是否签到推（不是累计天数）',
-  /const yStreak = yDoc && yDoc\.checkin && yDoc\.checkin\.done \? yDoc\.checkin\.streak \|\| 0 : 0;/.test(svc));
-ok('streak = 昨天 + 1', /const streak = yStreak \+ 1;/.test(svc));
-ok('并发重复签到用 checkin.done:false 做条件', /'checkin\.done':\s*false/.test(svc));
-ok('签到模型 openid+date 唯一', /beidouDaySchema\.index\(\{ openid: 1, date: 1 \}, \{ unique: true \}\)/.test(dayModel));
+// ===== ⑧ 管理端 =====
+console.log('\n[8] 管理端');
+ok('保存走 normalizeBeidouInput（钳位唯一实现）', /beidouSvc\.normalizeBeidouInput\(beidou\)/.test(adminCfg));
+ok('GET 下发 beidouEffective + 可编辑 beidou', /out\.beidouEffective = await beidouSvc\.loadConfig\(\)/.test(adminCfg) && /toEditableConfig/.test(adminCfg));
+ok('有预览接口（同一份归一/EV）', /router\.post\(\s*'\/beidou-preview'/.test(adminCfg) && /beidouSvc\.buildEffective\(norm\)/.test(adminCfg));
+ok('中奖流水支持 game 筛选', /req\.query\.game/.test(adminCfg) && /facets:[\s\S]{0,400}game:/.test(adminCfg));
+ok('铜版流水接口只读', /router\.get\(\s*'\/beidou-coin-logs'/.test(adminCfg) && !/router\.(put|post|delete)\(\s*'\/beidou-coin-logs'/.test(adminCfg));
+ok('经济概览接口只读', /router\.get\(\s*'\/beidou-economy'/.test(adminCfg) && !/router\.(put|post|delete)\(\s*'\/beidou-economy'/.test(adminCfg));
+ok('保存栏只给可写用户', /cfg-save-bar[^>]*wx:if="\{\{canManage\}\}"/.test(adminWxml));
+ok('增删奖池/符号/结果都有 canManage 守卫',
+  /addPrize[\s\S]{0,80}wx:if="\{\{canManage\}\}"/.test(adminWxml) || /wx:if="\{\{canManage\}\}"[\s\S]{0,120}bind:tap="addPrize"/.test(adminWxml));
+ok('后台页有预览/流水/铜版/经济 Tab', /switchTab/.test(adminWxml) && /铜版流水/.test(adminWxml) && /经济概览|当前流通/.test(adminWxml));
 
-// ===== ⑧ 管理端 / 文档接线 =====
-console.log('\n[8] 管理端与文档');
-ok('管理端保存走 normalizeBeidouInput（钳位唯一实现）',
-  /beidouSvc\.normalizeBeidouInput\(beidou\)/.test(adminCfg));
-ok('管理端 GET 下发 beidouEffective', /out\.beidouEffective = await beidouSvc\.loadConfig\(\)/.test(adminCfg));
-ok('中奖记录接口只读（只有 GET）', /router\.get\(\s*'\/beidou-draws'/.test(adminCfg) && !/router\.(put|post|delete)\(\s*'\/beidou-draws'/.test(adminCfg));
-ok('管理端保存栏只给可写用户', /cfg-save-bar[^>]*wx:if="\{\{canManage\}\}"/.test(adminWxml));
-ok('管理端奖池可增删（有 addPrize / removePrize）',
-  /addPrize\(\)/.test(readM('packageAdmin/config/reward-video.js')) && /removePrize\(e\)/.test(readM('packageAdmin/config/reward-video.js')));
-const plan = path.join(__dirname, '..', 'docs', 'beidou-lottery-plan.md');
-ok('方案文档存在', fs.existsSync(plan));
-const apiDoc = fs.readFileSync(path.join(__dirname, '..', 'docs', 'api.md'), 'utf8');
-ok('docs/api.md 已补 /api/beidou', /\/api\/beidou/.test(apiDoc));
-
-// ===== ⑧b 来源口径文案必须单点（顺序改了两端不能撒谎）=====
-console.log('\n[8b] 来源口径文案单点');
-ok('来源中文文案在 service 里定义一份（SOURCE_TEXT）',
-  /const SOURCE_TEXT = \{[\s\S]{0,200}prize: '再来一次'/.test(svc));
-ok('service 导出 SOURCE_TEXT / sourceNote', /^\s+SOURCE_TEXT,$/m.test(svc) && /^\s+sourceNote,$/m.test(svc));
-ok('口径整句由 SOURCE_ORDER 生成（顺序不会与代码脱节）',
-  /SOURCE_ORDER\.map\(\(s\) => SOURCE_TEXT\[s\]\)\.join\(' → '\)/.test(svc));
-ok('管理端路由不再自己写一份 SOURCE_TEXT（反向断言）',
-  !/const SOURCE_TEXT = \{[\s\S]{0,160}video: '看视频'/.test(adminCfg));
-ok('管理端下发的说明句取自 service', /sourceNote: cfgSvc\.sourceNote\(\)/.test(adminCfg));
-ok('来源说明接口的 order/text 也取自 service',
-  /order: svc\.SOURCE_ORDER/.test(adminCfg) && /text: svc\.SOURCE_TEXT/.test(adminCfg));
-ok('页面不硬编码扣减优先级（反向断言）',
-  !/再来一次 → 签到 → 看视频 → 邀请/.test(adminWxml));
-ok('页面渲染服务端下发的 sourceNote', /\{\{sourceNote\}\}/.test(adminWxml));
-ok('页面 data 有 sourceNote 初值（空则不显示，不编造）', /sourceNote: '',/.test(readM('packageAdmin/config/reward-video.js')));
-
-// ===== ⑨ 中奖播报：脱敏 / 稀有度 / 隐私 =====
-console.log('\n[9] 中奖播报（脱敏与稀有度）');
-ok('姓名脱敏有唯一实现（services/name-mask.js）', fs.existsSync(path.join(SERVER, 'services', 'name-mask.js')));
-ok('播报用 maskName，不下发完整姓名', /maskName\(u\.realName \|\| u\.nickname\)/.test(svc));
-ok('播报字段名是 nameMasked（不是 realName/nickname）', /nameMasked:/.test(svc) && !/nameMasked:\s*u\.realName[^,]*,/.test(svc));
-ok('不参与排名（exitRanking）的学生不进播报', /privacy\.exitRanking\) continue/.test(svc));
-ok('封禁 / 教师账号不进播报', /u\.status === 'banned'\) continue/.test(svc) && /u\.role === 'teacher'\) continue/.test(svc));
-ok('同一人最多占 2 条（防刷屏）', /cnt >= 2\) continue/.test(svc));
-ok('谢谢参与不进播报', /type: \{ \$ne: 'none' \}/.test(svc));
-ok('稀有度门槛是常量 10%（不是写死在 if 里）', /const RARE_PERCENT = 10;/.test(svc));
-ok('rarest 要求「最小 percent 且 ≤10%」（奖池平时不会全员最稀有）',
-  /pct <= minPct \+ 1e-9 && pct <= RARE_PERCENT/.test(svc));
-ok('统计字段走服务端拼（atText / rarityText）', /atText: fmtClock/.test(svc) && /rarityText: buildRarityText/.test(svc));
-ok('路由有 GET /winners', /router\.get\(\s*'\/winners'/.test(route));
-ok('今天状态带 sfxEnabled（音效总开关）', /sfxEnabled: cfg\.sfxEnabled !== false/.test(svc));
-ok('管理端可保存 sfxEnabled', /input\.sfxEnabled !== undefined/.test(svc));
-// 历史 bug：recent 只下发 at（Date），WXML 渲染 atText → 时间列恒空
-ok('recent 下发 atText（修历史 bug：时间列不再恒空）', /atText: fmtClock\(r\.createdAt\)/.test(svc));
-ok('recent 下发 prizeLabel（前端不再自己拼奖品文案）', /prizeLabel: p\.label \|\|/.test(svc));
-
-// ===== ⑩ 抽奖来源账本 + 管理端筛选（用户 2026-11-12）=====
-console.log('\n[10] 抽奖来源账本与筛选');
-ok('流水有 source 字段（账本归属）', /source:\s*\{\s*\n?\s*type:\s*String,/.test(drawModel));
-ok('source 取值白名单含 video/share/checkin/prize/unknown',
-  /'video',\s*'share',\s*'checkin',\s*'prize',\s*'unknown'/.test(drawModel));
-ok('source 建了索引（管理端按来源筛）', /source:\s*1,\s*date:\s*-1/.test(drawModel));
-ok('beidou_day 有各来源已用计数（usedVideo/usedShare/…）',
-  /usedVideo:/.test(dayModel) && /usedShare:/.test(dayModel) && /usedCheckin:/.test(dayModel) && /usedPrize:/.test(dayModel));
-ok('扣减优先级写死在代码里（prize → checkin → video → share）',
-  /const SOURCE_ORDER = \['prize', 'checkin', 'video', 'share'\];/.test(svc));
-ok('pickSource 是纯函数且导出', /function pickSource\(day\)/.test(svc) && /pickSource,/.test(svc));
-ok('抽奖时**同一次原子更新**里扣 used 与来源账本（不能分两次写）',
-  /\$inc: \{ 'draw\.used': 1, \.\.\.sourceInc \}/.test(svc));
-ok('唯一键冲突回滚时来源账本也一起退（否则余额永久偏差）',
-  /'draw\.used': -1, \.\.\.\(source === 'unknown' \? \{\} : \{ \[`draw\.\$\{SOURCE_USED_FIELD\[source\]\}`\]: -1 \}\)/.test(svc));
-ok('历史数据对齐（老文档没有 used* 字段）', /async function alignLegacyUsage\(day\)/.test(svc));
-ok('drawRound 抽奖前先对齐历史账本', /day = await alignLegacyUsage\(day\)/.test(svc));
-// 管理端筛选
-ok('管理端支持日期范围 dateFrom/dateTo', /cond\.date\.\$gte = from/.test(adminCfg) && /cond\.date\.\$lte = to/.test(adminCfg));
-ok('日期倒序会自动纠正（不能骗管理员「筛了但没筛」）', /if \(from && to && from > to\) \[from, to\] = \[to, from\];/.test(adminCfg));
-ok('管理端支持 source 筛选且校验白名单', /\[\'video\', \'share\', \'checkin\', \'prize\', \'unknown\'\]\.includes\(s\)/.test(adminCfg));
-ok('分面计数排除 source 本身（否则选了视频只剩一项有数）', /delete facetBase\.source;/.test(adminCfg));
-ok('来源中文文案由服务端下发（sourceText）', /sourceText: SOURCE_TEXT\[src\]/.test(adminCfg));
-ok('明细下发 roll/index 留证字段', /roll: r\.roll,/.test(adminCfg) && /index: r\.index,/.test(adminCfg));
-ok('有来源口径说明接口', /router\.get\(\s*'\/beidou-draws\/sources'/.test(adminCfg));
-ok('页面筛选走服务端（把条件拼进 query）', /dateFrom=\$\{encodeURIComponent/.test(readM('packageAdmin/config/reward-video.js')));
-
-// ===== ⑪ 纯函数行为断言（不连库，抓归一化/扇区的真错）=====
-console.log('\n[11] 纯函数行为');
+// ===== ⑨ 纯函数 =====
+console.log('\n[9] 纯函数行为');
 try {
   const b = require(path.join(SERVER, 'services', 'beidou'));
   const p = b.normalizePrizes(null);
   const sum = Math.round(p.reduce((s, x) => s + x.percent, 0));
   ok('默认奖池概率合计 ≈ 100%', Math.abs(sum - 100) <= 1, sum);
+  ok('默认奖池 8 项且含铜版奖', p.length === 8 && p.some((x) => x.type === 'coin'), p.map((x) => x.type));
   const sectors = b.buildSectors(p);
   ok('扇区数恒为 8', sectors.length === 8, sectors.length);
   ok('每个扇区都能对应到奖池项', sectors.every((k) => p.some((x) => x.key === k)));
-  // 权重全 0 必须回退默认，而不是返回空
   const fallback = b.normalizePrizes([{ key: 'a', type: 'none', weight: 0 }]);
   ok('权重全 0 → 回退默认奖池', fallback.length === b.DEFAULT_PRIZES.length, fallback.length);
-  // roll 边界：0 命中第一项，1 命中最后一项（不能出现 undefined）
-  const first = b.pickPrize(p, sectors, 0);
-  const last = b.pickPrize(p, sectors, 0.999999);
-  ok('roll=0 命中有效奖池项', !!first.prize && !!first.prize.key, first.prize);
-  ok('roll≈1 命中有效奖池项', !!last.prize && !!last.prize.key, last.prize);
-  ok('index 落在 0..7', first.index >= 0 && first.index < 8 && last.index >= 0 && last.index < 8);
-  // pickPrize 的 index 必须指向「该奖所在的扇区」，否则停位会错
-  ok('index 指向的扇区就是命中的奖', sectors[first.index] === first.prize.key);
-  // 归一化输入：越界夹紧、非数字不落
-  const norm = b.normalizeBeidouInput({ draw: { maxPerDay: -5, dailyStepsCap: 999999 }, prizes: [{ key: 'x', type: 'steps', amount: 3, weight: 1 }] });
-  ok('负数 maxPerDay 夹到 0', norm.draw.maxPerDay === 0, norm.draw.maxPerDay);
-  ok('超大 dailyStepsCap 被夹紧', norm.draw.dailyStepsCap <= b.LIMITS.dailyStepsCap, norm.draw.dailyStepsCap);
-
-  // 稀有度三档 + 边界（这几条错一个就会「页面说稀有、播报说普通」）
-  ok('rarest：最小 percent 且 ≤10%', b.rarityOf({ type: 'steps', percent: 2 }, p) === 'rarest', b.rarityOf({ type: 'steps', percent: 2 }, p));
-  ok('rare：<10% 但不是最小', b.rarityOf({ type: 'steps', percent: 6 }, p) === 'rare', b.rarityOf({ type: 'steps', percent: 6 }, p));
-  ok('normal：>=10%', b.rarityOf({ type: 'steps', percent: 30 }, p) === 'normal', b.rarityOf({ type: 'steps', percent: 30 }, p));
-  ok('none：空奖不参与稀有度', b.rarityOf({ type: 'none' }, p) === 'none');
-  const flat = [{ key: 'a', label: 'A', type: 'steps', percent: 25 }, { key: 'b', label: 'B', type: 'steps', percent: 25 }];
-  ok('奖池很平时（最小 25%）不算 rarest', b.rarityOf(flat[0], flat) === 'normal', b.rarityOf(flat[0], flat));
-  ok('rarityText 含最低与最高概率', /最低概率奖/.test(b.buildRarityText(p)) && /最高/.test(b.buildRarityText(p)));
-
-  // 脱敏：唯一实现的行为
-  const { maskName } = require(path.join(SERVER, 'services', 'name-mask'));
-  ok('张三丰 → 张**', maskName('张三丰') === '张**', maskName('张三丰'));
-  ok('陈宇航 → 陈**', maskName('陈宇航') === '陈**', maskName('陈宇航'));
-  ok('单字名「李」→ 李*', maskName('李') === '李*', maskName('李'));
-  ok('空名 → 匿名同学', maskName('') === '匿名同学', maskName(''));
-  ok('脱敏后不含原名的第 2 个字（不可反推）', !maskName('陈宇航').includes('宇'));
-
-  // 来源判定：优先级与余额（这几条错一个，管理端来源统计就整片失真）
-  const mk = (o) => ({ draw: Object.assign(
-    { fromPrize: 0, fromCheckin: 0, fromVideo: 0, fromShare: 0, usedPrize: 0, usedCheckin: 0, usedVideo: 0, usedShare: 0 },
-    o
-  ) });
-  ok('只有 video 有余额 → video', b.pickSource(mk({ fromVideo: 2 })) === 'video');
-  ok('checkin 优先于 video', b.pickSource(mk({ fromVideo: 2, fromCheckin: 1 })) === 'checkin');
-  ok('prize（再来一次）优先级最高', b.pickSource(mk({ fromPrize: 1, fromCheckin: 5, fromVideo: 5 })) === 'prize');
-  ok('video 优先于 share', b.pickSource(mk({ fromVideo: 1, fromShare: 1 })) === 'video');
-  ok('余额用尽 → unknown（不瞎归到一个来源）', b.pickSource(mk({ fromVideo: 2, usedVideo: 2 })) === 'unknown');
-  ok('部分消耗后继续扣剩余', b.pickSource(mk({ fromVideo: 2, usedVideo: 1 })) === 'video');
-  ok('老数据（无 used* 字段）按 from 计', b.pickSource({ draw: { fromVideo: 1 } }) === 'video');
+  const e = b.buildEffective({});
+  ok('默认转盘成本 5 / 九宫格成本 6', e.wheel.cost === 5 && e.grid.cost === 6, [e.wheel.cost, e.grid.cost]);
+  ok('默认返奖率 < 100%（收益策略：返奖低于成本）', e.wheel.ev.returnRate < 100 && e.grid.ev.returnRate < 100, [e.wheel.ev, e.grid.ev]);
+  ok('默认高价值奖占比 ≤ 10%', e.wheel.ev.highTierPercent <= 10 && e.grid.ev.highTierPercent <= 10);
+  const g = require(path.join(SERVER, 'services', 'beidou-grid'));
+  ok('默认九宫格期望线数 > 0', e.grid.ev.expectedLines > 0, e.grid.ev);
+  // 全皇冠盘面：8 条线，奖励 = 8 × 单线奖
+  const crown = e.grid.symbols.find((s) => s.key === 'crown');
+  const crownBoard = Array(9).fill('crown');
+  const full = g.evaluateBoard(crownBoard, e.grid.symbols);
+  ok('9 格全皇冠 → 8 线', full.totalLines === 8, full.totalLines);
+  ok('8 线奖励 = 8 × 单线奖', full.rewards[0] && full.rewards[0].amount === (crown.amount || 0) * 8, full.rewards);
+  // 1 线皇冠 = 1 个单线奖；2 线 = 2 个
+  const one = Array(9).fill('blank');
+  [0, 1, 2].forEach((i) => { one[i] = 'crown'; });
+  const oneEval = g.evaluateBoard(one, e.grid.symbols);
+  ok('1 线皇冠 = 单线奖', oneEval.totalLines === 1 && oneEval.coinAmount === (crown.amount || 0), oneEval);
+  const two = Array(9).fill('blank');
+  [0, 1, 2, 3, 4, 5].forEach((i) => { two[i] = 'crown'; });
+  const twoEval = g.evaluateBoard(two, e.grid.symbols);
+  ok('2 线皇冠 = 单线奖 × 2', twoEval.totalLines === 2 && twoEval.coinAmount === (crown.amount || 0) * 2, twoEval);
+  const norm = b.normalizeBeidouInput({
+    wheel: { cost: -5, maxPerDay: 999999 },
+    grid: { cost: 999999 },
+    share: { dailyLimit: -1 },
+    prizes: [{ key: 'x', type: 'coin', amount: 3, weight: 1 }],
+  });
+  ok('负数成本夹到 0', norm.wheel.cost === 0, norm.wheel.cost);
+  ok('超大成本被夹紧', norm.grid.cost <= b.LIMITS.coinCost, norm.grid.cost);
+  ok('负数分享上限夹到 0', norm.share.dailyLimit === 0, norm.share.dailyLimit);
 } catch (e) {
-  ok('service 可被 require 并跑通纯函数', false, e.message);
+  ok('service 可被 require 并跑通纯函数', false, e.stack || e.message);
 }
 
-console.log(failed ? `\n发现 ${failed} 个问题` : '\n北斗运动 2.0 静态契约全部通过');
+// ===== ⑩ 文档 =====
+console.log('\n[10] 文档与启动迁移');
+ok('方案文档存在', fs.existsSync(path.join(__dirname, '..', 'docs', 'beidou-economy-plan.md')));
+ok('docs/api.md 已补新接口', /\/api\/beidou/.test(fs.readFileSync(path.join(__dirname, '..', 'docs', 'api.md'), 'utf8')));
+ok('index.js 启动期调用 migrateBeidouConfig', /migrateBeidouConfig/.test(indexJs));
+
+// ===== ⑪ v4 修复（2026-11-25）：获奖概率口径 / 编辑不回写 / 露奖闸门 / 拉杆 =====
+console.log('\n[11] v4 修复');
+{
+  const g = require('../server/src/services/beidou-grid.js');
+  ok('lineWinProbability 已导出', typeof g.lineWinProbability === 'function');
+  // 独立交叉核对：枚举 2^9 格子状态按 p^k(1-p)^(9-k) 加权，与容斥公式逐点比对
+  const brute = (p) => {
+    let sum = 0;
+    for (let mask = 0; mask < 512; mask += 1) {
+      const cells = [];
+      let k = 0;
+      for (let i = 0; i < 9; i += 1) {
+        const on = (mask >> i) & 1;
+        cells.push(on);
+        k += on;
+      }
+      if (g.LINES.some((L) => L.cells.every((c) => cells[c] === 1))) sum += Math.pow(p, k) * Math.pow(1 - p, 9 - k);
+    }
+    return sum;
+  };
+  ok('获奖概率容斥 = 512 态枚举独立核对', [0.1, 0.3, 0.5, 0.9].every((p) => Math.abs(g.lineWinProbability(p) - brute(p)) < 1e-9));
+  ok('反解往返：cellProbForWinProbability 单调可逆', [0.01, 0.05, 0.1727, 0.5, 0.9].every((q) => Math.abs(g.lineWinProbability(g.cellProbForWinProbability(q)) - q) < 1e-6));
+  ok('normalizeSymbols 下发 winPercent（编辑态展示口径）', /winPercent:/.test(cfg) && /lineWinProbability/.test(cfg));
+  // 目标概率模式：填 winTarget 反解权重，空白拿剩余；Σp>1 按比例缩放；权重模式不受影响
+  const cfgSvc = require('../server/src/services/beidou-config.js');
+  const tNorm = cfgSvc.normalizeBeidouInput({ grid: { symbols: [
+    { key: 'star', label: '星星', type: 'coin', amount: 3, winTarget: '17.27' },
+    { key: 'crown', label: '皇冠', type: 'coin', amount: 1, winTarget: '0.78' },
+    { key: 'blank', label: '空白', type: 'none', amount: 0, weight: 30 },
+  ] } });
+  const tEff = cfgSvc.buildEffective(tNorm);
+  const tStar = tEff.grid.symbols.find((s) => s.key === 'star');
+  const tBlank = tEff.grid.symbols.find((s) => s.key === 'blank');
+  ok('目标模式：winTarget 反解后实际获奖概率≈目标', Math.abs(tStar.winPercent - 17.27) < 0.01, tStar.winPercent);
+  ok('目标模式：空白自动拿剩余概率', Math.abs(tBlank.percent - (100 - 30 - 10)) < 0.01, tBlank.percent);
+  const sNorm = cfgSvc.normalizeBeidouInput({ grid: { symbols: [
+    { key: 'a', label: 'A', type: 'coin', amount: 1, winTarget: '50' },
+    { key: 'b', label: 'B', type: 'coin', amount: 1, winTarget: '50' },
+    { key: 'c', label: 'C', type: 'coin', amount: 1, winTarget: '50' },
+  ] } });
+  const sEff = cfgSvc.buildEffective(sNorm);
+  ok('目标合计超可实现范围按比例缩放（不静默丢符号）', sEff.grid.symbols.filter((s) => s.type !== 'none').every((s) => s.winPercent > 0 && s.winPercent < 50));
+  ok('schema 放行 winTarget（否则保存被 stripped）', /winTarget: \{ type: String/.test(readS('models/goal-config.js')));
+  ok('内置图标 seed 导出 + 启动调用 + 静态挂载 + 资源在仓库',
+    /seedBeidouBuiltinIcons/.test(cfg) && /seedBeidouBuiltinIcons/.test(indexJs)
+    && /'\/beidou'/.test(readS('app.js'))
+    && ['crown.png', 'star.png', 'coin.png'].every((f) => fs.existsSync(path.join(SERVER, '..', 'public', 'beidou', f))));
+  ok('seed 只补空不覆盖管理员上传', /if \(file && !s\.iconUrl\)/.test(cfg) && /if \(!b\.coinIconUrl\)/.test(cfg));
+  const aJs = readM('packageAdmin/config/reward-video.js');
+  const aWxml = readM('packageAdmin/config/reward-video.wxml');
+  ok('编辑态展示单局获奖概率（不是单格出现率）', /单局获奖概率/.test(aWxml) && /winPercent/.test(aJs));
+  ok('编辑框填获奖概率反解权重（winTarget 输入 + 服务端反解 + 空白剩余只读）',
+    /data-key="winTarget"/.test(aWxml) && /key === 'winTarget'/.test(aJs) && /cellProbForWinProbability/.test(cfg) && /remainderText/.test(aWxml));
+  const deco = aJs.slice(aJs.indexOf('\n  decorateConfig(effective)'), aJs.indexOf('\n  async fetchPreview('));
+  ok('decorateConfig 派生字段点路径回写（不整数组替换 symbols/prizes）',
+    deco.length > 0 && !/'config\.beidou\.grid\.symbols':/.test(deco) && !/'config\.beidou\.prizes':/.test(deco));
+  const recalc = aJs.slice(aJs.indexOf('\n  recalcOdds()'), aJs.indexOf('\n  loadLogs(reset)'));
+  ok('recalcOdds 不整数组回写 symbols（编辑中途不重置输入框）',
+    recalc.length > 0 && !/'config\.beidou\.grid\.symbols':/.test(recalc));
+  const onSym = aJs.slice(aJs.indexOf('onSymbolField(e)'), aJs.indexOf('addSymbol()'));
+  ok('onSymbolField 点路径 + 权重/奖值保留原始字符串（空串/小数点不被强转 0）',
+    /patch\[`\$\{base\}\.\$\{key\}`\]/.test(onSym) && /String\(value == null \? '' : value\)/.test(onSym) && !/\? 0 : Math\.max/.test(onSym));
+  ok('中奖线胶囊停稳后才渲染（滚动中不剧透）',
+    /bd-grid-lines" wx:if="\{\{grid\.lines\.length && !grid\.revealing\}\}/.test(pageWxml));
+  ok('拉杆下压走常驻节点 transition（不是 class-add animation）',
+    /\.bd-lever\.is-pulled[\s\S]{0,120}transform: translateY\(120rpx\)/.test(pageWxss) && !/bd-lever-pull/.test(pageWxss));
+  ok('onLeverTap 与 SPIN 同入口（playGrid 守卫兜底竞态）', /onLeverTap\(\)/.test(pageJs) && /this\.playGrid\(\);/.test(pageJs));
+}
+
+console.log(failed ? `\n发现 ${failed} 个问题` : '\n北斗运动 3.0 静态契约全部通过');
 process.exit(failed ? 1 : 0);

@@ -1,4 +1,8 @@
-/* 自定义 tabBar：悬浮胶囊（亮色白底 / 暗色深色玻璃，随系统主题切换） */
+/* 自定义 tabBar：玻璃悬浮胶囊（Glassmorphism 2.0）
+   颜色/blur 全部走 app.wxss 的 --tt-glass-* / --tt-* 令牌（CSS 变量可穿透组件边界继承），
+   亮/暗主题随令牌自动切换，本文件不再写 @media (prefers-color-scheme) 硬编码色。
+   宽屏（iPad / Mac·PC，screenMode ≠ compact）挂 .tabbar-wide：居中胶囊 + px 尺寸
+   （rpx 按窗口宽换算，宽窗口会放大数倍，宽屏块内一律 px）。 */
 .tabbar {
   position: fixed;
   left: 24rpx;
@@ -9,8 +13,12 @@
   align-items: center;
   padding: 0 8rpx;
   border-radius: 999rpx;
-  background: rgba(255, 255, 255, 0.97);
-  box-shadow: 0 8rpx 32rpx rgba(28, 31, 35, 0.14), 0 2rpx 8rpx rgba(28, 31, 35, 0.06);
+  background: var(--tt-glass-bg-strong);
+  -webkit-backdrop-filter: var(--tt-glass-blur-strong);
+  backdrop-filter: var(--tt-glass-blur-strong);
+  /* 细亮边 + 顶部内高光 + 柔性浮起（禁止重阴影） */
+  box-shadow: 0 0 0 1rpx var(--tt-glass-border), var(--tt-glass-edge), var(--tt-glass-shadow);
+  transition: background-color 0.2s ease-out, box-shadow 0.2s ease-out;
   z-index: 999;
 }
 
@@ -18,12 +26,25 @@
   flex: 1;
   height: 100%;
   display: flex;
+  align-items: center;
+  justify-content: center;
+  /* 着色层：t-icon 不传 color 时走 currentColor，图标随这里变化 */
+  color: var(--tt-text-3);
+  /* 选中切换时图标/文字颜色 200ms 过渡（与药丸背景同节奏，不许瞬切） */
+  transition: color 0.2s ease-out;
+}
+
+/* 选中态：玻璃高亮药丸（品牌浅底 + 细描边），200ms ease-out 过渡 */
+.tabbar-pill {
+  width: 88%;
+  height: 88rpx;
+  display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 6rpx;
-  /* 着色层：t-icon 不传 color 时走 currentColor，图标随这里变化 */
-  color: #9aa0a6;
+  border-radius: 999rpx;
+  transition: background-color 0.2s ease-out, transform 0.2s ease-out, box-shadow 0.2s ease-out;
 }
 
 .tabbar-text {
@@ -32,29 +53,72 @@
 }
 
 .tabbar-item.active {
-  color: #ff6b00;
+  color: var(--tt-brand);
+}
+
+.tabbar-item.active .tabbar-pill {
+  background: var(--tt-brand-soft);
+  box-shadow: 0 0 0 1rpx var(--tt-brand-soft-2);
 }
 
 .tabbar-item.active .tabbar-text {
   font-weight: 600;
 }
 
-.tabbar-item:active {
-  opacity: 0.7;
+/* 按压：轻微压缩反馈 */
+.tabbar-item:active .tabbar-pill {
+  transform: scale(0.94);
 }
 
-/* 夜间模式：深色玻璃胶囊 + 提亮的品牌橙，与暗色页面融为一体 */
-@media (prefers-color-scheme: dark) {
+/* 悬停（PC 微信 / iPad 外接指针）：玻璃亮度提升 */
+@media (hover: hover) {
+  .tabbar-item:hover .tabbar-pill {
+    background: var(--tt-glass-bg-hover);
+  }
+  .tabbar-item.active:hover .tabbar-pill {
+    background: var(--tt-brand-soft-2);
+  }
+}
+
+/* 降级链：不支持 backdrop-filter 的机型回退高不透明实底 */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .tabbar {
-    background: rgba(28, 28, 30, 0.96);
-    box-shadow: 0 8rpx 32rpx rgba(0, 0, 0, 0.5), 0 2rpx 8rpx rgba(0, 0, 0, 0.4);
+    background: var(--tt-glass-fallback-strong);
   }
+}
 
-  .tabbar-item {
-    color: rgba(255, 255, 255, 0.55);
+/* 动效减弱偏好 */
+@media (prefers-reduced-motion: reduce) {
+  .tabbar,
+  .tabbar-pill {
+    transition: none;
   }
+  .tabbar-item:active .tabbar-pill {
+    transform: none;
+  }
+}
 
-  .tabbar-item.active {
-    color: #f09248;
-  }
+/* ===== 宽屏（≥600px，iPad / Mac·PC）：居中悬浮胶囊，px 尺寸 ===== */
+.tabbar-wide {
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  width: 560px;
+  max-width: calc(100vw - 48px);
+  height: 56px;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  padding: 0 6px;
+  border-radius: 28px;
+  /* 外环亮边改 1px：1rpx 在宽窗口换算≈1.6px，描边会显得粗笨 */
+  box-shadow: 0 0 0 1px var(--tt-glass-border), var(--tt-glass-edge), var(--tt-glass-shadow);
+}
+
+.tabbar-wide .tabbar-pill {
+  height: 44px;
+  gap: 3px;
+  border-radius: 22px;
+}
+
+.tabbar-wide .tabbar-text {
+  font-size: 11px;
 }

@@ -3,58 +3,49 @@
      模板只渲染、不拼三元（仓库约定：文案在 JS 里算好，模板不写复杂表达式）。
      照片用 catch:tap 阻止冒泡：卡片根节点 bind:tap 是进详情，不 catch 会同时跳走。 -->
 <template name="bc-record">
-  <view class="cls-bc-record" data-id="{{id}}" bind:tap="goBanchaoRecord">
-    <view class="cls-bc-record-head">
-      <text class="cls-bc-record-module">{{moduleName}}</text>
-      <view class="cls-bc-record-tags">
-        <text class="cls-bc-record-status">{{statusText}}</text>
-        <text class="num-font cls-bc-record-deduct">{{scoreText}}</text>
+  <view class="cls-bc-record {{hasPhotos ? 'has-photo' : ''}}" data-id="{{id}}" bind:tap="goBanchaoRecord">
+    <!-- 有照片就以照片为卡底（2026-11-23 用户要求）：首张铺满 + 渐变 scrim 保证文字可读 -->
+    <image wx:if="{{hasPhotos}}" class="cls-bc-cover" src="{{photos[0]}}" mode="aspectFill" lazy-load />
+    <view wx:if="{{hasPhotos}}" class="cls-bc-scrim"></view>
+    <view class="cls-bc-body">
+      <view class="cls-bc-record-head">
+        <text class="cls-bc-record-module">{{moduleName}}</text>
+        <view class="cls-bc-record-tags">
+          <text class="cls-bc-record-status">{{statusText}}</text>
+          <text class="num-font cls-bc-record-deduct">{{scoreText}}</text>
+        </view>
       </view>
-    </view>
-    <view class="cls-bc-record-meta">
-      <text class="cls-bc-record-target">{{targetName}}</text>
-      <text class="cls-bc-record-date">{{dateText}}</text>
-    </view>
-    <view class="cls-bc-record-people">
-      <text class="cls-bc-record-person">检查 {{inspectorText}}</text>
-      <text class="{{reviewerClass}}">复核 {{reviewerText}}</text>
-    </view>
-    <view class="cls-bc-record-metric" wx:if="{{metricSummary}}">{{metricSummary}}</view>
-
-    <!-- 照片缩略图：前 3 张 + 超出用 +N（服务端 photoCount 是总数） -->
-    <view class="cls-bc-photos" wx:if="{{hasPhotos}}">
-      <image
-        class="cls-bc-photo"
-        wx:for="{{photos}}"
-        wx:for-item="p"
-        wx:for-index="pi"
-        wx:key="*this"
-        src="{{p}}"
-        mode="aspectFill"
-        lazy-load
-        data-id="{{id}}"
-        data-index="{{pi}}"
-        catch:tap="previewPhoto"
-      />
-      <text class="cls-bc-photo-more" wx:if="{{photoMoreText}}">{{photoMoreText}}</text>
-    </view>
-    <!-- 宿舍照片被服务端裁剪（无权看原图）：给原因，不留空白区 -->
-    <view class="cls-bc-photo-mask" wx:elif="{{photosBlurred}}">
-      <t-icon name="secured" size="20rpx" color="var(--tt-text-3)" />
-      <text>{{photoMaskText}}</text>
-    </view>
-
-    <view class="cls-bc-record-appeal" wx:if="{{appealText}}">
-      <t-icon name="chat" size="20rpx" color="var(--tt-brand)" />
-      <text>{{appealText}}</text>
+      <view class="cls-bc-record-meta">
+        <text class="cls-bc-record-target">{{targetName}}</text>
+        <text class="cls-bc-record-date">{{dateText}}</text>
+      </view>
+      <view class="cls-bc-record-people">
+        <text class="cls-bc-record-person">检查 {{inspectorText}}</text>
+        <text class="{{reviewerClass}}">复核 {{reviewerText}}</text>
+      </view>
+      <view class="cls-bc-record-metric" wx:if="{{metricSummary}}">{{metricSummary}}</view>
+      <!-- 照片底卡：pill 显示照片总数，点按预览（catch 防冒泡成进详情） -->
+      <view class="cls-bc-photo-pill" wx:if="{{hasPhotos}}" catch:tap="previewPhoto" data-id="{{id}}" data-index="0">
+        <t-icon name="image" size="20rpx" color="#ffffff" />
+        <text>照片 {{photoCountText}}</text>
+      </view>
+      <!-- 宿舍照片被服务端裁剪（无权看原图）：给原因，不留空白区 -->
+      <view class="cls-bc-photo-mask" wx:if="{{photosBlurred}}">
+        <t-icon name="secured" size="20rpx" color="var(--tt-text-3)" />
+        <text>{{photoMaskText}}</text>
+      </view>
+      <view class="cls-bc-record-appeal" wx:if="{{appealText}}">
+        <t-icon name="chat" size="20rpx" color="var(--tt-brand)" />
+        <text>{{appealText}}</text>
+      </view>
     </view>
   </view>
 </template>
 
-<view class="page tt-page cls-page">
+<view class="page tt-page tt-ambient-page cls-page screen-{{screenMode}}">
   <!-- ===== 无班级身份：给出明确说明（而不是空白页） ===== -->
   <block wx:if="{{!loading && !role}}">
-    <view class="tt-card cls-blank">
+    <view class="tt-card tt-glass cls-blank">
       <t-icon name="usergroup" size="72rpx" color="var(--tt-text-3)" />
       <view class="cls-blank-title">你还不是班主任或班委</view>
       <view class="cls-blank-tip">班级身份由管理员在「用户管理 → 用户详情 → 班级身份」中分配：教师可分配多个班级做班主任，学生可设为班委（仅查看本班）。</view>
@@ -65,66 +56,150 @@
   </block>
 
   <block wx:if="{{role}}">
-    <!-- ===== 1. 顶部身份卡：班级名 + 角色胶囊 + 多班切换（班级选择器） ===== -->
-    <view class="tt-hero cls-hero">
-      <view class="tt-hero-body">
-        <view class="cls-hero-top">
-          <text class="cls-hero-name">{{className}}</text>
-          <text class="cls-hero-role">{{roleText}}</text>
+    <!-- ===== 吸顶头（2026-11-23 iOS 重排版）：班级条 + 分段控制器 =====
+         班级条：单班 = 班名 + 角色胶囊；多班 = 「班名 ▾」点弹页内选班抽屉（switchClass 全量重置不变）。
+         分段控制器复用公共 .tt-segment（iOS UISegmentedControl），替代原四等分橙渐变 tab；
+         吸顶后改 tab / 改周期都不用滚回顶部。偏移变量 --cls-head-h 见 class.wxss（宽屏换 px）。 -->
+    <view class="cls-topbar tt-glass-float">
+      <!-- 三行布局（2026-11-24 用户要求）：班级名独占一行 + 分段控制器全宽一行 + 条件周期行 -->
+      <view class="cls-topbar-main">
+        <view class="cls-classbar">
+          <view wx:if="{{classes.length > 1}}" class="cls-classpick" bind:tap="openClassPick">
+            <text class="cls-classpick-name">{{className}}</text>
+            <text class="tt-chip cls-role-chip">{{roleText}}</text>
+            <t-icon name="chevron-down" size="20rpx" color="var(--tt-text-3)" />
+          </view>
+          <block wx:else>
+            <text class="cls-classbar-name">{{className}}</text>
+            <text class="tt-chip cls-role-chip">{{roleText}}</text>
+          </block>
         </view>
-        <view class="cls-hero-sub">{{roleTip}}</view>
-
-        <!-- 班主任负责多个班级时的切换（横滑，不占多行） -->
-        <scroll-view wx:if="{{classes.length > 1}}" scroll-x class="cls-hero-classes">
+        <view class="tt-segment cls-segment">
           <view
-            class="cls-hero-class {{item === className ? 'active' : ''}}"
+            class="tt-segment-item {{tab === item.key ? 'active' : ''}}"
+            wx:for="{{tabs}}"
+            wx:key="key"
+            data-tab="{{item.key}}"
+            bind:tap="onTabTap"
+          >{{item.label}}</view>
+        </view>
+      </view>
+      <!-- ===== 融合第二行（2026-11-23）：班超 tab 的周期切换 + 周期选择并入吸顶头 =====
+           单一吸顶元素，不再需要 --cls-head-h 偏移变量；切 tab 时本行随 wx:if 显隐。 -->
+      <view class="cls-topbar-range" wx:if="{{tab === 'attendance'}}">
+        <view class="tt-segment cls-ranges">
+          <view
+            class="tt-segment-item cls-range-item {{range === item.key ? 'active' : ''}}"
+            wx:for="{{ranges}}"
+            wx:key="key"
+            data-range="{{item.key}}"
+            bind:tap="onBanchaoRange"
+          >{{item.label}}</view>
+        </view>
+
+        <view class="cls-period">
+          <!-- 今日：选具体日期（end 用 banchaoToday —— 不能用 banchaoDate，
+               否则选了过去的日子之后上限跟着退回，就再也选不回今天了） -->
+          <picker wx:if="{{range === 'day'}}" mode="date" value="{{banchaoDate}}" end="{{banchaoToday}}" bindchange="onBanchaoDate">
+            <view class="cls-period-chip">
+              <t-icon name="calendar" size="22rpx" color="var(--tt-brand)" />
+              <text>{{banchaoDateText}}</text>
+              <t-icon name="chevron-down" size="18rpx" color="var(--tt-text-3)" />
+            </view>
+          </picker>
+
+          <block wx:elif="{{range === 'week'}}">
+            <!-- 本周：当月 + 当月第几周；周选项 label 带日期段（「第2周(10月8日至10月14日)」） -->
+            <picker mode="selector" range="{{monthOptions}}" range-key="label" value="{{monthIndex}}" bindchange="onBanchaoMonth">
+              <view class="cls-period-chip">
+                <t-icon name="calendar" size="22rpx" color="var(--tt-brand)" />
+                <text>{{monthOptions[monthIndex].label}}</text>
+                <t-icon name="chevron-down" size="18rpx" color="var(--tt-text-3)" />
+              </view>
+            </picker>
+            <picker mode="selector" range="{{weekOptions}}" range-key="label" value="{{weekIndex}}" bindchange="onBanchaoWeek">
+              <view class="cls-period-chip">
+                <t-icon name="view-list" size="22rpx" color="var(--tt-brand)" />
+                <text>第{{weekOptions[weekIndex].value}}周</text>
+                <t-icon name="chevron-down" size="18rpx" color="var(--tt-text-3)" />
+              </view>
+            </picker>
+          </block>
+
+          <!-- 本月：1-12 月 -->
+          <picker wx:else mode="selector" range="{{monthOptions}}" range-key="label" value="{{monthIndex}}" bindchange="onBanchaoMonth">
+            <view class="cls-period-chip">
+              <t-icon name="calendar" size="22rpx" color="var(--tt-brand)" />
+              <text>{{monthOptions[monthIndex].label}}</text>
+              <t-icon name="chevron-down" size="18rpx" color="var(--tt-text-3)" />
+            </view>
+          </picker>
+        </view>
+      </view>
+      <!-- ===== 次级行（2026-11-23 用户要求：主/次两行封顶，搜索筛选排序融入吸顶）===== -->
+      <view class="cls-topbar-tools" wx:if="{{tab === 'students'}}">
+        <view class="cls-topbar-search">
+          <t-search shape="round" placeholder="搜索姓名 / 学号" value="{{keyword}}" bind:change="onSearch" bind:clear="onClearSearch" t-class="cls-search-root" t-class-input-container="cls-search-box" t-class-input="cls-search-input" />
+        </view>
+        <view class="cls-tool {{showFilters ? 'is-on' : ''}}" bind:tap="toggleFilters">
+          <t-icon name="filter" size="26rpx" />
+          <text>筛选</text>
+          <text class="cls-tool-dot" wx:if="{{filterCount}}">{{filterCount}}</text>
+        </view>
+        <view class="cls-tool {{sort !== 'today' ? 'is-on' : ''}}" bind:tap="toggleFilters">
+          <t-icon name="swap" size="26rpx" />
+          <text>{{sortLabel}}</text>
+        </view>
+      </view>
+      <view class="cls-topbar-tools" wx:elif="{{tab === 'run'}}">
+        <picker mode="date" value="{{runDate}}" end="{{runToday}}" bindchange="onRunDate">
+          <view class="cls-rundate-chip">
+            <t-icon name="calendar" size="24rpx" color="var(--tt-brand)" />
+            <text class="cls-rundate-date">{{runDateText}}</text>
+            <t-icon name="chevron-down" size="18rpx" color="var(--tt-text-3)" />
+          </view>
+        </picker>
+        <text class="cls-rundate-tag" wx:if="{{runIsPast}}">{{runDateTip}}</text>
+        <view class="cls-rundate-today" wx:if="{{runIsPast}}" bind:tap="onRunToday">今天</view>
+      </view>
+    </view>
+
+    <!-- ===== 宽屏左栏（常驻班级列表，零新接口）+ 主内容；compact/regular 左栏隐藏 ===== -->
+    <view class="cls-layout">
+      <view class="cls-side">
+        <view class="tt-card tt-glass cls-side-card">
+          <view class="cls-side-title">我的班级</view>
+          <view
+            class="cls-side-item {{item === className ? 'active' : ''}}"
             wx:for="{{classes}}"
             wx:key="*this"
             bind:tap="switchClass"
             data-class="{{item}}"
-          >{{item}}</view>
-        </scroll-view>
+          >
+            <text class="cls-side-name">{{item}}</text>
+            <text class="cls-side-role">{{roleText}}</text>
+            <t-icon wx:if="{{item === className}}" name="check" size="28rpx" color="var(--tt-brand)" />
+          </view>
+        </view>
       </view>
-    </view>
-
-    <!-- ===== 2. 四个 tab（页面内状态切换；分包页不能用原生 tabBar） ===== -->
-    <view class="cls-tabs">
-      <view
-        class="cls-tab {{tab === item.key ? 'active' : ''}}"
-        wx:for="{{tabs}}"
-        wx:key="key"
-        data-tab="{{item.key}}"
-        bind:tap="onTabTap"
-      >{{item.label}}</view>
-    </view>
+      <view class="cls-main">
 
     <!-- ================= tab 1：学生名单 ================= -->
     <block wx:if="{{tab === 'students'}}">
-      <!-- 名单工具：搜索 + 可折叠筛选面板（与用户管理页同一套设计） -->
+      <!-- 回看横条（用户 2026-11-22）：名单与达标筛选跟随「校园跑」tab 所选日期。
+           看历史日期时必须一眼看出「这不是今天」，否则老师会把昨天没达标的人当成今天。 -->
+      <view class="cls-notice" wx:if="{{listDateIsPast}}">
+        <t-icon name="info-circle" size="28rpx" color="var(--tt-brand)" />
+        <text>正在查看 {{listDateText}} 的名单与达标情况（日期在「校园跑」tab 切换）</text>
+      </view>
+      <!-- 筛选面板（默认收起；搜索/筛选/排序入口已融入吸顶次级行，2026-11-23） -->
       <view class="cls-head">
-        <view class="cls-search-card">
-          <t-search shape="round" placeholder="搜索姓名 / 学号" value="{{keyword}}" bind:change="onSearch" bind:clear="onClearSearch" />
-        </view>
-
-        <view class="cls-tools">
-          <view class="cls-tool {{showFilters ? 'is-on' : ''}}" bind:tap="toggleFilters">
-            <t-icon name="filter" size="28rpx" />
-            <text>筛选</text>
-            <text class="cls-tool-dot" wx:if="{{filterCount}}">{{filterCount}}</text>
-          </view>
-          <view class="cls-tool {{sort !== 'today' ? 'is-on' : ''}}" bind:tap="toggleFilters">
-            <t-icon name="swap" size="28rpx" />
-            <text>排序 · {{sortLabel}}</text>
-          </view>
-        </view>
-
-        <!-- 筛选面板（默认收起，点「筛选 / 排序」展开） -->
-        <view class="tt-card cls-panel" wx:if="{{showFilters}}">
+        <view class="tt-card tt-glass cls-panel" wx:if="{{showFilters}}">
           <view class="cls-filter-row">
             <text class="cls-filter-label">达标</text>
             <view class="tt-segment cls-seg">
               <view
-                class="tt-segment-item cls-seg-item {{achieved === item.key ? 'active' : ''}}"
+                class="tt-segment-item {{achieved === item.key ? 'active' : ''}}"
                 wx:for="{{filters}}"
                 wx:key="label"
                 bind:tap="pickFilter"
@@ -137,7 +212,7 @@
             <text class="cls-filter-label">排序</text>
             <view class="tt-segment cls-seg">
               <view
-                class="tt-segment-item cls-seg-item {{sort === item.key ? 'active' : ''}}"
+                class="tt-segment-item {{sort === item.key ? 'active' : ''}}"
                 wx:for="{{sorts}}"
                 wx:key="key"
                 bind:tap="pickSort"
@@ -167,7 +242,7 @@
 
       <view class="tt-section">
         <text>学生名单</text>
-        <text class="tt-section-extra">共 {{total}} 人 · 今日达标 {{overview.achievedToday}}/{{overview.studentCount}}</text>
+        <text class="tt-section-extra">共 {{total}} 人 · {{listDateLabel}}达标 {{overview.achievedToday}}/{{overview.studentCount}}</text>
       </view>
 
       <view class="cls-list" id="clsList">
@@ -176,6 +251,7 @@
           <text>仅查看：点开任意同学可看他的资料与今日 / 本周明细</text>
         </view>
 
+        <view class="tt-card tt-glass cls-group">
         <view
           class="cls-row"
           wx:for="{{students}}"
@@ -192,7 +268,7 @@
             <view class="cls-name">
               <text class="cls-row-name">{{item.name}}</text>
               <text class="cls-tag cls-tag-officer" wx:if="{{item.isClassOfficer}}">班委</text>
-              <text class="cls-tag {{item.achievedToday ? 'is-ok' : 'is-warn'}}">{{item.achievedToday ? '今日达标' : '未达标'}}</text>
+              <text class="cls-tag {{item.achievedToday ? 'is-ok' : 'is-warn'}}">{{item.achievedToday ? listDateLabel + '达标' : '未达标'}}</text>
             </view>
             <view class="cls-row-sub">
               <text>学号 {{item.studentId || '—'}}</text>
@@ -214,15 +290,16 @@
               <text class="num-font cls-row-steps-v">{{item.todayStepsText}}</text>
               <text class="cls-row-steps-u">步</text>
             </view>
-            <text class="cls-row-steps-sub">今日</text>
+            <text class="cls-row-steps-sub">{{listDateLabel}}</text>
           </view>
           <t-icon name="chevron-right" size="30rpx" color="var(--tt-text-3)" />
+        </view>
         </view>
 
         <view class="tt-empty" wx:if="{{!students.length && !loading}}">{{hasFilter ? '没有符合条件的学生' : '该班还没有学生'}}</view>
 
         <!-- 分页：上一页 / 页码 / 下一页（不做触底加载） -->
-        <view class="tt-card cls-pager-card" wx:if="{{total > 0}}">
+        <view class="tt-card tt-glass cls-pager-card" wx:if="{{total > 0}}">
           <view class="cls-pager">
             <view class="cls-page-btn {{page <= 1 || loadingMore ? 'is-disabled' : ''}}" bind:tap="prevPage">上一页</view>
             <block wx:if="{{!loadingMore}}">
@@ -241,25 +318,12 @@
         </view>
       </view>
 
-      <view class="tt-footer">点学生卡片看资料与今日 / 本周明细；达标 = 当日步数 ≥ 该生生效目标（个人计划优先）。宿舍取住宿名单（在住 / 借住），没显示即尚未录入住宿；督促未达标请到「校园跑」tab</view>
+      <!-- 解释性页脚已删（2026-11-23 用户要求） -->
     </block>
 
     <!-- ================= tab 2：校园跑（本班运动数据） ================= -->
     <block wx:if="{{tab === 'run'}}">
-      <!-- 日期回看（用户 2026-11-20「校园跑要跟班超联赛中同样拥有日期选择」）：
-           end 用 runToday（恒为今天）而不是 runDate —— 否则选了过去的日子就再也选不回今天。
-           回看态显示「回看 10月19日」标签与「今天」快捷按钮（文案全部 JS 预计算）。 -->
-      <view class="cls-rundate">
-        <picker mode="date" value="{{runDate}}" end="{{runToday}}" bindchange="onRunDate">
-          <view class="cls-rundate-chip">
-            <t-icon name="calendar" size="24rpx" color="var(--tt-brand)" />
-            <text class="cls-rundate-date">{{runDateText}}</text>
-            <t-icon name="chevron-down" size="18rpx" color="var(--tt-text-3)" />
-          </view>
-        </picker>
-        <text class="cls-rundate-tag" wx:if="{{runIsPast}}">{{runDateTip}}</text>
-        <view class="cls-rundate-today" wx:if="{{runIsPast}}" bind:tap="onRunToday">今天</view>
-      </view>
+      <!-- 日期回看入口已融入吸顶次级行（2026-11-23）；回看提示保留在内容区 -->
       <view class="cls-notice" wx:if="{{runIsPast}}">
         <t-icon name="info-circle" size="28rpx" color="var(--tt-brand)" />
         <text>{{runPastTip}}</text>
@@ -276,64 +340,69 @@
         <text class="tt-section-extra">{{runDateText}}</text>
       </view>
 
-      <view class="tt-card cls-overview">
-        <view class="tt-stat-row">
-          <view class="tt-stat">
-            <view class="tt-stat-value num-font">{{overview.studentCount}}</view>
-            <view class="cls-stat-label">本班人数</view>
+      <view class="tt-card tt-glass cls-overview">
+        <!-- iOS widget 板（2026-11-23）：左达标率环 + 右 2×2 关键数；操作 chips 紧贴数据 -->
+        <view class="cls-ov-main">
+          <view class="cls-ov-ring" style="{{overview.ringStyle}}">
+            <view class="cls-ov-ring-in">
+              <text class="num-font cls-ov-rate">{{overview.dailyRate}}%</text>
+              <text class="cls-ov-rate-l">当日达标</text>
+            </view>
           </view>
-          <view class="tt-stat">
-            <view class="tt-stat-value num-font">{{overview.activeToday}}</view>
-            <view class="cls-stat-label">当日活跃</view>
-          </view>
-          <view class="tt-stat">
-            <view class="tt-stat-value num-font">{{overview.dailyRate}}%</view>
-            <view class="cls-stat-label">当日达标率</view>
+          <view class="cls-ov-side">
+            <view class="cls-ov-cell">
+              <text class="num-font cls-ov-v">{{overview.achievedToday}}/{{overview.studentCount}}</text>
+              <text class="cls-ov-l">达标人数</text>
+            </view>
+            <view class="cls-ov-cell">
+              <text class="num-font cls-ov-v">{{overview.activeToday}}</text>
+              <text class="cls-ov-l">当日活跃</text>
+            </view>
+            <view class="cls-ov-cell">
+              <text class="num-font cls-ov-v">{{overview.classAvgStepsText}}</text>
+              <text class="cls-ov-l">班级日均(步)</text>
+            </view>
+            <view class="cls-ov-cell">
+              <text class="num-font cls-ov-v">{{overview.rankNo || '—'}}</text>
+              <text class="cls-ov-l">全校名次</text>
+            </view>
           </view>
         </view>
-        <view class="tt-stat-row">
-          <view class="tt-stat">
-            <view class="tt-stat-value num-font">{{overview.classAvgStepsText}}</view>
-            <view class="cls-stat-label">班级日均(步)</view>
-          </view>
-          <view class="tt-stat">
-            <view class="tt-stat-value num-font">{{pointsText}}</view>
-            <view class="cls-stat-label">本班跑分(本周)</view>
-          </view>
-          <view class="tt-stat">
-            <view class="tt-stat-value num-font">{{overview.rankNo || '—'}}</view>
-            <view class="cls-stat-label">全校名次</view>
-          </view>
+        <view class="cls-overview-sub">
+          本周达标率 {{overview.weeklyRate}}%（{{overview.achievedWeek}} 人）· 本班跑分 {{pointsText}} · 当日记录 {{overview.recordsToday}} 条
         </view>
-
-        <view class="cls-goal">
-          <view class="cls-goal-top">
-            <text>当日达标率</text>
-            <text class="num-font cls-goal-rate">{{overview.dailyRate}}%</text>
+        <view class="cls-overview-sub">
+          本班 {{overview.studentCount}} 人 · 累计 {{overview.totalStepsText}} 步 · 累计打卡 {{overview.totalDays}} 天
+        </view>
+        <view class="cls-ov-actions">
+          <view class="cls-ov-act" bind:tap="openUnachieved">
+            <t-icon name="task-checked" size="24rpx" color="var(--tt-brand)" />
+            <text>{{listDateLabel}}未达标 {{nudgeCount}}</text>
           </view>
-          <view class="cls-bar">
-            <view class="cls-bar-in" style="width:{{overview.dailyRate}}%"></view>
+          <view class="cls-ov-act" bind:tap="openStudentsTab">
+            <t-icon name="usergroup" size="24rpx" color="var(--tt-brand)" />
+            <text>学生名单</text>
           </view>
-          <view class="cls-overview-sub">
-            本周达标率 {{overview.weeklyRate}}%（{{overview.achievedWeek}} 人）· 当日记录 {{overview.recordsToday}} 条 · 当日步数 {{overview.stepsTodayText}}
-          </view>
-          <view class="cls-overview-sub">
-            累计 {{overview.totalStepsText}} 步 · 累计打卡 {{overview.totalDays}} 天
+          <view class="cls-ov-act" bind:tap="openPublicRanking">
+            <t-icon name="chart-bar" size="24rpx" color="var(--tt-brand)" />
+            <text>全校榜</text>
           </view>
         </view>
       </view>
 
-      <!-- 督促未达标：入口从「学生名单」tab 迁到校园跑 tab（督促的就是校园跑今日未达标）。
-           仅班主任可见（canNudge = 服务端 role==='homeroom' 且非只读）；班委这里一行都不渲染，
-           他仍然可以用下面「今日未达标名单」入口只读地看名单 —— 迁移没有放宽只读语义。
-           回看历史日期时不渲染：督促名单走 /students 的**今天语义**，与所选日期对不上。 -->
-      <view class="tt-card cls-nudge-bar" wx:if="{{canNudge && !runIsPast}}" bind:tap="openNudge">
+      <!-- 督促未达标：入口从「学生名单」tab 迁到校园跑 tab（督促的就是校园跑未达标）。
+           canNudge = 服务端 capabilities.nudge（**班主任与班委都放行**，见 /api/class/mine）；
+           无该能力时这里一行都不渲染，仍可用下面「未达标名单」入口只读地看名单。
+           用户 2026-11-22「校园跑的日期选择应该能查看当天的未达标学生」：
+           回看历史日期时**也渲染** —— 名单与文案都按所选日期取（openNudge 传 listDate），
+           标题用 listDateLabel（今天=「今日」、历史=「10月19日」）避免张冠李戴。 -->
+      <view class="tt-card tt-glass cls-nudge-bar" wx:if="{{canNudge}}" bind:tap="openNudge">
         <view class="cls-nudge-bar-icon">
           <t-icon name="notification" size="34rpx" color="var(--tt-brand)" />
         </view>
         <view class="cls-nudge-bar-main">
           <view class="cls-nudge-bar-title">
-            <text>督促未达标</text>
+            <text>{{listDateLabel}}未达标 · 督促</text>
             <text class="cls-nudge-bar-count num-font">{{overview ? nudgeCount : '—'}}</text>
           </view>
           <view class="cls-nudge-bar-sub">{{nudgeSubText}}</view>
@@ -348,7 +417,7 @@
         <text>班级榜单</text>
         <text class="tt-section-extra">本周步数{{overview.weekRangeText ? ' · ' + overview.weekRangeText : ''}}</text>
       </view>
-      <view class="tt-card cls-rank">
+      <view class="tt-card tt-glass cls-rank">
         <!-- 全校班级第 X / Y 名：整条醒目横条 -->
         <view class="cls-rankbar">
           <view class="cls-rankbar-icon">
@@ -397,51 +466,12 @@
         </view>
       </view>
 
-      <!-- 学生运动明细入口：点学生看今日 / 本周明细，或直接跳到公开的全校班级榜 -->
-      <view class="tt-section">
-        <text>学生运动明细</text>
-        <text class="tt-section-extra">共 {{total}} 人</text>
-      </view>
-      <view class="tt-card cls-entries">
-        <view class="cls-entry" bind:tap="openStudentsTab">
-          <view class="cls-entry-icon">
-            <t-icon name="usergroup" size="34rpx" color="var(--tt-brand)" />
-          </view>
-          <view class="cls-entry-main">
-            <view class="cls-entry-title">本班学生名单</view>
-            <view class="cls-entry-sub">点学生卡片看他的资料与今日 / 本周运动明细</view>
-          </view>
-          <t-icon name="chevron-right" size="30rpx" color="var(--tt-text-3)" />
-        </view>
-
-        <!-- 「今日未达标名单」入口 = 学生名单 tab 的今天语义（/students 不传 date）：
-             回看历史日期时不渲染 —— 否则点进去看到的是今天的数据，与当前日期对不上。 -->
-        <view class="cls-entry" wx:if="{{!runIsPast}}" bind:tap="openUnachieved">
-          <view class="cls-entry-icon">
-            <t-icon name="task-checked" size="34rpx" color="var(--tt-brand)" />
-          </view>
-          <view class="cls-entry-main">
-            <view class="cls-entry-title">今日未达标名单</view>
-            <view class="cls-entry-sub">{{nudgeCount}} 人未达标 · 打开名单并只看未达标</view>
-          </view>
-          <t-icon name="chevron-right" size="30rpx" color="var(--tt-text-3)" />
-        </view>
-
-        <view class="cls-entry" bind:tap="openPublicRanking">
-          <view class="cls-entry-icon">
-            <t-icon name="chart-pie" size="34rpx" color="var(--tt-brand)" />
-          </view>
-          <view class="cls-entry-main">
-            <view class="cls-entry-title">全校班级榜</view>
-            <view class="cls-entry-sub">排行榜页的班级榜（公开数据，不需要班级身份）</view>
-          </view>
-          <t-icon name="chevron-right" size="30rpx" color="var(--tt-text-3)" />
-        </view>
-      </view>
+      <!-- 学生运动明细 / 未达标 / 全校榜三个入口已并入数据概况 widget 板的操作 chips
+           （2026-11-23：操作紧贴数据，少一张独立入口卡） -->
 
       <!-- ===== 督促抽屉（随督促入口从「学生名单」tab 整体迁来）=====
            放在 tab==='run' 这个 block 里面：督促入口现在只有校园跑 tab 一处，抽屉也只会在校园跑渲染；
-           canNudge 判定不变（仅班主任），班委这一整段不渲染 —— 只读语义没有放宽。 -->
+           canNudge = capabilities.nudge（班主任与班委都放行）；无该能力时整段不渲染。 -->
       <t-popup wx:if="{{canNudge}}" visible="{{nudgeVisible}}" placement="bottom" bind:visible-change="onNudgeVisible">
         <view class="tt-sheet cls-sheet">
           <view class="tt-sheet-grab"></view>
@@ -450,8 +480,8 @@
               <t-icon name="usergroup" size="36rpx" color="var(--tt-brand)" />
             </view>
             <view class="tt-sheet-title">
-              今日未达标名单
-              <view class="tt-sheet-sub">{{className}} · {{realToday}} · {{nudgeList.length}} 人</view>
+              {{listDateLabel}}未达标名单
+              <view class="tt-sheet-sub">{{className}} · {{listDateText}} · {{nudgeList.length}} 人</view>
             </view>
             <view class="tt-sheet-close" bind:tap="closeNudge">
               <t-icon name="close" size="32rpx" color="var(--tt-text-2)" />
@@ -467,13 +497,13 @@
                     <text class="cls-row-name">{{item.name}}</text>
                     <text class="cls-tag cls-tag-officer" wx:if="{{item.isClassOfficer}}">班委</text>
                   </view>
-                  <view class="cls-top-sub">今日 <text class="num-font cls-row-v">{{item.todayStepsText}}</text> / {{item.targetText}} 步 · 还差 {{item.gapText}} 步</view>
+                  <view class="cls-top-sub">{{listDateLabel}} <text class="num-font cls-row-v">{{item.todayStepsText}}</text> / {{item.targetText}} 步 · 还差 {{item.gapText}} 步</view>
                   <view class="cls-top-sub" wx:if="{{item.roomText}}">宿舍 {{item.roomText}} · {{item.studentId || '—'}}</view>
                 </view>
                 <text class="cls-nudge-sync">{{item.syncText}}</text>
               </view>
             </block>
-            <view class="tt-empty" wx:if="{{!nudgeList.length && !nudgeLoading}}">今日全员达标，不用督促啦</view>
+            <view class="tt-empty" wx:if="{{!nudgeList.length && !nudgeLoading}}">{{listDateLabel}}全员达标，不用督促啦</view>
             <view class="cls-loading cls-nudge-loading" wx:if="{{nudgeLoading}}">
               <t-loading theme="circular" size="36rpx" text="统计中…" />
             </view>
@@ -486,75 +516,17 @@
         </view>
       </t-popup>
 
-      <view class="tt-footer">数据口径与首页数据概况一致：只统计学生（教师不参与运动记录与排名）</view>
+      <!-- 解释性页脚已删（2026-11-23 用户要求） -->
     </block>
 
-    <!-- ================= tab 3：班超联赛（原「班级考勤」tab 改名 + 原班超详细页内容并入）=================
-         班超与班级考勤本来就是同一件事的两面：考勤看「哪个模块出勤多少」，班超看「这些检查折算成多少分、
-         全校排第几」。原来分成两个页面，老师为同一批检查记录要来回跳 —— 现在并到一页、共用同一个周期选择器。
-         周期口径与班超排名页（packageUnion/stats）一致：日 = date，周 = month + weekNo，月 = month。 -->
+    <!-- ================= tab 3：班超联赛 ================== -->
     <block wx:if="{{tab === 'attendance'}}">
-      <!-- ===== 吸顶：周期切换 + 周期选择（今日选日期 / 本周选当月第几周 / 本月选 1-12 月）=====
-           吸顶是为了改周期时不用先滚回顶部（本页很长：明细 / 趋势 / 记录 / 榜单 / 考勤都在下面）。 -->
-      <view class="cls-sticky">
-        <view class="cls-ranges">
-          <view
-            class="cls-range-item {{range === item.key ? 'active' : ''}}"
-            wx:for="{{ranges}}"
-            wx:key="key"
-            data-range="{{item.key}}"
-            bind:tap="onBanchaoRange"
-          >{{item.label}}</view>
-        </view>
-
-        <view class="cls-period">
-          <!-- 今日：选具体日期（end 用 banchaoToday —— 不能用 banchaoDate，
-               否则选了过去的日子之后上限跟着退回，就再也选不回今天了） -->
-          <picker wx:if="{{range === 'day'}}" mode="date" value="{{banchaoDate}}" end="{{banchaoToday}}" bindchange="onBanchaoDate">
-            <view class="cls-period-chip">
-              <t-icon name="calendar" size="22rpx" color="var(--tt-brand)" />
-              <text>{{banchaoDateText}}</text>
-              <t-icon name="chevron-down" size="18rpx" color="var(--tt-text-3)" />
-            </view>
-          </picker>
-
-          <block wx:elif="{{range === 'week'}}">
-            <!-- 本周：当月 + 当月第几周；周选项 label 带日期段（「第2周(10月8日至10月14日)」） -->
-            <picker mode="selector" range="{{monthOptions}}" range-key="label" value="{{monthIndex}}" bindchange="onBanchaoMonth">
-              <view class="cls-period-chip">
-                <t-icon name="calendar" size="22rpx" color="var(--tt-brand)" />
-                <text>{{monthOptions[monthIndex].label}}</text>
-                <t-icon name="chevron-down" size="18rpx" color="var(--tt-text-3)" />
-              </view>
-            </picker>
-            <picker mode="selector" range="{{weekOptions}}" range-key="label" value="{{weekIndex}}" bindchange="onBanchaoWeek">
-              <view class="cls-period-chip">
-                <t-icon name="view-list" size="22rpx" color="var(--tt-brand)" />
-                <text>{{weekOptions[weekIndex].label}}</text>
-                <t-icon name="chevron-down" size="18rpx" color="var(--tt-text-3)" />
-              </view>
-            </picker>
-          </block>
-
-          <!-- 本月：1-12 月 -->
-          <picker wx:else mode="selector" range="{{monthOptions}}" range-key="label" value="{{monthIndex}}" bindchange="onBanchaoMonth">
-            <view class="cls-period-chip">
-              <t-icon name="calendar" size="22rpx" color="var(--tt-brand)" />
-              <text>{{monthOptions[monthIndex].label}}</text>
-              <t-icon name="chevron-down" size="18rpx" color="var(--tt-text-3)" />
-            </view>
-          </picker>
-        </view>
-      </view>
-
-      <!-- ===== 总评 hero（压缩：主数据=班超分，次数据=JS 预计算的一整句）=====
-           旧模板写「本 + rangeWord + 还没有检查记录」会渲染成「本今日还没有检查记录」，
-           现在空态/正常态都直接渲染 JS 拼好的 banchaoHeroNote（模板不拼三元、不拼字符串）。
-           全校名次已移到下方 KPI 卡（hero 只留分数 + 一行辅助说明，高度更矮）。 -->
-      <view class="tt-hero cls-bc-hero">
-        <view class="tt-hero-body">
+      <view class="tt-card tt-glass cls-bc-aggr">
+        <view class="cls-bc-aggr-hero">
           <view class="cls-bc-hero-top">
-            <text class="cls-bc-hero-name">{{className}}</text>
+            <view class="cls-bc-hero-title">
+              <text class="cls-bc-hero-kicker">班超分</text>
+            </view>
             <text class="cls-bc-hero-range">{{banchaoPeriodLabel || banchao.rangeLabel}}</text>
           </view>
           <view class="cls-bc-hero-main">
@@ -562,50 +534,81 @@
               <text class="num-font cls-bc-hero-score-v">{{banchao.scoreText || '—'}}</text>
               <text class="cls-bc-hero-score-u">分</text>
             </view>
+            <text class="cls-bc-hero-note">{{banchaoHeroNote}}</text>
           </view>
-          <text class="cls-bc-hero-note">{{banchaoHeroNote}}</text>
         </view>
-      </view>
 
-      <!-- ===== 本期关键指标：2×2 卡片 =====
-           4 张卡由 buildBanchaoKpis() 生成（overview + 班超详情谁后到都补齐）：
-           今日/本周达标率（带进度轨）、全校班超名次、本期检查记录数。
-           达标率 / 名次的空态、不参跑都在 JS 里落成整句，模板不写三元。 -->
-      <view class="cls-bc-kpis">
-        <view class="cls-bc-kpi" wx:for="{{banchaoKpis}}" wx:key="key">
-          <text class="num-font cls-bc-kpi-value">{{item.valueText}}</text>
-          <text class="cls-bc-kpi-label">{{item.label}}</text>
-          <view class="cls-bc-kpi-track" wx:if="{{item.hasBar}}">
-            <view class="cls-bc-kpi-fill" style="width: {{item.percent}}%"></view>
+        <view class="cls-bc-aggr-sec cls-bc-kpi-sec">
+          <view class="cls-bc-kpis">
+            <view class="cls-bc-kpi" wx:for="{{banchaoKpis}}" wx:key="key">
+              <text class="num-font cls-bc-kpi-value">{{item.valueText}}</text>
+              <text class="cls-bc-kpi-label">{{item.label}}</text>
+              <view class="cls-bc-kpi-track" wx:if="{{item.hasBar}}">
+                <view class="cls-bc-kpi-fill" style="width: {{item.percent}}%"></view>
+              </view>
+              <text class="cls-bc-kpi-aux" wx:if="{{item.auxText}}">{{item.auxText}}</text>
+            </view>
           </view>
-          <text class="cls-bc-kpi-aux" wx:if="{{item.auxText}}">{{item.auxText}}</text>
         </view>
-      </view>
 
-      <!-- ===== 检查明细：2 列独立卡片（模块名 + 得分 / 部门·指标 / 扣分），只压行高不删信息 ===== -->
-      <view class="tt-section cls-bc-section">
-        <text>检查明细</text>
-        <text class="tt-section-extra">{{banchaoPeriodLabel || banchao.rangeLabel}}</text>
-      </view>
-      <view class="cls-bc-modules">
-        <view class="cls-bc-module" wx:for="{{banchaoModules}}" wx:key="key">
-          <view class="cls-bc-module-head">
-            <text class="cls-bc-module-name">{{item.name}}</text>
-            <text class="num-font cls-bc-module-score cls-bc-module-{{item.state}}">{{item.scoreText}}</text>
+        <view class="cls-bc-aggr-sec">
+          <view class="cls-bc-aggr-head">
+            <text>检查明细</text>
           </view>
-          <text class="cls-bc-module-desc">{{item.descText}}</text>
-          <text class="cls-bc-module-deduct {{item.deductTone}}" wx:if="{{item.deductText}}">{{item.deductText}}</text>
+          <view class="cls-bc-modules">
+            <view class="cls-bc-module" wx:for="{{banchaoModules}}" wx:key="key">
+              <view class="cls-bc-module-head">
+                <text class="cls-bc-module-name">{{item.name}}</text>
+                <text class="num-font cls-bc-module-score cls-bc-module-{{item.state}}">{{item.scoreText}}</text>
+              </view>
+              <text class="cls-bc-module-desc">{{item.descText}}</text>
+              <text class="cls-bc-module-deduct {{item.deductTone}}" wx:if="{{item.deductText}}">{{item.deductText}}</text>
+            </view>
+            <view class="cls-bc-empty" wx:if="{{!banchaoModules.length}}">暂无检查模块</view>
+          </view>
         </view>
-        <view class="cls-bc-empty" wx:if="{{!banchaoModules.length}}">暂无检查模块</view>
-      </view>
 
-      <!-- ===== 得分趋势：单行迷你条形，只保留最近 7 天（区间数据由 loadBanchao 截取） ===== -->
-      <block wx:if="{{banchaoDays.length}}">
-        <view class="tt-section cls-bc-section">
-          <text>得分趋势</text>
-          <text class="tt-section-extra">最近 {{banchaoDays.length}} 天</text>
+        <view class="cls-bc-aggr-sec cls-bc-att-sec">
+          <view class="cls-bc-aggr-head">
+            <text>出勤率</text>
+          </view>
+          <view class="cls-bc-att">
+            <attendance
+              embedded
+              className="{{className}}"
+              refresh-at="{{attendanceRefreshAt}}"
+              range-from="{{attendanceFrom}}"
+              range-to="{{attendanceTo}}"
+              range-period="{{range}}"
+            />
+          </view>
         </view>
-        <view class="tt-card cls-bc-trend">
+
+        <view class="cls-bc-aggr-sec">
+          <view class="cls-bc-aggr-head">
+            <text>本期报表</text>
+          </view>
+          <view class="cls-bc-report-acts">
+            <view class="cls-bc-report-act tt-glass-press {{reportBusy ? 'is-busy' : ''}}" bind:tap="copyBanchaoReport">
+              <t-icon name="file-copy" size="30rpx" color="var(--tt-brand)" />
+              <text>复制文本</text>
+            </view>
+            <view class="cls-bc-report-act tt-glass-press {{reportBusy ? 'is-busy' : ''}}" bind:tap="shareBanchaoReportImage">
+              <t-icon name="image" size="30rpx" color="var(--tt-brand)" />
+              <text>生成图片</text>
+            </view>
+            <view class="cls-bc-report-act tt-glass-press {{reportExporting ? 'is-busy' : ''}}" bind:tap="exportBanchaoReport">
+              <t-icon name="file-excel" size="30rpx" color="var(--tt-brand)" />
+              <text>{{reportExportLabel}}</text>
+            </view>
+          </view>
+        </view>
+
+        <view class="cls-bc-aggr-sec" wx:if="{{banchaoDays.length}}">
+          <view class="cls-bc-aggr-head">
+            <text>得分趋势</text>
+            <text class="cls-bc-aggr-extra">最近 {{banchaoDays.length}} 天</text>
+          </view>
           <view class="cls-bc-trend-bars">
             <view class="cls-bc-trend-col" wx:for="{{banchaoDays}}" wx:key="date">
               <text class="num-font cls-bc-trend-value">{{item.scoreText}}</text>
@@ -616,100 +619,56 @@
             </view>
           </view>
         </view>
-      </block>
 
-      <!-- ===== 最近检查记录（2 列紧凑卡片，只显示前 6 条；模板 bc-record 与下方检查记录共用）=====
-           「全部 ›」入口保留（banchaoRecent 里仍有全部 10 条，进列表页即可看全）。 -->
-      <view class="tt-section cls-bc-section">
-        <text>最近记录</text>
-        <text class="tt-section-extra" bind:tap="goBanchaoRecords">全部 ›</text>
-      </view>
-      <view class="cls-bc-records-grid" wx:if="{{banchaoRecentGrid.length}}">
-        <block wx:for="{{banchaoRecentGrid}}" wx:key="id">
-          <template is="bc-record" data="{{...item}}" />
-        </block>
-      </view>
-      <view class="tt-card cls-bc-records" wx:else>
-        <view class="cls-bc-empty">暂无检查记录</view>
-      </view>
-      <view class="cls-bc-appeal-tip" wx:if="{{canNudge}}">对检查结果有异议？点开记录详情可以发起申诉</view>
-
-      <!-- ===== 班级榜前三 ===== -->
-      <block wx:if="{{banchaoRankingTop.length}}">
-        <view class="tt-section cls-bc-section">
-          <text>班级榜前三</text>
-          <text class="tt-section-extra" bind:tap="goBanchaoStats">完整榜单 ›</text>
-        </view>
-        <view class="tt-card cls-bc-top">
+        <view class="cls-bc-aggr-sec" wx:if="{{banchaoRankingTop.length}}">
+          <view class="cls-bc-aggr-head">
+            <text>班级榜前三</text>
+            <text class="cls-bc-aggr-extra" bind:tap="goBanchaoStats">完整榜单 ›</text>
+          </view>
           <view class="cls-bc-top-row" wx:for="{{banchaoRankingTop}}" wx:key="className">
             <text class="cls-bc-top-no cls-bc-top-no-{{item.rankNo}}">{{item.rankNo}}</text>
             <view class="cls-bc-top-main">
               <text class="cls-bc-top-name">{{item.className}}</text>
-              <text class="cls-bc-top-sub">{{item.departmentName || '—'}} · {{item.days}} 天有记录</text>
             </view>
-            <!-- 分数文案由 JS 预计算（10 分制两位小数）：
-                 直接渲染 item.score 会让 9.5 / 9.55 / 10 三种位数混在同一列，
-                 而这一列正是要和上方「总评 hero」逐字对照的。 -->
             <text class="num-font cls-bc-top-score">{{item.scoreText}}</text>
           </view>
         </view>
-      </block>
 
-      <!-- ===== 班级考勤 · 检查记录（用户 2026-11-20：所选区间的**全部**检查记录按模块分组）=====
-           数据取 GET /api/union/class/:className 的 dayRecords（与上面 hero / 最近记录同一接口），
-           字段与「最近记录」卡片完全一致 —— 共用模板 bc-record，视觉不分叉。
-           头部「共 N 条」用服务端 dayRecordsTotal；被单次 50 条上限截断时给出提示。
-           区间由上面的周期选择器决定（dayRecordsRange 回显服务端权威区间），空态文案说「所选区间」，
-           不写死「今日」（本周 / 本月同样走这一块）。 -->
-      <view class="tt-section cls-bc-section">
-        <text>班级考勤 · 检查记录</text>
-        <text class="tt-section-extra">共 {{banchaoDayTotal}} 条</text>
-      </view>
-      <view class="cls-bc-day-note" wx:if="{{banchaoDayRangeText}}">{{banchaoDayRangeText}}</view>
-      <view class="cls-bc-day-note" wx:if="{{banchaoDayTruncateText}}">{{banchaoDayTruncateText}}</view>
-      <block wx:if="{{banchaoDayGroups.length}}">
-        <view class="cls-bc-day-group" wx:for="{{banchaoDayGroups}}" wx:key="moduleName">
-          <view class="cls-bc-day-head">
-            <text class="cls-bc-day-title">{{item.moduleName}}</text>
-            <text class="cls-bc-day-count">{{item.countText}}</text>
+        <view class="cls-bc-aggr-sec cls-bc-day-sec">
+          <view class="cls-bc-aggr-head">
+            <text>检查记录</text>
+            <text class="cls-bc-aggr-extra">共 {{banchaoDayTotal}} 条 · {{banchaoDayRangeText}}</text>
           </view>
-          <view class="tt-card cls-bc-records cls-bc-day-card">
-            <block wx:for="{{item.items}}" wx:key="id">
-              <template is="bc-record" data="{{...item}}" />
+          <view class="cls-bc-day-list">
+            <view class="cls-bc-day-note" wx:if="{{banchaoDayTruncateText}}">{{banchaoDayTruncateText}}</view>
+            <block wx:if="{{banchaoDayGroups.length}}">
+              <view class="cls-bc-day-group" wx:for="{{banchaoDayGroups}}" wx:key="moduleName">
+                <view class="cls-bc-day-head">
+                  <text class="cls-bc-day-title">{{item.moduleName}}</text>
+                  <text class="cls-bc-day-count">{{item.countText}}</text>
+                </view>
+                <view class="cls-bc-records cls-bc-day-card">
+                  <block wx:for="{{item.items}}" wx:key="id">
+                    <template is="bc-record" data="{{...item}}" />
+                  </block>
+                </view>
+              </view>
             </block>
+            <view class="cls-bc-records" wx:if="{{!banchaoDayGroups.length}}">
+              <view class="cls-bc-empty">所选区间暂无检查记录</view>
+            </view>
           </view>
         </view>
-      </block>
-      <view class="tt-card cls-bc-records" wx:if="{{!banchaoDayGroups.length}}">
-        <view class="cls-bc-empty">所选区间暂无检查记录</view>
       </view>
 
-      <!-- ===== 班级考勤（各模块区间出勤率 + 按日明细）=====
-           数据来自 GET /api/class/attendance（班级域成员资格，只读）。
-           本页把**同一个周期区间**传进去驱动它（range-from / range-to），
-           所以它不再渲染自己的周期条，两半永远看同一个区间。 -->
-      <view class="tt-section cls-bc-section">
-        <text>班级考勤 · 出勤率</text>
-        <text class="tt-section-extra">只读</text>
-      </view>
-      <view class="cls-att">
-        <attendance
-          className="{{className}}"
-          refresh-at="{{attendanceRefreshAt}}"
-          range-from="{{attendanceFrom}}"
-          range-to="{{attendanceTo}}"
-          range-period="{{range}}"
-        />
-      </view>
-
-      <view class="tt-footer">检查结果由学生会各部门录入，主席团复核后计入班超总评；班主任与班委可查看与申诉</view>
+      <canvas type="2d" id="bcReportCanvas" class="cls-bc-report-canvas"></canvas>
     </block>
 
     <!-- ================= tab 4：班级配置 ================= -->
     <block wx:if="{{tab === 'profile'}}">
       <!-- 两条路径都不通（既不是本班班主任 / 班委，也没有 class.view）：不发请求，页面内说明
            （把 403 显示成「加载失败」会误导用户以为是自己网络问题） -->
-      <view class="tt-card cls-blank" wx:if="{{!canViewProfile}}">
+      <view class="tt-card tt-glass cls-blank" wx:if="{{!canViewProfile}}">
         <t-icon name="lock-on" size="72rpx" color="var(--tt-text-3)" />
         <view class="cls-blank-title">没有查看本班配置的权限</view>
         <view class="cls-blank-tip">班级配置有两条读取路径：① 本班班主任 / 班委（班级身份，不需要管理权限）；② 管理端权限 class.view / class.manage。你现在两者都没有。学生名单 / 校园跑 / 班级考勤属于班级域，不受这里影响。</view>
@@ -733,7 +692,7 @@
         </view>
 
         <!-- 接口异常 / 未就绪：页面内提示 + 重试（不弹 toast，避免一进来就报错） -->
-        <view class="tt-card cls-error" wx:if="{{profileError}}">
+        <view class="tt-card tt-glass cls-error" wx:if="{{profileError}}">
           <t-icon name="error-circle" size="30rpx" color="var(--tt-brand)" />
           <view class="cls-error-main">
             <view class="cls-error-title">班级配置没读到</view>
@@ -746,7 +705,7 @@
 
         <block wx:if="{{profileLoaded}}">
           <!-- 三个开关：早操 / 晚自习 / 校园跑 —— 都是「本班有没有某项安排」，各自影响不同统计 -->
-          <view class="tt-card cls-card">
+          <view class="tt-card tt-glass cls-card">
             <view class="cls-card-title">早操 · 晚自习 · 校园跑（三项独立配置）</view>
             <view class="cls-fitem">
               <view class="cls-fitem-col">
@@ -771,7 +730,7 @@
             </view>
           </view>
 
-          <view class="tt-card cls-card">
+          <view class="tt-card tt-glass cls-card">
             <view class="cls-card-title">人数（自动识别）</view>
             <view class="cls-fitem">
               <view class="cls-fitem-col">
@@ -794,7 +753,7 @@
                教室是班级台账上的标量字段（与早操 / 校园跑同一次「保存班级配置」提交）；
                卫生区是**独立资源**（多班共管 + 按班权重），有自己的抽屉与保存动作，不跟上面一起提交；
                宿舍是「学生 ↔ 房间」的关系，进独立页维护（用户 2026-10-23：班委也可管）。 -->
-          <view class="tt-card cls-card">
+          <view class="tt-card tt-glass cls-card">
             <view class="cls-card-title">教室与卫生区</view>
             <view class="cls-fitem">
               <view class="cls-fitem-col">
@@ -876,7 +835,7 @@
             </view>
           </view>
 
-          <view class="tt-card cls-card">
+          <view class="tt-card tt-glass cls-card">
             <view class="cls-card-title">班级信息（只读）</view>
             <view class="cls-ro">
               <text class="cls-ro-label">院系</text>
@@ -893,7 +852,7 @@
             <view class="cls-card-note">院系 / 年级 / 班主任来自学籍与班级身份分配（管理端「用户管理」维护），本页只展示</view>
           </view>
 
-          <view class="tt-card cls-card">
+          <view class="tt-card tt-glass cls-card">
             <view class="cls-card-title">备注</view>
             <t-textarea value="{{profile.remark}}" placeholder="班级备注（选填，最多 200 字）" maxlength="200" disabled="{{!canManageProfile}}" bind:change="onProfileRemark" />
           </view>
@@ -906,6 +865,9 @@
         </block>
       </block>
     </block>
+
+      </view><!-- /cls-main -->
+    </view><!-- /cls-layout -->
 
     <!-- ===== 卫生区多选抽屉（tab 外层：切 tab 时随 wx:if 一起卸载，不留残影；入口仅班主任）=====
            改的是「本班加入哪些区域」；共管区域只改本班的加入关系与权重，不动别的班的归属。
@@ -988,4 +950,42 @@
     bind:clear="onRoomClear"
     bind:close="closeRoomDialog"
   />
+
+  <!-- ===== 页内选班抽屉（多班；吸顶班级条「班名 ▾」入口；2026-11-23 iOS 重排版）=====
+       骨架复用公共 .tt-sheet*（与卫生区抽屉同一套滚动区高度约定）；选中即 switchClass 全量重置。 -->
+  <t-popup wx:if="{{classes.length > 1}}" visible="{{classPickVisible}}" placement="bottom" bind:visible-change="onClassPickVisible">
+    <view class="tt-sheet tt-glass-float cls-sheet cls-pick-sheet">
+      <view class="tt-sheet-grab"></view>
+      <view class="tt-sheet-head">
+        <view class="tt-sheet-icon">
+          <t-icon name="usergroup" size="36rpx" color="var(--tt-brand)" />
+        </view>
+        <view class="tt-sheet-title">
+          选择班级
+          <view class="tt-sheet-sub">共 {{classes.length}} 个班 · 切换后名单 / 校园跑 / 班超全部按新班重置</view>
+        </view>
+        <view class="tt-sheet-close" bind:tap="closeClassPick">
+          <t-icon name="close" size="32rpx" color="var(--tt-text-2)" />
+        </view>
+      </view>
+      <scroll-view scroll-y class="tt-sheet-body cls-pick-body">
+        <view
+          class="tt-sheet-item {{item === className ? 'is-on' : ''}}"
+          wx:for="{{classes}}"
+          wx:key="*this"
+          bind:tap="onPickClass"
+          data-class="{{item}}"
+        >
+          <view class="tt-sheet-item-icon">
+            <t-icon name="usergroup" size="32rpx" color="var(--tt-brand)" />
+          </view>
+          <view class="tt-sheet-item-main">
+            <view class="tt-sheet-item-title">{{item}}</view>
+            <view class="tt-sheet-item-desc">{{roleText}} · {{item === className ? '当前班级' : '点按切换'}}</view>
+          </view>
+          <t-icon wx:if="{{item === className}}" name="check" size="30rpx" color="var(--tt-brand)" />
+        </view>
+      </scroll-view>
+    </view>
+  </t-popup>
 </view>

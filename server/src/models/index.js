@@ -8,6 +8,10 @@ const UserGoal = require('./user-goal');
 const RewardVideoRecord = require('./reward-video-record');
 const BeidouDay = require('./beidou-day');
 const BeidouDraw = require('./beidou-draw');
+const BeidouWallet = require('./beidou-wallet');
+const BeidouCoinLog = require('./beidou-coin-log');
+const BeidouShareLink = require('./beidou-share-link');
+const BeidouShareClick = require('./beidou-share-click');
 const BanRecord = require('./ban-record');
 const Appeal = require('./appeal');
 const WaterRecord = require('./water-record');
@@ -38,6 +42,10 @@ module.exports = {
   RewardVideoRecord,
   BeidouDay,
   BeidouDraw,
+  BeidouWallet,
+  BeidouCoinLog,
+  BeidouShareLink,
+  BeidouShareClick,
   BanRecord,
   Appeal,
   WaterRecord,

@@ -1,10 +1,9 @@
 <!-- 班级考勤汇总（只读）：周期切换 + 概览卡（各模块区间平均出勤率 / 累计缺勤 / 未归）+ 按日倒序明细
      数据来自 GET /api/class/attendance（班级域成员资格校验：班主任 / 班委可读）；组件内没有任何写操作。 -->
-<view class="at-root">
-  <!-- 周期：今日 / 本周 / 本月。
-       父页面（我的班级页的「班超联赛」tab）自己有一个周期选择器并用 range-from/range-to 驱动本组件时，
-       rangeDriven=true → 这里**不渲染**，否则页面上会出现两个周期条、还互相打架。 -->
-  <view class="at-periods" wx:if="{{!rangeDriven}}">
+<view class="at-root {{embedded ? 'at-root-embedded' : ''}}">
+  <!-- 周期：今日 / 本周 / 本月。父页面驱动区间或嵌入父卡时均不渲染，避免重复控件。
+       rangeDriven=true 仍会保留一行区间说明；embedded=true 由父卡统一显示周期。 -->
+  <view class="at-periods" wx:if="{{!rangeDriven && !embedded}}">
     <view
       class="at-period {{index === periodIndex ? 'active' : ''}}"
       wx:for="{{periods}}"
@@ -17,12 +16,12 @@
     <text class="at-range" wx:if="{{periodLabel}}">{{periodLabel}}</text>
   </view>
   <!-- 父驱动时只留一行区间说明（周会带日期段：「本周 10月8日至10月14日」） -->
-  <view class="at-periods at-periods-driven" wx:else>
+  <view class="at-periods at-periods-driven" wx:elif="{{!embedded}}">
     <text class="at-range">{{periodLabel}}</text>
   </view>
 
   <!-- ===== 概览卡 ===== -->
-  <view class="tt-card at-card">
+  <view class="{{embedded ? 'at-card at-card-embedded' : 'tt-card at-card'}}">
     <block wx:if="{{loading}}">
       <view class="at-loading">加载中…</view>
     </block>
@@ -68,5 +67,5 @@
        （卡片说没记录，下面却列出「10月19日 未录入」）。
        日期维度的数据仍由服务端下发（days），此处只是不再渲染。 -->
 
-  <view class="tt-footer">考勤数据由学生会检查记录汇总，只读展示；有异议可向主席团申诉</view>
+  <!-- 解释性页脚已删（2026-11-23 用户要求：解释文本均去掉） -->
 </view>

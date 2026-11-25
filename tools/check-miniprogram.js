@@ -10,7 +10,8 @@
  *  6. WXML 标签配平 / JSON 合法 / WXSS 花括号配平 / WXSS 选择器不含通配符 `*`
  *  7. 页面四件套齐全、tabBar 页面与跳转目标已在 app.json 登记
  *  8. 业务页登录闸门：if (!getApp().requireLogin()) return;
- *  9. 主包体积（含 npm 上限 2MB）
+ *  9. 主包 / 各分包体积（各自 2MB 上限；主包含 npm）
+ * 10. 组件注册 / WXML import 源必须存在（删组件漏改引用 = 运行时 wx://not-found / 编译 ENOENT）
  */
 const fs = require('fs');
 const path = require('path');
@@ -57,6 +58,7 @@ const files = walk(ROOT);
 const wxmls = files.filter((f) => f.endsWith('.wxml'));
 const wxsss = files.filter((f) => f.endsWith('.wxss'));
 const jss = files.filter((f) => f.endsWith('.js'));
+const appJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'app.json'), 'utf8'));
 
 // 图标名（TDesign icon font）
 const iconCss = path.join(ROOT, NPM_DIR, 'tdesign-miniprogram/icon/icon.wxss');
@@ -312,7 +314,6 @@ for (const f of wxsss) {
   }
 }
 
-const appJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'app.json'), 'utf8'));
 const pages = [...(appJson.pages || [])];
 for (const sp of appJson.subpackages || []) for (const p of sp.pages || []) pages.push(`${sp.root}/${p}`);
 for (const p of pages) {
@@ -348,7 +349,6 @@ for (const f of jss) {
   }
 }
 
-const totalBytes = files.reduce((s, f) => s + fs.statSync(f).size, 0);
 const npmBytes = (() => {
   const dir = path.join(ROOT, NPM_DIR);
   if (!fs.existsSync(dir)) return 0;
@@ -365,14 +365,69 @@ const npmBytes = (() => {
   return sum;
 })();
 
+// 体积口径必须是「主包 + 各分包分别算」，不能把所有页面加在一起：
+// 分包（packageAdmin / packageUnion）上传时不计入主包，混算会把 3.47MB 误报成主包超限，
+// 而真实主包只有约 1.9MB。主包体积 = 根目录文件（不含分包）+ miniprogram_npm。
+const subRoots = (appJson.subpackages || []).map((s) => s.root).filter(Boolean);
+const relOf = (p) => path.relative(ROOT, p).replace(/\\/g, '/');
+const inSub = (relPath) => subRoots.some((r) => relPath === r || relPath.startsWith(`${r}/`));
+const sumBytes = (list) => list.reduce((s, f) => s + fs.statSync(f).size, 0);
+const mainBytes = sumBytes(files.filter((f) => !inSub(relOf(f)))) + npmBytes;
+const subSizes = subRoots.map((root) => ({
+  root,
+  bytes: sumBytes(files.filter((f) => relOf(f) === root || relOf(f).startsWith(`${root}/`))),
+}));
+
+const mb = (n) => (n / 1024 / 1024).toFixed(2);
 console.log(
   `检查：WXML ${wxmls.length} / WXSS ${wxsss.length} / JS ${jss.length}（语法均已解析） / 页面 ${pages.length}\n` +
     `      事件绑定 ${handlerCount} 处、图标 ${iconUse} 处、class ${classUse} 处\n` +
-    `      主包 ≈ ${((totalBytes + npmBytes) / 1024 / 1024).toFixed(2)} MB（不含 npm ${(totalBytes / 1024 / 1024).toFixed(2)} MB，上限 ${MAX_MAIN_PACKAGE_MB} MB）`
+    `      主包 ≈ ${mb(mainBytes)} MB（含 npm ${mb(npmBytes)} MB，上限 ${MAX_MAIN_PACKAGE_MB} MB）\n` +
+    subSizes.map((s) => `      分包 ${s.root} ≈ ${mb(s.bytes)} MB（上限 ${MAX_MAIN_PACKAGE_MB} MB）`).join('\n')
 );
-if ((totalBytes + npmBytes) / 1024 / 1024 > MAX_MAIN_PACKAGE_MB) {
-  problems.push(`主包体积超出 ${MAX_MAIN_PACKAGE_MB}MB 上限`);
+if (mainBytes / 1024 / 1024 > MAX_MAIN_PACKAGE_MB) {
+  problems.push(`主包体积超出 ${MAX_MAIN_PACKAGE_MB}MB 上限（${mb(mainBytes)}MB）`);
 }
+for (const s of subSizes) {
+  if (s.bytes / 1024 / 1024 > MAX_MAIN_PACKAGE_MB) {
+    problems.push(`分包 ${s.root} 体积超出 ${MAX_MAIN_PACKAGE_MB}MB 上限（${mb(s.bytes)}MB）`);
+  }
+}
+// ===== 10) 组件注册 / WXML import 源必须存在 =====
+// 2026-11-23 事故：删除 components/class-board 等组件后，若仍有 json 注册或 wxml import 指向它，
+// DevTools / PC 微信会报「Component is not found in path "wx://not-found"」或 WXML 编译 ENOENT，
+// 对应页面整块空白。静态扫一遍注册与 import 源，把这类「删了文件漏改引用」钉在检查期。
+{
+  const resolves = (from, ref) => {
+    let base;
+    if (ref.startsWith('/')) base = path.join(ROOT, ref);
+    else if (ref.startsWith('tdesign-') || ref.startsWith(NPM_DIR)) base = path.join(ROOT, NPM_DIR, ref);
+    else base = path.join(path.dirname(from), ref);
+    return ['.js', '.json', '.wxml'].every((e) => fs.existsSync(base + e));
+  };
+  for (const f of files.filter((x) => x.endsWith('.json'))) {
+    let j;
+    try {
+      j = JSON.parse(fs.readFileSync(f, 'utf8'));
+    } catch (e) {
+      continue;
+    }
+    for (const [k, v] of Object.entries(j.usingComponents || {})) {
+      if (typeof v === 'string' && !resolves(f, v)) {
+        problems.push(`组件注册解析不到文件：${rel(f)} :: ${k} -> ${v}`);
+      }
+    }
+  }
+  for (const f of wxmls) {
+    const src = fs.readFileSync(f, 'utf8');
+    for (const m of src.matchAll(/<(?:import|include)\s+src="([^"]+)"/g)) {
+      const ref = m[1];
+      const base = ref.startsWith('/') ? path.join(ROOT, ref) : path.join(path.dirname(f), ref);
+      if (!fs.existsSync(base)) problems.push(`WXML import/include 源不存在：${rel(f)} -> ${ref}`);
+    }
+  }
+}
+
 if (hooks.length) {
   console.log(`\n提示：${hooks.length} 处未定义的修饰类（不影响显示，仅作样式钩子）：`);
   for (const h of hooks) console.log(' · ' + h);

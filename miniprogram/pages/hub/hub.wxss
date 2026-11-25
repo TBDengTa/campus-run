@@ -1,11 +1,53 @@
-/* 管理中枢：分类 + 按钮平铺（点按钮直接进页面；首页才是「点分类弹浮层」） */
-.hub-page {
-  padding-bottom: calc(32rpx + env(safe-area-inset-bottom));
+/* 工作台（2026-11-24 iOS 重排版）：iOS 分组宫格 —— 灰字 footnote 标题 +
+   玻璃分组卡 + 图标文字入口，点按直接进页面。
+   手机/iPad 每行 4 个，Mac/PC 每行 5 个；数据概况已按用户要求移除（管理员首页保留）。
+   三端：.screen-regular（iPad 双栏）/ .screen-wide（Mac·PC 左身份栏 + 右多栏网格），
+   宽屏块内尺寸一律 px、禁 rpx（rpx 按窗口宽换算会放大数倍）。 */
+
+/* ===== iOS 分组 footnote 标题（灰字小标题、去橙竖条，与班级页同手法） ===== */
+.hub-page .tt-section {
+  margin: 0 var(--tt-gap) 8rpx;
+  font-size: 24rpx;
+  font-weight: 400;
+  color: var(--tt-text-3);
 }
 
+.hub-page .tt-section::before {
+  display: none;
+}
+
+.hub-page .tt-section-extra {
+  font-size: 22rpx;
+}
+
+/* 分类标题不参与压缩，避免右侧说明过长时把标题挤成多行 */
+.hub-section-title {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* ===== 玻璃身份卡（紧凑） ===== */
 .hub-hero {
-  padding: 28rpx 28rpx 24rpx;
-  border-radius: 32rpx;
+  position: relative;
+  overflow: hidden;
+  padding: 24rpx 28rpx 20rpx;
+}
+
+/* 橙色环境光晕（token 驱动，暗色自动降为半透明橙） */
+.hub-hero-glow {
+  position: absolute;
+  right: -60rpx;
+  top: -80rpx;
+  width: 320rpx;
+  height: 320rpx;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--tt-brand-soft-2), transparent 70%);
+  pointer-events: none;
+}
+
+.hub-hero-body {
+  position: relative;
+  z-index: 1;
 }
 
 .hub-hero-top {
@@ -17,61 +59,100 @@
 .hub-hero-name {
   flex: 1;
   min-width: 0;
-  font-size: 34rpx;
+  font-size: 32rpx;
   font-weight: 700;
-  color: #fff;
+  color: var(--tt-text-1);
 }
 
 .hub-hero-tag {
   flex-shrink: 0;
-  padding: 6rpx 18rpx;
+  padding: 4rpx 16rpx;
   border-radius: 999rpx;
   font-size: 22rpx;
-  color: #fff;
-  background: rgba(255, 255, 255, 0.24);
+  color: var(--tt-brand);
+  background: var(--tt-brand-soft);
 }
 
 .hub-hero-sub {
-  margin-top: 10rpx;
-  font-size: 23rpx;
-  color: rgba(255, 255, 255, 0.88);
-}
-
-.hub-card {
-  padding: 22rpx 16rpx 6rpx;
-}
-
-/* 分类标题：不参与压缩，避免右侧说明过长时把标题挤成多行（产品反馈：「我的班级」竖排三行）。
-   右侧 .tt-section-extra 自己换行即可 —— 它只有 24rpx 字号，多一行不影响标题。 */
-.hub-section-title {
-  flex-shrink: 0;
-  white-space: nowrap;
-}
-
-/* ===== 分组折叠：超过一行（4 项）时只展示一行 ===== */
-.hub-fold {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6rpx;
-  margin: 4rpx 6rpx 14rpx;
-  padding: 14rpx 0;
-  border-radius: 16rpx;
-  background: var(--td-bg-color-component);
+  margin-top: 8rpx;
   font-size: 23rpx;
   color: var(--tt-text-2);
 }
 
-.hub-fold:active {
-  opacity: 0.8;
+/* 身份胶囊行：只展示不切换（多身份统一工作台） */
+.hub-identities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8rpx;
+  margin-top: 14rpx;
 }
 
-/* ===== 我的班级：班级过多时折叠展示 ===== */
-.hub-classes {
-  margin: 2rpx 6rpx 16rpx;
-  padding: 16rpx 16rpx 14rpx;
-  border-radius: var(--tt-radius-sm);
+.hub-identity {
+  display: inline-flex;
+  align-items: center;
+  gap: 6rpx;
+  padding: 6rpx 14rpx;
+  border-radius: 999rpx;
+  font-size: 22rpx;
+  color: var(--tt-text-1);
   background: var(--tt-brand-soft);
+  box-shadow: 0 0 0 1rpx var(--tt-glass-border);
+}
+
+/* ===== 分组卡：4 列图标宫格 ===== */
+.hub-card {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4rpx;
+  padding: 8rpx 10rpx;
+}
+
+.hub-row {
+  min-width: 0;
+  min-height: 132rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
+  padding: 12rpx 4rpx;
+  border-radius: 16rpx;
+}
+
+.hub-row:active {
+  background: var(--td-bg-color-container-active);
+}
+
+.hub-row-icon {
+  width: 56rpx;
+  height: 56rpx;
+  border-radius: 16rpx;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s ease-out;
+}
+
+.hub-row-label {
+  width: 100%;
+  min-width: 0;
+  font-size: 24rpx;
+  line-height: 32rpx;
+  color: var(--tt-text-1);
+  text-align: center;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* ===== 我的班级 chips：并入班级分组卡，跨整行 ===== */
+.hub-classes {
+  grid-column: 1 / -1;
+  border-top: 1rpx solid var(--tt-line);
+  margin-top: 4rpx;
+  padding: 14rpx 6rpx 10rpx;
 }
 
 .hub-classes-head {
@@ -103,7 +184,7 @@
 .hub-class-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 12rpx;
+  gap: 10rpx;
   margin-top: 12rpx;
 }
 
@@ -116,7 +197,7 @@
 }
 
 .hub-classes-tip {
-  margin: 10rpx 6rpx 16rpx;
+  margin-top: 10rpx;
   font-size: 21rpx;
   line-height: 30rpx;
   color: var(--tt-text-3);
@@ -151,4 +232,253 @@
 .hub-empty-sub {
   font-size: 23rpx;
   color: var(--tt-text-3);
+}
+
+/* ============ iPad（regular）：分组卡双栏网格 ============ */
+.screen-regular .hub-hero {
+  padding: 14px 16px 12px;
+}
+
+.screen-regular .hub-hero-name {
+  font-size: 17px;
+}
+
+.screen-regular .hub-hero-tag,
+.screen-regular .hub-identity {
+  font-size: 11px;
+  padding: 3px 9px;
+}
+
+.screen-regular .hub-hero-sub {
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+/* wide 下 hub-layout 网格右列容器：min-width 0 防多栏网格撑破列宽 */
+.hub-main {
+  min-width: 0;
+}
+
+.screen-regular .hub-identities {
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.screen-regular .hub-groups {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 16px;
+  align-items: start;
+  padding: 0 16px;
+}
+
+.screen-regular .hub-group .tt-section {
+  margin: 0 2px 6px;
+  font-size: 12px;
+}
+
+.screen-regular .hub-group .tt-section-extra {
+  font-size: 11px;
+}
+
+.screen-regular .hub-group .tt-card {
+  margin: 0 0 12px;
+}
+
+.screen-regular .hub-card {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 3px;
+  padding: 6px;
+}
+
+.screen-regular .hub-row {
+  gap: 6px;
+  min-height: 78px;
+  padding: 8px 3px;
+  border-radius: 10px;
+}
+
+.screen-regular .hub-row-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+}
+
+.screen-regular .hub-row-label {
+  font-size: 11px;
+  line-height: 15px;
+}
+
+.screen-regular .hub-classes {
+  margin-top: 3px;
+  padding: 8px 3px 5px;
+}
+
+.screen-regular .hub-classes-title,
+.screen-regular .hub-classes-toggle {
+  font-size: 12px;
+}
+
+.screen-regular .hub-class-chips {
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.screen-regular .hub-classes-tip {
+  margin-top: 5px;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.screen-regular .hub-loading {
+  padding: 40px 0;
+}
+
+.screen-regular .hub-empty {
+  margin: 0 16px 12px;
+  padding: 30px 16px;
+  gap: 6px;
+}
+
+.screen-regular .hub-empty-text {
+  font-size: 14px;
+}
+
+.screen-regular .hub-empty-sub {
+  font-size: 12px;
+}
+
+/* ============ Mac·PC（wide）：左身份栏（sticky）+ 右多栏网格，高密度 ============ */
+.screen-wide .hub-layout {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 18px;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 18px;
+  align-items: start;
+}
+
+.screen-wide .hub-side {
+  position: sticky;
+  top: 16px;
+}
+
+.screen-wide .hub-hero {
+  margin: 0 0 14px;
+  padding: 16px;
+}
+
+.screen-wide .hub-hero-name {
+  font-size: 18px;
+}
+
+.screen-wide .hub-hero-tag,
+.screen-wide .hub-identity {
+  font-size: 11px;
+  padding: 3px 9px;
+}
+
+.screen-wide .hub-hero-sub {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.screen-wide .hub-identities {
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.screen-wide .hub-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 0 14px;
+  align-items: start;
+}
+
+.screen-wide .hub-group .tt-section {
+  margin: 0 2px 6px;
+  font-size: 12px;
+}
+
+.screen-wide .hub-group .tt-section-extra {
+  font-size: 11px;
+}
+
+.screen-wide .hub-group .tt-card {
+  margin: 0 0 14px;
+}
+
+.screen-wide .hub-card {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 3px;
+  padding: 6px;
+}
+
+.screen-wide .hub-row {
+  gap: 6px;
+  min-height: 74px;
+  padding: 8px 2px;
+  border-radius: 10px;
+}
+
+.screen-wide .hub-row-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+}
+
+.screen-wide .hub-row-label {
+  font-size: 10px;
+  line-height: 14px;
+}
+
+.screen-wide .hub-classes {
+  margin-top: 3px;
+  padding: 8px 3px 5px;
+}
+
+.screen-wide .hub-classes-title,
+.screen-wide .hub-classes-toggle {
+  font-size: 12px;
+}
+
+.screen-wide .hub-class-chips {
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.screen-wide .hub-classes-tip {
+  margin-top: 5px;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.screen-wide .hub-loading {
+  padding: 40px 0;
+}
+
+.screen-wide .hub-empty {
+  margin: 0 0 14px;
+  padding: 30px 16px;
+  gap: 6px;
+}
+
+.screen-wide .hub-empty-text {
+  font-size: 14px;
+}
+
+.screen-wide .hub-empty-sub {
+  font-size: 12px;
+}
+
+/* 宽屏悬停：入口图标轻微浮动（200ms ease-out 由 .hub-row-icon transition 提供） */
+@media (hover: hover) {
+  .screen-regular .hub-row:hover .hub-row-icon,
+  .screen-wide .hub-row:hover .hub-row-icon {
+    transform: translateY(-2px);
+  }
 }

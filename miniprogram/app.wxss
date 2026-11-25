@@ -150,6 +150,23 @@
     --tt-radius-sm: 20rpx;
     --tt-gap: 24rpx;
     --tt-pad: 32rpx;
+    /* ===== 玻璃拟态令牌（Glassmorphism 2.0，亮色）=====
+       单一来源：页面/组件一律引用，禁止硬编码玻璃底色与 blur 值。
+       降级链：不支持 backdrop-filter 的机型走 --tt-glass-fallback*（高不透明实底）。 */
+    --tt-glass-bg: rgba(255, 255, 255, 0.56);
+    --tt-glass-bg-strong: rgba(255, 255, 255, 0.72);
+    --tt-glass-bg-hover: rgba(255, 255, 255, 0.7);
+    --tt-glass-blur: blur(24px) saturate(1.5);
+    --tt-glass-blur-strong: blur(32px) saturate(1.6);
+    --tt-glass-border: rgba(255, 255, 255, 0.65);
+    --tt-glass-edge: inset 0 1rpx 0 rgba(255, 255, 255, 0.75), inset 0 0 0 1rpx rgba(255, 255, 255, 0.28);
+    --tt-glass-shadow: 0 12rpx 32rpx rgba(28, 31, 35, 0.09);
+    --tt-glass-fallback: rgba(255, 255, 255, 0.9);
+    --tt-glass-fallback-strong: rgba(255, 255, 255, 0.94);
+    /* 页面环境光：顶部橙色柔光 + 浅暖灰渐变底（静态渐变，不做动画，低端机无负担） */
+    --tt-ambient: radial-gradient(560rpx 420rpx at 18% -6%, rgba(255, 138, 61, 0.16), transparent 70%),
+      radial-gradient(700rpx 520rpx at 92% 4%, rgba(255, 178, 115, 0.12), transparent 72%),
+      linear-gradient(180deg, #fbf7f2 0%, #f6f7f9 46%, #f3f5f8 100%);
   }
 }
 @media (prefers-color-scheme: dark) {
@@ -298,6 +315,21 @@
     --tt-text-3: rgba(255, 255, 255, 0.42);
     --tt-line: rgba(255, 255, 255, 0.14);
     --tt-card-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.32), 0 12rpx 32rpx rgba(0, 0, 0, 0.44);
+    /* ===== 玻璃拟态令牌（暗色）=====
+       暗色玻璃靠「亮边 + 内高光」撑层次（阴影感知弱），blur 后底色更深 */
+    --tt-glass-bg: rgba(30, 30, 32, 0.55);
+    --tt-glass-bg-strong: rgba(28, 28, 30, 0.62);
+    --tt-glass-bg-hover: rgba(44, 44, 48, 0.66);
+    --tt-glass-blur: blur(24px) saturate(1.4);
+    --tt-glass-blur-strong: blur(32px) saturate(1.5);
+    --tt-glass-border: rgba(255, 255, 255, 0.14);
+    --tt-glass-edge: inset 0 1rpx 0 rgba(255, 255, 255, 0.12), inset 0 0 0 1rpx rgba(255, 255, 255, 0.06);
+    --tt-glass-shadow: 0 8rpx 24rpx rgba(0, 0, 0, 0.36);
+    --tt-glass-fallback: rgba(31, 31, 31, 0.96);
+    --tt-glass-fallback-strong: rgba(28, 28, 30, 0.97);
+    --tt-ambient: radial-gradient(560rpx 420rpx at 18% -6%, rgba(240, 146, 72, 0.12), transparent 70%),
+      radial-gradient(700rpx 520rpx at 92% 4%, rgba(240, 146, 72, 0.07), transparent 72%),
+      linear-gradient(180deg, #171512 0%, #141414 46%, #121316 100%);
   }
 }
 page,
@@ -962,4 +994,463 @@ page {
 .tt-sheet-foot {
   padding: 16rpx 32rpx calc(24rpx + env(safe-area-inset-bottom));
   box-shadow: 0 -8rpx 24rpx rgba(28, 31, 35, 0.05);
+}
+
+/* ============ 玻璃拟态公共类（Glassmorphism 2.0） ============
+   分层空间：环境光背景（.tt-ambient-page）→ 玻璃卡片（.tt-glass）→ 悬浮玻璃层（.tt-glass-float）。
+   用法：卡片写 class="tt-card tt-glass"（.tt-card 提供盒模型，.tt-glass 覆盖面层，
+   本段定义在 .tt-card 之后，同权重后置生效）；可点卡片再加 .tt-glass-press，
+   宽屏可悬停面加 .tt-glass-hover。全部颜色/blur 走 --tt-glass-* 令牌，禁止页面硬编码。
+   组件内使用需 json 声明 "styleIsolation": "apply-shared"（同 .tt-sheet* 约定）。 */
+.tt-glass {
+  background: var(--tt-glass-bg);
+  -webkit-backdrop-filter: var(--tt-glass-blur);
+  backdrop-filter: var(--tt-glass-blur);
+  /* 细亮边（外描边环）+ 顶部内高光 + 柔性浮起，禁止重阴影 */
+  box-shadow: 0 0 0 1rpx var(--tt-glass-border), var(--tt-glass-edge), var(--tt-glass-shadow);
+  transition: background-color 0.2s ease-out, transform 0.2s ease-out, box-shadow 0.2s ease-out;
+}
+
+/* 悬浮层（tabBar / 抽屉 / 弹层）：更强底 + 更强 blur */
+.tt-glass-float {
+  background: var(--tt-glass-bg-strong);
+  -webkit-backdrop-filter: var(--tt-glass-blur-strong);
+  backdrop-filter: var(--tt-glass-blur-strong);
+  box-shadow: 0 0 0 1rpx var(--tt-glass-border), var(--tt-glass-edge), var(--tt-glass-shadow);
+  transition: background-color 0.2s ease-out, transform 0.2s ease-out, box-shadow 0.2s ease-out;
+}
+
+/* 页面环境光背景：挂在页面根节点（.tt-page 同层），静态渐变不做动画。
+   min-height 必须给：内容不足一屏时（如教师首页只有几张卡）渐变会在内容底部截断，
+   下面露出 page 的纯色底，形成一道横向色缝。 */
+.tt-ambient-page {
+  min-height: 100vh;
+  box-sizing: border-box;
+  background: var(--tt-ambient);
+}
+
+/* 按压：轻微压缩反馈（200ms ease-out 由 .tt-glass 的 transition 提供） */
+.tt-glass-press:active {
+  transform: scale(0.96);
+}
+
+/* 悬停（仅真实可 hover 的设备生效：PC 微信 / iPad 外接指针）：玻璃亮度提升 + 卡片浮动 */
+@media (hover: hover) {
+  .tt-glass-hover:hover {
+    background: var(--tt-glass-bg-hover);
+    transform: translateY(-2px);
+  }
+  .tt-glass-hover.tt-glass-press:active {
+    transform: scale(0.96);
+  }
+}
+
+/* 降级链：不支持 backdrop-filter 的机型回退高不透明实底，保证可读性 */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .tt-glass {
+    background: var(--tt-glass-fallback);
+  }
+  .tt-glass-float {
+    background: var(--tt-glass-fallback-strong);
+  }
+}
+
+/* 动效减弱偏好：关过渡与位移 */
+@media (prefers-reduced-motion: reduce) {
+  .tt-glass,
+  .tt-glass-float {
+    transition: none;
+  }
+  .tt-glass-press:active,
+  .tt-glass-hover:hover {
+    transform: none;
+  }
+}
+
+/* ============ 三端响应式（screen behavior 挂根类） ============
+   compact(<600px) 走默认 rpx；regular(600~900px) / wide(>900px) 由 behaviors/screen.js
+   在页面根节点挂 .screen-regular / .screen-wide。
+   ⚠️ 宽屏块内尺寸一律 px、禁 rpx（rpx 按窗口宽换算，宽窗口下会把字号/圆角放大数倍）。
+   令牌在根类上按设备重定义 → 页面里引用令牌的盒模型自动跟进；
+   公共类字号在此统一给 px 对应值，页面私有字号在各自 wxss 的 .screen-* 块里补。 */
+.screen-regular {
+  --tt-radius: 20px;
+  --tt-radius-sm: 14px;
+  --tt-gap: 16px;
+  --tt-pad: 20px;
+  font-size: 15px;
+}
+
+.screen-wide {
+  --tt-radius: 18px;
+  --tt-radius-sm: 12px;
+  --tt-gap: 14px;
+  --tt-pad: 18px;
+  font-size: 14px;
+}
+
+.screen-regular .tt-page,
+.screen-wide .tt-page {
+  padding-top: 16px;
+}
+
+.screen-regular.tt-page-tab,
+.screen-wide.tt-page-tab {
+  padding-bottom: calc(88px + env(safe-area-inset-bottom));
+}
+
+.screen-regular .tt-section,
+.screen-wide .tt-section {
+  gap: 8px;
+  margin: 4px 16px 10px;
+  font-size: 16px;
+}
+
+.screen-regular .tt-section::before,
+.screen-wide .tt-section::before {
+  width: 4px;
+  height: 15px;
+  border-radius: 4px;
+}
+
+.screen-regular .tt-section-extra,
+.screen-wide .tt-section-extra {
+  font-size: 12px;
+}
+
+.screen-regular .tt-grid-item,
+.screen-wide .tt-grid-item {
+  padding: 9px 0;
+}
+
+.screen-regular .tt-chip-icon,
+.screen-wide .tt-chip-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+}
+
+.screen-regular .tt-grid-text,
+.screen-wide .tt-grid-text {
+  margin-top: 7px;
+  font-size: 12px;
+}
+
+.screen-regular .tt-row,
+.screen-wide .tt-row {
+  gap: 10px;
+  padding: 13px 0;
+}
+
+.screen-regular .tt-row-title,
+.screen-wide .tt-row-title {
+  font-size: 14px;
+}
+
+.screen-regular .tt-row-sub,
+.screen-wide .tt-row-sub {
+  margin-top: 3px;
+  font-size: 12px;
+}
+
+.screen-regular .tt-stat-value,
+.screen-wide .tt-stat-value {
+  font-size: 21px;
+}
+
+.screen-regular .tt-stat-label,
+.screen-wide .tt-stat-label {
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.screen-regular .tt-chip,
+.screen-wide .tt-chip {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.screen-regular .tt-pill-btn,
+.screen-wide .tt-pill-btn {
+  height: 44px;
+  gap: 4px;
+  font-size: 15px;
+}
+
+.screen-regular .tt-empty,
+.screen-wide .tt-empty {
+  padding: 30px 0;
+  font-size: 13px;
+}
+
+.screen-regular .tt-footer,
+.screen-wide .tt-footer {
+  padding: 12px 0 20px;
+  font-size: 12px;
+}
+
+/* ===== 管理 dashboard 公共段（首页 + 工作台共用；2026-11-23 自页内搬入）===== */
+/* ===== 管理 dashboard（数据概况 / 平均步数排行；2026-11-23 自首页搬入）===== */
+.screen-regular .mgr-panel,
+.screen-wide .mgr-panel {
+  border-width: 1px;
+  padding: 12px;
+}
+
+.screen-regular .mgr-head,
+.screen-wide .mgr-head {
+  margin-bottom: 10px;
+}
+
+.screen-regular .mgr-title,
+.screen-wide .mgr-title {
+  gap: 5px;
+  font-size: 14px;
+}
+
+.screen-regular .mgr-stats,
+.screen-wide .mgr-stats {
+  margin-bottom: 7px;
+}
+
+.screen-regular .mgr-num,
+.screen-wide .mgr-num {
+  font-size: 14px;
+}
+
+.screen-regular .mgr-label,
+.screen-wide .mgr-label {
+  font-size: 10px;
+  margin-top: 2px;
+}
+
+.screen-regular .mgr-loading,
+.screen-wide .mgr-loading {
+  padding: 6px 0 9px;
+}
+
+.screen-regular .mgr-head-sub,
+.screen-wide .mgr-head-sub {
+  margin-top: 4px;
+  padding-top: 8px;
+}
+
+.screen-regular .rank-col,
+.screen-wide .rank-col {
+  padding-right: 8px;
+}
+
+.screen-regular .rank-col-right,
+.screen-wide .rank-col-right {
+  padding-right: 0;
+  padding-left: 8px;
+  border-left-width: 1px;
+}
+
+.screen-regular .rank-col-title,
+.screen-wide .rank-col-title {
+  margin-bottom: 4px;
+  font-size: 11px;
+}
+
+.screen-regular .rank-row,
+.screen-wide .rank-row {
+  gap: 5px;
+  padding: 4px 0;
+}
+
+.screen-regular .rank-no,
+.screen-wide .rank-no {
+  width: 17px;
+  height: 17px;
+  border-radius: 5px;
+  line-height: 17px;
+  font-size: 10px;
+}
+
+.screen-regular .rank-name,
+.screen-wide .rank-name {
+  font-size: 12px;
+}
+
+.screen-regular .rank-sub,
+.screen-wide .rank-sub {
+  margin-top: 1px;
+  font-size: 10px;
+}
+
+.screen-regular .rank-value,
+.screen-wide .rank-value {
+  font-size: 12px;
+}
+
+.screen-regular .rank-empty,
+.screen-wide .rank-empty {
+  padding: 9px 0;
+  font-size: 11px;
+}
+
+/* ===== 管理 dashboard 基础段（自首页 HEAD 版本搬入）===== */
+/* ============================================================
+   管理视角
+   ============================================================ */
+.mgr-panel {
+  border: 2rpx solid var(--tt-brand-soft-2);
+  padding: 24rpx;
+}
+
+.mgr-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20rpx;
+}
+
+.mgr-title {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  font-size: 27rpx;
+  font-weight: 600;
+  color: var(--tt-text-1);
+}
+
+.mgr-stats {
+  display: flex;
+  margin-bottom: 14rpx;
+}
+
+.mgr-stat {
+  flex: 1;
+  text-align: center;
+}
+
+.mgr-num {
+  font-size: 26rpx;
+  font-weight: 700;
+  color: var(--tt-brand);
+  white-space: nowrap;
+}
+
+.mgr-label {
+  font-size: 20rpx;
+  margin-top: 4rpx;
+}
+
+.mgr-loading {
+  display: flex;
+  justify-content: center;
+  padding: 12rpx 0 18rpx;
+}
+
+/* ===== 平均步数排行（本周日均）：个人 / 班级 两列 ===== */
+.mgr-head-sub {
+  margin-top: 8rpx;
+  padding-top: 16rpx;
+}
+
+/* 快捷操作的分类小标题（班级管理 / 学生会 / 更多管理）：
+   比 .mgr-title 轻一档，只做宫格分组，不抢「数据概况」「快捷操作」的层级 */
+.mgr-sub {
+  margin: 4rpx 0 10rpx;
+  font-size: 23rpx;
+  font-weight: 600;
+  color: var(--tt-text-2);
+}
+
+/* 「快捷操作」独立卡（班主任 / 班委也看得到）：标题是卡内第一行，不像管理面板里那样需要上间距 */
+.mgr-head-card {
+  margin-top: 0;
+}
+
+.rank-cols {
+  display: flex;
+  align-items: stretch;
+}
+
+.rank-col {
+  flex: 1;
+  min-width: 0;
+  padding-right: 16rpx;
+}
+
+.rank-col-right {
+  padding-right: 0;
+  padding-left: 16rpx;
+  border-left: 2rpx solid var(--tt-line);
+}
+
+.rank-col-title {
+  margin-bottom: 8rpx;
+  font-size: 22rpx;
+  color: var(--tt-text-3);
+}
+
+.rank-row {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  padding: 8rpx 0;
+}
+
+.rank-no {
+  flex-shrink: 0;
+  width: 34rpx;
+  height: 34rpx;
+  border-radius: 10rpx;
+  text-align: center;
+  line-height: 34rpx;
+  font-size: 20rpx;
+  font-weight: 700;
+  color: #fff;
+  background: var(--td-gray-color-5, #c6c6c6);
+}
+
+.rank-no-1 {
+  background: linear-gradient(135deg, #ffb400, #ff8a00);
+}
+
+.rank-no-2 {
+  background: linear-gradient(135deg, #b9c2cc, #98a3ae);
+}
+
+.rank-no-3 {
+  background: linear-gradient(135deg, #e0a06a, #c9803f);
+}
+
+.rank-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.rank-name {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 24rpx;
+  color: var(--tt-text-1);
+}
+
+.rank-sub {
+  display: block;
+  margin-top: 2rpx;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 19rpx;
+  color: var(--tt-text-3);
+}
+
+.rank-value {
+  flex-shrink: 0;
+  font-size: 24rpx;
+  font-weight: 700;
+  color: var(--tt-brand);
+}
+
+.rank-empty {
+  padding: 18rpx 0;
+  font-size: 22rpx;
+  color: var(--tt-text-3);
 }

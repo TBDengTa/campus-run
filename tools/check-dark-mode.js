@@ -28,7 +28,9 @@ const APP_JSON = JSON.parse(read('miniprogram', 'app.json'));
 const THEME = JSON.parse(read('miniprogram', 'theme.json'));
 const TAB_WXML = read('miniprogram', 'custom-tab-bar', 'index.wxml');
 const TAB_WXSS = read('miniprogram', 'custom-tab-bar', 'index.wxss');
+const TAB_JSON = JSON.parse(read('miniprogram', 'custom-tab-bar', 'index.json'));
 const HOME_WXSS = read('miniprogram', 'pages', 'home', 'home.wxss');
+const CLASS_WXSS = read('miniprogram', 'packageAdmin', 'class', 'class.wxss');
 const RUN_WXSS = read('miniprogram', 'pages', 'run', 'index.wxss');
 
 // 提取某个 @media (prefers-color-scheme: dark) 块内、某选择器的声明段
@@ -59,13 +61,23 @@ ok('.card 引用描边令牌', /\.card\s*\{[^}]*var\(--tt-card-border\)/.test(AP
 ok('.tt-card 引用描边令牌', /\.tt-card\s*\{[^}]*var\(--tt-card-border\)/.test(APP_WXSS));
 
 // ===== 2) 自定义 tabBar 暗色适配 =====
+// 玻璃化改造（2026-11-23）后口径：tabBar 颜色/玻璃底全部走 --tt-glass-* / --tt-* 令牌，
+// 暗色值定义在 app.wxss 暗色令牌块 —— tabBar wxss **不再自写 @media 暗色块**（写了就是硬编码回潮）。
+// ⚠️ 令牌「引用存在」不等于「运行时解析得到」：custom-tab-bar 挂在页面内容树之外，
+//    令牌块选择器是 page, .page —— 必须 json apply-shared + 根节点挂 page 类，var() 才有值。
+//    缺任一条时 background/box-shadow/color 在计算值阶段整条失效 = 全宽平底黑图标栏
+//    （2026-11-23 真机截图报障），而下面这些文本断言依然全绿 —— 所以挂载契约单独钉两条。
 console.log('\n[2] custom-tab-bar');
+ok('json styleIsolation = apply-shared（app.wxss 令牌块才进得去组件）', TAB_JSON.styleIsolation === 'apply-shared', TAB_JSON.styleIsolation);
+ok('WXML 根节点挂 page 类（页面树外组件取令牌的唯一途径）', /<view\s+class="[^"]*\bpage\b/.test(TAB_WXML), TAB_WXML.split('\n')[0]);
 ok('WXML 不再给 t-icon 传硬编码 color（走 currentColor 继承）', !/t-icon[\s\S]{0,200}color="/.test(TAB_WXML));
-ok('颜色着色上移到 .tabbar-item（图标继承层）', /\.tabbar-item\s*\{[^}]*color:\s*#9aa0a6/.test(TAB_WXSS));
-const tabDark = darkRule(TAB_WXSS, '.tabbar');
-ok('tabBar 有暗色 media query 块', tabDark.length > 0);
-ok('暗色胶囊是深色玻璃（不再是白底）', /rgba\(28,\s*28,\s*30/.test(tabDark));
-ok('暗色选中色与品牌橙暗色令牌一致（#f09248）', /#f09248/.test(darkRule(TAB_WXSS, '.tabbar-item.active')));
+ok('颜色着色上移到 .tabbar-item（图标继承层，令牌驱动）', /\.tabbar-item\s*\{[^}]*color:\s*var\(--tt-text-3\)/.test(TAB_WXSS));
+ok('选中色走品牌令牌（亮暗自动适配）', /\.tabbar-item\.active\s*\{[^}]*color:\s*var\(--tt-brand\)/.test(TAB_WXSS));
+ok('胶囊玻璃底走 --tt-glass-bg-strong 令牌', /\.tabbar\s*\{[^}]*background:\s*var\(--tt-glass-bg-strong\)/.test(TAB_WXSS));
+ok('胶囊有 backdrop-filter 玻璃模糊（走令牌）', /backdrop-filter:\s*var\(--tt-glass-blur-strong\)/.test(TAB_WXSS));
+ok('app.wxss 暗色块定义玻璃令牌（暗色玻璃底，不再是白底）', /--tt-glass-bg:\s*rgba\(30/.test(darkTokens) && /--tt-glass-bg-strong:\s*rgba\(28/.test(darkTokens));
+ok('tabBar 有 backdrop-filter 不支持机型的实底降级', /@supports not[\s\S]*?--tt-glass-fallback-strong/.test(TAB_WXSS));
+ok('tabBar wxss 无硬编码色值（全部走令牌）', !/#[0-9a-fA-F]{3,8}\b|rgba\(/.test(TAB_WXSS));
 
 // ===== 3) 导航栏 / tabBar 兜底与页面底色同源 =====
 console.log('\n[3] theme.json / app.json');
@@ -82,12 +94,28 @@ if (allRefs) {
   ok('theme.json 亮/暗两套都有 tabBar 引用的 key', missing.length === 0, missing);
 }
 
-// ===== 4) 首页插画夜景化 =====
-console.log('\n[4] 首页插画夜景');
-for (const sel of ['.sky', '.sky-cloud', '.sky-hill', '.sky-title', '.sky-slogan']) {
-  ok(`暗色块覆盖插画 ${sel}`, darkRule(HOME_WXSS, sel).length > 0);
-}
-ok('夜空不再是亮蓝渐变', !/#9fd8ff/.test(darkRule(HOME_WXSS, '.sky')));
+// ===== 4) 首页重设计后的暗色口径（2026-11-23：天空插画已删，改 iOS 大标题 + 待办卡 + 小组件）=====
+console.log('\n[4] 首页暗色口径');
+ok('天空插画已删除（首屏不再有大块亮色场景）', !/\.sky\s*\{/.test(HOME_WXSS));
+ok('大标题 / 待办行 / 小组件文字走令牌', /\.home-header-title\s*\{[^}]*var\(--tt-text-1\)/.test(HOME_WXSS) && /\.todo-title\s*\{[^}]*var\(--tt-text-1\)/.test(HOME_WXSS) && /\.widget-label\s*\{[^}]*var\(--tt-text-1\)/.test(HOME_WXSS));
+ok('小组件图标底色暗色有半透明 tint 覆盖', /@media \(prefers-color-scheme: dark\)[\s\S]*?\.widget-icon-water\s*\{[^}]*rgba\(/.test(HOME_WXSS));
+
+// ===== 4b) 我的班级页 iOS 重排版暗色口径（2026-11-23）=====
+// 玻璃面层/描边/hairline 全走令牌 → 暗色自动适配；页面自写实底就是漏白来源。
+console.log('\n[4b] 我的班级页暗色');
+ok('class 吸顶头/融合周期行不自写 background（走玻璃令牌）', !/\.cls-topbar\s*\{[^}]*background:/.test(CLASS_WXSS) && !/\.cls-topbar-range\s*\{[^}]*background:/.test(CLASS_WXSS));
+ok('class 分组行 hairline 走令牌', /\.cls-row \+ \.cls-row\s*\{[^}]*var\(--tt-line\)/.test(CLASS_WXSS));
+// KPI/模块 inset 块允许暗色自适应令牌浅底（--td-bg-color-secondarycontainer 暗色有 #242424 覆写，
+// 与 cls-bc-day-list 同口径）；禁止的是硬编码实底（暗色漏白来源）。
+ok('class KPI/模块卡不自写硬编码实底（浅底必须走暗色自适应令牌）', (() => {
+  const tokenOnly = (sel) => {
+    const m = CLASS_WXSS.match(new RegExp(sel.replace('.', '\\.') + '\\s*\\{([^}]*)\\}'));
+    const body = (m && m[1]) || '';
+    return !/background:/.test(body) || /background:\s*var\(--td-bg-color-secondarycontainer\)/.test(body);
+  };
+  return tokenOnly('.cls-bc-kpi') && tokenOnly('.cls-bc-module');
+})());
+ok('class 宽屏左栏 280px 存在', /\.screen-wide \.cls-layout\s*\{[^}]*280px/.test(CLASS_WXSS));
 
 // ===== 5) 跑步页 =====
 console.log('\n[5] 跑步页');

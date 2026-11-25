@@ -335,33 +335,53 @@ const TARGETS = [
       const payload = {
         enabled: true,
         date: '2026-11-12',
-        video: { drawPerWatch: 1, dailyLimit: 10, adUnitId: '', count: 2, remaining: 8 },
-        share: { drawPerShare: 1, dailyLimit: 0, minIntervalSec: 5, count: 1, remaining: -1 },
+        coin: {
+          name: '铜版', balance: 88, earnedToday: 12, spentToday: 4, gameEarnedToday: 6,
+          dailyGameCap: 200, gameCapLeft: 194, gameCapReached: false,
+        },
+        video: { enabled: true, coinPerWatch: 1, drawPerWatch: 0, dailyLimit: 10, adUnitId: '', count: 2, remaining: 8 },
+        share: {
+          enabled: true, coinPerClick: 1, drawPerShare: 0, dailyLimit: 3, count: 1, remaining: 2,
+          rewardedToday: 1, clicksToday: 1, token: 'abc123abc123abc1', path: '/pages/splash/splash?bdshare=abc123abc123abc1',
+        },
         checkin: {
           enabled: true,
           done: false,
           streak: 2,
           todayIndex: 2,
           milestones: [
-            { draw: 1, steps: 0 }, { draw: 1, steps: 0 }, { draw: 2, steps: 200 },
-            { draw: 1, steps: 0 }, { draw: 1, steps: 0 }, { draw: 1, steps: 0 }, { draw: 3, steps: 500 },
+            { coin: 1, draw: 0, steps: 0 }, { coin: 1, draw: 0, steps: 0 }, { coin: 1, draw: 0, steps: 0 },
+            { coin: 1, draw: 0, steps: 0 }, { coin: 1, draw: 0, steps: 0 }, { coin: 1, draw: 0, steps: 0 }, { coin: 1, draw: 0, steps: 0 },
           ],
-          award: { draw: 0, steps: 0 },
+          award: { coin: 0, draw: 0, steps: 0 },
         },
         draw: {
-          remaining: 3, unlimited: true, total: 5, used: 2, maxPerDay: 0,
+          remaining: 3, unlimited: true, total: 5, used: 2, maxPerDay: 0, cost: 5,
+          pity: { after: 5, losses: 2, remaining: 3, ready: false, text: '再抽 3 次必中保底' },
           prizes: [
-            { key: 'steps_100', label: '100 步', type: 'steps', amount: 100, weight: 30, percent: 30 },
-            { key: 'none', label: '谢谢参与', type: 'none', amount: 0, weight: 70, percent: 70 },
+            { key: 'coin_2', label: '2 铜版', type: 'coin', amount: 2, weight: 30, percent: 30, tier: 'low' },
+            { key: 'none', label: '谢谢参与', type: 'none', amount: 0, weight: 70, percent: 70, tier: 'none' },
           ],
-          sectors: ['steps_100', 'none', 'steps_100', 'none', 'steps_100', 'none', 'steps_100', 'none'],
+          sectors: ['coin_2', 'none', 'coin_2', 'none', 'coin_2', 'none', 'coin_2', 'none'],
           sectorCount: 8,
+        },
+        grid: {
+          enabled: true, cost: 6, canPlay: true, playsToday: 1, maxPerDay: 0,
+          pity: { after: 5, losses: 1, remaining: 4, ready: false, text: '再抽 4 次必中保底' },
+          symbols: [
+            { key: 'star', label: '星星', icon: '⭐', type: 'coin', amount: 3, tier: 'low' },
+            { key: 'blank', label: '空白', icon: '▫', type: 'none', amount: 0, tier: 'none' },
+          ],
+          outcomes: [
+            { key: 'none', label: '没有连线', lines: 0, symbolKey: '', weight: 60, percent: 60 },
+            { key: 'line_star', label: '星星连线', lines: 1, symbolKey: 'star', weight: 40, percent: 40 },
+          ],
         },
         cap: { cap: 3000, used: 300, left: 2700, capped: false },
         earned: { steps: 300, distance: 210, calories: 12, durationSeconds: 150 },
-        rarityText: '最低概率奖：1500 步 2% · 最高：谢谢参与 38%',
+        rarityText: '最低概率奖：2 铜版 30% · 最高：谢谢参与 70%',
         sfxEnabled: true,
-        recent: [{ prizeKey: 'steps_100', prizeLabel: '100 步', type: 'steps', amount: 100, capped: false, atText: '09:12' }],
+        recent: [{ prizeKey: 'coin_2', prizeLabel: '2 铜版', game: 'wheel', type: 'coin', amount: 2, capped: false, atText: '09:12' }],
       };
       try {
         page.applyState(payload);
@@ -378,9 +398,12 @@ const TARGETS = [
         '每格都有 clip-path polygon（盘面不会渲染成纯色）',
         page.data.sectors[0] && page.data.sectors[0].clip
       );
-      ok(page.data.remaining === 3, 'remaining = 3', page.data.remaining);
+      ok(page.data.wheel.remaining === 3, 'wheel.remaining = 3', page.data.wheel.remaining);
       ok(String(page.data.capText || '').indexOf('2700') >= 0, 'capText 含剩余额度', page.data.capText);
       ok(String(page.data.rarityText || '').indexOf('最低概率') >= 0, '概率区间文案已下发（折叠时也能看到）', page.data.rarityText);
+      ok(page.data.coin.balance === 88, '铜版余额写入 data', page.data.coin);
+      ok(page.data.grid.cost === 6 && page.data.grid.symbols.length === 2, '九宫格配置写入 data', page.data.grid);
+      ok(/bdshare=/.test(page.data.share.path), '分享路径带 bdshare 令牌', page.data.share.path);
       ok(page.data.checkin.cells.length === 7, '签到 7 格', page.data.checkin.cells.length);
       ok(
         page.data.checkin.cells.filter((c) => c.signed).length === 2,
@@ -388,22 +411,13 @@ const TARGETS = [
         page.data.checkin.cells.filter((c) => c.signed).length
       );
       ok(page.data.checkin.cells.some((c) => c.isToday), '有「今天」高亮格');
-      // 第 3/7 天（有步数的那两档）必须被标出来，否则用户看不出哪天是大奖
-      ok(
-        page.data.checkin.cells.filter((c) => c.big).length === 2,
-        '第 3/7 天被标记（有步数奖励）',
-        page.data.checkin.cells.filter((c) => c.big).length
-      );
-      // 用户 2026-11-13「签到没有显示获得奖品，只有大字」：
-      // 每个格子必须写清「给几次 / 给多少步」，不能只有一个「大」字。
+      // 每个签到格都必须写清「给多少铜版」，不能是空奖励
       const c3 = page.data.checkin.cells[2];
-      ok(c3.rewardDrawText === '+2次' && c3.rewardStepsText === '+200步', '第 3 天写清「+2次 / +200步」', c3);
-      const c1 = page.data.checkin.cells[0];
-      ok(c1.rewardDrawText === '+1次' && c1.rewardStepsText === '', '第 1 天只有次数（无步数时该行不出现）', c1);
+      ok(c3.rewardCoinText === '+1' && /铜版/.test(c3.rewardText), '签到格写清 +1 铜版', c3);
       ok(
-        page.data.checkin.cells.every((c) => c.rewardDrawText || c.rewardStepsText),
-        '每个格子都至少写了一个奖励（不会有空白的「大」）',
-        page.data.checkin.cells.map((c) => [c.rewardDrawText, c.rewardStepsText])
+        page.data.checkin.cells.every((c) => c.rewardCoinText || c.rewardText),
+        '每个格子都至少写了一个奖励',
+        page.data.checkin.cells.map((c) => [c.rewardCoinText, c.rewardText])
       );
       ok(
         // 反向断言：格子里不许再出现那个占位大字
@@ -432,13 +446,15 @@ const TARGETS = [
       const drawPayload = (rarity, prize) => ({
         success: true, index: 0, rarity,
         prize,
-        capped: false, remaining: 2, unlimited: true, total: 5, used: 3,
+        capped: false, coinCapped: false, pity: false, cost: 5,
+        coin: { name: '铜版', balance: 90, earnedToday: 14, spentToday: 9, gameEarnedToday: 8, dailyGameCap: 200, gameCapLeft: 192, gameCapReached: false },
+        remaining: 2, unlimited: true, total: 5, used: 3,
         earned: { steps: 400, distance: 280, calories: 16, durationSeconds: 200 },
         cap: { cap: 3000, used: 400, left: 2600, capped: false },
         newBadges: [],
       });
       const cases = [
-        ['normal', { key: 'steps_100', label: '100 步', type: 'steps', amount: 100 }, 'normal'],
+        ['normal', { key: 'coin_2', label: '2 铜版', type: 'coin', amount: 2 }, 'normal'],
         ['rare', { key: 'steps_800', label: '800 步', type: 'steps', amount: 800 }, 'rare'],
         ['rarest', { key: 'steps_1500', label: '1500 步', type: 'steps', amount: 1500 }, 'rarest'],
         ['none', { key: 'none', label: '谢谢参与', type: 'none', amount: 0 }, 'normal'],
@@ -453,7 +469,11 @@ const TARGETS = [
         const expectFx = rarity === 'none' ? 'normal' : rarity;
         ok(page.data.fx === expectFx, `动效档位与稀有度对齐（${rarity} → ${expectFx}）`, page.data.fx);
         if (rarity === 'rarest') {
-          ok(page.data.confetti.length > 0, '最稀有才有彩带', page.data.confetti.length);
+          ok(page.data.confetti.length === 20, '最稀有彩带 20（全档最多）', page.data.confetti.length);
+        } else if (rarity === 'none') {
+          ok(page.data.confetti.length === 0, '空奖无彩带（克制）', page.data.confetti.length);
+        } else {
+          ok(page.data.confetti.length > 0, `全档炸裂：${rarity} 也有彩带`, page.data.confetti.length);
         }
         // 每轮都校验 lastPrize 跟着当前这一档走（别把断言放在循环外——最后一轮会覆盖前面的值）
         ok(
@@ -465,6 +485,121 @@ const TARGETS = [
       ok(String(page.data.earnedLine || '').indexOf('400') >= 0, '抽奖后已入账刷新为 400', page.data.earnedLine);
       // 音效模块在 node 下必然不可用 —— 关键断言是「不可用时抽奖仍然成功落盘」
       ok(!!page.data.lastPrize, '音效不可用时抽奖仍正常落盘（音效绝不阻塞入账）');
+
+      // ---- ②b 九宫格卷轴：停位严格 = 服务端 board，win 只来自服务端 lines ----
+      // 桩里没有 CSS transition/transitionend —— 停轴由兜底 setTimeout 权威驱动（与真机降级路径同构）。
+      const gridPayload = {
+        success: true, duplicated: false, game: 'grid', playId: 'g1',
+        board: [
+          { symbolKey: 'star', icon: '⭐', iconUrl: '', label: '星星', type: 'coin', amount: 3 },
+          { symbolKey: 'star', icon: '⭐', iconUrl: '', label: '星星', type: 'coin', amount: 3 },
+          { symbolKey: 'star', icon: '⭐', iconUrl: '', label: '星星', type: 'coin', amount: 3 },
+          { symbolKey: 'foot', icon: '👣', iconUrl: '', label: '足迹', type: 'steps', amount: 100 },
+          { symbolKey: 'foot', icon: '👣', iconUrl: '', label: '足迹', type: 'steps', amount: 100 },
+          { symbolKey: 'foot', icon: '👣', iconUrl: '', label: '足迹', type: 'steps', amount: 100 },
+          { symbolKey: 'blank', icon: '▫', iconUrl: '', label: '空白', type: 'none', amount: 0 },
+          { symbolKey: 'blank', icon: '▫', iconUrl: '', label: '空白', type: 'none', amount: 0 },
+          { symbolKey: 'blank', icon: '▫', iconUrl: '', label: '空白', type: 'none', amount: 0 },
+        ],
+        lines: [
+          { key: 'row0', label: '第 1 行', symbolKey: 'star', cells: [0, 1, 2], prizeText: '第 1 行 · 星星 +3 铜版' },
+          { key: 'row1', label: '第 2 行', symbolKey: 'foot', cells: [3, 4, 5], prizeText: '第 2 行 · 足迹 +100 步' },
+        ],
+        rewards: [
+          { symbolKey: 'star', label: '星星', type: 'coin', lines: 1, singleAmount: 3, amount: 3, tier: 'low' },
+          { symbolKey: 'foot', label: '足迹', type: 'steps', lines: 1, singleAmount: 100, amount: 100, tier: 'mid' },
+        ],
+        coinAmount: 3,
+        stepsAmount: 100,
+        rewardText: '星星 1 线 · +3 铜版；足迹 1 线 · +100 步',
+        prize: { key: 'star', label: '星星 1 线 · +3 铜版；足迹 1 线 · +100 步', type: 'mixed', amount: 3, lines: 2, percent: 40, tier: 'high' },
+        capped: false, coinCapped: false, pity: false, rarity: 'rarest', cost: 6,
+        coin: { name: '铜版', iconUrl: '', balance: 87, earnedToday: 17, spentToday: 15, gameEarnedToday: 11, dailyGameCap: 200, gameCapLeft: 189, gameCapReached: false },
+        earned: { steps: 500, distance: 350, calories: 20, durationSeconds: 250 },
+      };
+      try {
+        page.applyGridResult(gridPayload);
+        ok(page.data.grid.cells.length === 9, '九宫格 9 格渲染', page.data.grid.cells.length);
+        ok(page.data.grid.revealing === true, '卷轴滚动中（按钮禁用）', page.data.grid.revealing);
+        ok(page.data.grid.reels.length === 3, '装带 3 列卷轴', page.data.grid.reels.length);
+        // 停位 = board：每列末 3 帧严格等于 board 该列 3 格（board 行主序，列 c 取 c/c+3/c+6）
+        const allowedKeys = new Set([
+          ...gridPayload.board.map((b) => b.symbolKey),
+          ...page.data.grid.symbols.map((s) => s.symbolKey || s.key),
+        ]);
+        for (let c = 0; c < 3; c += 1) {
+          const reel = page.data.grid.reels[c];
+          const decor = 16 + 8 * c;
+          ok(reel.frames.length === decor + 3, `第 ${c + 1} 列帧数 = 装饰 ${decor} + 终态 3`, reel.frames.length);
+          const tail = reel.frames.slice(-3);
+          for (let r = 0; r < 3; r += 1) {
+            const want = gridPayload.board[c + r * 3];
+            ok(
+              tail[r].symbolKey === want.symbolKey && tail[r].icon === want.icon && tail[r].label === want.label && tail[r].type === want.type,
+              `第 ${c + 1} 列停位第 ${r + 1} 帧 = board[${c + r * 3}]（前端不自抽）`,
+              { got: tail[r], want }
+            );
+          }
+          ok(reel.frames.every((f) => allowedKeys.has(f.symbolKey)), `第 ${c + 1} 列装饰帧只来自 symbols/board 候选`, reel.frames.map((f) => f.symbolKey));
+          ok(reel.offsetRpx === 0, `第 ${c + 1} 列第一拍 offset=0（两拍启动才有过渡）`, reel.offsetRpx);
+        }
+      } catch (e) {
+        ok(false, 'applyGridResult 执行无异常', e.message);
+      }
+      await new Promise((r) => setTimeout(r, 200));
+      for (let c = 0; c < 3; c += 1) {
+        ok(page.data.grid.reels[c].offsetRpx === (16 + 8 * c) * 160, `第 ${c + 1} 列目标偏移 = 装饰帧数×160rpx`, page.data.grid.reels[c].offsetRpx);
+      }
+      ok(
+        page.data.grid.reels[0].durationMs < page.data.grid.reels[1].durationMs && page.data.grid.reels[1].durationMs < page.data.grid.reels[2].durationMs,
+        '三列时长严格递增（逐列减速停）',
+        page.data.grid.reels.map((r) => r.durationMs)
+      );
+      await new Promise((r) => setTimeout(r, 1300));
+      ok([0, 3, 6].every((i) => page.data.grid.cells[i].revealed), '首列停轴 = 该列 3 格 revealed', page.data.grid.cells.map((c) => c.revealed));
+      ok([1, 4, 7, 2, 5, 8].every((i) => !page.data.grid.cells[i].revealed), '其余两列尚未停（stagger 生效）', page.data.grid.cells.map((c) => c.revealed));
+      ok(page.data.grid.revealing === true, '未全部停稳前仍禁点', page.data.grid.revealing);
+      await new Promise((r) => setTimeout(r, 1500));
+      ok(page.data.grid.revealing === false, '三列停稳恢复可点', page.data.grid.revealing);
+      ok(page.data.grid.cells.filter((c) => c.revealed).length === 9, '9 格全部揭示', page.data.grid.cells.filter((c) => c.revealed).length);
+      ok(page.data.grid.reels.length === 0, '停稳后卷轴清空（换回静态格）', page.data.grid.reels.length);
+      ok(page.data.grid.cells.slice(0, 6).every((c) => c.win), '多条中奖线 6 格全部高亮（来自服务端 lines）', page.data.grid.cells.slice(0, 6));
+      ok(page.data.grid.cells.slice(6).every((c) => !c.win), '未中奖 3 格不得高亮（win 只来自服务端 lines）', page.data.grid.cells.slice(6));
+      ok(page.data.lastPrize && page.data.lastPrize.game === 'grid' && /铜版/.test(page.data.lastPrize.text || '') && /步/.test(page.data.lastPrize.text || ''), '混合奖励弹层文案含铜版+步数', page.data.lastPrize);
+
+      // ---- ②b-2 中断保护：滚动中 onHide → 立即静态终态，无 timer 复活 ----
+      {
+        const p2 = makePage(def);
+        p2.applyGridResult(gridPayload);
+        await new Promise((r) => setTimeout(r, 200));
+        ok(p2.data.grid.revealing === true && p2.data.grid.reels.length === 3, '中断用例：滚动中', p2.data.grid.phase);
+        p2.onHide();
+        ok(p2.data.grid.revealing === false && p2.data.grid.reels.length === 0, 'onHide 立即终态（不残留半滚动画）', { revealing: p2.data.grid.revealing, reels: p2.data.grid.reels.length });
+        ok(p2.data.grid.cells.every((c) => c.revealed), 'onHide 后 9 格全揭示', p2.data.grid.cells.map((c) => c.revealed));
+        ok(p2.data.grid.cells.slice(0, 6).every((c) => c.win) && p2.data.grid.cells.slice(6).every((c) => !c.win), 'onHide 终态 win 仍按服务端 lines', p2.data.grid.cells.map((c) => c.win));
+        const textAfterHide = p2.data.grid.resultText;
+        await new Promise((r) => setTimeout(r, 3000));
+        ok(p2.data.grid.revealing === false && p2.data.grid.resultText === textAfterHide && p2.data.grid.reels.length === 0, '中断后无 timer 复活（3s 反证）', { revealing: p2.data.grid.revealing, text: p2.data.grid.resultText });
+      }
+
+      // ---- ②b-3 减弱动效：跳过卷轴直接终态 ----
+      {
+        const p3 = makePage(def);
+        p3._reducedMotion = true;
+        p3.applyGridResult(gridPayload);
+        ok(p3.data.grid.revealing === false && p3.data.grid.reels.length === 0, 'reduced-motion 同步终态（按钮立即恢复）', { revealing: p3.data.grid.revealing, reels: p3.data.grid.reels.length });
+        ok(p3.data.grid.cells.every((c) => c.revealed), 'reduced-motion 9 格全揭示', p3.data.grid.cells.map((c) => c.revealed));
+        ok(p3.data.grid.cells.slice(0, 6).every((c) => c.win) && p3.data.grid.cells.slice(6).every((c) => !c.win), 'reduced-motion win 仍按服务端 lines', p3.data.grid.cells.map((c) => c.win));
+      }
+
+      // ---- ②b-4 开奖失败必须恢复按钮（对齐转盘 restoreCenter 教训）----
+      {
+        const p4 = makePage(def);
+        p4.applyState({ enabled: true, grid: { enabled: true, canPlay: true, cost: 6 }, coin: { balance: 88 } });
+        await p4.playGrid(); // 桩 post 回 {} → success falsy → 失败分支
+        ok(p4.data.grid.revealing === false && p4.data.grid.reels.length === 0, '开奖失败恢复可点（不卡「开奖中」）', { revealing: p4.data.grid.revealing, reels: p4.data.grid.reels.length });
+        ok(p4.data.grid.resultText === '点「开一局」看连线结果', '开奖失败文案恢复', p4.data.grid.resultText);
+      }
 
       // ---- ③ 盘面停位（差半格就会「停在 A 却发 B」）----
       // 指针固定在 12 点、盘面转：要停的角度 = 360 − 扇区中线 = 360 − (idx*45+22.5)。
@@ -553,23 +688,23 @@ const TARGETS = [
         page.data.sectors.map((s) => s.centerDeg)
       );
 
-      // ---- ③c 中心按钮三态 + 没次数时点它是「去赚次数」而不是死按钮 ----
-      ok(page.data.centerMain === '抽奖' && /剩/.test(page.data.centerSub), '有次数：中心显示「抽奖 + 剩 N 次」', {
+      // ---- ③c 中心按钮三态 + 没余额时点它是「去赚铜版」而不是死按钮 ----
+      ok(page.data.centerMain === '抽奖' && /铜版/.test(page.data.centerSub), '有余额：中心显示「抽奖 + 铜版成本」', {
         main: page.data.centerMain, sub: page.data.centerSub,
       });
-      page.applyCounters({ remaining: 0 });
-      ok(page.data.centerMain === '赚次数', '没次数：中心变成「赚次数」（不是灰色「没次数」死按钮）', page.data.centerMain);
-      ok(page.data.centerSub === '去做任务', '没次数：副文案直接指向下一步', page.data.centerSub);
-      // 点中心在没有次数时必须滚到任务区，**绝不能**发抽奖请求
+      page.applyCounters({ remaining: 0, coin: { ...page.data.coin, balance: 0 } });
+      ok(page.data.centerMain === '赚铜版', '没余额：中心变成「赚铜版」（不是灰色死按钮）', page.data.centerMain);
+      ok(page.data.centerSub === '去做任务', '没余额：副文案直接指向下一步', page.data.centerSub);
+      // 点中心在没有余额/次数时必须滚到任务区，**绝不能**发抽奖请求
       let scrolled = 0;
       page.scrollToTasks = () => { scrolled += 1; };
       let drew = 0;
       page.draw = () => { drew += 1; };
       page.tapCenter();
-      ok(scrolled === 1 && drew === 0, '没次数时点中心 = 滚到任务区（不发抽奖请求）', { scrolled, drew });
-      page.applyCounters({ remaining: 2 });
+      ok(scrolled === 1 && drew === 0, '没余额时点中心 = 滚到任务区（不发抽奖请求）', { scrolled, drew });
+      page.applyCounters({ remaining: 2, coin: { ...page.data.coin, balance: 90 } });
       page.tapCenter();
-      ok(drew === 1, '有次数时点中心 = 抽奖', drew);
+      ok(drew === 1, '有余额时点中心 = 抽奖', drew);
 
       // ---- ③c2 失败路径必须把「抽奖中」还原 ----
       // 事故形态：接口失败只写 spinning:false，中心文案是独立 data → 转盘没动、
@@ -599,9 +734,147 @@ const TARGETS = [
       page.playFx('rarest', { type: 'steps', amount: 1500 }, false);
       ok(page.data.fx === 'rarest', '先有弹层', page.data.fx);
       page.closeFx();
-      ok(page.data.fx === '' && page.data.confetti.length === 0, 'closeFx 立刻收起并清彩带', {
-        fx: page.data.fx, confetti: page.data.confetti.length,
+      ok(page.data.fx === '' && page.data.confetti.length === 0 && page.data.fxSparks.length === 0, 'closeFx 立刻收起并清彩带/星光', {
+        fx: page.data.fx, confetti: page.data.confetti.length, sparks: page.data.fxSparks.length,
       });
+
+      // ---- ③e2 拼多多式动效：最稀有才有光芒 + 金币雨，金额按奖品类型 ----
+      page.playFx('rarest', { type: 'steps', amount: 1500 }, false);
+      ok(Array.isArray(page.data.coinRain) && page.data.coinRain.length === 14, '金币雨 14 枚', (page.data.coinRain || []).length);
+      ok(
+        page.data.coinRain.every((c) => typeof c.left === 'number' && typeof c.delay === 'number' && typeof c.dur === 'number' && typeof c.size === 'number'),
+        '每枚金币都有 left/delay/dur/size（编排不会 NaN）',
+        page.data.coinRain[0]
+      );
+      ok(
+        Array.isArray(page.data.fxRays) && page.data.fxRays.length === 16 && page.data.fxRays.every((r) => Math.abs(r.deg - r.k * 22.5) < 0.001),
+        '光芒 16 条等分（deg 步进 22.5°）',
+        (page.data.fxRays || []).length
+      );
+      ok(
+        Array.isArray(page.data.confetti) && page.data.confetti.length === 20
+          && page.data.confetti.every((c) => c.dir >= 0 && c.dir <= 7 && c.tone >= 1 && c.tone <= 8 && c.shape >= 0 && c.shape <= 2
+            && typeof c.delay === 'number' && typeof c.dur === 'number'),
+        '彩带 20 片：8 方向 × 8 色 × 3 形状编排不越界不 NaN',
+        page.data.confetti[0]
+      );
+      ok(
+        Array.isArray(page.data.fxSparks) && page.data.fxSparks.length === 8
+          && page.data.fxSparks.every((s) => typeof s.x === 'number' && typeof s.y === 'number'
+            && typeof s.delay === 'number' && typeof s.dur === 'number' && s.tone >= 1 && s.tone <= 3 && !!s.ch),
+        '星光 8 颗环布（x/y/delay/dur/tone/字符齐全）',
+        page.data.fxSparks[0]
+      );
+      ok(page.data.fxAmountText === '+1500' && page.data.fxAmountUnit === '步', '步数奖金额 +1500 步', [page.data.fxAmountText, page.data.fxAmountUnit]);
+      page.closeFx();
+      ok(
+        page.data.coinRain.length === 0 && page.data.fxRays.length === 0 && page.data.confetti.length === 0 && page.data.fxSparks.length === 0 && page.data.fxShake === '' && page.data.fxAmountText === '',
+        'closeFx 清金币雨/光芒/彩带/星光/震屏/金额',
+        { c: page.data.coinRain.length, r: page.data.fxRays.length, f: page.data.confetti.length, s: page.data.fxSparks.length, k: page.data.fxShake, a: page.data.fxAmountText }
+      );
+
+      // 全档炸裂（2026-11-25）：normal/rare 也有自己的爆发档（逐档递进），光芒仍 rarest 签名
+      page.playFx('normal', { type: 'coin', amount: 2 }, false);
+      ok(
+        page.data.confetti.length === 10 && page.data.coinRain.length === 5 && page.data.fxSparks.length === 4
+          && page.data.fxRays.length === 0 && page.data.fxShake === 'sm',
+        '普通档中爆发：彩带10/金币5/星光4/无光芒/震屏sm',
+        { f: page.data.confetti.length, c: page.data.coinRain.length, s: page.data.fxSparks.length, k: page.data.fxShake }
+      );
+      ok(
+        page.data.coinRain.every((c) => typeof c.left === 'number' && typeof c.delay === 'number' && typeof c.dur === 'number' && typeof c.size === 'number'),
+        '普通档金币编排不 NaN',
+        page.data.coinRain[0]
+      );
+      ok(page.data.fxAmountText === '+2' && page.data.fxAmountUnit === '铜版', '铜版奖金额 +2 铜版', [page.data.fxAmountText, page.data.fxAmountUnit]);
+      page.closeFx();
+      page.playFx('rare', { type: 'steps', amount: 800 }, false);
+      ok(
+        page.data.confetti.length === 14 && page.data.coinRain.length === 8 && page.data.fxSparks.length === 6
+          && page.data.fxRays.length === 0 && page.data.fxShake === 'md' && page.data.fxAmountText === '+800',
+        '稀有档大爆发：彩带14/金币8/星光6/无光芒/震屏md，金额 +800',
+        { f: page.data.confetti.length, c: page.data.coinRain.length, s: page.data.fxSparks.length, k: page.data.fxShake, a: page.data.fxAmountText }
+      );
+      ok(
+        page.data.coinRain.every((c) => typeof c.left === 'number' && typeof c.delay === 'number' && typeof c.dur === 'number' && typeof c.size === 'number'),
+        '稀有档金币编排不 NaN',
+        page.data.coinRain[0]
+      );
+      page.closeFx();
+
+      // rarest 紧接 normal：normal 必须拿自己的档位数量，不能残留 rarest 的
+      page.playFx('rarest', { type: 'coin', amount: 5 }, false);
+      page.playFx('normal', { type: 'steps', amount: 100 }, false);
+      ok(
+        page.data.coinRain.length === 5 && page.data.fxRays.length === 0 && page.data.confetti.length === 10
+          && page.data.fxSparks.length === 4 && page.data.fxShake === 'sm',
+        'rarest 紧接 normal 换成 normal 自有档（不残留旧档特效）',
+        { c: page.data.coinRain.length, r: page.data.fxRays.length, f: page.data.confetti.length, s: page.data.fxSparks.length, k: page.data.fxShake }
+      );
+      page.closeFx();
+
+      // ---- ③e4 减弱动效：粒子连 DOM 都不生成，静态出卡 ----
+      {
+        const pLite = makePage(def);
+        pLite._reducedMotion = true;
+        pLite.playFx('rarest', { type: 'steps', amount: 1500 }, false);
+        ok(
+          pLite.data.fx === 'rarest' && pLite.data.confetti.length === 0 && pLite.data.coinRain.length === 0
+            && pLite.data.fxRays.length === 0 && pLite.data.fxSparks.length === 0 && pLite.data.fxShake === '',
+          'reduced-motion 弹层静态出卡（四组粒子全空、不震屏）',
+          { fx: pLite.data.fx, f: pLite.data.confetti.length, c: pLite.data.coinRain.length, r: pLite.data.fxRays.length, s: pLite.data.fxSparks.length, k: pLite.data.fxShake }
+        );
+        pLite.closeFx();
+      }
+
+      // 空奖 / 封顶降级 / 混合奖：金额留空，绝不给误导性的 +N
+      page.playFx('none', { type: 'coin', amount: 2 }, false);
+      ok(page.data.fx === 'normal' && page.data.fxAmountText === '', '空奖走普通档且金额留空', { fx: page.data.fx, a: page.data.fxAmountText });
+      ok(
+        page.data.confetti.length === 0 && page.data.coinRain.length === 0 && page.data.fxSparks.length === 0 && page.data.fxShake === '',
+        '空奖保持克制（全档炸裂不含 none）',
+        { f: page.data.confetti.length, c: page.data.coinRain.length, k: page.data.fxShake }
+      );
+      page.closeFx();
+      page.playFx('rarest', { type: 'coin', amount: 2 }, true);
+      ok(page.data.fxAmountText === '', '封顶降级时金额留空（不给假的 +N）', page.data.fxAmountText);
+      page.closeFx();
+      page.playFx('rarest', { type: 'mixed', amount: 3 }, false);
+      ok(page.data.fxAmountText === '', 'mixed 奖金额留空（明细已在卡片 sub，避免单一单位误导）', page.data.fxAmountText);
+      page.closeFx();
+
+      // ---- ③e3 钱包产出进度条 + 外圈灯珠（纯展示，封顶仍由服务端判定）----
+      ok(Array.isArray(page.data.rimLights) && page.data.rimLights.length === 16, '外圈灯珠 16 颗', (page.data.rimLights || []).length);
+      ok(page.data.rimLights.every((l, i) => Math.abs(l.deg - i * 22.5) < 0.001), '灯珠等分 22.5°', page.data.rimLights.slice(0, 3).map((l) => l.deg));
+      const pCap = makePage(def);
+      pCap.applyState({ enabled: true, coin: { name: '铜版', gameEarnedToday: 6, dailyGameCap: 200 } });
+      ok(pCap.data.coinCapPercent === 3, '产出进度 = round(6/200*100)=3', pCap.data.coinCapPercent);
+      const pCap0 = makePage(def);
+      pCap0.applyState({ enabled: true, coin: { name: '铜版', gameEarnedToday: 5, dailyGameCap: 0 } });
+      ok(pCap0.data.coinCapPercent === 0, '上限 0（不限）时进度为 0（进度条隐藏）', pCap0.data.coinCapPercent);
+
+      // ---- ③g 音效 v2：五档文件名升版 + 和声序列可合成（零资源文件）----
+      const sfxMod = require('../miniprogram/utils/sfx.js');
+      const fsNames = sfxMod._internal.FS_NAME;
+      ok(
+        Object.keys(fsNames).length === 5 && Object.keys(fsNames).every((k) => /_v2\.wav$/.test(fsNames[k])),
+        '五档音效文件名均升版 _v2（改序列必须升版，否则老用户听旧音）',
+        fsNames
+      );
+      const rarestSeq = sfxMod._internal.SEQUENCES.rarest;
+      ok(rarestSeq.some((n) => n.length === 3 && n[2] > 0), 'rarest 序列含和声元组（号角更饱满）', rarestSeq.filter((n) => n.length === 3).length);
+      try {
+        const wav = sfxMod.synthWav(rarestSeq);
+        const totalMs = rarestSeq.reduce((s, [, ms]) => s + ms, 0) + 10;
+        const sampleCount = Math.floor((sfxMod._internal.SAMPLE_RATE * totalMs) / 1000);
+        ok(
+          wav.sampleCount === sampleCount && wav.buffer.byteLength === 44 + sampleCount * 2,
+          '合成 WAV = 44 字节头 + 采样×2',
+          { sc: wav.sampleCount, bl: wav.buffer.byteLength }
+        );
+      } catch (e) {
+        ok(false, 'rarest 和声序列可合成（不抛）', e.message);
+      }
 
       // ---- ③f 管理端音效总开关必须真的生效（早先只进 data、从没被读）----
       // 关掉后抽奖仍要正常落盘、动效照给 —— 音效只是锦上添花，不能成为阻塞点。
@@ -781,16 +1054,36 @@ const TARGETS = [
         'onRunDate 同时按新日期刷新概况与榜单',
         ovCalls.map((c) => `${c.url}:${c.params && c.params.date}`)
       );
-      // 切回学生名单：概况回**今天**口径（名单本身是今天语义，回看只作用于校园跑 tab）
+      // 切到学生名单：用户 2026-11-22「校园跑的日期选择应该能查看当天的未达标学生」
+      //   → 名单与概况都**沿用所选日期**（listDate），不再回今天；顶部给回看横条。
       ovCalls.length = 0;
       p5.data.tab = 'run'; // 默认 tab 是 students，不先切到 run 的话 switchTab 会直接 return
       p5.switchTab('students');
       await new Promise((r) => setTimeout(r, 0));
       const ovToday = ovCalls.find((c) => c.url === '/api/class/overview');
       const realToday = require(path.join(M, 'utils/format.js')).todayKey();
-      ok(!!ovToday && ovToday.params.date === realToday, '切到学生名单 tab 时概况回到今天口径', ovToday && ovToday.params);
+      ok(!ovToday || ovToday.params.date === '2026-11-12', '学生名单 tab 沿用所选日期（不再强制回到今天）', ovToday && ovToday.params);
+      ok(p5.data.listDate === '2026-11-12' && p5.data.listDateIsPast === true && p5.data.listDateLabel === '11月12日', '名单日期三件套跟随所选日期', [p5.data.listDate, p5.data.listDateIsPast, p5.data.listDateLabel]);
+      // 名单请求必须带 date（旧实现不传 → 回看历史日期时看到的是今天的达标结果）
+      ovCalls.length = 0;
+      p5.data.page = 1;
+      await p5.loadStudents(1);
+      const stCall = ovCalls.find((c) => c.url === '/api/class/students');
+      ok(!!stCall && stCall.params && stCall.params.date === '2026-11-12', '/students 带所选日期（按天筛未达标）', stCall && stCall.params);
+      // 回今天：三件套复位成「今日」，请求也回到今天
+      ovCalls.length = 0;
+      p5.onRunToday();
+      await new Promise((r) => setTimeout(r, 0));
+      ok(p5.data.listDate === realToday && p5.data.listDateIsPast === false && p5.data.listDateLabel === '今日', '点「今天」后名单日期复位', [p5.data.listDate, p5.data.listDateLabel]);
+      ok((p5.data.filters || []).some((f) => f.key === '0' && /未达标/.test(f.label) && !/月/.test(f.label)), '回到今天时达标筛选文案为「今日未达标」', p5.data.filters);
+      // 回看态下「未达标名单」入口必须可用（旧实现 wxml 用 !runIsPast 隐藏了两个入口）
+      const classWxml = require('fs').readFileSync(path.join(__dirname, '..', 'miniprogram', 'packageAdmin', 'class', 'class.wxml'), 'utf8');
+      ok(!/wx:if="\{\{canNudge && !runIsPast\}\}"/.test(classWxml), '督促入口不再因回看日期被隐藏', null);
+      ok(/openNudge/.test(classWxml) && /openUnachieved/.test(classWxml), '督促 / 未达标名单两个入口都在');
       // 切回校园跑：保留回看日期并按它重取
       ovCalls.length = 0;
+      p5.data.runDate = '2026-11-12';
+      p5.data.listDate = '2026-11-12';
       p5.switchTab('run');
       await new Promise((r) => setTimeout(r, 0));
       ok(
@@ -798,6 +1091,18 @@ const TARGETS = [
         '切回校园跑 tab 保留回看日期（不悄悄跳回今天）',
         ovCalls.map((c) => c.params && c.params.date)
       );
+      // 督促清单：回看态下也按所选日期取（旧实现直接 return，抽屉打不开）
+      ovCalls.length = 0;
+      p5.data.canNudge = true;
+      p5.data.tab = 'run';
+      p5.data.listDate = '2026-11-12';
+      p5.data.listDateIsPast = true;
+      p5.data.listDateText = '11月12日';
+      p5.data.nudgeLoading = false;
+      await p5.openNudge();
+      const nudgeCall = ovCalls.find((c) => c.url === '/api/class/students' && c.params.achievedToday === '0');
+      ok(!!nudgeCall && nudgeCall.params.date === '2026-11-12', '回看态督促清单按所选日期取（不被 runIsPast 拦下）', nudgeCall && nudgeCall.params);
+      ok(/11月12日/.test(p5.data.nudgeText || ''), '督促文案写所选日期而不是「今日」', p5.data.nudgeText);
       // 切班级：回看日期重置为今天（不能把 A 班的回看日期带到 B 班）
       const p6 = makePage(def);
       p6.data.className = '26级信息安全技术应用';
@@ -855,17 +1160,36 @@ const TARGETS = [
         'hero 备注只有 JS 预计算这一种形态（空串或整句）',
         p4.data.banchaoHeroNote
       );
-      // 最近记录：同一模板进 2 列网格，数据取前 6 条、全量仍留在 banchaoRecent
-      ok(
-        Array.isArray(p4.data.banchaoRecentGrid) && p4.data.banchaoRecentGrid.length === Math.min(6, p4.data.banchaoRecent.length),
-        '最近记录网格取前 6 条（banchaoRecent 仍保留全量给「全部 ›」）',
-        [p4.data.banchaoRecentGrid.length, p4.data.banchaoRecent.length]
-      );
+      // 最近记录块已删（2026-11-23）：banchaoRecent 仍保留给记录详情定位，不再派生网格
       ok(
         /条记录|还没有检查记录/.test(p4.data.banchaoHeroNote) && !/本今日/.test(p4.data.banchaoHeroNote),
         'hero 备注是「本期 X 条记录 / 还没有检查记录」整句（不会是「本今日」）',
         p4.data.banchaoHeroNote
       );
+      // 2026-11-23 iOS 重排版：吸顶分段 + 页内选班抽屉（多班管理）
+      const wxmlCls = classWxml;
+      ok(wxmlCls.includes('cls-topbar') && wxmlCls.includes('tt-segment'), '吸顶头 + 分段控制器在 WXML', '');
+      ok(
+        wxmlCls.includes('cls-topbar-range') && !wxmlCls.includes('cls-sticky'),
+        '周期行融合进 topbar（无独立第二层吸顶）',
+        ''
+      );
+      const pPick = makePage(def);
+      pPick.data.classes = ['23级大数据技术', '24级软件技术'];
+      pPick.data.className = '23级大数据技术';
+      pPick.openClassPick();
+      ok(pPick.data.classPickVisible === true, '多班点班级条开页内抽屉', pPick.data.classPickVisible);
+      pPick.onPickClass({ currentTarget: { dataset: { class: '24级软件技术' } } });
+      ok(
+        pPick.data.classPickVisible === false && pPick.data.className === '24级软件技术',
+        '选班后关抽屉且切班（转发 switchClass）',
+        [pPick.data.classPickVisible, pPick.data.className]
+      );
+      ok(pPick.data.runDate === pPick.data.runToday, '切班后校园跑回看重置为今天', [pPick.data.runDate, pPick.data.runToday]);
+      const pSingle = makePage(def);
+      pSingle.data.classes = ['23级大数据技术'];
+      pSingle.openClassPick();
+      ok(pSingle.data.classPickVisible === false, '单班不开抽屉（班级条直接显示班名）', pSingle.data.classPickVisible);
     },
   },
   {
@@ -2256,7 +2580,7 @@ const TARGETS = [
       const p = makePage(def);
       await p.loadDraws(true);
       await flush();
-      ok(calls.length === 1 && /beidou-draws\?page=1&limit=20$/.test(calls[0]), '首次载入只带分页参数（无筛选不传空值）', calls[0]);
+      ok(calls.length === 1 && /beidou-draws\?page=1&limit=20&dateFrom=/.test(calls[0]), '首次载入带分页与默认日期范围', calls[0]);
       ok(p.data.draws.length === 1 && p.data.drawsTotal === 7, '列表与总数写入', [p.data.draws.length, p.data.drawsTotal]);
       ok(p.data.sourceFacets.length === 5, '来源分面 5 项', p.data.sourceFacets.length);
 
@@ -2342,12 +2666,12 @@ const TARGETS = [
       p.clearDrawFilter();
       await flush();
       ok(
-        !p.data.drawFilter.prizeKey && !p.data.drawFilter.dateFrom && p.data.drawFilterPrizeIndex === 0 && !p.data.drawFilterPrizeLabel,
-        '清空筛选把下标与回显文案一起归零',
+        !p.data.drawFilter.prizeKey && /^\d{4}-\d{2}-\d{2}$/.test(p.data.drawFilter.dateFrom || '') && p.data.drawFilterPrizeIndex === 0 && !p.data.drawFilterPrizeLabel,
+        '清空筛选把奖品维度归零、日期回到默认区间',
         { f: p.data.drawFilter, idx: p.data.drawFilterPrizeIndex, label: p.data.drawFilterPrizeLabel }
       );
       const cleanQ = calls[calls.length - 1];
-      ok(!/prizeKey=|dateFrom=|source=/.test(cleanQ), '清空后 query 不带任何筛选条件', cleanQ);
+      ok(!/prizeKey=|source=/.test(cleanQ) && /dateFrom=/.test(cleanQ), '清空后 query 不带奖品/来源筛选（日期回默认区间）', cleanQ);
 
       // ===== 点路径 setData 真的写进了嵌套对象（检查器基础设施）=====
       p.data.config = { beidou: { prizes: [], checkin: { milestones: [] }, draw: {}, video: {}, share: {} } };
@@ -2367,6 +2691,74 @@ const TARGETS = [
       ];
       p.recalcOdds();
       ok(!!p.data.oddsInvalid, '权重全 0 时给出显式警告（不能静默回退默认奖池）', p.data.oddsInvalid);
+
+      // 用户 2026-11-22：保底不再手填 key，改用选择器（看得懂的名字）
+      p.data.config.beidou.prizes = [
+        { key: 'a', label: '星星奖', type: 'steps', amount: 100, weight: 30 },
+        { key: 'b', label: '铜版奖', type: 'coin', amount: 2, weight: 70 },
+      ];
+      p.data.config.beidou.wheel = { pity: { prizeKey: '' } };
+      p.data.config.beidou.grid = {
+        pity: { outcomeKey: '' },
+        symbols: [{ key: 's', label: '星星', icon: '⭐', type: 'coin', amount: 3, tier: 'low' }],
+        outcomes: [{ key: 'o1', label: '星星连线', lines: 1, symbolKey: 's', weight: 100 }],
+      };
+      // 用户 2026-11-22「后台签到点击更改会变成 21 行」：wx:key 缺失 + 脏数据 21 行
+      // 编辑态必须固定 7 行且每行有稳定 dayNo；改一个值后长度不能膨胀
+      p.data.config.beidou.checkin.milestones = Array.from({ length: 21 }, () => ({ coin: 1 }));
+      p.setData({ canManage: true });
+      p.decorateConfig({});
+      ok(p.data.config.beidou.checkin.milestones.length === 7, '后台签到固定 7 行（21 行脏数据被截断）', p.data.config.beidou.checkin.milestones.length);
+      ok(new Set(p.data.config.beidou.checkin.milestones.map((m) => m.dayNo)).size === 7, '签到每行有稳定且唯一的 dayNo（wx:key 不会重复渲染）', p.data.config.beidou.checkin.milestones.map((m) => m.dayNo));
+      p.onMilestoneField({ currentTarget: { dataset: { index: 0 } }, detail: { value: '2' } });
+      ok(p.data.config.beidou.checkin.milestones.length === 7, '改签到奖励后仍是 7 行（不会 7 变 21）', p.data.config.beidou.checkin.milestones.length);
+      ok(p.data.config.beidou.checkin.milestones[0].coin === 2, '改签到奖励写入对应行', p.data.config.beidou.checkin.milestones[0].coin);
+      p.onMilestoneField({ currentTarget: { dataset: { index: 0 } }, detail: { value: '' } });
+      ok(p.data.config.beidou.checkin.milestones.length === 7 && p.data.config.beidou.checkin.milestones[0].coin === 0, '删除输入也不会把列表改坏（7 行、第 1 行归 0）', p.data.config.beidou.checkin.milestones);
+      p.recalcOdds();
+      ok(p.data.pityPrizeLabels[0] === '自动选择最低档铜版奖', '保底奖品选择器首项是「自动」', p.data.pityPrizeLabels[0]);
+      ok(p.data.pityPrizeLabels.length === 3, '保底奖品选择器列出全部奖池项（自动 + 2）', p.data.pityPrizeLabels);
+      p.onPityPrize({ detail: { value: 1 } });
+      ok(p.data.config.beidou.wheel.pity.prizeKey === 'a', '选保底奖品写入对应 key', p.data.config.beidou.wheel.pity.prizeKey);
+      ok(p.data.pityPrizeLabel === '星星奖（步数 · 100 步）', '选择器回显可读名称（不显示内部 key）', p.data.pityPrizeLabel);
+      ok(p.data.pitySymbolLabels[0] === '自动选择最低单线奖图案', '保底图案选择器首项是「自动」', p.data.pitySymbolLabels[0]);
+      p.onPitySymbol({ detail: { value: 1 } });
+      ok(p.data.config.beidou.grid.pity.symbolKey === 's', '选保底图案写入对应 key', p.data.config.beidou.grid.pity.symbolKey);
+      ok(/星星/.test(p.data.pitySymbolLabel), '保底图案回显可读名称', p.data.pitySymbolLabel);
+
+      // ===== 铜版流水来源标签（srcKind 配色桶）=====
+      // 服务端 COIN_SOURCE_TEXT 真实来源是 welcome/video/checkin/share/wheel/grid/refund；
+      // 页面把它们折进 5 个配色桶：三任务来源各自一色，游戏产出/赠送归 prize，其余 unknown。
+      const coinGet = async (url) => {
+        calls.push(url);
+        return {
+          list: [
+            { _id: 'c1', realName: '陈宇航', studentId: '20230101', className: '23级大数据', source: 'video', sourceText: '看视频', delta: 1, balanceAfter: 89, createdAt: '2026-11-12T02:24:00.000Z' },
+            { _id: 'c2', realName: '李晓明', source: 'grid', sourceText: '九宫格产出', delta: 2, balanceAfter: 91, createdAt: '2026-11-12T02:20:00.000Z' },
+            { _id: 'c3', realName: '王五', source: 'mystery', sourceText: '', delta: -1, balanceAfter: 90, createdAt: '2026-11-12T02:18:00.000Z' },
+          ],
+          total: 3,
+          facets: { source: [], game: [] },
+          totals: { earned: 3, spent: 1 },
+        };
+      };
+      state.get = coinGet;
+      const pc = makePage(def);
+      await pc.loadCoinLogs(true);
+      await flush();
+      const cl = pc.data.coinLogs;
+      ok(cl.length === 3, '铜版流水写入', cl.length);
+      ok(
+        cl[0].srcKind === 'video' && cl[1].srcKind === 'prize' && cl[2].srcKind === 'unknown',
+        '来源映射 video→video / grid→prize / 未知→unknown',
+        cl.map((r) => r.srcKind)
+      );
+      ok(
+        cl[0].deltaText === '+1' && cl[2].deltaText === '-1' && cl[2].directionText === '扣除',
+        '增减方向文案正确',
+        [cl[0].deltaText, cl[2].deltaText, cl[2].directionText]
+      );
+      state.get = recGet;
 
       // 接口失败不能把上一次的记录留着（会被当成最新数据）
       state.get = () => Promise.reject(Object.assign(new Error('boom'), { code: 500 }));

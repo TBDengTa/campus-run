@@ -12,34 +12,45 @@
  *      可能永久静音（用户听到的是「没有音效」，且无任何报错）。
  *   ③ **遵守系统静音**：obeyMuteSwitch = true（iOS 侧边静音键按下就不响）。
  *
- * 音效设计（三档，与动效三档对齐）：
- *   normal 普通中奖 —— 两个上行短音（C5 → E5），约 180ms
- *   rare   稀有     —— 三个上行音（C5 → E5 → G5），约 300ms
- *   rarest 最稀有   —— 四个音 + 高八度尾音（C5 → E5 → G5 → C6），约 520ms
+ * 音效设计（v2，三档与动效三档对齐；中奖档带「金币入账」尾音）：
+ *   normal 普通中奖 —— 两个上行短音 + 一枚金币叮（C5 → E5 → E6），约 220ms
+ *   rare   稀有     —— 上行琶音 + 两枚金币（C5 → E5 → G5 → C6 → E6 → G6），约 480ms
+ *   rarest 最稀有   —— 五度和声号角 + 6 连金币尾音（尾音起点 ≈740ms，与金币雨动画对齐），约 1085ms
  *   none   空奖     —— 一个下行短音（G4 → E4），轻，不刺耳
+ *
+ * ⚠️ 改 SEQUENCES 必须同步给 FS_NAME 升版（_v2 → _v3 …）：ensureFile 用 accessSync
+ * 复用已存在的旧文件，不升版老用户永远听旧音。
  */
 
 const FS_NAME = {
-  normal: 'bd_win_normal.wav',
-  rare: 'bd_win_rare.wav',
-  rarest: 'bd_win_rarest.wav',
-  none: 'bd_win_none.wav',
+  normal: 'bd_win_normal_v2.wav',
+  rare: 'bd_win_rare_v2.wav',
+  rarest: 'bd_win_rarest_v2.wav',
+  none: 'bd_win_none_v2.wav',
   // 「哒」——点抽奖那一刻的即时反馈。
   // 它不只是好听：iOS 上 InnerAudioContext 必须在**用户手势的同一 tick** 里发声过，
   // 否则 3.2 秒后转盘停下再 play 会被静默拦掉（用户听到的就是「没有音效」）。
-  spin: 'bd_spin.wav',
+  spin: 'bd_spin_v2.wav',
 };
 
 const SAMPLE_RATE = 16000; // 16k 足够（只是提示音），文件小、合成快
 
 // 音符表（频率 Hz）
-const NOTE = { G4: 392, E4: 330, C5: 523, E5: 659, G5: 784, C6: 1047 };
+const NOTE = { G4: 392, E4: 330, C5: 523, E5: 659, G5: 784, C6: 1047, D6: 1175, E6: 1319, G6: 1568 };
 
-// 每档音效的音符序列：[频率, 时长ms]
+// 每档音效的音符序列：[频率, 时长ms, 和声频率?]
+// 第三位可选：以 0.5× 振幅叠加同包络正弦（五度/八度和声），让号角更饱满而不削波。
 const SEQUENCES = {
-  normal: [[NOTE.C5, 90], [NOTE.E5, 110]],
-  rare: [[NOTE.C5, 80], [NOTE.E5, 80], [NOTE.G5, 140]],
-  rarest: [[NOTE.C5, 70], [NOTE.E5, 70], [NOTE.G5, 100], [NOTE.C6, 220]],
+  normal: [[NOTE.C5, 80], [NOTE.E5, 90], [NOTE.E6, 50]],
+  rare: [[NOTE.C5, 70], [NOTE.E5, 70], [NOTE.G5, 110], [NOTE.C6, 140], [NOTE.E6, 45], [NOTE.G6, 45]],
+  rarest: [
+    [NOTE.C5, 130, NOTE.G5],
+    [NOTE.E5, 130, NOTE.C6],
+    [NOTE.G5, 160, NOTE.E6],
+    [NOTE.C6, 320, NOTE.G6],
+    // 6 连金币尾音（起点 ≈740ms，与金币雨 delay 编排对齐）
+    [NOTE.E6, 45], [NOTE.C6, 45], [NOTE.E6, 45], [NOTE.C6, 45], [NOTE.E6, 45], [NOTE.G6, 120],
+  ],
   none: [[NOTE.G4, 90], [NOTE.E4, 120]],
   // 两个极短高音 = 「哒」，比正片短得多，不抢后面中奖音的戏
   spin: [[NOTE.C6, 18], [NOTE.G5, 16]],
@@ -49,9 +60,10 @@ const SEQUENCES = {
  * 合成 WAV（16bit 单声道 PCM）。
  *
  * 每个音符用「正弦 + 指数衰减包络」：纯正弦听起来像电报音，加包络才有「叮」的质感。
+ * 起音加 4ms 线性 attack 防爆音；可选和声频率以 0.5× 振幅叠加（0.32 + 0.16 不削波）。
  * 结尾留 10ms 静音，避免播放器把尾部爆音（click）放出来。
  *
- * @param {Array<[number, number]>} seq [[频率, 时长ms], ...]
+ * @param {Array<[number, number, number?]>} seq [[频率, 时长ms, 和声频率?], ...]
  * @returns {{buffer: ArrayBuffer|Uint8Array, sampleCount:number}}
  */
 function synthWav(seq) {
@@ -81,14 +93,18 @@ function synthWav(seq) {
 
   // ---- 采样点 ----
   let cursor = 0;
-  for (const [freq, ms] of seq) {
+  const attackSamples = Math.floor((SAMPLE_RATE * 4) / 1000); // 4ms 线性起音
+  for (const [freq, ms, harm] of seq) {
     const need = Math.floor((SAMPLE_RATE * ms) / 1000);
     for (let i = 0; i < need; i += 1) {
       const t = i / SAMPLE_RATE;
       // 指数衰减包络：起音立即到峰值，然后 ~5 个时间常数内衰到接近 0
       const env = Math.exp((-5 * i) / need);
-      // 正弦，振幅 0.32（留足余量，多个音叠加也不削波）
-      const v = Math.sin(2 * Math.PI * freq * t) * env * 0.32;
+      const attack = i < attackSamples ? i / attackSamples : 1;
+      // 主音振幅 0.32 + 和声 0.16（留足余量，叠加不削波）
+      let v = Math.sin(2 * Math.PI * freq * t) * env * 0.32;
+      if (harm) v += Math.sin(2 * Math.PI * harm * t) * env * 0.16;
+      v *= attack;
       const pcm = Math.max(-32768, Math.min(32767, Math.round(v * 32767)));
       view.setInt16(44 + cursor * 2, pcm, true);
       cursor += 1;
@@ -213,22 +229,30 @@ function vibrate(kind) {
   try {
     if (typeof wx === 'undefined' || !wx.vibrateShort) return;
     if (kind === 'rarest') {
+      // 三段对齐号角重音与金币尾音：重 → 中 → 重
       wx.vibrateShort({ type: 'heavy' });
+      setTimeout(() => {
+        try {
+          wx.vibrateShort({ type: 'medium' });
+        } catch (e) {
+          /* 失败无所谓 */
+        }
+      }, 160);
       setTimeout(() => {
         try {
           wx.vibrateShort({ type: 'heavy' });
         } catch (e) {
-          /* 第二下失败无所谓 */
+          /* 失败无所谓 */
         }
-      }, 140);
+      }, 340);
       return;
     }
     if (kind === 'rare') {
-      wx.vibrateShort({ type: 'medium' });
+      wx.vibrateShort({ type: 'heavy' });
       return;
     }
     if (kind === 'none') return; // 空奖不震（负反馈别做得太重）
-    wx.vibrateShort({ type: 'light' });
+    wx.vibrateShort({ type: 'medium' });
   } catch (e) {
     /* 震动不可用完全不影响业务 */
   }
@@ -249,10 +273,12 @@ function prewarm() {
     // 预建上下文（关键：发生在手势栈内）
     const c = ensureCtx();
     if (!c) return false; // 没有音频能力（wx 缺失/不支持 InnerAudioContext）
-    // 预写最可能用到的两档文件（普通与稀有），避免播放时同步写盘造成卡顿
+    // 预写最可能用到的三档文件（普通/稀有/最稀有），避免播放时同步写盘造成卡顿。
+    // rarest v2 约 1.1s ≈ 35KB，合成 <10ms，手势栈内完成无压力。
     const a = ensureFile('normal');
     const b = ensureFile('rare');
-    return !!(a || b);
+    const c2 = ensureFile('rarest');
+    return !!(a || b || c2);
   } catch (e) {
     return false;
   }

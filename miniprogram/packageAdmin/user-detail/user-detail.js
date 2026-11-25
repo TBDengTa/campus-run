@@ -315,6 +315,14 @@ Page({
       readonlyScope: scope === 'class',
       className: options.className ? decodeURIComponent(options.className) : '',
       fallbackName: options.name ? decodeURIComponent(options.name) : '',
+      // 班级域「看哪一天」（用户 2026-11-22）：「我的班级 → 校园跑」选了历史日期再点学生，
+      // 详情里的当日步数 / 达标必须是那一天的，不能又回到今天。
+      // 管理员域（scope=admin）不认这个参数：管理端详情的「今日」一律是真实今天。
+      viewDate: scope === 'class' && /^\d{4}-\d{2}-\d{2}$/.test(options.date || '') ? options.date : '',
+      // 摘要区的「今日」标签文案：选了历史日期就显示「10月19日」，否则「今日」
+      // （服务端把该日当「今日」算，所以 todaySteps 类字段在该日下逐字有效）。
+      viewDateLabel:
+        scope === 'class' && /^\d{4}-\d{2}-\d{2}$/.test(options.date || '') ? dateText(options.date) : '今日',
     });
     this.load();
   },
@@ -559,9 +567,12 @@ Page({
   async loadClassScope() {
     const { id, className, fallbackName } = this.data;
     const cls = className || '';
+    // 班级域可带「看哪一天」（我的班级 → 校园跑 选了历史日期后点学生）；
+    // 服务端把该日当「今日」算达标（/api/class/students 的 date 参数）。
+    const dateQuery = this.data.viewDate ? { date: this.data.viewDate } : {};
     let row = null;
     try {
-      const res = await auth.get('/api/class/students', { className: cls, keyword: id, page: 1, limit: 5 });
+      const res = await auth.get('/api/class/students', { className: cls, keyword: id, page: 1, limit: 5, ...dateQuery });
       const list = (res && res.list) || [];
       row = list.find((s) => s.userId === id) || null;
     } catch (e) {

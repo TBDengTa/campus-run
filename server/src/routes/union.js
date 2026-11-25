@@ -2383,6 +2383,24 @@ router.get(
   })
 );
 
+// 「能不能看这个班的班超全景」——**唯一判定**（单点实现）。
+// 调用方：GET /class/:className（页面）、GET /class/:className/report（导出报表，用户 2026-11-23）。
+// 两处必须同源：各写一份必然出现「页面能看、导出 403」或反过来越权。
+async function canViewClassFull(req, identity, className, info) {
+  const scope = unionSvc.scopeFilter(identity);
+  // 分院成员：本级（院级）直接可见；系部成员还要求该班系部在自己范围内
+  const inUnionScope =
+    identity.isMember &&
+    (identity.level === 'school' || !!(scope && info.departmentId && (identity.departmentIds || []).includes(info.departmentId)));
+  const selfClass = className === req.user.className;
+  const homeroom = (req.user.homeroomClasses || []).includes(className);
+  // 学生会总管（含持 `*` 的超管）全校可见 —— 与 /records 的 isRecordSteward 同一口径。
+  // 漏这条会出现「总管能列出全校记录、却点不进某个班的全景」（403），
+  // 而班超块与「我的班级」页正是从这条接口取数的（用户 2026-11-19「查看所有记录」）。
+  const isClassSteward = await isRecordSteward(req, identity);
+  return { allowed: !!(inUnionScope || selfClass || homeroom || isClassSteward), identity, isClassSteward };
+}
+
 // 班级检查全景（首页「班超块」与班超门户页共用）
 // 规则：学生会成员可按身份看任意班级；否则只允许看自己所在班级（班委 / 班主任走 /api/class/checks??
 router.get(
@@ -2394,16 +2412,9 @@ router.get(
 
     const info = await resolveClassInfo(className);
     if (!info) throw new ApiError(404, 404, '班级不存在');
-    const scope = unionSvc.scopeFilter(identity);
-    const inUnionScope =
-      identity.isMember && (identity.level === 'school' || (scope && info.departmentId && (identity.departmentIds || []).includes(info.departmentId)));
-    const selfClass = className === req.user.className;
-    const homeroom = (req.user.homeroomClasses || []).includes(className);
-    // 学生会总管（含持 `*` 的超管）全校可见 —— 与 /records 的 isRecordSteward 同一口径。
-    // 漏这条会出现「总管能列出全校记录、却点不进某个班的全景」（403），
-    // 而班超块与「我的班级」页正是从这条接口取数的（用户 2026-11-19「查看所有记录」）。
-    const isClassSteward = await isRecordSteward(req, identity);
-    if (!inUnionScope && !selfClass && !homeroom && !isClassSteward) throw new ApiError(403, 403002, NO_ACCESS);
+    const view = await canViewClassFull(req, identity, className, info);
+    const isClassSteward = view.isClassSteward;
+    if (!view.allowed) throw new ApiError(403, 403002, NO_ACCESS);
 
     const range = ['day', 'week', 'month'].includes(String(req.query.range)) ? String(req.query.range) : 'day';
     const date = dates.isValidDateKey(String(req.query.date || '')) ? String(req.query.date) : dates.todayKey();
@@ -2477,6 +2488,77 @@ router.get(
       dayRecordsTotal,
       // 明细区间（前端展示「from ~ to」，与服务端实际统计窗口同源，不在前端自己算周/月）
       dayRecordsRange: { from: scopeRange.from, to: scopeRange.to },
+    });
+  })
+);
+
+// 班超报表（用户 2026-11-23「在班超联赛中增加功能，复制(日、周、月)问题情况直接发到本班群聊的文本，
+// 也可以生成图片，也可以生成详情表格文件」）。
+//
+// 三种产物同一个数据源（services/class-report-export.js::buildReport → bandChao.classSummary）：
+//   · ?format=text（缺省）：JSON，含 copyText（短文本）+ 图片要画的模块行 + 口径说明；
+//   · ?format=xlsx      ：详情表格文件（本期总览 + 检查明细两个 sheet）；
+//   · 图片：前端按同一次 buildReport 的字段用画布画（服务端不产图，避免再引入图片依赖）。
+//
+// 权限：与 GET /class/:className **同一份判定** canViewClassFull（不另写一份，见该函数注释）。
+// 参数与 /class/:className 完全一致（range / date / weekNo / month），页面上导出的就是页面上看到的那一期。
+router.get(
+  '/class/:className/report',
+  wrap(async (req, res) => {
+    const className = decodeURIComponent(String(req.params.className || '')).trim();
+    if (!className) throw new ApiError(400, 400, '缺少班级');
+    const identity = await unionSvc.resolveIdentity(req.user);
+    const info = await resolveClassInfo(className);
+    if (!info) throw new ApiError(404, 404, '班级不存在');
+    const view = await canViewClassFull(req, identity, className, info);
+    if (!view.allowed) throw new ApiError(403, 403002, NO_ACCESS);
+
+    const range = ['day', 'week', 'month'].includes(String(req.query.range)) ? String(req.query.range) : 'day';
+    const date = dates.isValidDateKey(String(req.query.date || '')) ? String(req.query.date) : dates.todayKey();
+    const reportSvc = require('../services/class-report-export');
+    const modules = await checkModules.listModules({ force: true });
+    const viewer = { openid: req.user.openid || '', role: req.user.role || '', identity, isSteward: view.isClassSteward };
+
+    // presentRecord 与 /class/:className 的 presentRow 同口径（照片权限 / 名单裁剪都在里面）；
+    // 报表只用它的 metricText 等摘要字段，**不下发照片**（发群的文件不该带检查照片）。
+    const report = await reportSvc.buildReport({
+      className,
+      range,
+      date,
+      weekNo: req.query.weekNo ? String(req.query.weekNo) : '',
+      month: req.query.month ? String(req.query.month) : '',
+      modules,
+      presentRecord: (r) => presentRecord(r, { withDetails: false, viewer, photoLimit: 0 }),
+    });
+
+    if (String(req.query.format || '').toLowerCase() === 'xlsx') {
+      await reportSvc.sendXlsx(res, report);
+      return;
+    }
+    ok(res, {
+      className,
+      range: report.range,
+      rangeWord: report.rangeWord,
+      periodLabel: report.periodLabel,
+      periodSpan: report.periodSpan,
+      from: report.from,
+      to: report.to,
+      score: report.score,
+      scoreText: report.scoreText,
+      fullScore: report.fullScore,
+      deduct: report.deduct,
+      recordCount: report.recordCount,
+      dayCount: report.dayCount,
+      absenceCount: report.absenceCount,
+      absenceWeight: report.absenceWeight,
+      departmentName: report.departmentName,
+      modules: report.moduleRows,
+      problemModules: report.problemModules,
+      missingModules: report.missingModules,
+      records: report.records.slice(0, 10),
+      recordsTotal: report.recordsTotal,
+      copyText: report.copyText,
+      noteLines: report.noteLines,
     });
   })
 );

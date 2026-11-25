@@ -9,7 +9,7 @@ const navGroups = require(path.join(ROOT, 'utils/nav-groups'));
 // 记录跳转目标（wx.navigateTo / switchTab），供「点条目 → 进页面」断言使用
 const navLog = [];
 
-function loadPage(rel, user, classMine) {
+function loadPage(rel, user, classMine, unionDash) {
   let page = null;
   const behaviorDefs = []; // 本次加载中收集到的 Behavior 定义
   const sandbox = {
@@ -29,9 +29,13 @@ function loadPage(rel, user, classMine) {
             if (url.includes('/api/content/announcements')) return [];
             if (url.includes('/api/points/me')) return null;
             if (url.includes('/api/admin/dashboard/overview')) {
-              return { totalUsers: 1500, activeToday: 800, stepsToday: 9000000, recordsToday: 900 };
+              return { totalUsers: 1500, activeToday: 800, stepsToday: 9000000, recordsToday: 900, pendingAppeals: 2 };
             }
             if (url.includes('/api/admin/dashboard/top3')) return { individuals: [], classes: [] };
+            // 首页「身份与待办」单卡的三路数据源（2026-11-23 首页重设计）
+            if (url.includes('/api/union/dashboard')) return unionDash || null;
+            if (url.includes('/api/class/overview')) return { studentCount: 48, achievedToday: 20, activeToday: 30, weeklyRate: 62 };
+            if (url.includes('/api/union/class/')) return { score: 8.4, ranking: { rank: 3, total: 43 }, rangeLabel: '今日' };
             if (url.includes('/api/auth/me')) return user;
             if (url.includes('/api/class/mine')) return classMine;
             throw new Error('未打桩的接口: ' + url);
@@ -50,14 +54,32 @@ function loadPage(rel, user, classMine) {
           formatNumber: (n) => String(n),
           formatDistance: (n) => String(n),
           formatDuration: (n) => String(n),
+          scoreText: (v) => (typeof v === 'number' ? v.toFixed(2) : '—'),
           parseDateKey: () => ({ m: 3, d: 8, week: '周日' }),
         };
       }
       if (p.includes('utils/nav-groups')) return navGroups;
+      // 管理 dashboard 取数模块（管理员首页用；工作台已移除）：桩返回与真接口同形态的数据，
+      // canViewDashboard 与真实实现同口径（dashboard.view / '*'）。
+      if (p.includes('utils/dashboard')) {
+        return {
+          canViewDashboard: (u) => {
+            const perms = (u && u.effectivePermissions) || [];
+            return perms.includes('*') || perms.includes('dashboard.view');
+          },
+          fetchOverview: async () => ({
+            totalUsers: 1500, activeToday: 800, stepsToday: 9000000, recordsToday: 900,
+            pendingAppeals: 2, stepsTodayText: '9000000',
+          }),
+          fetchTop3: async () => ({ rangeText: '本周', individuals: [], classes: [] }),
+        };
+      }
+      // 分享归因工具只在页面 onShow 里用；nav-groups 测试不关心它的网络行为，
+      // 但页面 require 它是真实依赖，必须给一个无副作用的桩。
+      if (p.includes('utils/beidou-share')) return { capture() {}, flush: async () => null, pending: () => null, clear() {} };
       // behaviors/*.js 的加载需要 `Behavior` 全局（它只存在于小程序运行时里）：
       // 临时挂到 node global 上真实 require，拿到 Behavior 定义，之后再清理。
-      // 这样页面里 behaviors: [x] 拿到的是真定义，测试才能调到 Behavior 的方法
-      // （例：nav-sheet 的 onNavCellTap —— 「点分类开浮层」这条交互靠它）。
+      // 这样页面里 behaviors: [x] 拿到的是真定义（例：screen behavior 的 data.screenMode）。
       if (p.includes('behaviors/')) {
         // 页面里的路径是相对 miniprogram/ 的（如 '../../behaviors/nav-sheet'），
         // 而 ROOT 已经指向 miniprogram，所以剥掉前导 '../' 再拼到 ROOT 上。
@@ -161,15 +183,16 @@ const ROLES = [
     name: '学生会管理员',
     user: { _id: 'u1', realName: '王同学', role: 'student', effectivePermissions: ['union.view', 'union.manage'], isManager: true, homeroomClasses: [], isClassOfficer: false, isUnionMember: true, className: '23级大数据技术' },
     mine: { role: null, classes: [] },
+    unionDash: { canReview: true, pendingReview: 3, modules: [{ entered: 2, expected: 5 }, { entered: 0, expected: 0, optionalWhenMissing: true }] },
   },
   {
     // **纯学生会成员**（有 union 身份、但没有任何 union.* 管理权限）：
-    // 用户要求「学生会学生中不需要显示快捷操作」—— 首页快捷操作里不该出现「学生会」分类，
-    // 但**管理中枢必须保留**（学生处/团委持 union.* 权限时的唯一入口）。
-    // 这个角色就是用来守住"首页刻意少一组、中枢保持原样"这条区分规则的。
+    // 首页只该出现「学生会 / 待复核」待办行，不该有任何管理面板；
+    // 工作台必须保留「学生会」分类（学生处/团委持 union.* 权限时的唯一入口）。
     name: '学生会成员(无管理权限)',
     user: { _id: 'u1', realName: '孙部员', role: 'student', effectivePermissions: [], isManager: false, homeroomClasses: [], isClassOfficer: false, isUnionMember: true, className: '23级大数据技术' },
     mine: { role: null, classes: [] },
+    unionDash: { canReview: false, pendingReview: 0, modules: [{ entered: 1, expected: 4 }] },
   },
   {
     // **学生会总管**（用户 2026-10-20 新增）：团委老师 / 学生处干事，
@@ -216,98 +239,100 @@ const check = (name, cond, detail) => {
 (async () => {
   for (const r of ROLES) {
     console.log(`\n=== ${r.name} ===`);
-    // ---- 首页 ----
-    const home = loadPage('pages/home/home.js', r.user, r.mine);
+    // ---- 首页（2026-11-23 重设计：个人今日视图 + 单一「身份与待办」卡）----
+    // 首页不再有任何管理面板 / 快捷操作浮层；身份只以计数行出现，行内直跳或进工作台。
+    const home = loadPage('pages/home/home.js', r.user, r.mine, r.unionDash);
     await home.refresh();
-    const hg = home.data.mgrGroups;
-    check('首页 mgrGroups 是数组', Array.isArray(hg), typeof hg);
-    check('首页 showHomeEntries 与分组数一致', home.data.showHomeEntries === hg.length > 0, `${home.data.showHomeEntries} vs ${hg.length}`);
-    console.log(`  首页快捷操作：${hg.length} 组 / ${hg.reduce((a, g) => a + g.items.length, 0)} 入口`);
-    hg.forEach((g) => console.log(`    ${g.title}：${g.items.map((i) => i.label).join('、')}`));
-    // 权限不够的入口必须**彻底不出现**（用户 2026-10-22「没有权限就不应该显示」）
-    if (r.hideEntries && r.hideEntries.length) {
-      const labels = hg.flatMap((g) => g.items.map((i) => i.label));
-      for (const h of r.hideEntries) {
-        check(`不显示「${h}」（没有对应权限）`, !labels.includes(h), labels.join('、'));
-      }
+    // refresh() 里 loadTodoRows 不 await（不阻塞首屏），测试显式等一次再断言
+    await home.loadTodoRows(r.user);
+    const rows = home.data.todoRows || [];
+    const keys = rows.map((x) => x.key);
+    check('首页不再有管理面板 / 快捷操作浮层', home.data.mgrGroups === undefined && typeof home.onNavCellTap === 'undefined', JSON.stringify({ mgr: home.data.mgrGroups, tap: typeof home.onNavCellTap }));
+    check('待办卡显隐与行数一致', home.data.showTodoCard === (rows.length > 0), `${home.data.showTodoCard} vs ${rows.length}`);
+    check('待办行 key 不重复（多身份叠加不堆卡）', new Set(keys).size === keys.length, keys.join(','));
+    console.log(`  首页待办行：${keys.join('、') || '（无）'}`);
+    // 角色矩阵：每种身份只对应自己的行，无身份 = 无卡
+    const isMember = !!r.user.isUnionMember;
+    check('学生会行仅成员可见', keys.includes('union') === isMember, keys.join(','));
+    const wantReview = !!(isMember && r.unionDash && r.unionDash.canReview && r.unionDash.pendingReview > 0);
+    check('待复核行仅在 canReview 且有.pending 时出现', keys.includes('review') === wantReview, keys.join(','));
+    const hasClass = !!(r.mine && r.mine.role && (r.mine.classes || []).length);
+    check('班超行仅班级身份可见', keys.includes('banchao') === hasClass, keys.join(','));
+    check('校园跑行仅班级身份可见', keys.includes('run') === hasClass, keys.join(','));
+    const perms = r.user.effectivePermissions || [];
+    const canDash = perms.includes('*') || perms.includes('dashboard.view');
+    check('申诉行仅 dashboard.view 可见（isManager 不等于有看板权限）', keys.includes('appeal') === canDash, keys.join(','));
+    // 每行都要有图标 / 文案 / 跳转目标（WXML 零运算，全靠 JS 预计算）
+    const badRow = rows.filter((x) => !x.icon || !x.title || !x.valueText || !x.url);
+    check('待办行字段齐全（icon/title/valueText/url）', badRow.length === 0, JSON.stringify(badRow));
+    const bcRow = rows.find((x) => x.key === 'banchao');
+    const runRow = rows.find((x) => x.key === 'run');
+    if (bcRow && runRow) {
+      const single = (r.mine.classes || []).length === 1;
+      check(
+        single ? '单班：班超行直跳班超联赛 tab 带 className' : '多班：班超行聚合进工作台选班',
+        single
+          ? !bcRow.tab && bcRow.url.includes('/packageAdmin/class/class?tab=attendance&className=')
+          : bcRow.tab === true && bcRow.url === '/pages/hub/hub',
+        bcRow.url
+      );
+      check(
+        single ? '单班：校园跑行直跳校园跑 tab 带 className' : '多班：校园跑行聚合进工作台选班',
+        single
+          ? !runRow.tab && runRow.url.includes('/packageAdmin/class/class?tab=run&className=')
+          : runRow.tab === true && runRow.url === '/pages/hub/hub',
+        runRow.url
+      );
+      check('班超行带分数（10 分制两位小数）', /\d\.\d{2}|—/.test(bcRow.valueText), bcRow.valueText);
+      check('校园跑行带达标人数', runRow.valueText.includes('达标'), runRow.valueText);
     }
-    // 每个条目必须带 bg/color（模板直接用）
-    const missingTint = hg.flatMap((g) => g.items.filter((i) => !i.bg || !i.color)).map((i) => i.label);
-    check('每个入口都带图标底色', missingTint.length === 0, missingTint.join(','));
-
-    // ---- 新交互：分类按钮 → 条目浮层 → 点条目进页面 ----
-    // 规则（用户明确要求）：分类下**实际可见**条目 >1 → 弹浮层；只剩 1 条 → 直接进该页
-    if (hg.length) {
-      const g0 = hg[0];
-      check('分类按钮不直接带页面 url（点分类只开浮层）', !g0.url, `group ${g0.key} 不该有 url 字段`);
-      check('Behavior 的 onNavCellTap 已合并进页面', typeof home.onNavCellTap === 'function', typeof home.onNavCellTap);
-
-      // 找一个「实际可见 >1 条」的分类 → 应弹浮层
-      const multi = hg.find((g) => g.items.length > 1);
-      if (multi) {
-        home.closeNavSheet();
-        home.onNavCellTap({ currentTarget: { dataset: { key: multi.key } } });
-        const sheet = home.data.navSheet;
-        check('多条分类：点分类后浮层被打开', home.data.navSheetVisible === true && !!sheet, JSON.stringify({ v: home.data.navSheetVisible, s: !!sheet }));
-        check('多条分类：浮层标题 = 分类名', sheet && sheet.title === multi.title, sheet && sheet.title);
-        check(
-          '多条分类：浮层条目与该分类的条目一一对应且都有 url',
-          sheet && sheet.items.length === multi.items.length && sheet.items.every((it) => !!it.url),
-          sheet ? sheet.items.map((it) => `${it.label}:${it.url || '无url'}`).join(',') : 'null'
-        );
-        // 点条目应触发跳转到该条目的 url
-        const first = sheet.items[0];
-        navLog.length = 0;
-        home.onNavEntryTap({ currentTarget: { dataset: { url: first.url, key: first.key } } });
-        check(
-          '多条分类：点条目 → 跳转到该条目的 url 且浮层关闭',
-          navLog.length === 1 && navLog[0] === first.url && home.data.navSheetVisible === false,
-          JSON.stringify({ navLog, visible: home.data.navSheetVisible })
-        );
-      }
-
-      // 找一个「实际可见 1 条」的分类 → 应**直接跳页**、不弹浮层
-      const single = hg.find((g) => g.items.length === 1);
-      if (single) {
-        home.closeNavSheet();
-        navLog.length = 0;
-        home.onNavCellTap({ currentTarget: { dataset: { key: single.key } } });
-        check(
-          `单条分类「${single.title}」：点分类直接进页面且不弹浮层`,
-          navLog.length === 1 && navLog[0] === single.items[0].url && home.data.navSheetVisible === false,
-          JSON.stringify({ navLog, visible: home.data.navSheetVisible })
-        );
-      }
+    // 行内直跳：点行 → 跳该行 url（tab 行用 switchTab，其余 navigateTo，都进 navLog）
+    if (rows.length) {
+      navLog.length = 0;
+      home.goTodoRow({ currentTarget: { dataset: { key: rows[0].key } } });
+      check('点待办行 → 跳该行 url', navLog.length === 1 && navLog[0] === rows[0].url, JSON.stringify(navLog));
+      navLog.length = 0;
+      home.goWorkbench();
+      check('卡头「工作台」→ switchTab 工作台', navLog.length === 1 && navLog[0] === '/pages/hub/hub', JSON.stringify(navLog));
+    }
+    // 管理员首页也要有数据概况（用户 2026-11-23 复核），与工作台同一份取数实现
+    check('首页 dashboard 显隐按 dashboard.view', home.data.canDashboard === canDash, `${home.data.canDashboard} vs ${canDash}`);
+    if (canDash) {
+      await home.loadOverview();
+      await home.loadTop3();
+      check('首页数据概况已加载', !!home.data.overview && home.data.overview.stepsTodayText !== undefined, JSON.stringify(home.data.overview));
+    } else {
+      check('无看板权限首页不拉概况', home.data.overview === null, JSON.stringify(home.data.overview));
     }
 
     // ---- 管理中枢（**平铺**：分类 + 按钮，点按钮直接进页面）----
-    const hub = loadPage('pages/hub/hub.js', r.user, r.mine);
+    const hub = loadPage('pages/hub/hub.js', r.user, r.mine, r.unionDash);
     await hub.load();
     const gg = hub.data.groups;
-    check('管理中枢 groups 是数组', Array.isArray(gg), typeof gg);
-    const hubTitles = gg.map((g) => g.title).join('|');
-    const homeTitles = hg.map((g) => g.title).join('|');
-    // 同一数据源，但**首页刻意排除「学生会」分类**（用户要求：纯学生会成员已有独立学生会卡片 +
-    // 底部「学生会」tab，不必再在首页列一排管理导航）。所以这里比较的是
-    // 「中枢 = 首页 + 被排除的分类」，而不是简单相等 —— 旧断言写的是完全相等，
-    // 会把这条产品要求误判成 bug。
-    const homeOnlyExcluded = gg.map((g) => g.title).filter((t) => !hg.some((x) => x.title === t));
-    check(
-      '首页快捷操作 = 中枢分类去掉被排除的组（同一数据源）',
-      hubTitles.startsWith(homeTitles) || homeOnlyExcluded.length <= 1,
-      `hub=[${hubTitles}] home=[${homeTitles}] 差值=[${homeOnlyExcluded.join('|')}]`
-    );
-    // 「学生会」分类：首页对**纯成员**隐藏、对持 union.* 权限的管理员保留；中枢**永远保留**
+    check('工作台 groups 是数组', Array.isArray(gg), typeof gg);
+    // 权限不够的入口必须**彻底不出现**（用户 2026-10-22「没有权限就不应该显示」）
+    if (r.hideEntries && r.hideEntries.length) {
+      const labels = gg.flatMap((g) => g.items.map((i) => i.label));
+      for (const h of r.hideEntries) {
+        check(`工作台不显示「${h}」（没有对应权限）`, !labels.includes(h), labels.join('、'));
+      }
+    }
+    // 每个条目必须带 bg/color（模板直接用）
+    const missingTint = gg.flatMap((g) => g.items.filter((i) => !i.bg || !i.color)).map((i) => i.label);
+    check('工作台每个入口都带图标底色', missingTint.length === 0, missingTint.join(','));
+    // 「学生会」分类：工作台**永远保留**（持 union.* 权限的管理员的唯一入口）
     const hubHasUnion = gg.some((g) => g.key === 'union');
-    const homeHasUnion = hg.some((g) => g.key === 'union');
-    const hasUnionPerm = (r.user.effectivePermissions || []).some((p) => p.indexOf('union.') === 0);
-    check('管理中枢始终保留「学生会」分类（管理员入口不能丢）', !r.user.isUnionMember || hubHasUnion, `isMember=${r.user.isUnionMember} hubHasUnion=${hubHasUnion}`);
-    if (r.user.isUnionMember && !hasUnionPerm) {
-      check('纯学生会成员：首页快捷操作**不显示**「学生会」分类', !homeHasUnion, `homeHasUnion=${homeHasUnion}`);
-    }
-    if (hasUnionPerm) {
-      check('持 union.* 权限者：首页仍显示「学生会」分类', homeHasUnion, `homeHasUnion=${homeHasUnion}`);
-    }
+    check('工作台始终保留「学生会」分类（管理员入口不能丢）', !r.user.isUnionMember || hubHasUnion, `isMember=${r.user.isUnionMember} hubHasUnion=${hubHasUnion}`);
+    // 数据概况已移出工作台（用户 2026-11-24「工作台去掉数据概况」，管理员首页保留）：
+    // 工作台只做入口平铺，canDashboard/overview 与取数方法都不应再存在
+    check(
+      '工作台不再承载数据概况（字段与取数方法均已移除）',
+      hub.data.canDashboard === undefined &&
+        hub.data.overview === undefined &&
+        typeof hub.loadOverview !== 'function' &&
+        typeof hub.loadTop3 !== 'function',
+      JSON.stringify({ canDashboard: hub.data.canDashboard, overview: hub.data.overview })
+    );
     // 平铺交互：每个分类下的条目都要有 url + icon + bg/color，且页面用 go() 直跳
     const flatBad = gg.flatMap((g) => (g.items || []).filter((it) => !it.url || !it.icon || !it.bg || !it.color)).map((it) => it.label);
     check('管理中枢每条入口都带 url/icon/底色（可直接平铺渲染）', flatBad.length === 0, flatBad.join(','));
@@ -414,6 +439,95 @@ const check = (name, cond, detail) => {
       !/tt-hero/.test(aboutWxml) && !/about-feature\b/.test(aboutWxml),
       '仍在用 hero / 大图标卡'
     );
+  }
+
+  // ===== 玻璃 tabBar：多身份统一「工作台」（用户 2026-11-23）=====
+  // 旧逻辑「动态项只放 1 个」会把多身份用户的入口挤掉（班委+学生会丢学生会、管理员+班委丢班级）。
+  // 新契约：底栏动态项**只有一个「工作台」**，全部身份入口收进 hub 页；学生 ≤6 项、教师恒 3 项。
+  {
+    console.log('\n=== 玻璃 tabBar：统一工作台 ===');
+    const tabSrc = fs.readFileSync(path.join(ROOT, 'custom-tab-bar/index.js'), 'utf8');
+    let tabDef = null;
+    const tabUser = { user: null };
+    const tabSandbox = {
+      console,
+      require(p) {
+        if (p.includes('utils/nav-groups')) return navGroups;
+      // 管理 dashboard 取数模块（管理员首页用；工作台已移除）：桩返回与真接口同形态的数据，
+      // canViewDashboard 与真实实现同口径（dashboard.view / '*'）。
+      if (p.includes('utils/dashboard')) {
+        return {
+          canViewDashboard: (u) => {
+            const perms = (u && u.effectivePermissions) || [];
+            return perms.includes('*') || perms.includes('dashboard.view');
+          },
+          fetchOverview: async () => ({
+            totalUsers: 1500, activeToday: 800, stepsToday: 9000000, recordsToday: 900,
+            pendingAppeals: 2, stepsTodayText: '9000000',
+          }),
+          fetchTop3: async () => ({ rangeText: '本周', individuals: [], classes: [] }),
+        };
+      }
+        if (p.includes('utils/screen')) return require(path.join(ROOT, 'utils/screen.js'));
+        throw new Error('unexpected require ' + p);
+      },
+      getApp: () => ({ globalData: { userInfo: tabUser.user }, refreshUser: async () => tabUser.user }),
+      wx: {
+        getWindowInfo: () => ({ windowWidth: 390 }),
+        onWindowResize: () => () => {},
+        offWindowResize: () => {},
+      },
+      Component: (def) => { tabDef = def; },
+      setTimeout,
+      Promise,
+    };
+    vm.createContext(tabSandbox);
+    vm.runInContext(tabSrc, tabSandbox);
+    check('custom-tab-bar 可加载（Component 定义捕获）', !!tabDef, '未捕获到定义');
+
+    const buildFor = (user) => {
+      tabUser.user = user;
+      const inst = {
+        data: JSON.parse(JSON.stringify(tabDef.data)),
+        setData(patch) { Object.assign(this.data, patch); },
+      };
+      Object.assign(inst, tabDef.methods);
+      return inst.buildList();
+    };
+    const hubCount = (list) => list.filter((x) => x.key === 'hub').length;
+    const texts = (list) => list.map((x) => x.text).join('/');
+
+    const plainStudent = buildFor({ role: 'student' });
+    check('普通学生 5 项、无工作台', plainStudent.length === 5 && hubCount(plainStudent) === 0, texts(plainStudent));
+
+    const multiStudent = buildFor({ role: 'student', isClassOfficer: true, isUnionMember: true, effectivePermissions: ['user.view'] });
+    check('管理员+班委+学生会：仍只有 1 个工作台（不再互相挤掉）', multiStudent.length === 6 && hubCount(multiStudent) === 1, texts(multiStudent));
+    check('工作台插在「记录」之后（第 4 位）', multiStudent[3] && multiStudent[3].key === 'hub', texts(multiStudent));
+    check('底栏不再有独立「班级/学生会/管理」tab', !multiStudent.some((x) => ['banchao', 'union', 'admin'].includes(x.key)), texts(multiStudent));
+
+    const officerOnly = buildFor({ role: 'student', isClassOfficer: true });
+    check('仅班委：也有工作台（6 项）', officerOnly.length === 6 && hubCount(officerOnly) === 1, texts(officerOnly));
+
+    const teacherAdmin = buildFor({ role: 'teacher', effectivePermissions: ['*'] });
+    check('管理教师 3 项：首页/工作台/我的', texts(teacherAdmin) === '首页/工作台/我的', texts(teacherAdmin));
+
+    const homeroom = buildFor({ role: 'teacher', effectivePermissions: [], homeroomClasses: ['23级大数据技术'] });
+    check('班主任(无权限) 3 项：首页/工作台/我的', texts(homeroom) === '首页/工作台/我的', texts(homeroom));
+
+    const plainTeacher = buildFor({ role: 'teacher', effectivePermissions: [] });
+    check('普通教师 3 项：首页/公告/我的（无工作台）', texts(plainTeacher) === '首页/公告/我的', texts(plainTeacher));
+
+    check('学生底栏封顶 6 项（不再溢出）', multiStudent.length <= 6, String(multiStudent.length));
+
+    // unionEntry：取消学生会 tab 后，检查录入入口必须在工作台里且仅真实成员可见
+    const unionGroup = navGroups.NAV_GROUPS.find((g) => g.key === 'union');
+    const entryItem = unionGroup && unionGroup.items.find((i) => i.only === 'unionEntry');
+    check('NAV_GROUPS 学生会组含「检查录入」(unionEntry → /pages/union/union)', !!entryItem && entryItem.url === '/pages/union/union', JSON.stringify(entryItem));
+    const memberCtx = { isSuper: false, perms: [], isAdmin: false, isClassRole: false, isUnionMember: true };
+    const stewardCtx = { isSuper: false, perms: ['union.view', 'union.manage'], isAdmin: true, isClassRole: false, isUnionMember: false };
+    check('unionEntry 仅真实学生会成员可见', navGroups.entryVisible(entryItem, memberCtx) === true, '成员看不到');
+    check('非成员管理员（union.* 权限/总管）看不到 unionEntry（与旧 UNION_TAB 同口径）', navGroups.entryVisible(entryItem, stewardCtx) === false, '非成员被放行');
+    check('工作台路径是 tab 页（switchTab 可达）', multiStudent[3].path === '/pages/hub/hub' && multiStudent[3].tab === true, JSON.stringify(multiStudent[3]));
   }
 
   console.log(`\n角色矩阵校验：失败 ${failed}`);

@@ -7,7 +7,7 @@ const mongoose = require('mongoose');
 // ⚠️ check_photo 由第四轮新增：学生会录入检查时的现场照片。与 avatar 不同，检查照片**不做旧文件清理**
 //   （留证用途，见 routes/upload.js 的 /check-photo）—— 这是刻意行为，不要"顺手"加清理。
 //   enum 是闭合的，漏了这项会让 FileObject.create 直接 ValidationError（接口 400 不可用）。
-const CATEGORIES = ['avatar', 'ad', 'badge', 'check_photo', 'other'];
+const CATEGORIES = ['avatar', 'ad', 'badge', 'beidou', 'check_photo', 'other'];
 
 const fileObjectSchema = new mongoose.Schema(
   {
